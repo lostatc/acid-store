@@ -100,3 +100,9 @@ Cargo.lock
 **/*.rs.bk
 
 # End of https://www.gitignore.io/api/rust,intellij+all
+
+# Environment variables
+/.env
+
+# Test database
+/test.db
