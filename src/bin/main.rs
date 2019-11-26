@@ -14,13 +14,11 @@
  * limitations under the License.
  */
 
-#![allow(dead_code)]
+use std::path::PathBuf;
 
-#[macro_use]
-extern crate diesel;
-#[macro_use]
-extern crate diesel_migrations;
+use disk_archive::database::create_database;
 
-mod schema;
-pub mod database;
-pub mod error;
+fn main() {
+    let path = PathBuf::from("/home/wren/Documents/Programs/disk-archive/test.db");
+    create_database(&path).unwrap();
+}
