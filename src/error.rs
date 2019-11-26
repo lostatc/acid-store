@@ -13,14 +13,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use std::result::Result as StdResult;
 
-#![allow(dead_code)]
+use diesel::ConnectionError;
+use diesel::migration::RunMigrationsError;
+use thiserror::Error as DeriveError;
 
-#[macro_use]
-extern crate diesel;
-#[macro_use]
-extern crate diesel_migrations;
+/// The error type for this crate.
+#[derive(Debug, DeriveError)]
+pub enum Error {
+    #[error("{0}")]
+    Connection(#[from] ConnectionError),
 
-mod schema;
-pub mod database;
-pub mod error;
+    #[error("{0}")]
+    Migration(#[from] RunMigrationsError),
+
+    #[doc(hidden)]
+    #[error("")]
+    __NonExhaustive,
+}
+
+pub type Result<T> = StdResult<T, Error>;

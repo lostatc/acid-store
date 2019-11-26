@@ -16,7 +16,7 @@
 
 table! {
     Blob (id) {
-        id -> Nullable<Integer>,
+        id -> Integer,
         size -> Integer,
         checksum -> Binary,
         data -> Binary,
@@ -25,21 +25,21 @@ table! {
 
 table! {
     Block (file_id, blob_id, index) {
-        file_id -> Nullable<Integer>,
-        blob_id -> Nullable<Integer>,
-        index -> Nullable<Integer>,
+        file_id -> Integer,
+        blob_id -> Integer,
+        index -> Integer,
     }
 }
 
 table! {
     Directory (file_id) {
-        file_id -> Nullable<Integer>,
+        file_id -> Integer,
     }
 }
 
 table! {
     ExtendedAttribute (id) {
-        id -> Nullable<Integer>,
+        id -> Integer,
         file_id -> Integer,
         name -> Text,
         value -> Binary,
@@ -48,7 +48,7 @@ table! {
 
 table! {
     File (id) {
-        id -> Nullable<Integer>,
+        id -> Integer,
         path -> Text,
         modifiedTime -> Integer,
         permissions -> Nullable<Integer>,
@@ -57,7 +57,7 @@ table! {
 
 table! {
     RegularFile (file_id) {
-        file_id -> Nullable<Integer>,
+        file_id -> Integer,
         size -> Integer,
         checksum -> Binary,
     }
@@ -65,7 +65,7 @@ table! {
 
 table! {
     SymbolicLink (file_id) {
-        file_id -> Nullable<Integer>,
+        file_id -> Integer,
         target -> Text,
     }
 }

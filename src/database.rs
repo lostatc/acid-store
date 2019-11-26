@@ -14,13 +14,17 @@
  * limitations under the License.
  */
 
-#![allow(dead_code)]
+use std::path::Path;
 
-#[macro_use]
-extern crate diesel;
-#[macro_use]
-extern crate diesel_migrations;
+use diesel::{Connection, SqliteConnection};
 
-mod schema;
-pub mod database;
-pub mod error;
+use crate::error::Result;
+
+embed_migrations!("./migrations");
+
+pub fn create_database(path: &Path) -> Result<()> {
+    let url = path.to_string_lossy();
+    let connection = SqliteConnection::establish(&url)?;
+    embedded_migrations::run(&connection)?;
+    Ok(())
+}
