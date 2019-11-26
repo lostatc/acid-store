@@ -6,7 +6,9 @@ edition = "2018"
 
 [dependencies]
 multihash = "0.8.0"
-diesel = "1.4.3"
+diesel = { version = "1.4.3", features = ["sqlite"] }
+diesel_migrations = "1.4.0"
+dotenv = "0.15.0"
 blake2-rfc = "0.2.18"
 xattr = "0.2.2"
 flate2 = "1.0.13"
