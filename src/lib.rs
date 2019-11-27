@@ -16,12 +16,4 @@
 
 #![allow(dead_code)]
 
-#[macro_use]
-extern crate diesel;
-#[macro_use]
-extern crate diesel_migrations;
-
-mod schema;
-mod models;
-pub mod database;
 pub mod error;

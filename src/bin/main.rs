@@ -14,11 +14,5 @@
  * limitations under the License.
  */
 
-use std::path::PathBuf;
-
-use disk_archive::database::create_database;
-
 fn main() {
-    let path = PathBuf::from("/home/garrett/Documents/Programs/disk-archive/test.db");
-    create_database(&path).unwrap();
 }
