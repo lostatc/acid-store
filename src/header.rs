@@ -25,16 +25,11 @@ use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
+use crate::io::{Block, block_range, pad_to_block_size};
 use crate::serialization::SerializableNaiveDateTime;
 
-/// The size of blocks used for storing data in the archive.
-const BLOCK_SIZE: usize = 4096;
-
-/// The address of a block as the number of bytes from the start of the file.
-type Address = u64;
-
 /// A type of file which can be stored in an archive.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EntryType {
     /// A regular file with opaque contents.
     File {
@@ -44,8 +39,8 @@ pub enum EntryType {
         /// The self-describing checksum of the file.
         checksum: Vec<u8>,
 
-        /// The addresses of the blocks containing the data for this file.
-        blocks: Vec<Address>,
+        /// The locations of blocks containing the data for this file.
+        blocks: Vec<Block>,
     },
 
     /// A directory.
@@ -95,22 +90,9 @@ pub struct Header {
     pub entries: Vec<ArchiveEntry>,
 }
 
-/// Writes to the given `file` to pad it to a multiple of `BLOCK_SIZE`.
-///
-/// # Errors
-/// - `Error::Io`: An I/O error occurred reading or writing the file.
-fn pad_to_block_size(file: &mut File) -> Result<()> {
-    let file_size = file.metadata()?.len();
-    let padding_size = file_size % BLOCK_SIZE as u64;
-    let padding = vec![0u8; padding_size as usize];
-    file.write_all(&padding)?;
-
-    Ok(())
-}
-
 impl Header {
-    /// Returns the set of addresses used for storing data.
-    fn data_blocks(&self) -> HashSet<Address> {
+    /// Returns the set of locations of blocks used for storing data.
+    fn data_blocks(&self) -> HashSet<Block> {
         self.entries
             .iter()
             .filter_map(|entry| match &entry.entry_type {
@@ -183,7 +165,7 @@ impl Header {
 /// The location of the header in the archive.
 pub struct HeaderLocation {
     /// The address of the first block in the header.
-    pub address: Address,
+    pub address: u64,
 
     /// The size of the header in bytes.
     pub header_size: u64,
@@ -193,28 +175,27 @@ pub struct HeaderLocation {
 }
 
 impl HeaderLocation {
-    /// Returns the set of addresses of all blocks in the archive.
-    fn blocks(&self) -> HashSet<Address> {
+    /// Returns the set of locations of all blocks in the archive.
+    fn blocks(&self) -> HashSet<Block> {
         // The first bytes of the file contain the address of the header.
-        let start_address = size_of::<Address>() as u64;
-        (start_address..self.archive_size).step_by(BLOCK_SIZE).collect()
+        block_range(size_of::<Block>() as u64, self.archive_size)
     }
 
-    /// Returns the set of addresses used for storing the header.
-    fn header_blocks(&self) -> HashSet<Address> {
-        (self.address..self.header_size).step_by(BLOCK_SIZE).collect()
+    /// Returns the set of locations of blocks used for storing the header.
+    fn header_blocks(&self) -> HashSet<Block> {
+        block_range(self.address, self.header_size)
     }
 }
 
-/// Returns a sorted list of addresses which are unused and can be overwritten.
-pub fn unused_blocks(header: Header, location: HeaderLocation) -> Vec<Address> {
+/// Returns a sorted list of locations of blocks which are unused and can be overwritten.
+pub fn unused_blocks(header: &Header, location: &HeaderLocation) -> Vec<Block> {
     let mut used_blocks = header.data_blocks();
     used_blocks.extend(location.header_blocks());
 
     let mut unused_blocks = location.blocks()
         .difference(&used_blocks)
         .copied()
-        .collect::<Vec<Address>>();
+        .collect::<Vec<_>>();
 
     unused_blocks.sort();
     unused_blocks
