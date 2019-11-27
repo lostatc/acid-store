@@ -15,19 +15,11 @@
  */
 use std::result::Result as StdResult;
 
-use diesel::ConnectionError;
-use diesel::migration::RunMigrationsError;
 use thiserror::Error as DeriveError;
 
 /// The error type for this crate.
 #[derive(Debug, DeriveError)]
 pub enum Error {
-    #[error("{0}")]
-    Connection(#[from] ConnectionError),
-
-    #[error("{0}")]
-    Migration(#[from] RunMigrationsError),
-
     #[doc(hidden)]
     #[error("")]
     __NonExhaustive,
