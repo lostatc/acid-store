@@ -26,6 +26,6 @@ anyhow = "1.0.19"
 chrono = "0.4.10"
 
 # Serialization
-serde = "1.0.103"
+serde = { version = "1.0.103", features = ["derive"] }
 rmp = "0.8.8"
 rmp-serde = "0.14.0"

@@ -14,8 +14,20 @@
  * limitations under the License.
  */
 
-#![allow(dead_code)]
+use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
 
-pub mod error;
-mod header;
-mod serialization;
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "NaiveDateTime")]
+pub struct SerializableNaiveDateTime {
+    #[serde(getter = "NaiveDateTime::timestamp")]
+    secs: i64,
+    #[serde(getter = "NaiveDateTime::timestamp_subsec_nanos")]
+    nsecs: u32,
+}
+
+impl From<SerializableNaiveDateTime> for NaiveDateTime {
+    fn from(serializable: SerializableNaiveDateTime) -> Self {
+        NaiveDateTime::from_timestamp(serializable.secs, serializable.nsecs)
+    }
+}
