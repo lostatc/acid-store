@@ -13,30 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::io;
-use std::result::Result as StdResult;
 
-use rmp_serde::{decode, encode};
-use thiserror::Error as DeriveError;
+use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
 
-/// The error type for this crate.
-#[derive(Debug, DeriveError)]
-pub enum Error {
-    /// An I/O error.
-    #[error("{0}")]
-    Io(#[from] io::Error),
-
-    /// An error serializing data.
-    #[error("{0}")]
-    Serialize(#[from] encode::Error),
-
-    /// An error deserializing data.
-    #[error("{0}")]
-    Deserialize(#[from] decode::Error),
-
-    #[doc(hidden)]
-    #[error("")]
-    __NonExhaustive,
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "NaiveDateTime")]
+pub struct SerializableNaiveDateTime {
+    #[serde(getter = "NaiveDateTime::timestamp")]
+    secs: i64,
+    #[serde(getter = "NaiveDateTime::timestamp_subsec_nanos")]
+    nsecs: u32,
 }
 
-pub type Result<T> = StdResult<T, Error>;
+impl From<SerializableNaiveDateTime> for NaiveDateTime {
+    fn from(serializable: SerializableNaiveDateTime) -> Self {
+        NaiveDateTime::from_timestamp(serializable.secs, serializable.nsecs)
+    }
+}

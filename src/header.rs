@@ -15,10 +15,17 @@
  */
 
 use std::collections::HashSet;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::mem::size_of;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use chrono::NaiveDateTime;
+use rmp_serde::{decode, encode};
+use serde::{Deserialize, Serialize};
+
+use crate::error::Result;
+use crate::serialization::SerializableNaiveDateTime;
 
 /// The size of blocks used for storing data in the archive.
 const BLOCK_SIZE: usize = 4096;
@@ -27,6 +34,7 @@ const BLOCK_SIZE: usize = 4096;
 type Address = u64;
 
 /// A type of file which can be stored in an archive.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum EntryType {
     /// A regular file with opaque contents.
     File {
@@ -51,6 +59,7 @@ pub enum EntryType {
 }
 
 /// An extended attribute of a file.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ExtendedAttribute {
     /// The name of the attribute.
     pub name: String,
@@ -60,11 +69,13 @@ pub struct ExtendedAttribute {
 }
 
 /// Metadata about a file which is stored in an archive.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArchiveEntry {
     /// The path of the file in the archive.
     pub path: PathBuf,
 
     /// The time the file was last modified.
+    #[serde(with = "SerializableNaiveDateTime")]
     pub modified_time: NaiveDateTime,
 
     /// The POSIX permissions bits of the file, or `None` if POSIX permissions are not applicable.
@@ -78,30 +89,26 @@ pub struct ArchiveEntry {
 }
 
 /// Metadata about files stored in the archive.
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Header {
-    /// The address of the first block used to store this header.
-    pub address: Address,
-
-    /// The size of the header in bytes.
-    pub header_size: u64,
-
     /// The entries which are stored in this archive.
     pub entries: Vec<ArchiveEntry>,
 }
 
+/// Writes to the given `file` to pad it to a multiple of `BLOCK_SIZE`.
+///
+/// # Errors
+/// - `Error::Io`: An I/O error occurred reading or writing the file.
+fn pad_to_block_size(file: &mut File) -> Result<()> {
+    let file_size = file.metadata()?.len();
+    let padding_size = file_size % BLOCK_SIZE as u64;
+    let padding = vec![0u8; padding_size as usize];
+    file.write_all(&padding)?;
+
+    Ok(())
+}
+
 impl Header {
-    /// Returns the set of addresses of all blocks in the archive.
-    fn blocks(archive_size: u64) -> HashSet<Address> {
-        // The first bytes of the file contain the address of the header.
-        let start_address = size_of::<Address>() as u64;
-        (start_address..archive_size).step_by(BLOCK_SIZE).collect()
-    }
-
-    /// Returns the set of addresses used for storing the header.
-    fn header_blocks(&self) -> HashSet<Address> {
-        (self.address..self.header_size).step_by(BLOCK_SIZE).collect()
-    }
-
     /// Returns the set of addresses used for storing data.
     fn data_blocks(&self) -> HashSet<Address> {
         self.entries
@@ -115,19 +122,100 @@ impl Header {
             .collect::<HashSet<_>>()
     }
 
-    /// Returns the set of addresses which are unused and can be overwritten.
+    /// Reads the header from the given `archive`.
     ///
-    /// The returned addresses are sorted in ascending order.
-    pub fn unused_blocks(&self, archive_size: u64) -> Vec<Address> {
-        let mut used_blocks = self.data_blocks();
-        used_blocks.extend(self.header_blocks());
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred reading from the archive.
+    /// - `Error::Deserialize`: An error occurred deserializing the header.
+    pub fn read(archive: &Path) -> Result<(Header, HeaderLocation)> {
+        let mut file = File::open(archive)?;
+        let mut address_buffer = [0u8; size_of::<u64>()];
+        let archive_size = file.metadata()?.len();
 
-        let mut unused_blocks = Self::blocks(archive_size)
-            .difference(&used_blocks)
-            .copied()
-            .collect::<Vec<Address>>();
+        // Get the address of the header.
+        file.seek(SeekFrom::Start(0))?;
+        file.read_exact(&mut address_buffer)?;
+        let address = u64::from_be_bytes(address_buffer);
 
-        unused_blocks.sort();
-        unused_blocks
+        // Read the header size and header.
+        file.seek(SeekFrom::Start(address))?;
+        file.read_exact(&mut address_buffer)?;
+        let header_size = u64::from_be_bytes(address_buffer);
+        let header = decode::from_read(file.take(header_size))?;
+
+        let location = HeaderLocation { address, header_size, archive_size };
+        Ok((header, location))
     }
+
+    /// Writes this header to the given `archive` and returns its location.
+    ///
+    /// This does not overwrite the old header, but instead marks the space as unused so that it can
+    /// be overwritten with new data in the future. If this method call is interrupted before the
+    /// header is fully written, the old header will still be valid and the written bytes of the new
+    /// header will be marked as unused.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred writing to the archive.
+    /// - `Error::Serialize`: An error occurred serializing the header.
+    pub fn write(&self, archive: &Path) -> Result<HeaderLocation> {
+        let mut file = File::open(archive)?;
+
+        // Pad the file to a multiple of `BLOCK_SIZE`.
+        let address = file.seek(SeekFrom::End(0))?;
+        pad_to_block_size(&mut file)?;
+
+        // Append the new header size and header.
+        let serialized_header = encode::to_vec(&self)?;
+        file.write_all(&serialized_header.len().to_be_bytes())?;
+        file.write_all(&serialized_header)?;
+
+        // Update the header address to point to the new header.
+        file.seek(SeekFrom::Start(0))?;
+        file.write_all(&address.to_be_bytes())?;
+
+        let archive_size = file.metadata()?.len();
+        let header_size = archive_size - address;
+
+        Ok(HeaderLocation { address, header_size, archive_size })
+    }
+}
+
+/// The location of the header in the archive.
+pub struct HeaderLocation {
+    /// The address of the first block in the header.
+    pub address: Address,
+
+    /// The size of the header in bytes.
+    pub header_size: u64,
+
+    /// The size of the archive in bytes.
+    pub archive_size: u64,
+}
+
+impl HeaderLocation {
+    /// Returns the set of addresses of all blocks in the archive.
+    fn blocks(&self) -> HashSet<Address> {
+        // The first bytes of the file contain the address of the header.
+        let start_address = size_of::<Address>() as u64;
+        (start_address..self.archive_size).step_by(BLOCK_SIZE).collect()
+    }
+
+    /// Returns the set of addresses used for storing the header.
+    fn header_blocks(&self) -> HashSet<Address> {
+        (self.address..self.header_size).step_by(BLOCK_SIZE).collect()
+    }
+}
+
+/// Returns a sorted list of addresses which are unused and can be overwritten.
+pub fn unused_blocks(header: Header, location: HeaderLocation) -> Vec<Address> {
+    let mut used_blocks = header.data_blocks();
+    used_blocks.extend(location.header_blocks());
+
+    let mut unused_blocks = location.blocks()
+        .difference(&used_blocks)
+        .copied()
+        .collect::<Vec<Address>>();
+
+    unused_blocks.sort();
+    unused_blocks
 }

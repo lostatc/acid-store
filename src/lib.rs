@@ -18,3 +18,4 @@
 
 pub mod error;
 mod header;
+mod serialization;
