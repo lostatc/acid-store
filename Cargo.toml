@@ -5,14 +5,27 @@ authors = ["Garrett Powell <garrett@gpowell.net>"]
 edition = "2018"
 
 [dependencies]
-multihash = "0.8.0"
-blake2-rfc = "0.2.18"
+# File I/O
 xattr = "0.2.2"
-flate2 = "1.0.13"
 fuse = "0.3.1"
+
+# Compression/encryption/hashing
+flate2 = "1.0.13"
 zip = "0.5.3"
+rust-crypto = "0.2.36"
+multihash = "0.8.0"
+
+# CLI argument parsing
 clap = "2.33.0"
+
+# Error handling
 thiserror = "1.0.4"
 anyhow = "1.0.19"
+
+# Dates/times
 chrono = "0.4.10"
-futures = "0.3.1"
+
+# Serialization
+serde = "1.0.103"
+rmp = "0.8.8"
+rmp-serde = "0.14.0"
