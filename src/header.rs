@@ -54,7 +54,7 @@ pub enum EntryType {
 }
 
 /// An extended attribute of a file.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExtendedAttribute {
     /// The name of the attribute.
     pub name: String,
@@ -64,7 +64,7 @@ pub struct ExtendedAttribute {
 }
 
 /// Metadata about a file which is stored in an archive.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArchiveEntry {
     /// The path of the file in the archive.
     pub path: PathBuf,
@@ -163,6 +163,7 @@ impl Header {
 }
 
 /// The location of the header in the archive.
+#[derive(Debug, PartialEq, Eq)]
 pub struct HeaderLocation {
     /// The address of the first block in the header.
     pub address: u64,
