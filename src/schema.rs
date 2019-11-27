@@ -50,7 +50,7 @@ table! {
     File (id) {
         id -> Integer,
         path -> Text,
-        modifiedTime -> Integer,
+        modified_time -> Integer,
         permissions -> Nullable<Integer>,
     }
 }

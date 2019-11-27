@@ -22,5 +22,6 @@ extern crate diesel;
 extern crate diesel_migrations;
 
 mod schema;
+mod models;
 pub mod database;
 pub mod error;

@@ -1,7 +1,7 @@
 CREATE TABLE File (
     "id" INTEGER NOT NULL PRIMARY KEY,
     "path" TEXT NOT NULL UNIQUE,
-    "modifiedTime" INTEGER NOT NULL,
+    "modified_time" INTEGER NOT NULL,
     "permissions" INTEGER
 );
 
