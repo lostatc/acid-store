@@ -24,9 +24,15 @@ use chrono::NaiveDateTime;
 use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
 
+use crate::block::{BlockAddress, pad_to_block_size};
 use crate::error::Result;
-use crate::io::{Block, block_range, pad_to_block_size};
 use crate::serialization::SerializableNaiveDateTime;
+
+/// The size of the checksum of each file.
+const FILE_HASH_SIZE: usize = 32;
+
+/// The checksum of a file.
+type FileChecksum = [u8; FILE_HASH_SIZE];
 
 /// A type of file which can be stored in an archive.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,11 +42,11 @@ pub enum EntryType {
         /// The size of the file in bytes.
         size: u64,
 
-        /// The self-describing checksum of the file.
-        checksum: Vec<u8>,
+        /// The BLAKE2 checksum of the file.
+        checksum: FileChecksum,
 
         /// The locations of blocks containing the data for this file.
-        blocks: Vec<Block>,
+        blocks: Vec<BlockAddress>,
     },
 
     /// A directory.
@@ -92,7 +98,7 @@ pub struct Header {
 
 impl Header {
     /// Returns the set of locations of blocks used for storing data.
-    fn data_blocks(&self) -> HashSet<Block> {
+    fn data_blocks(&self) -> Vec<BlockAddress> {
         self.entries
             .iter()
             .filter_map(|entry| match &entry.entry_type {
@@ -101,7 +107,7 @@ impl Header {
             })
             .flatten()
             .copied()
-            .collect::<HashSet<_>>()
+            .collect()
     }
 
     /// Reads the header from the given `archive`.
@@ -176,28 +182,32 @@ pub struct HeaderLocation {
 }
 
 impl HeaderLocation {
-    /// Returns the set of locations of all blocks in the archive.
-    fn blocks(&self) -> HashSet<Block> {
-        // The first bytes of the file contain the address of the header.
-        block_range(size_of::<Block>() as u64, self.archive_size)
+    /// Returns the list of locations of all blocks in the archive.
+    fn blocks(&self) -> Vec<BlockAddress> {
+        // The first bytes in the archive are the offset of the header.
+        BlockAddress::range(
+            BlockAddress::from_offset(size_of::<u64>() as u64),
+            BlockAddress::from_offset(self.archive_size),
+        )
     }
 
     /// Returns the set of locations of blocks used for storing the header.
-    fn header_blocks(&self) -> HashSet<Block> {
-        block_range(self.address, self.header_size)
+    fn header_blocks(&self) -> Vec<BlockAddress> {
+        BlockAddress::range(
+            BlockAddress::from_offset(self.address),
+            BlockAddress::from_offset(self.header_size),
+        )
     }
 }
 
 /// Returns a sorted list of locations of blocks which are unused and can be overwritten.
-pub fn unused_blocks(header: &Header, location: &HeaderLocation) -> Vec<Block> {
-    let mut used_blocks = header.data_blocks();
+pub fn unused_blocks(header: &Header, location: &HeaderLocation) -> Vec<BlockAddress> {
+    let mut used_blocks = HashSet::new();
+    used_blocks.extend(header.data_blocks());
     used_blocks.extend(location.header_blocks());
 
-    let mut unused_blocks = location.blocks()
-        .difference(&used_blocks)
-        .copied()
-        .collect::<Vec<_>>();
+    let mut unused_blocks = location.blocks();
+    unused_blocks.retain(|block| !used_blocks.contains(block));
 
-    unused_blocks.sort();
     unused_blocks
 }
