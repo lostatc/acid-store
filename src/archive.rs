@@ -15,12 +15,12 @@
  */
 
 use std::fs::File;
-use std::io::{copy, Read, Seek, SeekFrom};
+use std::io::{Seek, SeekFrom};
 use std::path::PathBuf;
 
+use crate::block::{Block, BlockAddress, pad_to_block_size};
 use crate::error::Result;
 use crate::header::{Header, HeaderLocation, unused_blocks};
-use crate::io::{Block, block_range, BLOCK_SIZE, pad_to_block_size};
 
 pub struct Archive {
     path: PathBuf,
@@ -28,35 +28,40 @@ pub struct Archive {
     location: HeaderLocation,
 }
 
-// TODO: Don't add a file if a file with the same checksum already exists.
-
 impl Archive {
+    // TODO: Don't add a block if a block with the same checksum already exists.
+    // TODO: Calculate the file checksum.
     /// Writes the data from the given `file` to the archive.
     ///
     /// This returns the addresses of the file's blocks in the archive.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    fn write_file_data(&self, file: &mut File) -> Result<Vec<Block>> {
+    fn write_file_data(&self, file: &mut File) -> Result<Vec<BlockAddress>> {
         let mut archive = File::open(&self.path)?;
         let unused_blocks = unused_blocks(&self.header, &self.location);
+        let mut addresses = Vec::new();
 
         // Fill unused blocks in the archive first.
-        for block in &unused_blocks {
-            archive.seek(SeekFrom::Start(block.address()))?;
-            copy(&mut file.try_clone()?.take(BLOCK_SIZE as u64), &mut archive)?;
+        for block_address in unused_blocks {
+            match Block::from_read(file)? {
+                Some(block) => block.write_at(&mut archive, block_address)?,
+                None => break
+            };
+            addresses.push(block_address);
         }
 
         // Append remaining data to the end of the archive.
         pad_to_block_size(&mut archive)?;
-        let first_new_block = archive.seek(SeekFrom::End(0))?;
-        copy(file, &mut archive)?;
-        let end_of_file = archive.seek(SeekFrom::Current(0))?;
+        let start_address = BlockAddress::from_offset(archive.seek(SeekFrom::End(0))?);
+        for block in Block::iter_blocks(file) {
+            block?.write(&mut archive);
+        }
+        let end_address = BlockAddress::from_offset(archive.seek(SeekFrom::Current(0))?);
 
-        // Get the locations of the file's blocks.
-        let mut blocks = unused_blocks.clone();
-        blocks.extend(block_range(first_new_block, end_of_file));
+        // Get addresses of new blocks.
+        addresses.extend(BlockAddress::range(start_address, end_address));
 
-        Ok(blocks)
+        Ok(addresses)
     }
 }
