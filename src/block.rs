@@ -20,10 +20,12 @@ use std::iter;
 use std::mem::size_of;
 
 use crypto::blake2b::Blake2b;
+use crypto::digest::Digest;
 use num_integer::{div_ceil, div_floor};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
+use crate::header::{FILE_HASH_SIZE, FileChecksum};
 
 /// The size of the checksum of the block data.
 pub const BLOCK_HASH_SIZE: usize = 32;
@@ -40,10 +42,10 @@ pub const BLOCK_SIZE: usize = BLOCK_HASH_SIZE + BLOCK_DATA_SIZE;
 pub const BLOCK_OFFSET: u64 = size_of::<u64>() as u64;
 
 /// The checksum of a block.
-type BlockChecksum = [u8; BLOCK_HASH_SIZE];
+pub type BlockChecksum = [u8; BLOCK_HASH_SIZE];
 
 /// The data of a block.
-type BlockData = [u8; BLOCK_DATA_SIZE];
+pub type BlockData = [u8; BLOCK_DATA_SIZE];
 
 /// A block of data.
 pub struct Block {
@@ -118,6 +120,12 @@ impl BlockAddress {
         BlockAddress(index)
     }
 
+    /// Returns the `BlockAddress` of the block at the given `offset`.
+    pub fn from_offset(offset: u64) -> Self {
+        let index = div_floor(offset - BLOCK_OFFSET, BLOCK_SIZE as u64);
+        BlockAddress(index as u32)
+    }
+
     /// Returns the range of `BlockAddress` values between `start_offset` and `end_offset`.
     pub fn range(start_offset: u64, end_offset: u64) -> Vec<BlockAddress> {
         let start_index = div_floor(start_offset - BLOCK_OFFSET, BLOCK_SIZE as u64);
@@ -159,6 +167,38 @@ impl BlockAddress {
     /// - `Error::Io`: An I/O error occurred.
     pub fn read_block(self, archive: &mut File) -> Result<Block> {
         Ok(Block { checksum: self.read_checksum(archive)?, data: self.read_data(archive)? })
+    }
+}
+
+/// An `Iterator` which computes the checksum of all the blocks which pass through it.
+pub struct BlockDigest {
+    digest: Blake2b,
+    blocks: Box<dyn Iterator<Item=Result<Block>>>,
+}
+
+impl BlockDigest {
+    /// Creates a new `BlockDigest` which wraps an existing iterator.
+    pub fn new(iter: impl Iterator<Item=Result<Block>> + 'static) -> Self {
+        BlockDigest { digest: Blake2b::new(FILE_HASH_SIZE), blocks: Box::new(iter) }
+    }
+
+    /// Returns the checksum of all the data which has passed through the iterator so far.
+    pub fn result(&mut self) -> FileChecksum {
+        let mut checksum = [0u8; FILE_HASH_SIZE];
+        self.digest.result(&mut checksum);
+        checksum
+    }
+}
+
+impl Iterator for BlockDigest {
+    type Item = Result<Block>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next_element = self.blocks.next();
+        if let Some(Ok(block)) = &next_element {
+            self.digest.input(&block.data);
+        };
+        next_element
     }
 }
 
