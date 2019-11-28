@@ -14,66 +14,133 @@
  * limitations under the License.
  */
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Seek, SeekFrom};
 use std::path::PathBuf;
 
-use crypto::blake2b::Blake2b;
-use crypto::digest::Digest;
-
-use crate::block::{Block, BlockAddress, pad_to_block_size};
+use crate::block::{Block, BlockAddress, BlockChecksum, BlockDigest, pad_to_block_size};
 use crate::error::Result;
 use crate::header::{EntryType, FILE_HASH_SIZE, Header, HeaderAddress};
 
 pub struct Archive {
+    /// The path of the archive.
     path: PathBuf,
+
+    /// The archive's header.
     header: Header,
+
+    /// The address of the archive's header.
     header_address: HeaderAddress,
+
+    /// The checksums of all the blocks in the archive and their addresses.
+    block_checksums: HashMap<BlockChecksum, BlockAddress>
 }
 
 impl Archive {
-    // TODO: Don't add a block if a block with the same checksum already exists.
+    /// Writes a block to the archive.
+    ///
+    /// If the given `block` already exists in the archive, this method does nothing and returns the
+    /// address of the existing block. Otherwise, this method adds the given `block` to the archive
+    /// at the given `address` and returns that address.
+    ///
+    /// # Errors
+    /// - `Error::Io` An I/O error occurred.
+    fn write_block(
+        &mut self,
+        mut archive: &mut File,
+        block: &Block,
+        address: BlockAddress,
+    ) -> Result<BlockAddress> {
+        // Check if the block already exists in the archive.
+        match self.block_checksums.get(&block.checksum) {
+            // Use the address of the existing block.
+            Some(existing_address) => Ok(*existing_address),
+
+            // Add the new block.
+            None => {
+                block.write_at(&mut archive, address)?;
+                self.block_checksums.insert(block.checksum, address);
+                Ok(address)
+            }
+        }
+    }
+
+    /// Writes the given `blocks` to the `archive` by filling unused spaces.
+    ///
+    /// This only writes as many blocks as there are unused spaces to fill. If there are no unused
+    /// spaces, no blocks will be written. This returns the list of addresses that blocks have been
+    /// written to.
+    ///
+    /// # Errors
+    /// - `Error::Io` An I/O error occurred.
+    fn write_unused_blocks(
+        &mut self,
+        mut archive: &mut File,
+        blocks: &mut impl Iterator<Item=Result<Block>>,
+    ) -> Result<Vec<BlockAddress>> {
+        let unused_blocks = self.header.unused_blocks(&self.header_address);
+        let mut addresses = Vec::new();
+
+        for block_address in unused_blocks {
+            match blocks.next() {
+                Some(block_result) => {
+                    let block = block_result?;
+                    addresses.push(self.write_block(&mut archive, &block, block_address)?);
+                },
+                None => break
+            }
+        }
+
+        Ok(addresses)
+    }
+
+    /// Writes the given `blocks` to the `archive` by appending to the end.
+    ///
+    /// This writes all remaining blocks to the archive. This returns the list of addresses that
+    /// blocks have been written to.
+    ///
+    /// # Errors
+    /// - `Error::Io` An I/O error occurred.
+    fn write_new_blocks(
+        &mut self,
+        mut archive: &mut File,
+        blocks: &mut impl Iterator<Item=Result<Block>>,
+    ) -> Result<Vec<BlockAddress>> {
+        let mut addresses = Vec::new();
+
+        for block_result in blocks {
+            let block = block_result?;
+            let block_offset = archive.seek(SeekFrom::Current(0))?;
+            let block_address = BlockAddress::from_offset(block_offset);
+            addresses.push(self.write_block(&mut archive, &block, block_address)?);
+        }
+
+        Ok(addresses)
+    }
+
     /// Writes the data from the given regular `file` to the archive.
     ///
     /// This returns the `EntryType::File` for the file.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    fn write_file_data(&self, file: &mut File) -> Result<EntryType> {
+    fn write_file_data(&mut self, file: &'static mut File) -> Result<EntryType> {
         let mut archive = File::open(&self.path)?;
-        let unused_blocks = self.header.unused_blocks(&self.header_address);
-
-        let mut file_digest = Blake2b::new(FILE_HASH_SIZE);
         let mut addresses = Vec::new();
+        let file_size = file.metadata()?.len();
+        let mut block_digest = BlockDigest::new(Block::iter_blocks(file));
 
         // Fill unused blocks in the archive first.
-        for block_address in unused_blocks {
-            match Block::from_read(file)? {
-                Some(block) => {
-                    file_digest.input(&block.data);
-                    block.write_at(&mut archive, block_address)?;
-                    addresses.push(block_address);
-                },
-                None => break
-            };
-        }
+        addresses.extend(self.write_unused_blocks(&mut archive, &mut block_digest)?);
 
-        // Append remaining blocks to the end of the archive.
-        let start_offset = archive.seek(SeekFrom::End(0))?;
+        // Pad the archive to a multiple of `BLOCK_SIZE`.
+        archive.seek(SeekFrom::End(0))?;
         pad_to_block_size(&mut archive)?;
-        for block_result in Block::iter_blocks(file) {
-            let block = block_result?;
-            file_digest.input(&block.data);
-            block.write(&mut archive)?;
-        }
-        let end_offset = archive.seek(SeekFrom::Current(0))?;
 
-        // Get file size, checksum, and block addresses.
-        let file_size = file.metadata()?.len();
-        let mut checksum = [0u8; FILE_HASH_SIZE];
-        file_digest.result(&mut checksum);
-        addresses.extend(BlockAddress::range(start_offset, end_offset));
+        // Append the remaining blocks to the end of the archive.
+        addresses.extend(self.write_new_blocks(&mut archive, &mut block_digest)?);
 
-        Ok(EntryType::File { size: file_size, checksum, blocks: addresses })
+        Ok(EntryType::File { size: file_size, checksum: block_digest.result(), blocks: addresses })
     }
 }
