@@ -110,32 +110,44 @@ impl Header {
             .collect()
     }
 
+    /// Returns a list of addresses of blocks which are unused and can be overwritten.
+    pub fn unused_blocks(&self, location: &HeaderAddress) -> Vec<BlockAddress> {
+        let mut used_blocks = HashSet::new();
+        used_blocks.extend(self.data_blocks());
+        used_blocks.extend(location.header_blocks());
+
+        let mut unused_blocks = location.blocks();
+        unused_blocks.retain(|block| !used_blocks.contains(block));
+
+        unused_blocks
+    }
+
     /// Reads the header from the given `archive`.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred reading from the archive.
     /// - `Error::Deserialize`: An error occurred deserializing the header.
-    pub fn read(archive: &Path) -> Result<(Header, HeaderLocation)> {
+    pub fn read(archive: &Path) -> Result<(Header, HeaderAddress)> {
         let mut file = File::open(archive)?;
-        let mut address_buffer = [0u8; size_of::<u64>()];
+        let mut offset_buffer = [0u8; size_of::<u64>()];
         let archive_size = file.metadata()?.len();
 
-        // Get the address of the header.
+        // Get the offset of the header.
         file.seek(SeekFrom::Start(0))?;
-        file.read_exact(&mut address_buffer)?;
-        let address = u64::from_be_bytes(address_buffer);
+        file.read_exact(&mut offset_buffer)?;
+        let offset = u64::from_be_bytes(offset_buffer);
 
         // Read the header size and header.
-        file.seek(SeekFrom::Start(address))?;
-        file.read_exact(&mut address_buffer)?;
-        let header_size = u64::from_be_bytes(address_buffer);
+        file.seek(SeekFrom::Start(offset))?;
+        file.read_exact(&mut offset_buffer)?;
+        let header_size = u64::from_be_bytes(offset_buffer);
         let header = decode::from_read(file.take(header_size))?;
 
-        let location = HeaderLocation { address, header_size, archive_size };
-        Ok((header, location))
+        let header_address = HeaderAddress { offset, header_size, archive_size };
+        Ok((header, header_address))
     }
 
-    /// Writes this header to the given `archive` and returns its location.
+    /// Writes this header to the given `archive` and returns its address.
     ///
     /// This does not overwrite the old header, but instead marks the space as unused so that it can
     /// be overwritten with new data in the future. If this method call is interrupted before the
@@ -145,11 +157,11 @@ impl Header {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred writing to the archive.
     /// - `Error::Serialize`: An error occurred serializing the header.
-    pub fn write(&self, archive: &Path) -> Result<HeaderLocation> {
+    pub fn write(&self, archive: &Path) -> Result<HeaderAddress> {
         let mut file = File::open(archive)?;
 
         // Pad the file to a multiple of `BLOCK_SIZE`.
-        let address = file.seek(SeekFrom::End(0))?;
+        let offset = file.seek(SeekFrom::End(0))?;
         pad_to_block_size(&mut file)?;
 
         // Append the new header size and header.
@@ -157,50 +169,38 @@ impl Header {
         file.write_all(&serialized_header.len().to_be_bytes())?;
         file.write_all(&serialized_header)?;
 
-        // Update the header address to point to the new header.
+        // Update the header offset to point to the new header.
         file.seek(SeekFrom::Start(0))?;
-        file.write_all(&address.to_be_bytes())?;
+        file.write_all(&offset.to_be_bytes())?;
 
         let archive_size = file.metadata()?.len();
-        let header_size = archive_size - address;
+        let header_size = archive_size - offset;
 
-        Ok(HeaderLocation { address, header_size, archive_size })
+        Ok(HeaderAddress { offset, header_size, archive_size })
     }
 }
 
-/// The location of the header in the archive.
+/// The address of the header in the archive.
 #[derive(Debug, PartialEq, Eq)]
-pub struct HeaderLocation {
-    /// The address of the first block in the header.
-    pub address: u64,
+pub struct HeaderAddress {
+    /// The offset of the first block in the header.
+    offset: u64,
 
     /// The size of the header in bytes.
-    pub header_size: u64,
+    header_size: u64,
 
     /// The size of the archive in bytes.
-    pub archive_size: u64,
+    archive_size: u64,
 }
 
-impl HeaderLocation {
-    /// Returns the list of locations of all blocks in the archive.
+impl HeaderAddress {
+    /// Returns the list of addresses of all blocks in the archive.
     fn blocks(&self) -> Vec<BlockAddress> {
         BlockAddress::range(BLOCK_OFFSET, self.archive_size)
     }
 
-    /// Returns the set of locations of blocks used for storing the header.
+    /// Returns the list of addresses of blocks used for storing the header.
     fn header_blocks(&self) -> Vec<BlockAddress> {
-        BlockAddress::range(self.address, self.header_size)
+        BlockAddress::range(self.offset, self.header_size)
     }
-}
-
-/// Returns a sorted list of locations of blocks which are unused and can be overwritten.
-pub fn unused_blocks(header: &Header, location: &HeaderLocation) -> Vec<BlockAddress> {
-    let mut used_blocks = HashSet::new();
-    used_blocks.extend(header.data_blocks());
-    used_blocks.extend(location.header_blocks());
-
-    let mut unused_blocks = location.blocks();
-    unused_blocks.retain(|block| !used_blocks.contains(block));
-
-    unused_blocks
 }
