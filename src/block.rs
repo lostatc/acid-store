@@ -20,6 +20,7 @@ use std::iter;
 use std::mem::size_of;
 
 use crypto::blake2b::Blake2b;
+use num_integer::{div_ceil, div_floor};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
@@ -32,6 +33,11 @@ pub const BLOCK_DATA_SIZE: usize = 4096;
 
 /// The total size of the block.
 pub const BLOCK_SIZE: usize = BLOCK_HASH_SIZE + BLOCK_DATA_SIZE;
+
+/// The number of bytes between the start of the archive and the first block.
+///
+/// The first `BLOCK_OFFSET` bytes in the archive store the offset of the header.
+pub const BLOCK_OFFSET: u64 = size_of::<u64>() as u64;
 
 /// The checksum of a block.
 type BlockChecksum = [u8; BLOCK_HASH_SIZE];
@@ -112,29 +118,17 @@ impl BlockAddress {
         BlockAddress(index)
     }
 
-    /// Returns the `BlockAddress` of the block at the byte `offset` from the start of the archive.
-    ///
-    /// The `offset` doesn't have to be on a block boundary. It can be anywhere between the start
-    /// and end of the block.
-    pub fn from_offset(offset: u64) -> Self {
-        // The first bytes in the archive are the offset of the header.
-        let start = size_of::<u64>() as u64;
-        let quotient = (offset - start) / BLOCK_SIZE as u64;
-        let is_boundary = (offset - start) % BLOCK_SIZE as u64 == 0;
-        let index = if is_boundary { quotient - 1 } else { quotient };
-
-        BlockAddress(index as u32)
-    }
-
-    /// Returns the range of `BlockAddress` values between `start` and `end`.
-    pub fn range(start: BlockAddress, end: BlockAddress) -> Vec<BlockAddress> {
-        (start.0..=end.0).map(BlockAddress).collect()
+    /// Returns the range of `BlockAddress` values between `start_offset` and `end_offset`.
+    pub fn range(start_offset: u64, end_offset: u64) -> Vec<BlockAddress> {
+        let start_index = div_floor(start_offset - BLOCK_OFFSET, BLOCK_SIZE as u64);
+        let end_index = div_ceil(end_offset - BLOCK_OFFSET, BLOCK_SIZE as u64);
+        (start_index..end_index).map(|index| BlockAddress(index as u32)).collect()
     }
 
     /// Returns the byte offset of the block from the beginning of the file.
     fn offset(self) -> u64 {
         // The first bytes in the archive are the offset of the header.
-        size_of::<u64>() as u64 + (self.0 as u64 * BLOCK_SIZE as u64)
+        BLOCK_OFFSET + (self.0 as u64 * BLOCK_SIZE as u64)
     }
 
     /// Reads the block's checksum from the given `archive`.
@@ -192,8 +186,8 @@ fn read_all(source: &mut impl Read, buffer: &mut [u8]) -> Result<usize> {
 /// # Errors
 /// - `Error::Io`: An I/O error occurred.
 pub fn pad_to_block_size(file: &mut File) -> Result<()> {
-    let file_size = file.metadata()?.len();
-    let padding_size = file_size % BLOCK_SIZE as u64;
+    let position = file.seek(SeekFrom::Current(0))?;
+    let padding_size = (position - BLOCK_OFFSET) % BLOCK_SIZE as u64;
     let padding = vec![0u8; padding_size as usize];
     file.write_all(&padding)?;
 

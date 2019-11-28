@@ -18,9 +18,12 @@ use std::fs::File;
 use std::io::{Seek, SeekFrom};
 use std::path::PathBuf;
 
+use crypto::blake2b::Blake2b;
+use crypto::digest::Digest;
+
 use crate::block::{Block, BlockAddress, pad_to_block_size};
 use crate::error::Result;
-use crate::header::{Header, HeaderLocation, unused_blocks};
+use crate::header::{EntryType, FILE_HASH_SIZE, FileChecksum, Header, HeaderLocation, unused_blocks};
 
 pub struct Archive {
     path: PathBuf,
@@ -30,38 +33,47 @@ pub struct Archive {
 
 impl Archive {
     // TODO: Don't add a block if a block with the same checksum already exists.
-    // TODO: Calculate the file checksum.
-    /// Writes the data from the given `file` to the archive.
+    /// Writes the data from the given regular `file` to the archive.
     ///
-    /// This returns the addresses of the file's blocks in the archive.
+    /// This returns the `EntryType::File` for the file.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    fn write_file_data(&self, file: &mut File) -> Result<Vec<BlockAddress>> {
+    fn write_file_data(&self, file: &mut File) -> Result<EntryType> {
         let mut archive = File::open(&self.path)?;
         let unused_blocks = unused_blocks(&self.header, &self.location);
+
+        let mut file_digest = Blake2b::new(FILE_HASH_SIZE);
         let mut addresses = Vec::new();
 
         // Fill unused blocks in the archive first.
         for block_address in unused_blocks {
             match Block::from_read(file)? {
-                Some(block) => block.write_at(&mut archive, block_address)?,
+                Some(block) => {
+                    file_digest.input(&block.data);
+                    block.write_at(&mut archive, block_address)?;
+                    addresses.push(block_address);
+                },
                 None => break
             };
-            addresses.push(block_address);
         }
 
-        // Append remaining data to the end of the archive.
+        // Append remaining blocks to the end of the archive.
+        let start_offset = archive.seek(SeekFrom::End(0))?;
         pad_to_block_size(&mut archive)?;
-        let start_address = BlockAddress::from_offset(archive.seek(SeekFrom::End(0))?);
-        for block in Block::iter_blocks(file) {
-            block?.write(&mut archive);
+        for block_result in Block::iter_blocks(file) {
+            let block = block_result?;
+            file_digest.input(&block.data);
+            block.write(&mut archive)?;
         }
-        let end_address = BlockAddress::from_offset(archive.seek(SeekFrom::Current(0))?);
+        let end_offset = archive.seek(SeekFrom::Current(0))?;
 
-        // Get addresses of new blocks.
-        addresses.extend(BlockAddress::range(start_address, end_address));
+        // Get file size, checksum, and block addresses.
+        let file_size = file.metadata()?.len();
+        let mut checksum = [0u8; FILE_HASH_SIZE];
+        file_digest.result(&mut checksum);
+        addresses.extend(BlockAddress::range(start_offset, end_offset));
 
-        Ok(addresses)
+        Ok(EntryType::File { size: file_size, checksum, blocks: addresses })
     }
 }

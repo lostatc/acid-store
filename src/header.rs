@@ -24,15 +24,15 @@ use chrono::NaiveDateTime;
 use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
 
-use crate::block::{BlockAddress, pad_to_block_size};
+use crate::block::{BLOCK_OFFSET, BlockAddress, pad_to_block_size};
 use crate::error::Result;
 use crate::serialization::SerializableNaiveDateTime;
 
 /// The size of the checksum of each file.
-const FILE_HASH_SIZE: usize = 32;
+pub const FILE_HASH_SIZE: usize = 32;
 
 /// The checksum of a file.
-type FileChecksum = [u8; FILE_HASH_SIZE];
+pub type FileChecksum = [u8; FILE_HASH_SIZE];
 
 /// A type of file which can be stored in an archive.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -184,19 +184,12 @@ pub struct HeaderLocation {
 impl HeaderLocation {
     /// Returns the list of locations of all blocks in the archive.
     fn blocks(&self) -> Vec<BlockAddress> {
-        // The first bytes in the archive are the offset of the header.
-        BlockAddress::range(
-            BlockAddress::from_offset(size_of::<u64>() as u64),
-            BlockAddress::from_offset(self.archive_size),
-        )
+        BlockAddress::range(BLOCK_OFFSET, self.archive_size)
     }
 
     /// Returns the set of locations of blocks used for storing the header.
     fn header_blocks(&self) -> Vec<BlockAddress> {
-        BlockAddress::range(
-            BlockAddress::from_offset(self.address),
-            BlockAddress::from_offset(self.header_size),
-        )
+        BlockAddress::range(self.address, self.header_size)
     }
 }
 
