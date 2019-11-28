@@ -23,12 +23,12 @@ use crypto::digest::Digest;
 
 use crate::block::{Block, BlockAddress, pad_to_block_size};
 use crate::error::Result;
-use crate::header::{EntryType, FILE_HASH_SIZE, FileChecksum, Header, HeaderLocation, unused_blocks};
+use crate::header::{EntryType, FILE_HASH_SIZE, Header, HeaderAddress};
 
 pub struct Archive {
     path: PathBuf,
     header: Header,
-    location: HeaderLocation,
+    header_address: HeaderAddress,
 }
 
 impl Archive {
@@ -41,7 +41,7 @@ impl Archive {
     /// - `Error::Io`: An I/O error occurred.
     fn write_file_data(&self, file: &mut File) -> Result<EntryType> {
         let mut archive = File::open(&self.path)?;
-        let unused_blocks = unused_blocks(&self.header, &self.location);
+        let unused_blocks = self.header.unused_blocks(&self.header_address);
 
         let mut file_digest = Blake2b::new(FILE_HASH_SIZE);
         let mut addresses = Vec::new();
