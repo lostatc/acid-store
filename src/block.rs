@@ -25,32 +25,31 @@ use num_integer::{div_ceil, div_floor};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::header::{FILE_HASH_SIZE, FileChecksum};
 
-/// The size of the checksum of the block data.
-pub const BLOCK_HASH_SIZE: usize = 32;
+/// The size of a checksum.
+pub const CHECKSUM_SIZE: usize = 32;
 
 /// The size of the data contained in the block.
 pub const BLOCK_DATA_SIZE: usize = 4096;
 
-/// The total size of the block.
-pub const BLOCK_SIZE: usize = BLOCK_HASH_SIZE + BLOCK_DATA_SIZE;
+/// The total size of a block.
+pub const BLOCK_SIZE: usize = CHECKSUM_SIZE + BLOCK_DATA_SIZE;
 
 /// The number of bytes between the start of the archive and the first block.
 ///
 /// The first `BLOCK_OFFSET` bytes in the archive store the offset of the header.
 pub const BLOCK_OFFSET: u64 = size_of::<u64>() as u64;
 
-/// The checksum of a block.
-pub type BlockChecksum = [u8; BLOCK_HASH_SIZE];
+/// A checksum.
+pub type Checksum = [u8; CHECKSUM_SIZE];
 
-/// The data of a block.
+/// The data contained in a block.
 pub type BlockData = [u8; BLOCK_DATA_SIZE];
 
 /// A block of data.
 pub struct Block {
     /// The BLAKE2 checksum of `data`.
-    pub checksum: BlockChecksum,
+    pub checksum: Checksum,
 
     /// The data stored in this block.
     pub data: BlockData,
@@ -70,7 +69,7 @@ impl Block {
         if bytes_read == 0 {
             Ok(None)
         } else {
-            let mut checksum = [0u8; BLOCK_HASH_SIZE];
+            let mut checksum = [0u8; CHECKSUM_SIZE];
             Blake2b::blake2b(&mut checksum, &data[..bytes_read], &[0u8; 0]);
             Ok(Some(Block { checksum, data }))
         }
@@ -133,9 +132,8 @@ impl BlockAddress {
         (start_index..end_index).map(|index| BlockAddress(index as u32)).collect()
     }
 
-    /// Returns the byte offset of the block from the beginning of the file.
+    /// Returns the byte offset of the start of the block from the beginning of the file.
     fn offset(self) -> u64 {
-        // The first bytes in the archive are the offset of the header.
         BLOCK_OFFSET + (self.0 as u64 * BLOCK_SIZE as u64)
     }
 
@@ -143,8 +141,8 @@ impl BlockAddress {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn read_checksum(self, archive: &mut File) -> Result<BlockChecksum> {
-        let mut checksum = [0u8; BLOCK_HASH_SIZE];
+    pub fn read_checksum(self, archive: &mut File) -> Result<Checksum> {
+        let mut checksum = [0u8; CHECKSUM_SIZE];
         archive.seek(SeekFrom::Start(self.offset()))?;
         archive.read_exact(&mut checksum)?;
         Ok(checksum)
@@ -156,7 +154,7 @@ impl BlockAddress {
     /// - `Error::Io`: An I/O error occurred.
     pub fn read_data(self, archive: &mut File) -> Result<BlockData> {
         let mut data = [0u8; BLOCK_DATA_SIZE];
-        archive.seek(SeekFrom::Start(self.offset() + BLOCK_HASH_SIZE as u64))?;
+        archive.seek(SeekFrom::Start(self.offset() + CHECKSUM_SIZE as u64))?;
         archive.read_exact(&mut data)?;
         Ok(data)
     }
@@ -179,12 +177,12 @@ pub struct BlockDigest {
 impl BlockDigest {
     /// Creates a new `BlockDigest` which wraps an existing iterator.
     pub fn new(iter: impl Iterator<Item=Result<Block>> + 'static) -> Self {
-        BlockDigest { digest: Blake2b::new(FILE_HASH_SIZE), blocks: Box::new(iter) }
+        BlockDigest { digest: Blake2b::new(CHECKSUM_SIZE), blocks: Box::new(iter) }
     }
 
     /// Returns the checksum of all the data which has passed through the iterator so far.
-    pub fn result(&mut self) -> FileChecksum {
-        let mut checksum = [0u8; FILE_HASH_SIZE];
+    pub fn result(&mut self) -> Checksum {
+        let mut checksum = [0u8; CHECKSUM_SIZE];
         self.digest.result(&mut checksum);
         checksum
     }
