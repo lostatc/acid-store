@@ -19,9 +19,13 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
+use relative_path::RelativePath;
+
+use crate::archive_entry::{EntryData, EntryMetadata};
 use crate::block::{Block, BlockAddress, BlockDigest, Checksum, pad_to_block_size};
 use crate::error::Result;
-use crate::header::{EntryType, Header, HeaderAddress};
+use crate::header::{Header, HeaderAddress};
+use crate::header_entry::HeaderEntryType;
 
 pub struct Archive {
     /// The path of the archive.
@@ -53,6 +57,13 @@ impl Archive {
         };
         archive.read_checksums()?;
         Ok(archive)
+    }
+
+    /// Writes the archive's header to disk, committing any changes which have been made.
+    fn write_header(&mut self) -> Result<()> {
+        let new_address = self.header.write(&self.path)?;
+        self.header_address = new_address;
+        Ok(())
     }
 
     /// Reads the checksums of the blocks in this archive and updates `block_checksums`.
@@ -158,7 +169,7 @@ impl Archive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    fn write_file(&mut self, mut source: &mut impl Read) -> Result<EntryType> {
+    fn write_file(&mut self, mut source: &mut impl Read) -> Result<HeaderEntryType> {
         let mut archive = File::open(&self.path)?;
         let mut addresses = Vec::new();
         let mut block_digest = BlockDigest::new(Block::iter_blocks(&mut source));
@@ -173,7 +184,7 @@ impl Archive {
         // Append the remaining blocks to the end of the archive.
         addresses.extend(self.write_new_blocks(&mut archive, &mut block_digest)?);
 
-        let entry = EntryType::File {
+        let entry = HeaderEntryType::File {
             size: block_digest.bytes_read(),
             checksum: block_digest.result(),
             blocks: addresses,
@@ -197,10 +208,81 @@ impl Archive {
         Ok(())
     }
 
-    /// Writes the archive's header to disk, committing any changes which have been made.
-    fn write_header(&mut self) -> Result<()> {
-        let new_address = self.header.write(&self.path)?;
-        self.header_address = new_address;
-        Ok(())
+    /// Returns an iterator of archive entries which are children of `parent`.
+    pub fn list(parent: &RelativePath) -> Result<Box<dyn Iterator<Item=&EntryMetadata>>> {
+        unimplemented!()
+    }
+
+    /// Returns an iterator of archive entries which are descendants of `parent`.
+    pub fn walk(parent: &RelativePath) -> Result<Box<dyn Iterator<Item=&EntryMetadata>>> {
+        unimplemented!()
+    }
+
+    /// Get the data for the archive entry at `path`.
+    pub fn data(path: &RelativePath) -> Result<&EntryData> {
+        unimplemented!()
+    }
+
+    /// Get the metadata for the archive entry at `path`.
+    pub fn metadata(path: &RelativePath) -> Result<&EntryMetadata> {
+        unimplemented!()
+    }
+
+    /// Add a regular file entry to the archive with the given `metadata` and `contents`.
+    pub fn add_file(metadata: EntryMetadata, contents: impl Read) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Add a directory entry to the archive with the given `metadata`.
+    pub fn add_directory(metadata: EntryMetadata) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Add a symbolic link entry to the archive with the given `metadata` and `target`.
+    pub fn add_link(metadata: EntryMetadata, target: PathBuf) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Create an archive entry at `dest` from the file at `source`.
+    ///
+    /// This does not remove the `source` file from the file system.
+    pub fn archive(source: &Path, dest: &RelativePath) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Create a tree of archive entries at `dest` from the directory tree at `source`.
+    ///
+    /// This does not remove the `source` directory or its descendants from the file system.
+    pub fn archive_tree(source: &Path, dest: &RelativePath) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Create a file at `dest` from the archive entry at `source`.
+    ///
+    /// This does not remove the `source` entry from the archive.
+    pub fn extract(source: &RelativePath, dest: &Path) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Create a directory tree at `dest` from the tree of archive entries at `source`.
+    ///
+    /// This does not remove the `source` entry or its descendants from the archive.
+    pub fn extract_tree(source: &RelativePath, dest: &Path) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Delete the entry in the archive with the given `path`.
+    pub fn delete(path: &RelativePath) -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Reduce the archive size by reclaiming unallocated space.
+    pub fn compact() -> Result<()> {
+        unimplemented!()
+    }
+
+    /// Degrament the archive by rewriting its contents.
+    pub fn defragment() -> Result<()> {
+        unimplemented!()
     }
 }
