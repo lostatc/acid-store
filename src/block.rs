@@ -29,11 +29,14 @@ use crate::error::Result;
 /// The size of a checksum.
 pub const CHECKSUM_SIZE: usize = 32;
 
-/// The size of the data contained in the block.
-pub const BLOCK_DATA_SIZE: usize = 4096;
+/// The size of the integer specifying the number of bytes in the block.
+const BLOCK_LENGTH_SIZE: usize = size_of::<u16>();
+
+/// The size of the block's data buffer.
+const BLOCK_BUFFER_SIZE: usize = 4096;
 
 /// The total size of a block.
-pub const BLOCK_SIZE: usize = CHECKSUM_SIZE + BLOCK_DATA_SIZE;
+const BLOCK_SIZE: usize = CHECKSUM_SIZE + BLOCK_LENGTH_SIZE + BLOCK_BUFFER_SIZE;
 
 /// The number of bytes between the start of the archive and the first block.
 ///
@@ -43,19 +46,24 @@ pub const BLOCK_OFFSET: u64 = size_of::<u64>() as u64;
 /// A checksum.
 pub type Checksum = [u8; CHECKSUM_SIZE];
 
-/// The data contained in a block.
-pub type BlockData = [u8; BLOCK_DATA_SIZE];
-
 /// A block of data.
 pub struct Block {
-    /// The BLAKE2 checksum of `data`.
+    /// The BLAKE2 checksum of the block's data.
     pub checksum: Checksum,
 
-    /// The data stored in this block.
-    pub data: BlockData,
+    /// The number of bytes in the block.
+    pub size: usize,
+
+    /// The buffer which stores the block's data.
+    pub buffer: [u8; BLOCK_BUFFER_SIZE],
 }
 
 impl Block {
+    /// The data contained in this block.
+    pub fn data(&self) -> &[u8] {
+        &self.buffer[..self.size as usize]
+    }
+
     /// Creates a `Block` by reading bytes from the given `source`.
     ///
     /// This returns `Some` if the block was read from `source`, or `None` if `source` was at EOF.
@@ -63,15 +71,15 @@ impl Block {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn from_read(source: &mut impl Read) -> Result<Option<Self>> {
-        let mut data = [0u8; BLOCK_DATA_SIZE];
-        let bytes_read = read_all(source, &mut data)?;
+        let mut buffer = [0u8; BLOCK_BUFFER_SIZE];
+        let bytes_read = read_all(source, &mut buffer)?;
 
         if bytes_read == 0 {
             Ok(None)
         } else {
             let mut checksum = [0u8; CHECKSUM_SIZE];
-            Blake2b::blake2b(&mut checksum, &data[..bytes_read], &[0u8; 0]);
-            Ok(Some(Block { checksum, data }))
+            Blake2b::blake2b(&mut checksum, &buffer[..bytes_read], &[0u8; 0]);
+            Ok(Some(Block { checksum, size: bytes_read, buffer }))
         }
     }
 
@@ -94,7 +102,8 @@ impl Block {
     /// - `Error::Io`: An I/O error occurred.
     pub fn write(&self, destination: &mut impl Write) -> Result<()> {
         destination.write_all(&self.checksum)?;
-        destination.write_all(&self.data)?;
+        destination.write_all(&(self.size as u16).to_be_bytes())?;
+        destination.write_all(&self.buffer)?;
         Ok(())
     }
 
@@ -148,23 +157,21 @@ impl BlockAddress {
         Ok(checksum)
     }
 
-    /// Reads the block's data from the given `archive`.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn read_data(self, archive: &mut File) -> Result<BlockData> {
-        let mut data = [0u8; BLOCK_DATA_SIZE];
-        archive.seek(SeekFrom::Start(self.offset() + CHECKSUM_SIZE as u64))?;
-        archive.read_exact(&mut data)?;
-        Ok(data)
-    }
-
     /// Read the block from the given `archive`.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn read_block(self, archive: &mut File) -> Result<Block> {
-        Ok(Block { checksum: self.read_checksum(archive)?, data: self.read_data(archive)? })
+        let mut length_buffer = [0u8; BLOCK_LENGTH_SIZE];
+        let mut buffer = [0u8; BLOCK_BUFFER_SIZE];
+
+        archive.seek(SeekFrom::Start(self.offset() + CHECKSUM_SIZE as u64))?;
+        archive.read_exact(&mut length_buffer)?;
+        archive.read_exact(&mut buffer)?;
+
+        let checksum = self.read_checksum(archive)?;
+        let size = u16::from_be_bytes(length_buffer) as usize;
+        Ok(Block { checksum, size, buffer })
     }
 }
 
@@ -194,7 +201,7 @@ impl Iterator for BlockDigest {
     fn next(&mut self) -> Option<Self::Item> {
         let next_element = self.blocks.next();
         if let Some(Ok(block)) = &next_element {
-            self.digest.input(&block.data);
+            self.digest.input(block.data());
         };
         next_element
     }
