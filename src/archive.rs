@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use crate::block::{Block, BlockAddress, BlockDigest, Checksum, pad_to_block_size};
@@ -152,17 +152,16 @@ impl Archive {
         Ok(addresses)
     }
 
-    /// Writes the data from the given regular `file` to the archive.
+    /// Writes the data from the given `source` to the archive as a regular file.
     ///
-    /// This returns the `EntryType::File` for the file.
+    /// This returns the `EntryType::File` for the written data.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    fn write_file_data(&mut self, file: &'static mut File) -> Result<EntryType> {
+    fn write_file(&mut self, mut source: &mut impl Read) -> Result<EntryType> {
         let mut archive = File::open(&self.path)?;
         let mut addresses = Vec::new();
-        let file_size = file.metadata()?.len();
-        let mut block_digest = BlockDigest::new(Block::iter_blocks(file));
+        let mut block_digest = BlockDigest::new(Block::iter_blocks(&mut source));
 
         // Fill unused blocks in the archive first.
         addresses.extend(self.write_unused_blocks(&mut archive, &mut block_digest)?);
@@ -174,7 +173,13 @@ impl Archive {
         // Append the remaining blocks to the end of the archive.
         addresses.extend(self.write_new_blocks(&mut archive, &mut block_digest)?);
 
-        Ok(EntryType::File { size: file_size, checksum: block_digest.result(), blocks: addresses })
+        let entry = EntryType::File {
+            size: block_digest.bytes_read(),
+            checksum: block_digest.result(),
+            blocks: addresses,
+        };
+
+        Ok(entry)
     }
 
     /// Writes the archive's header to disk, committing any changes which have been made.

@@ -176,15 +176,16 @@ impl BlockAddress {
 }
 
 /// An `Iterator` which computes the checksum of all the blocks which pass through it.
-pub struct BlockDigest {
+pub struct BlockDigest<'a> {
     digest: Blake2b,
-    blocks: Box<dyn Iterator<Item=Result<Block>>>,
+    blocks: Box<dyn Iterator<Item=Result<Block>> + 'a>,
+    bytes_read: u64,
 }
 
-impl BlockDigest {
+impl<'a> BlockDigest<'a> {
     /// Creates a new `BlockDigest` which wraps an existing iterator.
-    pub fn new(iter: impl Iterator<Item=Result<Block>> + 'static) -> Self {
-        BlockDigest { digest: Blake2b::new(CHECKSUM_SIZE), blocks: Box::new(iter) }
+    pub fn new(iter: impl Iterator<Item=Result<Block>> + 'a) -> Self {
+        BlockDigest { digest: Blake2b::new(CHECKSUM_SIZE), blocks: Box::new(iter), bytes_read: 0 }
     }
 
     /// Returns the checksum of all the data which has passed through the iterator so far.
@@ -193,15 +194,21 @@ impl BlockDigest {
         self.digest.result(&mut checksum);
         checksum
     }
+
+    /// Returns the number of bytes of data which have passed through this `Iterator`.
+    pub fn bytes_read(&self) -> u64 {
+        self.bytes_read
+    }
 }
 
-impl Iterator for BlockDigest {
+impl<'a> Iterator for BlockDigest<'a> {
     type Item = Result<Block>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let next_element = self.blocks.next();
         if let Some(Ok(block)) = &next_element {
             self.digest.input(block.data());
+            self.bytes_read += block.size as u64;
         };
         next_element
     }
