@@ -8,6 +8,7 @@ edition = "2018"
 # File I/O
 xattr = "0.2.2"
 fuse = "0.3.1"
+relative-path = "1.0.0"
 
 # Compression/encryption/hashing
 flate2 = "1.0.13"

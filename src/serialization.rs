@@ -15,6 +15,7 @@
  */
 
 use chrono::NaiveDateTime;
+use relative_path::{RelativePath, RelativePathBuf};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -29,5 +30,18 @@ pub struct SerializableNaiveDateTime {
 impl From<SerializableNaiveDateTime> for NaiveDateTime {
     fn from(serializable: SerializableNaiveDateTime) -> Self {
         NaiveDateTime::from_timestamp(serializable.secs, serializable.nsecs)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "RelativePathBuf")]
+pub struct SerializableRelativePathBuf {
+    #[serde(getter = "RelativePathBuf::to_string")]
+    path: String
+}
+
+impl From<SerializableRelativePathBuf> for RelativePathBuf {
+    fn from(serializable: SerializableRelativePathBuf) -> Self {
+        RelativePathBuf::from(serializable.path)
     }
 }
