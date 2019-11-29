@@ -16,9 +16,10 @@
 
 #![allow(dead_code)]
 
-pub mod error;
+mod archive_entry;
+mod archive;
+mod error;
 mod header;
 mod serialization;
-mod archive;
 mod block;
 mod header_entry;
