@@ -21,3 +21,4 @@ mod header;
 mod serialization;
 mod archive;
 mod block;
+mod header_entry;

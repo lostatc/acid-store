@@ -18,76 +18,20 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::mem::size_of;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use chrono::NaiveDateTime;
 use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
 
-use crate::block::{BLOCK_OFFSET, BlockAddress, Checksum, pad_to_block_size};
+use crate::block::{BLOCK_OFFSET, BlockAddress, pad_to_block_size};
 use crate::error::Result;
-use crate::serialization::SerializableNaiveDateTime;
-
-/// A type of file which can be stored in an archive.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum EntryType {
-    /// A regular file with opaque contents.
-    File {
-        /// The size of the file in bytes.
-        size: u64,
-
-        /// The BLAKE2 checksum of the file.
-        checksum: Checksum,
-
-        /// The addresses of blocks containing the data for this file.
-        blocks: Vec<BlockAddress>,
-    },
-
-    /// A directory.
-    Directory,
-
-    /// A symbolic link.
-    Link {
-        /// The path of the target of this symbolic link.
-        target: PathBuf
-    },
-}
-
-/// An extended attribute of a file.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExtendedAttribute {
-    /// The name of the attribute.
-    pub name: String,
-
-    /// The value of the attribute.
-    pub value: Vec<u8>,
-}
-
-/// Metadata about a file which is stored in an archive.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ArchiveEntry {
-    /// The path of the file in the archive.
-    pub path: PathBuf,
-
-    /// The time the file was last modified.
-    #[serde(with = "SerializableNaiveDateTime")]
-    pub modified_time: NaiveDateTime,
-
-    /// The POSIX permissions bits of the file, or `None` if POSIX permissions are not applicable.
-    pub permissions: Option<i32>,
-
-    /// The file's extended attributes.
-    pub attributes: Vec<ExtendedAttribute>,
-
-    /// The type of file this entry represents.
-    pub entry_type: EntryType,
-}
+use crate::header_entry::{HeaderEntry, HeaderEntryType};
 
 /// Metadata about files stored in the archive.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Header {
     /// The entries which are stored in this archive.
-    pub entries: Vec<ArchiveEntry>,
+    pub entries: Vec<HeaderEntry>,
 }
 
 impl Header {
@@ -96,7 +40,7 @@ impl Header {
         self.entries
             .iter()
             .filter_map(|entry| match &entry.entry_type {
-                EntryType::File { blocks, .. } => Some(blocks),
+                HeaderEntryType::File { blocks, .. } => Some(blocks),
                 _ => None
             })
             .flatten()
