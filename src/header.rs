@@ -24,15 +24,9 @@ use chrono::NaiveDateTime;
 use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
 
-use crate::block::{BLOCK_OFFSET, BlockAddress, pad_to_block_size};
+use crate::block::{BLOCK_OFFSET, BlockAddress, Checksum, pad_to_block_size};
 use crate::error::Result;
 use crate::serialization::SerializableNaiveDateTime;
-
-/// The size of the checksum of each file.
-pub const FILE_HASH_SIZE: usize = 32;
-
-/// The checksum of a file.
-pub type FileChecksum = [u8; FILE_HASH_SIZE];
 
 /// A type of file which can be stored in an archive.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,9 +37,9 @@ pub enum EntryType {
         size: u64,
 
         /// The BLAKE2 checksum of the file.
-        checksum: FileChecksum,
+        checksum: Checksum,
 
-        /// The locations of blocks containing the data for this file.
+        /// The addresses of blocks containing the data for this file.
         blocks: Vec<BlockAddress>,
     },
 
@@ -97,8 +91,8 @@ pub struct Header {
 }
 
 impl Header {
-    /// Returns the set of locations of blocks used for storing data.
-    fn data_blocks(&self) -> Vec<BlockAddress> {
+    /// Returns the list of addresses of blocks used for storing data.
+    pub fn data_blocks(&self) -> Vec<BlockAddress> {
         self.entries
             .iter()
             .filter_map(|entry| match &entry.entry_type {
@@ -111,12 +105,12 @@ impl Header {
     }
 
     /// Returns a list of addresses of blocks which are unused and can be overwritten.
-    pub fn unused_blocks(&self, location: &HeaderAddress) -> Vec<BlockAddress> {
+    pub fn unused_blocks(&self, header_address: &HeaderAddress) -> Vec<BlockAddress> {
         let mut used_blocks = HashSet::new();
         used_blocks.extend(self.data_blocks());
-        used_blocks.extend(location.header_blocks());
+        used_blocks.extend(header_address.header_blocks());
 
-        let mut unused_blocks = location.blocks();
+        let mut unused_blocks = header_address.blocks();
         unused_blocks.retain(|block| !used_blocks.contains(block));
 
         unused_blocks

@@ -17,11 +17,11 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Seek, SeekFrom};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use crate::block::{Block, BlockAddress, BlockChecksum, BlockDigest, pad_to_block_size};
+use crate::block::{Block, BlockAddress, BlockDigest, Checksum, pad_to_block_size};
 use crate::error::Result;
-use crate::header::{EntryType, FILE_HASH_SIZE, Header, HeaderAddress};
+use crate::header::{EntryType, Header, HeaderAddress};
 
 pub struct Archive {
     /// The path of the archive.
@@ -34,10 +34,40 @@ pub struct Archive {
     header_address: HeaderAddress,
 
     /// The checksums of all the blocks in the archive and their addresses.
-    block_checksums: HashMap<BlockChecksum, BlockAddress>
+    block_checksums: HashMap<Checksum, BlockAddress>
 }
 
 impl Archive {
+    /// Opens the archive at the given `path`.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    /// - `Error::Deserialize`: An error occurred deserializing the header.
+    pub fn open(path: &Path) -> Result<Self> {
+        let (header, header_address) = Header::read(path)?;
+        let mut archive = Archive {
+            path: path.to_owned(),
+            header,
+            header_address,
+            block_checksums: HashMap::new(),
+        };
+        archive.read_checksums()?;
+        Ok(archive)
+    }
+
+    /// Reads the checksums of the blocks in this archive and updates `block_checksums`.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    fn read_checksums(&mut self) -> Result<()> {
+        let mut archive = File::open(&self.path)?;
+        for block_address in self.header.data_blocks() {
+            let checksum = block_address.read_checksum(&mut archive)?;
+            self.block_checksums.insert(checksum, block_address);
+        }
+        Ok(())
+    }
+
     /// Writes a block to the archive.
     ///
     /// If the given `block` already exists in the archive, this method does nothing and returns the
@@ -84,10 +114,13 @@ impl Archive {
 
         for block_address in unused_blocks {
             match blocks.next() {
+                // Fill an unused space with the next block.
                 Some(block_result) => {
                     let block = block_result?;
                     addresses.push(self.write_block(&mut archive, &block, block_address)?);
                 },
+
+                // There are no blocks left to write.
                 None => break
             }
         }
@@ -142,5 +175,12 @@ impl Archive {
         addresses.extend(self.write_new_blocks(&mut archive, &mut block_digest)?);
 
         Ok(EntryType::File { size: file_size, checksum: block_digest.result(), blocks: addresses })
+    }
+
+    /// Writes the archive's header to disk, committing any changes which have been made.
+    fn write_header(&mut self) -> Result<()> {
+        let new_address = self.header.write(&self.path)?;
+        self.header_address = new_address;
+        Ok(())
     }
 }
