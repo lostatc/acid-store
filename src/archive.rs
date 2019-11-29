@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use crate::block::{Block, BlockAddress, BlockDigest, Checksum, pad_to_block_size};
@@ -152,7 +152,7 @@ impl Archive {
         Ok(addresses)
     }
 
-    /// Writes the data from the given `source` to the archive as a regular file.
+    /// Writes the data from the given `source` to the archive.
     ///
     /// This returns the `EntryType::File` for the written data.
     ///
@@ -180,6 +180,21 @@ impl Archive {
         };
 
         Ok(entry)
+    }
+
+    /// Writes the data stored at the given `addresses` to `dest`.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    fn read_file(&self, addresses: Vec<BlockAddress>, dest: &mut impl Write) -> Result<()> {
+        let mut archive = File::open(&self.path)?;
+
+        for block_address in addresses {
+            let block = block_address.read_block(&mut archive)?;
+            dest.write_all(block.data())?;
+        }
+
+        Ok(())
     }
 
     /// Writes the archive's header to disk, committing any changes which have been made.
