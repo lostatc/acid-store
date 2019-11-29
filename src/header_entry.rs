@@ -16,10 +16,11 @@
 use std::path::PathBuf;
 
 use chrono::NaiveDateTime;
+use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::block::{BlockAddress, Checksum};
-use crate::serialization::SerializableNaiveDateTime;
+use crate::serialization::{SerializableNaiveDateTime, SerializableRelativePathBuf};
 
 /// A type of entry which can be stored in the archive header.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,7 +61,8 @@ pub struct ExtendedAttribute {
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HeaderEntry {
     /// The path of the file in the archive.
-    pub path: PathBuf,
+    #[serde(with = "SerializableRelativePathBuf")]
+    pub path: RelativePathBuf,
 
     /// The time the file was last modified.
     #[serde(with = "SerializableNaiveDateTime")]
