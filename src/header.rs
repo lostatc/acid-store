@@ -24,14 +24,14 @@ use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
 
 use crate::block::{BLOCK_OFFSET, BlockAddress, pad_to_block_size};
-use crate::entry::{HeaderData, HeaderEntry};
+use crate::entry::{ArchiveEntry, EntryData};
 use crate::error::Result;
 
 /// Metadata about the archive.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Header {
     /// The entries which are stored in this archive.
-    pub entries: Vec<HeaderEntry>,
+    pub entries: Vec<ArchiveEntry>,
 }
 
 impl Header {
@@ -40,7 +40,7 @@ impl Header {
         self.entries
             .iter()
             .filter_map(|entry| match &entry.entry_type {
-                HeaderData { blocks, .. } => Some(blocks),
+                EntryData { blocks, .. } => Some(blocks),
                 _ => None
             })
             .flatten()

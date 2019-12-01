@@ -21,7 +21,7 @@ use std::iter;
 use std::path::{Path, PathBuf};
 
 use crate::block::{Block, BlockAddress, BlockDigest, Checksum, pad_to_block_size};
-use crate::entry::{ArchiveData, ArchiveEntry, HeaderData, HeaderEntry};
+use crate::entry::{ArchiveData, ArchiveEntry, ArchiveEntry, EntryData};
 use crate::error::Result;
 use crate::header::{Header, HeaderAddress};
 
@@ -160,7 +160,7 @@ impl Archive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub(super) fn write_entry_data(&mut self, mut source: &mut impl Read) -> Result<HeaderData> {
+    fn write_entry_data(&mut self, mut source: &mut impl Read) -> Result<EntryData> {
         let mut archive = File::open(&self.path)?;
         let mut addresses = Vec::new();
         let mut block_digest = BlockDigest::new(Block::iter_blocks(&mut source));
@@ -175,7 +175,7 @@ impl Archive {
         // Append the remaining blocks to the end of the archive.
         addresses.extend(self.write_new_blocks(&mut archive, &mut block_digest)?);
 
-        let entry = HeaderData {
+        let entry = EntryData {
             size: block_digest.bytes_read(),
             checksum: block_digest.result(),
             blocks: addresses,
@@ -188,7 +188,7 @@ impl Archive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub(super) fn read_entry_data(&mut self, blocks: &Vec<BlockAddress>) -> Result<impl Read> {
+    fn read_entry_data(&self, blocks: &Vec<BlockAddress>) -> Result<impl Read> {
         let mut archive_file = File::open(self.path)?;
         let mut reader = iter::empty();
 
@@ -200,29 +200,46 @@ impl Archive {
     }
 
     /// Adds an entry with the given `name` to the archive.
-    pub fn add(&mut self, name: String) -> Result<ArchiveEntry> {
+    ///
+    /// If an archive with the given `name` already exists, it is returned. Otherwise, the newly
+    /// created entry is returned.
+    pub fn add<'a>(&mut self, name: String) -> Result<&'a mut ArchiveEntry> {
         unimplemented!()
     }
 
     /// Returns a mutable reference to the entry with the given `name`, or `None` if there is none.
-    pub fn update<'a>(&mut self, name: String) -> Result<Option<&'a mut ArchiveEntry>> {
+    pub fn update<'a>(&mut self, name: &str) -> Result<Option<&'a mut ArchiveEntry>> {
         unimplemented!()
     }
 
     /// Removes the entry with the given `name` from the archive.
     ///
     /// This return `true` if the entry was deleted, or `false` if it didn't exist.
-    pub fn delete(&mut self, name: String) -> Result<bool> {
+    pub fn delete(&mut self, name: &str) -> Result<bool> {
         unimplemented!()
     }
 
     /// Returns the entry with the given `name`, or `None` if there is none.
-    pub fn get<'a>(&self, name: String) -> Result<Option<&'a ArchiveEntry>> {
+    pub fn get<'a>(&self, name: &str) -> Result<Option<&'a ArchiveEntry>> {
         unimplemented!()
     }
 
     /// Returns a list of entries whose names start with `prefix`.
-    pub fn list<'a>(&self, prefix: String) -> Result<Vec<&'a ArchiveEntry>> {
+    pub fn list<'a>(&self, prefix: &str) -> Result<Vec<&'a ArchiveEntry>> {
+        unimplemented!()
+    }
+
+    /// Returns a reader for reading the data for the entry with the given `name`.
+    ///
+    /// If the entry has no data, `None` is returned instead.
+    pub fn read(&self, name: &str) -> Result<Option<impl Read>> {
+        unimplemented!()
+    }
+
+    /// Replaces the data for the entry with the given `name` with the bytes from `source`.
+    ///
+    /// Passing `None` removes the data without replacing it with new data.
+    pub fn write(&mut self, name: &str, source: Option<impl Read>) -> Result<()> {
         unimplemented!()
     }
 
