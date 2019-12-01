@@ -24,7 +24,7 @@ use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
 
 use crate::block::{BLOCK_OFFSET, BlockAddress, pad_to_block_size};
-use crate::entry::{ArchiveEntry, EntryData};
+use crate::entry::ArchiveEntry;
 use crate::error::Result;
 
 /// Metadata about the archive.
@@ -39,12 +39,8 @@ impl Header {
     pub fn data_blocks(&self) -> Vec<BlockAddress> {
         self.entries
             .iter()
-            .filter_map(|entry| match &entry.entry_type {
-                EntryData { blocks, .. } => Some(blocks),
-                _ => None
-            })
-            .flatten()
-            .copied()
+            .filter_map(|entry| entry.data)
+            .flat_map(|data| data.blocks)
             .collect()
     }
 

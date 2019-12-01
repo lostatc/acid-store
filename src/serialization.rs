@@ -15,7 +15,7 @@
  */
 
 use chrono::NaiveDateTime;
-use relative_path::{RelativePath, RelativePathBuf};
+use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]

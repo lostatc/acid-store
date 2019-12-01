@@ -22,5 +22,3 @@ mod header;
 mod serialization;
 mod block;
 mod entry;
-mod file_archive;
-mod object;
