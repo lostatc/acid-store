@@ -39,8 +39,9 @@ impl Header {
     pub fn data_blocks(&self) -> Vec<BlockAddress> {
         self.entries
             .iter()
-            .filter_map(|entry| entry.data)
-            .flat_map(|data| data.blocks)
+            .filter_map(|entry| entry.data.as_ref())
+            .flat_map(|data| &data.blocks)
+            .copied()
             .collect()
     }
 

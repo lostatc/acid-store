@@ -19,6 +19,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::block::{BlockAddress, Checksum};
 
+/// The 256-bit BLAKE2 checksum of an empty byte array.
+const EMPTY_CHECKSUM: Checksum = [0x0e, 0x57, 0x51, 0xc0, 0x26, 0xe5, 0x43, 0xb2, 0xe8, 0xab, 0x2e, 0xb0, 0x60, 0x99, 0xda, 0xa1, 0xd1, 0xe5, 0xdf, 0x47, 0x77, 0x8f, 0x77, 0x87, 0xfa, 0xab, 0x45, 0xcd, 0xf1, 0x2f, 0xe3, 0xa8];
+
 /// Information about an entry in the archive.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArchiveEntry {
@@ -28,20 +31,13 @@ pub struct ArchiveEntry {
     /// The metadata associated with this entry.
     pub metadata: HashMap<String, Vec<u8>>,
 
-    /// The data associated with this entry.
-    pub(super) data: Option<EntryData>,
+    /// A handle for accessing the data associated with this entry.
+    pub data: Option<DataHandle>,
 }
 
-impl ArchiveEntry {
-    /// The data associated with this entry, or `None` if there is none.
-    pub fn data(&self) -> Option<EntryData> {
-        self.data
-    }
-}
-
-/// Information about the data associated with an entry.
+/// A handle for accessing the data associated with an entry.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EntryData {
+pub struct DataHandle {
     /// The size of the entry's data in bytes.
     pub(super) size: u64,
 
@@ -52,7 +48,12 @@ pub struct EntryData {
     pub(super) blocks: Vec<BlockAddress>,
 }
 
-impl EntryData {
+impl DataHandle {
+    /// Create a new `DataHandle` which represents no data.
+    pub fn new() -> Self {
+        DataHandle { size: 0, checksum: EMPTY_CHECKSUM, blocks: Vec::new() }
+    }
+
     /// The size of the entry's data in bytes.
     pub fn size(&self) -> u64 {
         self.size
@@ -61,5 +62,11 @@ impl EntryData {
     /// The 256-bit BLAKE2 checksum of the entry's data.
     pub fn checksum(&self) -> Checksum {
         self.checksum
+    }
+}
+
+impl Default for DataHandle {
+    fn default() -> Self {
+        Self::new()
     }
 }

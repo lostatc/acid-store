@@ -20,7 +20,7 @@ use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use crate::block::{Block, BlockAddress, BlockDigest, Checksum, pad_to_block_size};
-use crate::entry::{ArchiveEntry, EntryData};
+use crate::entry::{ArchiveEntry, DataHandle};
 use crate::error::Result;
 use crate::header::{Header, HeaderAddress};
 
@@ -153,55 +153,10 @@ impl Archive {
         Ok(addresses)
     }
 
-    /// Writes the data from the given `source` to the archive.
-    ///
-    /// This returns the `HeaderData` for the written data.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    fn write_entry_data(&mut self, mut source: &mut impl Read) -> Result<EntryData> {
-        let mut archive = File::open(&self.path)?;
-        let mut addresses = Vec::new();
-        let mut block_digest = BlockDigest::new(Block::iter_blocks(&mut source));
-
-        // Fill unused blocks in the archive first.
-        addresses.extend(self.write_unused_blocks(&mut archive, &mut block_digest)?);
-
-        // Pad the archive to a multiple of `BLOCK_SIZE`.
-        archive.seek(SeekFrom::End(0))?;
-        pad_to_block_size(&mut archive)?;
-
-        // Append the remaining blocks to the end of the archive.
-        addresses.extend(self.write_new_blocks(&mut archive, &mut block_digest)?);
-
-        let entry = EntryData {
-            size: block_digest.bytes_read(),
-            checksum: block_digest.result(),
-            blocks: addresses,
-        };
-
-        Ok(entry)
-    }
-
-    /// Returns a reader for reading the data from the given `blocks`.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    fn read_entry_data(&self, blocks: &Vec<BlockAddress>) -> Result<impl Read> {
-        let mut archive_file = File::open(self.path)?;
-        let reader = io::empty();
-
-        for block_address in blocks {
-            let reader = reader.chain(block_address.new_reader(&mut archive_file)?);
-        }
-
-        Ok(reader)
-    }
-
     /// Adds an entry with the given `name` to the archive.
     ///
-    /// If an archive with the given `name` already exists, it is returned. Otherwise, the newly
-    /// created entry is returned.
+    /// A mutable reference to the newly created entry is returned. If an entry with the given
+    /// `name` already exists, that is returned instead.
     pub fn add<'a>(&mut self, name: String) -> Result<&'a mut ArchiveEntry> {
         unimplemented!()
     }
@@ -228,33 +183,84 @@ impl Archive {
         unimplemented!()
     }
 
-    /// Returns a reader for reading the data for the entry with the given `name`.
+    /// Returns a reader for reading the data associated with the given `handle`.
     ///
-    /// If the entry has no data, `None` is returned instead.
-    pub fn read(&self, name: &str) -> Result<Option<impl Read>> {
-        unimplemented!()
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn read(&self, handle: &DataHandle) -> Result<impl Read> {
+        let mut archive_file = File::open(&self.path)?;
+        let mut reader: Box<dyn Read> = Box::new(io::empty());
+
+        for block_address in &handle.blocks {
+            reader = Box::new(reader.chain(block_address.new_reader(&mut archive_file)?));
+        }
+
+        Ok(reader)
     }
 
-    /// Replaces the data for the entry with the given `name` with the bytes from `source`.
+    /// Writes the data associated with the given `handle`.
     ///
-    /// Passing `None` removes the data without replacing it with new data.
-    pub fn write(&mut self, name: &str, source: Option<impl Read>) -> Result<()> {
-        unimplemented!()
+    /// This gets bytes from `source` and writes them to the archive, replacing any data which was
+    /// previously associated with `handle`.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn write(&mut self, handle: &mut DataHandle, mut source: &mut impl Read) -> Result<()> {
+        let mut archive = File::open(&self.path)?;
+        let mut addresses = Vec::new();
+        let mut block_digest = BlockDigest::new(Block::iter_blocks(&mut source));
+
+        // Fill unused blocks in the archive first.
+        addresses.extend(self.write_unused_blocks(&mut archive, &mut block_digest)?);
+
+        // Pad the archive to a multiple of `BLOCK_SIZE`.
+        archive.seek(SeekFrom::End(0))?;
+        pad_to_block_size(&mut archive)?;
+
+        // Append the remaining blocks to the end of the archive.
+        addresses.extend(self.write_new_blocks(&mut archive, &mut block_digest)?);
+
+        handle.size = block_digest.bytes_read();
+        handle.checksum = block_digest.result();
+        handle.blocks = addresses;
+
+        Ok(())
     }
 
     /// Commits all changes that have been made to the archive.
+    ///
+    /// No changes made to the archive are saved persistently until this method is called.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
     pub fn commit(&mut self) -> Result<()> {
         let new_address = self.header.write(&self.path)?;
         self.header_address = new_address;
         Ok(())
     }
 
-    /// Reduces the archive size by reclaiming unallocated space.
+    /// Reduces the archive size by reclaiming unused space.
+    ///
+    /// Archives can reclaim space left over from deleted entries, but they can not deallocate space
+    /// which has been allocated. This means that archive files can grow in size, but never shrink.
+    /// This method rewrites data in the archive to shrink the archive file as much as possible.
+    /// Calling this method may be necessary if a large amount of data is removed from the archive
+    /// which will not be replaced with new data.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
     pub fn compact(&mut self) -> Result<()> {
         unimplemented!()
     }
 
     /// Defragments the archive by rewriting its contents.
+    ///
+    /// Archives can become fragmented over time just like file systems, and this may cause a
+    /// performance penalty. This method will rewrite the data in the archive to defragment it,
+    /// which may take a while depending on the size of the archive and how fragmented it is.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
     pub fn defragment(&mut self) -> Result<()> {
         unimplemented!()
     }
