@@ -36,7 +36,7 @@ const BLOCK_LENGTH_SIZE: usize = size_of::<u16>();
 const BLOCK_BUFFER_SIZE: usize = 4096;
 
 /// The total size of a block.
-const BLOCK_SIZE: usize = CHECKSUM_SIZE + BLOCK_LENGTH_SIZE + BLOCK_BUFFER_SIZE;
+pub const BLOCK_SIZE: usize = CHECKSUM_SIZE + BLOCK_LENGTH_SIZE + BLOCK_BUFFER_SIZE;
 
 /// The number of bytes between the start of the archive and the first block.
 ///
@@ -142,7 +142,7 @@ impl BlockAddress {
     }
 
     /// Returns the byte offset of the start of the block from the beginning of the file.
-    fn offset(self) -> u64 {
+    pub fn offset(self) -> u64 {
         BLOCK_OFFSET + (self.0 as u64 * BLOCK_SIZE as u64)
     }
 
@@ -172,6 +172,17 @@ impl BlockAddress {
         let checksum = self.read_checksum(archive)?;
         let size = u16::from_be_bytes(length_buffer) as usize;
         Ok(Block { checksum, size, buffer })
+    }
+
+    /// Returns a new reader for reading the contents of the block at this address.
+    pub fn new_reader(&self, archive: &mut File) -> Result<impl Read> {
+        archive.seek(SeekFrom::Start(self.offset() + CHECKSUM_SIZE as u64))?;
+
+        let mut length_buffer = [0u8; BLOCK_LENGTH_SIZE];
+        archive.read_exact(&mut length_buffer)?;
+        let size = u16::from_be_bytes(length_buffer) as u64;
+
+        Ok(archive.try_clone()?.take(size))
     }
 }
 
@@ -220,7 +231,7 @@ impl<'a> Iterator for BlockDigest<'a> {
 ///
 /// # Errors
 /// - `Error::Io`: An I/O error occurred.
-fn read_all(source: &mut impl Read, buffer: &mut [u8]) -> Result<usize> {
+pub fn read_all(source: &mut impl Read, buffer: &mut [u8]) -> Result<usize> {
     let mut bytes_read;
     let mut total_read = 0;
 

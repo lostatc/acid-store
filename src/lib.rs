@@ -16,10 +16,11 @@
 
 #![allow(dead_code)]
 
-mod archive_entry;
 mod archive;
 mod error;
 mod header;
 mod serialization;
 mod block;
-mod header_entry;
+mod entry;
+mod file_archive;
+mod object;
