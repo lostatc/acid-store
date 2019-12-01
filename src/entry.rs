@@ -14,15 +14,10 @@
  * limitations under the License.
  */
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{Read, Write};
-use std::iter;
 
 use serde::{Deserialize, Serialize};
 
-use crate::archive::Archive;
-use crate::block::{Block, BlockAddress, Checksum};
-use crate::error::Result;
+use crate::block::{BlockAddress, Checksum};
 
 /// Information about an entry in the archive.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,7 +29,7 @@ pub struct ArchiveEntry {
     pub metadata: HashMap<String, Vec<u8>>,
 
     /// The data associated with this entry.
-    data: Option<EntryData>,
+    pub(super) data: Option<EntryData>,
 }
 
 impl ArchiveEntry {
@@ -48,13 +43,13 @@ impl ArchiveEntry {
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EntryData {
     /// The size of the entry's data in bytes.
-    size: u64,
+    pub(super) size: u64,
 
     /// The 256-bit BLAKE2 checksum of the entry's data.
-    checksum: Checksum,
+    pub(super) checksum: Checksum,
 
     /// A reader for reading the entry's data from the archive.
-    blocks: Vec<BlockAddress>,
+    pub(super) blocks: Vec<BlockAddress>,
 }
 
 impl EntryData {

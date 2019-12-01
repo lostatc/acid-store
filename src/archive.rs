@@ -16,12 +16,11 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, Write};
-use std::iter;
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use crate::block::{Block, BlockAddress, BlockDigest, Checksum, pad_to_block_size};
-use crate::entry::{ArchiveData, ArchiveEntry, ArchiveEntry, EntryData};
+use crate::entry::{ArchiveEntry, EntryData};
 use crate::error::Result;
 use crate::header::{Header, HeaderAddress};
 
@@ -190,10 +189,10 @@ impl Archive {
     /// - `Error::Io`: An I/O error occurred.
     fn read_entry_data(&self, blocks: &Vec<BlockAddress>) -> Result<impl Read> {
         let mut archive_file = File::open(self.path)?;
-        let mut reader = iter::empty();
+        let reader = io::empty();
 
         for block_address in blocks {
-            reader = reader.chain(address.new_reader(&mut archive_file)?)
+            let reader = reader.chain(block_address.new_reader(&mut archive_file)?);
         }
 
         Ok(reader)
