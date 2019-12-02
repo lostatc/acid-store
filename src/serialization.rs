@@ -15,8 +15,12 @@
  */
 
 use chrono::NaiveDateTime;
+use panoradix::RadixMap;
 use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
+
+use crate::entry::ArchiveEntry;
+use crate::header::Header;
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "NaiveDateTime")]
@@ -43,5 +47,27 @@ pub struct SerializableRelativePathBuf {
 impl From<SerializableRelativePathBuf> for RelativePathBuf {
     fn from(serializable: SerializableRelativePathBuf) -> Self {
         RelativePathBuf::from(serializable.path)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SerializableHeader {
+    entries: Vec<ArchiveEntry>
+}
+
+impl From<SerializableHeader> for Header {
+    fn from(serializable: SerializableHeader) -> Self {
+        let mut entries = RadixMap::new();
+        for entry in serializable.entries {
+            entries.insert(entry.name.as_str(), entry.clone());
+        }
+        Header { entries }
+    }
+}
+
+impl From<Header> for SerializableHeader {
+    fn from(header: Header) -> Self {
+        let entries = header.entries.values().cloned().collect();
+        SerializableHeader { entries }
     }
 }
