@@ -16,6 +16,10 @@
 
 #![allow(dead_code)]
 
+pub use crate::archive::Archive;
+pub use crate::entry::{ArchiveEntry, DataHandle};
+pub use crate::error::{Error, Result};
+
 mod archive;
 mod block;
 mod entry;
