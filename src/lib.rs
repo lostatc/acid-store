@@ -17,8 +17,8 @@
 #![allow(dead_code)]
 
 mod archive;
+mod block;
+mod entry;
 mod error;
 mod header;
 mod serialization;
-mod block;
-mod entry;

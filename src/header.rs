@@ -78,7 +78,11 @@ impl Header {
         let header_size = u64::from_be_bytes(offset_buffer);
         let header = decode::from_read(file.take(header_size))?;
 
-        let header_address = HeaderAddress { offset, header_size, archive_size };
+        let header_address = HeaderAddress {
+            offset,
+            header_size,
+            archive_size,
+        };
         Ok((header, header_address))
     }
 
@@ -111,7 +115,11 @@ impl Header {
         let archive_size = file.metadata()?.len();
         let header_size = archive_size - offset;
 
-        Ok(HeaderAddress { offset, header_size, archive_size })
+        Ok(HeaderAddress {
+            offset,
+            header_size,
+            archive_size,
+        })
     }
 }
 

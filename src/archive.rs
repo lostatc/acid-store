@@ -19,7 +19,7 @@ use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use crate::block::{Block, BlockAddress, BlockDigest, Checksum, pad_to_block_size};
+use crate::block::{pad_to_block_size, Block, BlockAddress, BlockDigest, Checksum};
 use crate::entry::{ArchiveEntry, DataHandle};
 use crate::error::Result;
 use crate::header::{Header, HeaderAddress};
@@ -35,7 +35,7 @@ pub struct Archive {
     header_address: HeaderAddress,
 
     /// The checksums of all the blocks in the archive and their addresses.
-    block_checksums: HashMap<Checksum, BlockAddress>
+    block_checksums: HashMap<Checksum, BlockAddress>,
 }
 
 impl Archive {
@@ -108,7 +108,7 @@ impl Archive {
     fn write_unused_blocks(
         &mut self,
         mut archive: &mut File,
-        blocks: &mut impl Iterator<Item=Result<Block>>,
+        blocks: &mut impl Iterator<Item = Result<Block>>,
     ) -> Result<Vec<BlockAddress>> {
         let unused_blocks = self.header.unused_blocks(&self.header_address);
         let mut addresses = Vec::new();
@@ -119,10 +119,10 @@ impl Archive {
                 Some(block_result) => {
                     let block = block_result?;
                     addresses.push(self.write_block(&mut archive, &block, block_address)?);
-                },
+                }
 
                 // There are no blocks left to write.
-                None => break
+                None => break,
             }
         }
 
@@ -139,7 +139,7 @@ impl Archive {
     fn write_new_blocks(
         &mut self,
         mut archive: &mut File,
-        blocks: &mut impl Iterator<Item=Result<Block>>,
+        blocks: &mut impl Iterator<Item = Result<Block>>,
     ) -> Result<Vec<BlockAddress>> {
         let mut addresses = Vec::new();
 
@@ -179,7 +179,7 @@ impl Archive {
     }
 
     /// Returns the names of all the entries in this archive.
-    pub fn names(&self) -> impl Iterator<Item=&String> {
+    pub fn names(&self) -> impl Iterator<Item = &String> {
         self.header.entries.keys()
     }
 
@@ -245,7 +245,8 @@ impl Archive {
     /// which has been allocated. This means that archive files can grow in size, but never shrink.
     /// This method rewrites data in the archive to shrink the archive file as much as possible.
     /// Calling this method may be necessary if a large amount of data is removed from the archive
-    /// which will not be replaced with new data.
+    /// which will not be replaced with new data. This may take a while depending on the size of
+    /// the archive.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
