@@ -14,4 +14,18 @@
  * limitations under the License.
  */
 
-fn main() {}
+use std::path::PathBuf;
+
+use disk_archive::{Archive, ArchiveEntry};
+
+fn main() {
+    let path = PathBuf::from("/home/garrett/test-archive");
+    let mut archive = Archive::create(&path).unwrap();
+
+    let mut entry = ArchiveEntry::new();
+    let handle = archive.write(&mut [0u8; 8].as_ref()).unwrap();
+    entry.metadata.insert(String::from("tag"), vec![0u8; 4]);
+    entry.data = Some(handle);
+
+    archive.insert("null", entry);
+}
