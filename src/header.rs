@@ -35,6 +35,13 @@ pub struct Header {
 }
 
 impl Header {
+    /// Creates a new empty header.
+    pub fn new() -> Self {
+        Header {
+            entries: HashMap::new(),
+        }
+    }
+
     /// Returns the list of addresses of blocks used for storing data.
     pub fn data_blocks(&self) -> Vec<BlockAddress> {
         self.entries
@@ -50,21 +57,20 @@ impl Header {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred reading from the archive.
     /// - `Error::Deserialize`: An error occurred deserializing the header.
-    pub fn read(archive: &Path) -> Result<(Header, HeaderAddress)> {
-        let mut file = File::open(archive)?;
+    pub fn read(archive: &mut File) -> Result<(Header, HeaderAddress)> {
         let mut offset_buffer = [0u8; size_of::<u64>()];
-        let archive_size = file.metadata()?.len();
+        let archive_size = archive.metadata()?.len();
 
         // Get the offset of the header.
-        file.seek(SeekFrom::Start(0))?;
-        file.read_exact(&mut offset_buffer)?;
+        archive.seek(SeekFrom::Start(0))?;
+        archive.read_exact(&mut offset_buffer)?;
         let offset = u64::from_be_bytes(offset_buffer);
 
         // Read the header size and header.
-        file.seek(SeekFrom::Start(offset))?;
-        file.read_exact(&mut offset_buffer)?;
+        archive.seek(SeekFrom::Start(offset))?;
+        archive.read_exact(&mut offset_buffer)?;
         let header_size = u64::from_be_bytes(offset_buffer);
-        let header = decode::from_read(file.take(header_size))?;
+        let header = decode::from_read(archive.take(header_size))?;
 
         let header_address = HeaderAddress {
             offset,
@@ -84,23 +90,21 @@ impl Header {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred writing to the archive.
     /// - `Error::Serialize`: An error occurred serializing the header.
-    pub fn write(&self, archive: &Path) -> Result<HeaderAddress> {
-        let mut file = File::open(archive)?;
-
+    pub fn write(&self, mut archive: &mut File) -> Result<HeaderAddress> {
         // Pad the file to a multiple of `BLOCK_SIZE`.
-        let offset = file.seek(SeekFrom::End(0))?;
-        pad_to_block_size(&mut file)?;
+        let offset = archive.seek(SeekFrom::End(0))?;
+        pad_to_block_size(&mut archive)?;
 
         // Append the new header size and header.
         let serialized_header = encode::to_vec(&self)?;
-        file.write_all(&serialized_header.len().to_be_bytes())?;
-        file.write_all(&serialized_header)?;
+        archive.write_all(&serialized_header.len().to_be_bytes())?;
+        archive.write_all(&serialized_header)?;
 
         // Update the header offset to point to the new header.
-        file.seek(SeekFrom::Start(0))?;
-        file.write_all(&offset.to_be_bytes())?;
+        archive.seek(SeekFrom::Start(0))?;
+        archive.write_all(&offset.to_be_bytes())?;
 
-        let archive_size = file.metadata()?.len();
+        let archive_size = archive.metadata()?.len();
         let header_size = archive_size - offset;
 
         Ok(HeaderAddress {
