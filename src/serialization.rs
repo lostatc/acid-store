@@ -37,7 +37,7 @@ impl From<SerializableNaiveDateTime> for NaiveDateTime {
 #[serde(remote = "RelativePathBuf")]
 pub struct SerializableRelativePathBuf {
     #[serde(getter = "RelativePathBuf::to_string")]
-    path: String
+    path: String,
 }
 
 impl From<SerializableRelativePathBuf> for RelativePathBuf {

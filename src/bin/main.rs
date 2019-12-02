@@ -14,5 +14,4 @@
  * limitations under the License.
  */
 
-fn main() {
-}
+fn main() {}

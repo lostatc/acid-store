@@ -20,7 +20,10 @@ use serde::{Deserialize, Serialize};
 use crate::block::{BlockAddress, Checksum};
 
 /// The 256-bit BLAKE2 checksum of an empty byte array.
-const EMPTY_CHECKSUM: Checksum = [0x0e, 0x57, 0x51, 0xc0, 0x26, 0xe5, 0x43, 0xb2, 0xe8, 0xab, 0x2e, 0xb0, 0x60, 0x99, 0xda, 0xa1, 0xd1, 0xe5, 0xdf, 0x47, 0x77, 0x8f, 0x77, 0x87, 0xfa, 0xab, 0x45, 0xcd, 0xf1, 0x2f, 0xe3, 0xa8];
+const EMPTY_CHECKSUM: Checksum = [
+    0x0e, 0x57, 0x51, 0xc0, 0x26, 0xe5, 0x43, 0xb2, 0xe8, 0xab, 0x2e, 0xb0, 0x60, 0x99, 0xda, 0xa1,
+    0xd1, 0xe5, 0xdf, 0x47, 0x77, 0x8f, 0x77, 0x87, 0xfa, 0xab, 0x45, 0xcd, 0xf1, 0x2f, 0xe3, 0xa8,
+];
 
 /// Information about an entry in the archive.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,7 +37,10 @@ pub struct ArchiveEntry {
 
 impl Default for ArchiveEntry {
     fn default() -> Self {
-        ArchiveEntry { metadata: HashMap::new(), data: None }
+        ArchiveEntry {
+            metadata: HashMap::new(),
+            data: None,
+        }
     }
 }
 
@@ -54,7 +60,11 @@ pub struct DataHandle {
 impl DataHandle {
     /// Create a new `DataHandle` which represents no data.
     pub fn new() -> Self {
-        DataHandle { size: 0, checksum: EMPTY_CHECKSUM, blocks: Vec::new() }
+        DataHandle {
+            size: 0,
+            checksum: EMPTY_CHECKSUM,
+            blocks: Vec::new(),
+        }
     }
 
     /// The size of the entry's data in bytes.

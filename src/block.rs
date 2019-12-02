@@ -79,7 +79,11 @@ impl Block {
         } else {
             let mut checksum = [0u8; CHECKSUM_SIZE];
             Blake2b::blake2b(&mut checksum, &buffer[..bytes_read], &[0u8; 0]);
-            Ok(Some(Block { checksum, size: bytes_read, buffer }))
+            Ok(Some(Block {
+                checksum,
+                size: bytes_read,
+                buffer,
+            }))
         }
     }
 
@@ -87,12 +91,10 @@ impl Block {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn iter_blocks<'a>(source: &'a mut impl Read) -> impl Iterator<Item=Result<Self>> + 'a {
-        iter::from_fn(move || {
-            match Self::from_read(source) {
-                Ok(option) => option.map(Ok),
-                Err(error) => Some(Err(error))
-            }
+    pub fn iter_blocks<'a>(source: &'a mut impl Read) -> impl Iterator<Item = Result<Self>> + 'a {
+        iter::from_fn(move || match Self::from_read(source) {
+            Ok(option) => option.map(Ok),
+            Err(error) => Some(Err(error)),
         })
     }
 
@@ -138,7 +140,9 @@ impl BlockAddress {
     pub fn range(start_offset: u64, end_offset: u64) -> Vec<BlockAddress> {
         let start_index = div_floor(start_offset - BLOCK_OFFSET, BLOCK_SIZE as u64);
         let end_index = div_ceil(end_offset - BLOCK_OFFSET, BLOCK_SIZE as u64);
-        (start_index..end_index).map(|index| BlockAddress(index as u32)).collect()
+        (start_index..end_index)
+            .map(|index| BlockAddress(index as u32))
+            .collect()
     }
 
     /// Returns the byte offset of the start of the block from the beginning of the file.
@@ -171,7 +175,11 @@ impl BlockAddress {
 
         let checksum = self.read_checksum(archive)?;
         let size = u16::from_be_bytes(length_buffer) as usize;
-        Ok(Block { checksum, size, buffer })
+        Ok(Block {
+            checksum,
+            size,
+            buffer,
+        })
     }
 
     /// Returns a new reader for reading the contents of the block at this address.
@@ -189,14 +197,18 @@ impl BlockAddress {
 /// An `Iterator` which computes the checksum of all the blocks which pass through it.
 pub struct BlockDigest<'a> {
     digest: Blake2b,
-    blocks: Box<dyn Iterator<Item=Result<Block>> + 'a>,
+    blocks: Box<dyn Iterator<Item = Result<Block>> + 'a>,
     bytes_read: u64,
 }
 
 impl<'a> BlockDigest<'a> {
     /// Creates a new `BlockDigest` which wraps an existing iterator.
-    pub fn new(iter: impl Iterator<Item=Result<Block>> + 'a) -> Self {
-        BlockDigest { digest: Blake2b::new(CHECKSUM_SIZE), blocks: Box::new(iter), bytes_read: 0 }
+    pub fn new(iter: impl Iterator<Item = Result<Block>> + 'a) -> Self {
+        BlockDigest {
+            digest: Blake2b::new(CHECKSUM_SIZE),
+            blocks: Box::new(iter),
+            bytes_read: 0,
+        }
     }
 
     /// Returns the checksum of all the data which has passed through the iterator so far.
@@ -237,7 +249,9 @@ pub fn read_all(source: &mut impl Read, buffer: &mut [u8]) -> Result<usize> {
 
     loop {
         bytes_read = source.read(&mut buffer[total_read..])?;
-        if bytes_read == 0 { break; }
+        if bytes_read == 0 {
+            break;
+        }
         total_read += bytes_read;
     }
 
