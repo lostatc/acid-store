@@ -23,12 +23,12 @@ use std::path::Path;
 use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
 
-use crate::block::{BLOCK_OFFSET, BlockAddress, pad_to_block_size};
+use crate::block::{pad_to_block_size, BlockAddress, BLOCK_OFFSET};
 use crate::entry::ArchiveEntry;
 use crate::error::Result;
 
 /// Metadata about the archive.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Header {
     /// A map of entry names to entries which are in this archive.
     pub entries: HashMap<String, ArchiveEntry>,
@@ -43,18 +43,6 @@ impl Header {
             .flat_map(|data| &data.blocks)
             .copied()
             .collect()
-    }
-
-    /// Returns a list of addresses of blocks which are unused and can be overwritten.
-    pub fn unused_blocks(&self, header_address: &HeaderAddress) -> Vec<BlockAddress> {
-        let mut used_blocks = HashSet::new();
-        used_blocks.extend(self.data_blocks());
-        used_blocks.extend(header_address.header_blocks());
-
-        let mut unused_blocks = header_address.blocks();
-        unused_blocks.retain(|block| !used_blocks.contains(block));
-
-        unused_blocks
     }
 
     /// Reads the header from the given `archive`.
@@ -138,12 +126,12 @@ pub struct HeaderAddress {
 
 impl HeaderAddress {
     /// Returns the list of addresses of all blocks in the archive.
-    fn blocks(&self) -> Vec<BlockAddress> {
+    pub fn blocks(&self) -> Vec<BlockAddress> {
         BlockAddress::range(BLOCK_OFFSET, self.archive_size)
     }
 
     /// Returns the list of addresses of blocks used for storing the header.
-    fn header_blocks(&self) -> Vec<BlockAddress> {
+    pub fn header_blocks(&self) -> Vec<BlockAddress> {
         BlockAddress::range(self.offset, self.header_size)
     }
 }
