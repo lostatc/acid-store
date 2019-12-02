@@ -70,7 +70,7 @@ impl Archive {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn create(path: &Path) -> Result<Self> {
-        let mut archive_file = File::open(&path)?;
+        let mut archive_file = File::create(&path)?;
 
         // Allocate space for the header address.
         archive_file.set_len(BLOCK_OFFSET)?;
