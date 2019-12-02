@@ -15,7 +15,7 @@
  */
 
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
@@ -245,7 +245,7 @@ impl Archive {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn write(&mut self, mut source: &mut impl Read) -> Result<DataHandle> {
-        let mut archive = File::open(&self.path)?;
+        let mut archive = OpenOptions::new().write(true).open(&self.path)?;
         let mut addresses = Vec::new();
         let mut block_digest = BlockDigest::new(Block::iter_blocks(&mut source));
 
@@ -275,7 +275,7 @@ impl Archive {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn commit(&mut self) -> Result<()> {
-        let mut archive_file = File::open(&self.path)?;
+        let mut archive_file = OpenOptions::new().write(true).open(&self.path)?;
         let new_address = self.header.write(&mut archive_file)?;
         self.header_address = new_address;
         self.old_header = self.header.clone();
@@ -297,7 +297,7 @@ impl Archive {
     /// - `Error::Io`: An I/O error occurred.
     pub fn compacted(&mut self, dest: &Path) -> Result<Archive> {
         let mut dest_archive = Self::create(dest)?;
-        let mut dest_file = File::open(dest)?;
+        let mut dest_file = OpenOptions::new().write(true).open(dest)?;
         let mut source_file = File::open(&self.path)?;
 
         // Get the addresses of used blocks in this archive.
