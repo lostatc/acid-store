@@ -117,10 +117,12 @@ impl Header {
 /// The address of the header in the archive.
 #[derive(Debug, PartialEq, Eq)]
 pub struct HeaderAddress {
-    /// The offset of the first block in the header.
+    /// The byte offset of the first block in the header.
     offset: u64,
 
     /// The size of the header in bytes.
+    ///
+    /// This does not include the 8 bytes at the start of the header which store the header size.
     header_size: u64,
 
     /// The size of the archive in bytes.
@@ -135,6 +137,9 @@ impl HeaderAddress {
 
     /// Returns the list of addresses of blocks used for storing the header.
     pub fn header_blocks(&self) -> Vec<BlockAddress> {
-        BlockAddress::range(self.offset, self.header_size)
+        BlockAddress::range(
+            self.offset,
+            self.offset + size_of::<u64>() as u64 + self.header_size,
+        )
     }
 }
