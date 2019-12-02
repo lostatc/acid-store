@@ -19,7 +19,7 @@ use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use crate::block::{pad_to_block_size, Block, BlockAddress, BlockDigest, Checksum};
+use crate::block::{pad_to_block_size, Block, BlockAddress, BlockDigest, Checksum, BLOCK_OFFSET};
 use crate::entry::{ArchiveEntry, DataHandle};
 use crate::error::Result;
 use crate::header::{Header, HeaderAddress};
@@ -52,7 +52,8 @@ impl Archive {
     /// - `Error::Io`: An I/O error occurred.
     /// - `Error::Deserialize`: An error occurred deserializing the header.
     pub fn open(path: &Path) -> Result<Self> {
-        let (header, header_address) = Header::read(path)?;
+        let mut archive_file = File::open(&path)?;
+        let (header, header_address) = Header::read(&mut archive_file)?;
         let mut archive = Archive {
             path: path.to_owned(),
             old_header: header.clone(),
@@ -62,6 +63,23 @@ impl Archive {
         };
         archive.read_checksums()?;
         Ok(archive)
+    }
+
+    /// Creates and opens a new archive at the given `path`.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn create(path: &Path) -> Result<Self> {
+        let mut archive_file = File::open(&path)?;
+
+        // Allocate space for the header address.
+        archive_file.set_len(BLOCK_OFFSET)?;
+        archive_file.seek(SeekFrom::End(0))?;
+
+        let header = Header::new();
+        header.write(&mut archive_file)?;
+
+        Self::open(path)
     }
 
     /// Reads the checksums of the blocks in this archive and updates `block_checksums`.
@@ -258,36 +276,44 @@ impl Archive {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn commit(&mut self) -> Result<()> {
-        let new_address = self.header.write(&self.path)?;
+        let mut archive_file = File::open(&self.path)?;
+        let new_address = self.header.write(&mut archive_file)?;
         self.header_address = new_address;
         self.old_header = self.header.clone();
         Ok(())
     }
 
-    /// Reduces the archive size by reclaiming unused space.
+    /// Creates a copy of this archive which is compacted to reduce its size.
     ///
-    /// Archives can reclaim space left over from deleted entries, but they can not deallocate space
+    /// Archives can reuse space left over from deleted entries, but they can not deallocate space
     /// which has been allocated. This means that archive files can grow in size, but never shrink.
-    /// This method rewrites data in the archive to shrink the archive file as much as possible.
-    /// Calling this method may be necessary if a large amount of data is removed from the archive
-    /// which will not be replaced with new data. This may take a while depending on the size of
-    /// the archive.
+    ///
+    /// This method copies the data in this archive to a new archive, allocating the minimum amount
+    /// of space necessary. This can result in a significantly smaller archive size if a lot of data
+    /// has been removed from this archive and not replaced with new data.
+    ///
+    /// This method accepts the path of the new archive returns the newly created archive.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn compact(&mut self) -> Result<()> {
-        unimplemented!()
-    }
+    pub fn compacted(&mut self, dest: &Path) -> Result<Archive> {
+        let mut dest_archive = Self::create(dest)?;
+        let mut dest_file = File::open(dest)?;
+        let mut source_file = File::open(&self.path)?;
 
-    /// Defragments the archive by rewriting its contents.
-    ///
-    /// Archives can become fragmented over time just like file systems, and this may cause a
-    /// performance penalty. This method will rewrite the data in the archive to defragment it,
-    /// which may take a while depending on the size of the archive and how fragmented it is.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn defragment(&mut self) -> Result<()> {
-        unimplemented!()
+        // Get the addresses of used blocks in this archive.
+        let mut block_addresses = self.header.data_blocks();
+        block_addresses.sort();
+
+        // Lazily read blocks from this archive.
+        let mut data_blocks = block_addresses
+            .iter()
+            .map(|address| address.read_block(&mut source_file));
+
+        // Write blocks to the destination archive.
+        dest_archive.write_new_blocks(&mut dest_file, &mut data_blocks)?;
+        dest_archive.commit()?;
+
+        Ok(dest_archive)
     }
 }
