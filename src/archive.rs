@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -28,10 +28,17 @@ pub struct Archive {
     /// The path of the archive.
     path: PathBuf,
 
-    /// The archive's header.
+    /// The archive's old header.
+    ///
+    /// This is the archive's header as of the last time changes were committed.
+    old_header: Header,
+
+    /// The archive's current header.
+    ///
+    /// This is the header which will be saved when changes are committed.
     header: Header,
 
-    /// The address of the archive's header.
+    /// The address of the archive's old header.
     header_address: HeaderAddress,
 
     /// The checksums of all the blocks in the archive and their addresses.
@@ -48,6 +55,7 @@ impl Archive {
         let (header, header_address) = Header::read(path)?;
         let mut archive = Archive {
             path: path.to_owned(),
+            old_header: header.clone(),
             header,
             header_address,
             block_checksums: HashMap::new(),
@@ -67,6 +75,22 @@ impl Archive {
             self.block_checksums.insert(checksum, block_address);
         }
         Ok(())
+    }
+
+    /// Returns a list of addresses of blocks which are unused and can be overwritten.
+    fn unused_blocks(&self) -> Vec<BlockAddress> {
+        let mut used_blocks = HashSet::new();
+
+        // We can't overwrite blocks which are still referenced by the old header in case the
+        // changes aren't committed.
+        used_blocks.extend(self.header.data_blocks());
+        used_blocks.extend(self.old_header.data_blocks());
+        used_blocks.extend(self.header_address.header_blocks());
+
+        let mut unused_blocks = self.header_address.blocks();
+        unused_blocks.retain(|block| !used_blocks.contains(block));
+
+        unused_blocks
     }
 
     /// Writes a block to the archive.
@@ -110,7 +134,7 @@ impl Archive {
         mut archive: &mut File,
         blocks: &mut impl Iterator<Item = Result<Block>>,
     ) -> Result<Vec<BlockAddress>> {
-        let unused_blocks = self.header.unused_blocks(&self.header_address);
+        let unused_blocks = self.unused_blocks();
         let mut addresses = Vec::new();
 
         for block_address in unused_blocks {
@@ -236,6 +260,7 @@ impl Archive {
     pub fn commit(&mut self) -> Result<()> {
         let new_address = self.header.write(&self.path)?;
         self.header_address = new_address;
+        self.old_header = self.header.clone();
         Ok(())
     }
 
