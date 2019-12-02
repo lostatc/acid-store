@@ -25,14 +25,17 @@ const EMPTY_CHECKSUM: Checksum = [0x0e, 0x57, 0x51, 0xc0, 0x26, 0xe5, 0x43, 0xb2
 /// Information about an entry in the archive.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArchiveEntry {
-    /// The unique name of the entry.
-    pub name: String,
-
     /// The metadata associated with this entry.
     pub metadata: HashMap<String, Vec<u8>>,
 
     /// A handle for accessing the data associated with this entry.
     pub data: Option<DataHandle>,
+}
+
+impl Default for ArchiveEntry {
+    fn default() -> Self {
+        ArchiveEntry { metadata: HashMap::new(), data: None }
+    }
 }
 
 /// A handle for accessing the data associated with an entry.

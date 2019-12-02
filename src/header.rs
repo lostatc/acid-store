@@ -14,38 +14,24 @@
  * limitations under the License.
  */
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::mem::size_of;
 use std::path::Path;
 
-use panoradix::RadixMap;
 use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
 
 use crate::block::{BLOCK_OFFSET, BlockAddress, pad_to_block_size};
 use crate::entry::ArchiveEntry;
 use crate::error::Result;
-use crate::serialization::SerializableHeader;
 
 /// Metadata about the archive.
-#[derive(Serialize, Deserialize)]
-#[serde(into = "SerializableHeader")]
-#[serde(from = "SerializableHeader")]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Header {
-    /// The entries which are stored in this archive.
-    pub entries: RadixMap<str, ArchiveEntry>,
-}
-
-impl Clone for Header {
-    fn clone(&self) -> Self {
-        let mut entries = RadixMap::new();
-        for (key, value) in self.entries.iter() {
-            entries.insert(key.as_ref(), value.clone());
-        }
-        Header { entries }
-    }
+    /// A map of entry names to entries which are in this archive.
+    pub entries: HashMap<String, ArchiveEntry>,
 }
 
 impl Header {
