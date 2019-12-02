@@ -14,11 +14,10 @@
  * limitations under the License.
  */
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::mem::size_of;
-use std::path::Path;
 
 use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
@@ -47,7 +46,7 @@ impl Header {
         self.entries
             .values()
             .filter_map(|entry| entry.data.as_ref())
-            .flat_map(|data| &data.blocks)
+            .flat_map(|handle| &handle.blocks)
             .copied()
             .collect()
     }

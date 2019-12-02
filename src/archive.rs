@@ -199,13 +199,8 @@ impl Archive {
     ///
     /// If an entry with the given `name` already existed in the archive, it is replaced and the old
     /// entry is returned. Otherwise, `None` is returned.
-    pub fn add(&mut self, name: String, entry: ArchiveEntry) -> Option<ArchiveEntry> {
-        self.header.entries.insert(name, entry)
-    }
-
-    /// Returns a mutable reference to the entry with the given `name`, or `None` if there is none.
-    pub fn update(&mut self, name: &str) -> Option<&mut ArchiveEntry> {
-        self.header.entries.get_mut(name)
+    pub fn insert(&mut self, name: &str, entry: ArchiveEntry) -> Option<ArchiveEntry> {
+        self.header.entries.insert(name.to_string(), entry)
     }
 
     /// Removes and returns the entry with the given `name` from the archive.
@@ -218,6 +213,11 @@ impl Archive {
     /// Returns the entry with the given `name`, or `None` if it doesn't exist.
     pub fn get(&self, name: &str) -> Option<&ArchiveEntry> {
         self.header.entries.get(name)
+    }
+
+    /// Returns a mutable reference to the entry with the given `name`, or `None` if there is none.
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut ArchiveEntry> {
+        self.header.entries.get_mut(name)
     }
 
     /// Returns the names of all the entries in this archive.
@@ -240,14 +240,11 @@ impl Archive {
         Ok(reader)
     }
 
-    /// Writes the data associated with the given `handle`.
-    ///
-    /// This gets bytes from `source` and writes them to the archive, replacing any data which was
-    /// previously associated with `handle`.
+    /// Writes the data from `source` to the archive and returns a handle to it.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn write(&mut self, handle: &mut DataHandle, mut source: &mut impl Read) -> Result<()> {
+    pub fn write(&mut self, mut source: &mut impl Read) -> Result<DataHandle> {
         let mut archive = File::open(&self.path)?;
         let mut addresses = Vec::new();
         let mut block_digest = BlockDigest::new(Block::iter_blocks(&mut source));
@@ -262,11 +259,13 @@ impl Archive {
         // Append the remaining blocks to the end of the archive.
         addresses.extend(self.write_new_blocks(&mut archive, &mut block_digest)?);
 
-        handle.size = block_digest.bytes_read();
-        handle.checksum = block_digest.result();
-        handle.blocks = addresses;
+        let handle = DataHandle {
+            size: block_digest.bytes_read(),
+            checksum: block_digest.result(),
+            blocks: addresses,
+        };
 
-        Ok(())
+        Ok(handle)
     }
 
     /// Commits all changes that have been made to the archive.
