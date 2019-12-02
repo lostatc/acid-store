@@ -20,25 +20,39 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::mem::size_of;
 use std::path::Path;
 
+use panoradix::RadixMap;
 use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
 
 use crate::block::{BLOCK_OFFSET, BlockAddress, pad_to_block_size};
 use crate::entry::ArchiveEntry;
 use crate::error::Result;
+use crate::serialization::SerializableHeader;
 
 /// Metadata about the archive.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[serde(into = "SerializableHeader")]
+#[serde(from = "SerializableHeader")]
 pub struct Header {
     /// The entries which are stored in this archive.
-    pub entries: Vec<ArchiveEntry>,
+    pub entries: RadixMap<str, ArchiveEntry>,
+}
+
+impl Clone for Header {
+    fn clone(&self) -> Self {
+        let mut entries = RadixMap::new();
+        for (key, value) in self.entries.iter() {
+            entries.insert(key.as_ref(), value.clone());
+        }
+        Header { entries }
+    }
 }
 
 impl Header {
     /// Returns the list of addresses of blocks used for storing data.
     pub fn data_blocks(&self) -> Vec<BlockAddress> {
         self.entries
-            .iter()
+            .values()
             .filter_map(|entry| entry.data.as_ref())
             .flat_map(|data| &data.blocks)
             .copied()

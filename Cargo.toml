@@ -32,3 +32,6 @@ rmp-serde = "0.14.0"
 
 # Math
 num-integer = "0.1.41"
+
+# Data structures
+panoradix = "0.6.6"
