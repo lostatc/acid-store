@@ -153,34 +153,34 @@ impl Archive {
         Ok(addresses)
     }
 
-    /// Adds an entry with the given `name` to the archive.
+    /// Adds an `entry` with the given `name` to the archive.
     ///
-    /// A mutable reference to the newly created entry is returned. If an entry with the given
-    /// `name` already exists, that is returned instead.
-    pub fn add<'a>(&mut self, name: String) -> Result<&'a mut ArchiveEntry> {
-        unimplemented!()
+    /// If an entry with the given `name` already existed in the archive, it is replaced and the old
+    /// entry is returned. Otherwise, `None` is returned.
+    pub fn add(&mut self, name: String, entry: ArchiveEntry) -> Option<ArchiveEntry> {
+        self.header.entries.insert(name, entry)
     }
 
     /// Returns a mutable reference to the entry with the given `name`, or `None` if there is none.
-    pub fn update<'a>(&mut self, name: &str) -> Result<Option<&'a mut ArchiveEntry>> {
-        unimplemented!()
+    pub fn update(&mut self, name: &str) -> Option<&mut ArchiveEntry> {
+        self.header.entries.get_mut(name)
     }
 
-    /// Removes the entry with the given `name` from the archive.
+    /// Removes and returns the entry with the given `name` from the archive.
     ///
-    /// This return `true` if the entry was deleted, or `false` if it didn't exist.
-    pub fn delete(&mut self, name: &str) -> Result<bool> {
-        unimplemented!()
+    /// This returns `None` if there is no entry with the given `name`.
+    pub fn remove(&mut self, name: &str) -> Option<ArchiveEntry> {
+        self.header.entries.remove(name)
     }
 
-    /// Returns the entry with the given `name`, or `None` if there is none.
-    pub fn get<'a>(&self, name: &str) -> Result<Option<&'a ArchiveEntry>> {
-        unimplemented!()
+    /// Returns the entry with the given `name`, or `None` if it doesn't exist.
+    pub fn get(&self, name: &str) -> Option<&ArchiveEntry> {
+        self.header.entries.get(name)
     }
 
-    /// Returns a list of entries whose names start with `prefix`.
-    pub fn list<'a>(&self, prefix: &str) -> Result<Vec<&'a ArchiveEntry>> {
-        unimplemented!()
+    /// Returns the names of all the entries in this archive.
+    pub fn names(&self) -> impl Iterator<Item=&String> {
+        self.header.entries.keys()
     }
 
     /// Returns a reader for reading the data associated with the given `handle`.
