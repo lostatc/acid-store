@@ -23,8 +23,6 @@ use crypto::blake2b::Blake2b;
 use num_integer::{div_ceil, div_floor};
 use serde::{Deserialize, Serialize};
 
-use crate::error::Result;
-
 /// The size of a checksum.
 pub const CHECKSUM_SIZE: usize = 32;
 
@@ -69,7 +67,7 @@ impl Block {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn from_read(source: &mut impl Read) -> Result<Option<Self>> {
+    pub fn from_read(source: &mut impl Read) -> io::Result<Option<Self>> {
         let mut buffer = [0u8; BLOCK_BUFFER_SIZE];
         let bytes_read = read_all(source, &mut buffer)?;
 
@@ -90,7 +88,9 @@ impl Block {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn iter_blocks<'a>(source: &'a mut impl Read) -> impl Iterator<Item = Result<Self>> + 'a {
+    pub fn iter_blocks<'a>(
+        source: &'a mut impl Read,
+    ) -> impl Iterator<Item = io::Result<Self>> + 'a {
         iter::from_fn(move || match Self::from_read(source) {
             Ok(option) => option.map(Ok),
             Err(error) => Some(Err(error)),
@@ -101,7 +101,7 @@ impl Block {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn write(&self, destination: &mut impl Write) -> Result<()> {
+    pub fn write(&self, destination: &mut impl Write) -> io::Result<()> {
         destination.write_all(&self.checksum)?;
         destination.write_all(&(self.size as u16).to_be_bytes())?;
         destination.write_all(&self.buffer)?;
@@ -112,7 +112,7 @@ impl Block {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn write_at(&self, archive: &mut File, address: BlockAddress) -> Result<()> {
+    pub fn write_at(&self, archive: &mut File, address: BlockAddress) -> io::Result<()> {
         archive.seek(SeekFrom::Start(address.offset()))?;
         self.write(archive)
     }
@@ -153,7 +153,7 @@ impl BlockAddress {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn read_checksum(self, archive: &mut File) -> Result<Checksum> {
+    pub fn read_checksum(self, archive: &mut File) -> io::Result<Checksum> {
         let mut checksum = [0u8; CHECKSUM_SIZE];
         archive.seek(SeekFrom::Start(self.offset()))?;
         archive.read_exact(&mut checksum)?;
@@ -164,7 +164,7 @@ impl BlockAddress {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn read_block(self, archive: &mut File) -> Result<Block> {
+    pub fn read_block(self, archive: &mut File) -> io::Result<Block> {
         let mut length_buffer = [0u8; BLOCK_LENGTH_SIZE];
         let mut buffer = [0u8; BLOCK_BUFFER_SIZE];
 
@@ -182,7 +182,7 @@ impl BlockAddress {
     }
 
     /// Returns a new reader for reading the contents of the block at this address.
-    pub fn new_reader(self, archive: &mut File) -> Result<impl Read> {
+    pub fn new_reader(self, archive: &mut File) -> io::Result<impl Read> {
         archive.seek(SeekFrom::Start(self.offset() + CHECKSUM_SIZE as u64))?;
 
         let mut length_buffer = [0u8; BLOCK_LENGTH_SIZE];
@@ -228,7 +228,7 @@ impl<T: Read> Read for CountingReader<T> {
 ///
 /// # Errors
 /// - `Error::Io`: An I/O error occurred.
-pub fn read_all(source: &mut impl Read, buffer: &mut [u8]) -> Result<usize> {
+pub fn read_all(source: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
     let mut bytes_read;
     let mut total_read = 0;
 
@@ -247,7 +247,7 @@ pub fn read_all(source: &mut impl Read, buffer: &mut [u8]) -> Result<usize> {
 ///
 /// # Errors
 /// - `Error::Io`: An I/O error occurred.
-pub fn pad_to_block_size(file: &mut File) -> Result<()> {
+pub fn pad_to_block_size(file: &mut File) -> io::Result<()> {
     let position = file.seek(SeekFrom::Current(0))?;
     let padding_size = (position - BLOCK_OFFSET) % BLOCK_SIZE as u64;
     let padding = vec![0u8; padding_size as usize];
