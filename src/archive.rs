@@ -71,6 +71,7 @@ impl Archive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
+    /// - `Error::Deserialize`: An error occurred deserializing the header.
     pub fn create(path: &Path) -> Result<Self> {
         let mut archive_file = File::create(&path)?;
 
@@ -85,10 +86,7 @@ impl Archive {
     }
 
     /// Reads the checksums of the blocks in this archive and updates `block_checksums`.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    fn read_checksums(&mut self) -> Result<()> {
+    fn read_checksums(&mut self) -> io::Result<()> {
         let mut archive = File::open(&self.path)?;
         for block_address in self.header.data_blocks() {
             let checksum = block_address.read_checksum(&mut archive)?;
@@ -118,15 +116,12 @@ impl Archive {
     /// If the given `block` already exists in the archive, this method does nothing and returns the
     /// address of the existing block. Otherwise, this method adds the given `block` to the archive
     /// at the given `address` and returns that address.
-    ///
-    /// # Errors
-    /// - `Error::Io` An I/O error occurred.
     fn write_block(
         &mut self,
         mut archive: &mut File,
         block: &Block,
         address: BlockAddress,
-    ) -> Result<BlockAddress> {
+    ) -> io::Result<BlockAddress> {
         // Check if the block already exists in the archive.
         match self.block_checksums.get(&block.checksum) {
             // Use the address of the existing block.
@@ -146,14 +141,11 @@ impl Archive {
     /// This only writes as many blocks as there are unused spaces to fill. If there are no unused
     /// spaces, no blocks will be written. This returns the list of addresses that blocks have been
     /// written to.
-    ///
-    /// # Errors
-    /// - `Error::Io` An I/O error occurred.
     fn write_unused_blocks(
         &mut self,
         mut archive: &mut File,
-        blocks: &mut impl Iterator<Item = Result<Block>>,
-    ) -> Result<Vec<BlockAddress>> {
+        blocks: &mut impl Iterator<Item = io::Result<Block>>,
+    ) -> io::Result<Vec<BlockAddress>> {
         let unused_blocks = self.unused_blocks();
         let mut addresses = Vec::new();
 
@@ -177,14 +169,11 @@ impl Archive {
     ///
     /// This writes all remaining blocks to the archive. This returns the list of addresses that
     /// blocks have been written to.
-    ///
-    /// # Errors
-    /// - `Error::Io` An I/O error occurred.
     fn write_new_blocks(
         &mut self,
         mut archive: &mut File,
-        blocks: &mut impl Iterator<Item = Result<Block>>,
-    ) -> Result<Vec<BlockAddress>> {
+        blocks: &mut impl Iterator<Item = io::Result<Block>>,
+    ) -> io::Result<Vec<BlockAddress>> {
         let mut addresses = Vec::new();
 
         for block_result in blocks {
