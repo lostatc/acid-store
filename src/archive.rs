@@ -19,7 +19,9 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use crate::block::{pad_to_block_size, Block, BlockAddress, BlockDigest, Checksum, BLOCK_OFFSET};
+use crate::block::{
+    pad_to_block_size, Block, BlockAddress, Checksum, CountingReader, BLOCK_OFFSET,
+};
 use crate::entry::{ArchiveEntry, DataHandle};
 use crate::error::Result;
 use crate::header::{Header, HeaderAddress};
@@ -244,24 +246,27 @@ impl Archive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn write(&mut self, mut source: &mut impl Read) -> Result<DataHandle> {
-        let mut archive = OpenOptions::new().write(true).open(&self.path)?;
+    pub fn write(&mut self, source: &mut impl Read) -> Result<DataHandle> {
+        let mut archive_file = OpenOptions::new().write(true).open(&self.path)?;
         let mut addresses = Vec::new();
-        let mut block_digest = BlockDigest::new(Block::iter_blocks(&mut source));
+        let mut source = CountingReader::new(source);
+        let mut blocks = Block::iter_blocks(&mut source);
 
         // Fill unused blocks in the archive first.
-        addresses.extend(self.write_unused_blocks(&mut archive, &mut block_digest)?);
+        addresses.extend(self.write_unused_blocks(&mut archive_file, &mut blocks)?);
 
         // Pad the archive to a multiple of `BLOCK_SIZE`.
-        archive.seek(SeekFrom::End(0))?;
-        pad_to_block_size(&mut archive)?;
+        archive_file.seek(SeekFrom::End(0))?;
+        pad_to_block_size(&mut archive_file)?;
 
         // Append the remaining blocks to the end of the archive.
-        addresses.extend(self.write_new_blocks(&mut archive, &mut block_digest)?);
+        addresses.extend(self.write_new_blocks(&mut archive_file, &mut blocks)?);
+
+        // All the blocks have been read from the source file.
+        drop(blocks);
 
         let handle = DataHandle {
-            size: block_digest.bytes_read(),
-            checksum: block_digest.result(),
+            size: source.bytes_read(),
             blocks: addresses,
         };
 

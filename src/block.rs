@@ -15,12 +15,11 @@
  */
 
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::iter;
 use std::mem::size_of;
 
 use crypto::blake2b::Blake2b;
-use crypto::digest::Digest;
 use num_integer::{div_ceil, div_floor};
 use serde::{Deserialize, Serialize};
 
@@ -194,46 +193,32 @@ impl BlockAddress {
     }
 }
 
-/// An `Iterator` which computes the checksum of all the blocks which pass through it.
-pub struct BlockDigest<'a> {
-    digest: Blake2b,
-    blocks: Box<dyn Iterator<Item = Result<Block>> + 'a>,
+/// A `Read` which counts the total number of bytes read from it.
+pub struct CountingReader<T: Read> {
+    reader: T,
     bytes_read: u64,
 }
 
-impl<'a> BlockDigest<'a> {
-    /// Creates a new `BlockDigest` which wraps an existing iterator.
-    pub fn new(iter: impl Iterator<Item = Result<Block>> + 'a) -> Self {
-        BlockDigest {
-            digest: Blake2b::new(CHECKSUM_SIZE),
-            blocks: Box::new(iter),
+impl<T: Read> CountingReader<T> {
+    /// Creates a new `CountingReader` which wraps the given `reader`.
+    pub fn new(reader: T) -> Self {
+        CountingReader {
+            reader,
             bytes_read: 0,
         }
     }
 
-    /// Returns the checksum of all the data which has passed through the iterator so far.
-    pub fn result(&mut self) -> Checksum {
-        let mut checksum = [0u8; CHECKSUM_SIZE];
-        self.digest.result(&mut checksum);
-        checksum
-    }
-
-    /// Returns the number of bytes of data which have passed through this `Iterator`.
+    /// The total number of bytes which have been read from the reader.
     pub fn bytes_read(&self) -> u64 {
         self.bytes_read
     }
 }
 
-impl<'a> Iterator for BlockDigest<'a> {
-    type Item = Result<Block>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let next_element = self.blocks.next();
-        if let Some(Ok(block)) = &next_element {
-            self.digest.input(block.data());
-            self.bytes_read += block.size as u64;
-        };
-        next_element
+impl<T: Read> Read for CountingReader<T> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let bytes_read = self.reader.read(buf)?;
+        self.bytes_read += bytes_read as u64;
+        Ok(bytes_read)
     }
 }
 

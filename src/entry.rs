@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::block::{BlockAddress, Checksum};
+use crate::block::BlockAddress;
 
 /// Information about an entry in the archive.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,9 +50,6 @@ pub struct DataHandle {
     /// The size of the entry's data in bytes.
     pub(super) size: u64,
 
-    /// The 256-bit BLAKE2 checksum of the entry's data.
-    pub(super) checksum: Checksum,
-
     /// The addresses of the blocks containing the entry's data.
     pub(super) blocks: Vec<BlockAddress>,
 }
@@ -61,10 +58,5 @@ impl DataHandle {
     /// The size of the entry's data in bytes.
     pub fn size(&self) -> u64 {
         self.size
-    }
-
-    /// The 256-bit BLAKE2 checksum of the entry's data.
-    pub fn checksum(&self) -> Checksum {
-        self.checksum
     }
 }
