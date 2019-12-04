@@ -14,12 +14,8 @@
  * limitations under the License.
  */
 
-#![allow(dead_code)]
+pub use self::archive::FileArchive;
+pub use self::entry::{ArchiveEntry, EntryType};
 
-pub use crate::error::{Error, Result};
-pub use crate::file::{ArchiveEntry, EntryType, FileArchive};
-pub use crate::storage::{Archive, ArchiveObject, DataHandle};
-
-mod error;
-mod file;
-mod storage;
+mod archive;
+mod entry;

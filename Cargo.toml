@@ -7,6 +7,7 @@ edition = "2018"
 [dependencies]
 # File I/O
 xattr = "0.2.2"
+utime = "0.2.1"
 fuse = "0.3.1"
 relative-path = "1.0.0"
 
