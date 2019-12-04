@@ -17,12 +17,12 @@
 #![allow(dead_code)]
 
 pub use crate::archive::Archive;
-pub use crate::entry::{ArchiveEntry, DataHandle};
 pub use crate::error::{Error, Result};
+pub use crate::object::{ArchiveObject, DataHandle};
 
 mod archive;
 mod block;
-mod entry;
 mod error;
 mod header;
+mod object;
 mod serialization;

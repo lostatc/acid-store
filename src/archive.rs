@@ -22,9 +22,9 @@ use std::path::{Path, PathBuf};
 use crate::block::{
     pad_to_block_size, Block, BlockAddress, Checksum, CountingReader, BLOCK_OFFSET,
 };
-use crate::entry::{ArchiveEntry, DataHandle};
 use crate::error::Result;
 use crate::header::{Header, HeaderAddress};
+use crate::object::{ArchiveObject, DataHandle};
 
 pub struct Archive {
     /// The path of the archive.
@@ -186,34 +186,34 @@ impl Archive {
         Ok(addresses)
     }
 
-    /// Adds an `entry` with the given `name` to the archive.
+    /// Adds an `object` with the given `name` to the archive.
     ///
-    /// If an entry with the given `name` already existed in the archive, it is replaced and the old
-    /// entry is returned. Otherwise, `None` is returned.
-    pub fn insert(&mut self, name: &str, entry: ArchiveEntry) -> Option<ArchiveEntry> {
-        self.header.entries.insert(name.to_string(), entry)
+    /// If an object with the given `name` already existed in the archive, it is replaced and the
+    /// old object is returned. Otherwise, `None` is returned.
+    pub fn insert(&mut self, name: &str, object: ArchiveObject) -> Option<ArchiveObject> {
+        self.header.objects.insert(name.to_string(), object)
     }
 
-    /// Removes and returns the entry with the given `name` from the archive.
+    /// Removes and returns the object with the given `name` from the archive.
     ///
-    /// This returns `None` if there is no entry with the given `name`.
-    pub fn remove(&mut self, name: &str) -> Option<ArchiveEntry> {
-        self.header.entries.remove(name)
+    /// This returns `None` if there is no object with the given `name`.
+    pub fn remove(&mut self, name: &str) -> Option<ArchiveObject> {
+        self.header.objects.remove(name)
     }
 
-    /// Returns the entry with the given `name`, or `None` if it doesn't exist.
-    pub fn get(&self, name: &str) -> Option<&ArchiveEntry> {
-        self.header.entries.get(name)
+    /// Returns the object with the given `name`, or `None` if it doesn't exist.
+    pub fn get(&self, name: &str) -> Option<&ArchiveObject> {
+        self.header.objects.get(name)
     }
 
-    /// Returns a mutable reference to the entry with the given `name`, or `None` if there is none.
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut ArchiveEntry> {
-        self.header.entries.get_mut(name)
+    /// Returns a mutable reference to the object with the given `name`, or `None` if there is none.
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut ArchiveObject> {
+        self.header.objects.get_mut(name)
     }
 
-    /// Returns the names of all the entries in this archive.
+    /// Returns the names of all the objects in this archive.
     pub fn names(&self) -> impl Iterator<Item = &String> {
-        self.header.entries.keys()
+        self.header.objects.keys()
     }
 
     /// Returns a reader for reading the data associated with the given `handle`.
@@ -278,7 +278,7 @@ impl Archive {
 
     /// Creates a copy of this archive which is compacted to reduce its size.
     ///
-    /// Archives can reuse space left over from deleted entries, but they can not deallocate space
+    /// Archives can reuse space left over from deleted objects, but they can not deallocate space
     /// which has been allocated. This means that archive files can grow in size, but never shrink.
     ///
     /// This method copies the data in this archive to a new archive, allocating the minimum amount
