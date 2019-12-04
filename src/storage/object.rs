@@ -27,7 +27,7 @@ use super::block::BlockAddress;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArchiveObject {
     /// The metadata associated with this object.
-    pub metadata: HashMap<String, Vec<u8>>,
+    pub metadata: Vec<u8>,
 
     /// A handle for accessing the data associated with this object.
     pub data: Option<DataHandle>,

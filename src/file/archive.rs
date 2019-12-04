@@ -18,11 +18,33 @@ use std::io::Read;
 use std::path::Path;
 
 use relative_path::RelativePath;
+use rmp_serde::{decode, encode};
 
 use crate::error::Result;
-use crate::{Archive, DataHandle};
+use crate::{Archive, ArchiveObject, DataHandle, EntryType};
 
 use super::entry::ArchiveEntry;
+
+impl ArchiveObject {
+    /// Convert this object into an entry.
+    fn to_entry(&self) -> ArchiveEntry {
+        decode::from_read_ref(&self.metadata).expect("Could not deserialize file metadata.")
+    }
+}
+
+impl ArchiveEntry {
+    /// Convert this entry into an object.
+    fn into_object(self) -> ArchiveObject {
+        let data = match self.entry_type {
+            EntryType::File { data } => Some(data),
+            _ => None,
+        };
+        ArchiveObject {
+            data,
+            metadata: encode::to_vec(&self).expect("Could not serialize file metadata."),
+        }
+    }
+}
 
 /// An archive for storing files.
 ///
@@ -44,7 +66,9 @@ impl FileArchive {
     /// - `Error::Io`: An I/O error occurred.
     /// - `Error::Deserialize`: An error occurred deserializing the header.
     pub fn open(path: &Path) -> Result<Self> {
-        unimplemented!()
+        Ok(FileArchive {
+            archive: Archive::open(path)?,
+        })
     }
 
     /// Creates and opens a new archive at the given `path`.
@@ -53,37 +77,51 @@ impl FileArchive {
     /// - `Error::Io`: An I/O error occurred.
     /// - `Error::Deserialize`: An error occurred deserializing the header.
     pub fn create(path: &Path) -> Result<Self> {
-        unimplemented!()
+        Ok(FileArchive {
+            archive: Archive::create(path)?,
+        })
     }
 
-    /// Returns the entry at `path`.
-    pub fn entry(path: &RelativePath) -> &ArchiveEntry {
-        unimplemented!()
+    /// Returns the entry at `path` or `None` if there is none.
+    pub fn entry(&self, path: &RelativePath) -> Option<ArchiveEntry> {
+        Some(self.archive.get(path.as_str())?.to_entry())
     }
 
     /// Returns a list of archive entries which are children of `parent`.
-    pub fn list(parent: &RelativePath) -> Vec<&ArchiveEntry> {
-        unimplemented!()
+    pub fn list(&self, parent: &RelativePath) -> Vec<&RelativePath> {
+        self.archive
+            .names()
+            .map(|name| RelativePath::new(name))
+            .filter(|path| path.parent() == Some(parent))
+            .collect()
     }
 
     /// Returns a list of archive entries which are descendants of `parent`.
-    pub fn walk(parent: &RelativePath) -> Vec<&ArchiveEntry> {
-        unimplemented!()
+    pub fn walk(&self, parent: &RelativePath) -> Vec<&RelativePath> {
+        self.archive
+            .names()
+            .map(|name| RelativePath::new(name))
+            .filter(|path| path.starts_with(parent))
+            .collect()
     }
 
     /// Adds the given `entry` to the archive with the given `path`.
     ///
     /// If an entry with the given `path` already existed in the archive, it is replaced and the
     /// old entry is returned. Otherwise, `None` is returned.
-    pub fn add(&mut self, path: &RelativePath, entry: ArchiveEntry) -> Option<ArchiveEntry> {
-        unimplemented!()
+    pub fn insert(&mut self, path: &RelativePath, entry: ArchiveEntry) -> Option<ArchiveEntry> {
+        Some(
+            self.archive
+                .insert(path.as_str(), entry.into_object())?
+                .to_entry(),
+        )
     }
 
     /// Delete the entry in the archive with the given `path`.
     ///
     /// This returns the removed entry or `None` if there was no entry at `path`.
-    pub fn remove(path: &RelativePath) -> Option<ArchiveEntry> {
-        unimplemented!()
+    pub fn remove(&mut self, path: &RelativePath) -> Option<ArchiveEntry> {
+        Some(self.archive.remove(path.as_str())?.to_entry())
     }
 
     /// Returns a reader for reading the data associated with the given `handle`.
@@ -91,7 +129,7 @@ impl FileArchive {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn read(&self, handle: &DataHandle) -> Result<impl Read> {
-        unimplemented!()
+        self.archive.read(handle)
     }
 
     /// Writes the data from `source` to the archive and returns a handle to it.
@@ -102,7 +140,7 @@ impl FileArchive {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn write(&mut self, source: &mut impl Read) -> Result<DataHandle> {
-        unimplemented!()
+        self.archive.write(source)
     }
 
     /// Create an archive entry at `dest` from the file at `source`.
@@ -140,7 +178,7 @@ impl FileArchive {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn commit(&mut self) -> Result<()> {
-        unimplemented!()
+        self.archive.commit()
     }
 
     /// Creates a copy of this archive which is compacted to reduce its size.
@@ -150,6 +188,8 @@ impl FileArchive {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn compacted(&mut self, dest: &Path) -> Result<FileArchive> {
-        unimplemented!()
+        Ok(FileArchive {
+            archive: self.archive.compacted(dest)?,
+        })
     }
 }

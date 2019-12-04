@@ -22,4 +22,5 @@ pub use crate::storage::{Archive, ArchiveObject, DataHandle};
 
 mod error;
 mod file;
+mod serialization;
 mod storage;

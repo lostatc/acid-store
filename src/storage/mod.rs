@@ -21,4 +21,3 @@ mod archive;
 mod block;
 mod header;
 mod object;
-mod serialization;
