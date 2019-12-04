@@ -17,7 +17,7 @@
 use std::io::Read;
 use std::path::PathBuf;
 
-use disk_archive::{Archive, ArchiveEntry, Result};
+use disk_archive::{Archive, ArchiveObject, Result};
 
 fn main() {
     // create().unwrap();
@@ -46,7 +46,7 @@ fn create() -> Result<()> {
     let path = PathBuf::from("/home/garrett/test-archive");
     let mut archive = Archive::create(&path)?;
 
-    let mut entry = ArchiveEntry::new();
+    let mut entry = ArchiveObject::new();
     let handle = archive.write(&mut b"Garrett".as_ref())?;
     entry.metadata.insert(String::from("Tag"), b"Meta".to_vec());
     entry.data = Some(handle);

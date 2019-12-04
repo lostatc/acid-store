@@ -23,29 +23,29 @@ use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
 
 use crate::block::{pad_to_block_size, BlockAddress, BLOCK_OFFSET};
-use crate::entry::ArchiveEntry;
 use crate::error::Result;
+use crate::object::ArchiveObject;
 
 /// Metadata about the archive.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Header {
-    /// A map of entry names to entries which are in this archive.
-    pub entries: HashMap<String, ArchiveEntry>,
+    /// A map of object names to objects which are in this archive.
+    pub objects: HashMap<String, ArchiveObject>,
 }
 
 impl Header {
     /// Creates a new empty header.
     pub fn new() -> Self {
         Header {
-            entries: HashMap::new(),
+            objects: HashMap::new(),
         }
     }
 
     /// Returns the list of addresses of blocks used for storing data.
     pub fn data_blocks(&self) -> Vec<BlockAddress> {
-        self.entries
+        self.objects
             .values()
-            .filter_map(|entry| entry.data.as_ref())
+            .filter_map(|object| object.data.as_ref())
             .flat_map(|handle| &handle.blocks)
             .copied()
             .collect()
