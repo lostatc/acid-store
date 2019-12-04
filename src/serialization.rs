@@ -32,16 +32,3 @@ impl From<SerializableNaiveDateTime> for NaiveDateTime {
         NaiveDateTime::from_timestamp(serializable.secs, serializable.nsecs)
     }
 }
-
-#[derive(Serialize, Deserialize)]
-#[serde(remote = "RelativePathBuf")]
-pub struct SerializableRelativePathBuf {
-    #[serde(getter = "RelativePathBuf::to_string")]
-    path: String,
-}
-
-impl From<SerializableRelativePathBuf> for RelativePathBuf {
-    fn from(serializable: SerializableRelativePathBuf) -> Self {
-        RelativePathBuf::from(serializable.path)
-    }
-}

@@ -220,9 +220,14 @@ impl Archive {
         self.header.objects.get_mut(name)
     }
 
-    /// Returns the names of all the objects in this archive.
+    /// Returns an iterator over all the names of objects in this archive.
     pub fn names(&self) -> impl Iterator<Item = &String> {
         self.header.objects.keys()
+    }
+
+    /// Returns an iterator over all the names and objects in this archive.
+    pub fn objects(&self) -> impl Iterator<Item = (&String, &ArchiveObject)> {
+        self.header.objects.iter()
     }
 
     /// Returns a reader for reading the data associated with the given `handle`.

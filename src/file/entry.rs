@@ -18,10 +18,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use chrono::NaiveDateTime;
+use serde::{Deserialize, Serialize};
 
+use crate::serialization::SerializableNaiveDateTime;
 use crate::DataHandle;
 
 /// A type of file which can be stored in an archive.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EntryType {
     /// A regular file.
     File {
@@ -43,8 +46,10 @@ pub enum EntryType {
 }
 
 /// Metadata about a file stored in an archive.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchiveEntry {
     /// The time the file was last modified.
+    #[serde(with = "SerializableNaiveDateTime")]
     pub modified_time: NaiveDateTime,
 
     /// The POSIX permissions of the file, or `None` if POSIX permissions are not applicable.
