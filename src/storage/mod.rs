@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-#![allow(dead_code)]
+pub use self::archive::Archive;
+pub use self::object::{ArchiveObject, DataHandle};
 
-pub use crate::error::{Error, Result};
-pub use crate::storage::{Archive, ArchiveObject, DataHandle};
-
-mod error;
-mod storage;
+mod archive;
+mod block;
+mod header;
+mod object;
+mod serialization;
