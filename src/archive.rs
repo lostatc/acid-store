@@ -26,6 +26,14 @@ use crate::error::Result;
 use crate::header::{Header, HeaderAddress};
 use crate::object::{ArchiveObject, DataHandle};
 
+/// An object store which stores its data in a single file.
+///
+/// An `Archive` is a binary file format for efficiently storing large amounts of binary data. An
+/// archive consists of objects, each of which has a unique name, metadata, and data associated with
+/// it.
+///
+/// Data in an archive is automatically deduplicated at the block level. Changes made to an
+/// `Archive` are not persisted to disk until `commit` is called.
 pub struct Archive {
     /// The path of the archive.
     path: PathBuf,
@@ -264,7 +272,9 @@ impl Archive {
 
     /// Commits all changes that have been made to the archive.
     ///
-    /// No changes made to the archive are saved persistently until this method is called.
+    /// No changes made to the archive are saved persistently until this method is called. If data
+    /// has been written to the archive with `write` and the `Archive` is dropped before this method
+    /// is called, that data will be inaccessible and will be overwritten by new data.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.

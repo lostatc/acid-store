@@ -19,10 +19,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::block::BlockAddress;
 
-/// An object in the archive.
+/// An object in an archive.
+///
+/// An `ArchiveObject` has `metadata` and `data` associated with it. An object's `metadata` must be
+/// small enough to be held in memory, while an object's data can be directly read from and written
+/// to an `Archive`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArchiveObject {
-    /// The metadata associated with this obbject.
+    /// The metadata associated with this object.
     pub metadata: HashMap<String, Vec<u8>>,
 
     /// A handle for accessing the data associated with this object.
@@ -45,6 +49,11 @@ impl Default for ArchiveObject {
 }
 
 /// A handle for accessing the data associated with an object.
+///
+/// A `DataHandle` does not store the data itself, but contains a reference to data stored in an
+/// archive file. Values of this type can be cloned to allow two or more objects to share the same
+/// data; two `DataHandle` values are equal when they reference the same data. When a `DataHandle`
+/// is not owned by any `ArchiveObject`, the data it references can be overwritten by new data.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataHandle {
     /// The size of the object's data in bytes.
