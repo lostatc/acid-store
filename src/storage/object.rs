@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::block::BlockAddress;
+use super::block::BlockAddress;
 
 /// An object in an archive.
 ///

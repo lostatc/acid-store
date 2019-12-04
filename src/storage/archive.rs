@@ -19,12 +19,13 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use crate::block::{
+use crate::error::Result;
+
+use super::block::{
     pad_to_block_size, Block, BlockAddress, Checksum, CountingReader, BLOCK_OFFSET,
 };
-use crate::error::Result;
-use crate::header::{Header, HeaderAddress};
-use crate::object::{ArchiveObject, DataHandle};
+use super::header::{Header, HeaderAddress};
+use super::object::{ArchiveObject, DataHandle};
 
 /// An object store which stores its data in a single file.
 ///

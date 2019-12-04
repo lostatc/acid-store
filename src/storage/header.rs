@@ -22,9 +22,10 @@ use std::mem::size_of;
 use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
 
-use crate::block::{pad_to_block_size, BlockAddress, BLOCK_OFFSET};
 use crate::error::Result;
-use crate::object::ArchiveObject;
+
+use super::block::{pad_to_block_size, BlockAddress, BLOCK_OFFSET};
+use super::object::ArchiveObject;
 
 /// Metadata about the archive.
 #[derive(Debug, Clone, Serialize, Deserialize)]
