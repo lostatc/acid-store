@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +35,7 @@ pub struct ArchiveObject {
 impl ArchiveObject {
     pub fn new() -> Self {
         ArchiveObject {
-            metadata: HashMap::new(),
+            metadata: Vec::new(),
             data: None,
         }
     }

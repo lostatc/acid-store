@@ -14,7 +14,10 @@
  * limitations under the License.
  */
 
-use std::io::Read;
+use std::collections::HashMap;
+use std::fs::{read_link, symlink_metadata, File};
+use std::io::{self, ErrorKind, Read};
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use relative_path::RelativePath;
@@ -34,9 +37,10 @@ impl ArchiveObject {
 
 impl ArchiveEntry {
     /// Convert this entry into an object.
-    fn into_object(self) -> ArchiveObject {
-        let data = match self.entry_type {
-            EntryType::File { data } => Some(data),
+    fn to_object(&self) -> ArchiveObject {
+        // TODO: Avoid storing the data handle in the object twice.
+        let data = match &self.entry_type {
+            EntryType::File { data } => Some(data.clone()),
             _ => None,
         };
         ArchiveObject {
@@ -48,13 +52,17 @@ impl ArchiveEntry {
 
 /// An archive for storing files.
 ///
-/// This is a wrapper over `disk_archive::storage::Archive` which allows it to function as a file
-/// archive like `zip` or `tar` rather than an object store. A `FileArchive` consists of
-/// `ArchiveEntry` values which can represent a regular file, directory, or symbolic link.
+/// This is a wrapper over `Archive` which allows it to function as a file archive like `zip` or
+/// `tar` rather than an object store. A `FileArchive` consists of `ArchiveEntry` values which can
+/// represent a regular file, directory, or symbolic link.
 ///
 /// This type provides a high-level API through the methods `archive`, `archive_tree`, `extract`,
 /// and `extract_tree` for archiving and extracting files in the file system. It also provides
 /// low-level access for manually creating, deleting, and querying entries in the archive.
+///
+/// While files in the file system are identified by their `Path`, entries in the archive are
+/// identified by a `RelativePath`. A `RelativePath` is a platform-independent path representation
+/// that allows entries archived on one system to be extracted on another.
 pub struct FileArchive {
     archive: Archive,
 }
@@ -112,7 +120,7 @@ impl FileArchive {
     pub fn insert(&mut self, path: &RelativePath, entry: ArchiveEntry) -> Option<ArchiveEntry> {
         Some(
             self.archive
-                .insert(path.as_str(), entry.into_object())?
+                .insert(path.as_str(), entry.to_object())?
                 .to_entry(),
         )
     }
@@ -146,13 +154,67 @@ impl FileArchive {
     /// Create an archive entry at `dest` from the file at `source`.
     ///
     /// This does not remove the `source` file from the file system.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
     pub fn archive(&mut self, source: &Path, dest: &RelativePath) -> Result<()> {
-        unimplemented!()
+        let metadata = symlink_metadata(source)?;
+        let file_type = metadata.file_type();
+
+        // Get the file type.
+        let entry_type = if file_type.is_file() {
+            let handle = self.write(&mut File::open(source)?)?;
+            EntryType::File { data: handle }
+        } else if file_type.is_dir() {
+            EntryType::Directory
+        } else if file_type.is_symlink() {
+            EntryType::Link {
+                target: read_link(source)?,
+            }
+        } else {
+            return Err(io::Error::new(
+                ErrorKind::Other,
+                "This file is not a regular file, symlink or directory.",
+            )
+            .into());
+        };
+
+        // Get file permissions if supported.
+        let permissions = if cfg!(unix) {
+            Some(metadata.permissions().mode())
+        } else {
+            None
+        };
+
+        // Get extended attributes if supported.
+        let mut attributes = HashMap::new();
+        if xattr::SUPPORTED_PLATFORM {
+            for attr_name in xattr::list(source)? {
+                if let Some(attr_value) = xattr::get(source, &attr_name)? {
+                    attributes.insert(attr_name, attr_value);
+                }
+            }
+        }
+
+        // Create an entry.
+        let entry = ArchiveEntry {
+            modified_time: metadata.modified()?,
+            permissions,
+            attributes,
+            entry_type,
+        };
+
+        self.insert(dest, entry);
+
+        Ok(())
     }
 
     /// Create a tree of archive entries at `dest` from the directory tree at `source`.
     ///
     /// This does not remove the `source` directory or its descendants from the file system.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
     pub fn archive_tree(&mut self, source: &Path, dest: &RelativePath) -> Result<()> {
         unimplemented!()
     }
@@ -160,6 +222,9 @@ impl FileArchive {
     /// Create a file at `dest` from the archive entry at `source`.
     ///
     /// This does not remove the `source` entry from the archive.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
     pub fn extract(&mut self, source: &RelativePath, dest: &Path) -> Result<()> {
         unimplemented!()
     }
@@ -167,13 +232,16 @@ impl FileArchive {
     /// Create a directory tree at `dest` from the tree of archive entries at `source`.
     ///
     /// This does not remove the `source` entry or its descendants from the archive.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
     pub fn extract_tree(&mut self, source: &RelativePath, dest: &Path) -> Result<()> {
         unimplemented!()
     }
 
     /// Commits all changes that have been made to the archive.
     ///
-    /// See `disk_archive::storage::Archive::commit` for details.
+    /// See `Archive::commit` for details.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
@@ -183,7 +251,7 @@ impl FileArchive {
 
     /// Creates a copy of this archive which is compacted to reduce its size.
     ///
-    /// See `disk_archive::storage::Archive::compacted` for details.
+    /// See `Archive::compacted` for details.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
