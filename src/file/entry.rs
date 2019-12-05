@@ -15,12 +15,12 @@
  */
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
-use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
-use crate::serialization::SerializableNaiveDateTime;
 use crate::DataHandle;
 
 /// A type of file which can be stored in an archive.
@@ -49,14 +49,13 @@ pub enum EntryType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchiveEntry {
     /// The time the file was last modified.
-    #[serde(with = "SerializableNaiveDateTime")]
-    pub modified_time: NaiveDateTime,
+    pub modified_time: SystemTime,
 
     /// The POSIX permissions of the file, or `None` if POSIX permissions are not applicable.
-    pub permissions: Option<i32>,
+    pub permissions: Option<u32>,
 
     /// The file's extended attributes.
-    pub attributes: HashMap<String, Vec<u8>>,
+    pub attributes: HashMap<OsString, Vec<u8>>,
 
     /// The type of file this entry represents.
     pub entry_type: EntryType,
