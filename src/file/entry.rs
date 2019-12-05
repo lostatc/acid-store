@@ -38,7 +38,7 @@ pub enum EntryType {
     /// A symbolic link.
     ///
     /// The link target is stored as a platform-dependent path, so a symlink archived on one system
-    /// may not be able to be extracted on another.
+    /// may be broken when extracted on another.
     Link {
         /// The file the symbolic link points to.
         target: PathBuf,

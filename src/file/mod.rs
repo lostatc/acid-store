@@ -19,3 +19,4 @@ pub use self::entry::{ArchiveEntry, EntryType};
 
 mod archive;
 mod entry;
+mod platform;
