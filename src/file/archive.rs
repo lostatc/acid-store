@@ -15,13 +15,17 @@
  */
 
 use std::collections::HashMap;
-use std::fs::{create_dir, create_dir_all, read_link, symlink_metadata, File, OpenOptions};
+use std::fs::{
+    create_dir, create_dir_all, read_dir, read_link, symlink_metadata, DirEntry, File, OpenOptions,
+};
 use std::io::{self, copy, ErrorKind, Read};
+use std::iter;
 use std::path::Path;
 
 use filetime::{set_file_mtime, FileTime};
 use relative_path::RelativePath;
 use rmp_serde::{decode, encode};
+use walkdir::WalkDir;
 
 use crate::error::Result;
 use crate::file::platform::{set_extended_attrs, set_file_mode, soft_link};
@@ -97,7 +101,7 @@ impl FileArchive {
         Some(self.archive.get(path.as_str())?.to_entry())
     }
 
-    /// Returns a list of archive entries which are children of `parent`.
+    /// Returns an unordered list of archive entries which are children of `parent`.
     pub fn list(&self, parent: &RelativePath) -> Vec<&RelativePath> {
         self.archive
             .names()
@@ -106,7 +110,7 @@ impl FileArchive {
             .collect()
     }
 
-    /// Returns a list of archive entries which are descendants of `parent`.
+    /// Returns an unordered list of archive entries which are descendants of `parent`.
     pub fn walk(&self, parent: &RelativePath) -> Vec<&RelativePath> {
         self.archive
             .names()
@@ -200,8 +204,16 @@ impl FileArchive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
+    /// - `Error::Walk` There was an error walking the directory tree.
     pub fn archive_tree(&mut self, source: &Path, dest: &RelativePath) -> Result<()> {
-        unimplemented!()
+        for result in WalkDir::new(source) {
+            let dir_entry = result?;
+            let relative_path = dir_entry.path().strip_prefix(source).unwrap();
+            let entry_path = dest.join(RelativePath::from_path(relative_path).unwrap());
+            self.archive(dir_entry.path(), entry_path.as_relative_path())?;
+        }
+
+        Ok(())
     }
 
     /// Create a file at `dest` from the archive entry at `source`.
@@ -254,7 +266,22 @@ impl FileArchive {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn extract_tree(&mut self, source: &RelativePath, dest: &Path) -> Result<()> {
-        unimplemented!()
+        // We must convert to owned paths because we'll need a mutable reference to `self` later.
+        let mut descendants = self
+            .walk(source)
+            .into_iter()
+            .map(|path| path.to_relative_path_buf())
+            .collect::<Vec<_>>();
+
+        // Sort the descendants by depth.
+        descendants.sort_by_key(|path| path.components().count());
+
+        for entry_path in descendants {
+            let file_path = entry_path.to_path(dest);
+            self.extract(entry_path.as_relative_path(), file_path.as_path())?;
+        }
+
+        Ok(())
     }
 
     /// Commits all changes that have been made to the archive.
