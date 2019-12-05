@@ -141,7 +141,7 @@ impl FileArchive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn read(&self, handle: &DataHandle) -> Result<impl Read> {
+    pub fn read(&mut self, handle: &DataHandle) -> Result<impl Read> {
         self.archive.read(handle)
     }
 
@@ -156,9 +156,10 @@ impl FileArchive {
         self.archive.write(source)
     }
 
-    /// Create an archive entry at `dest` from the file at `source`.
+    /// Copy a file from the file system into the archive.
     ///
-    /// This does not remove the `source` file from the file system.
+    /// This creates an archive entry at `dest` from the file at `source`. This does not remove the
+    /// `source` file from the file system.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
@@ -199,9 +200,10 @@ impl FileArchive {
         Ok(())
     }
 
-    /// Create a tree of archive entries at `dest` from the directory tree at `source`.
+    /// Copy a directory tree from the file system into the archive.
     ///
-    /// This does not remove the `source` directory or its descendants from the file system.
+    /// This creates a tree of archive entries at `dest` from the directory tree at `source`. This
+    /// does not remove the `source` directory or its descendants from the file system.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
@@ -219,9 +221,10 @@ impl FileArchive {
         Ok(())
     }
 
-    /// Create a file at `dest` from the archive entry at `source`.
+    /// Copy a file from the archive into the file system.
     ///
-    /// This does not remove the `source` entry from the archive.
+    /// This creates a file at `dest` from the archive entry at `source`. This does not remove the
+    /// `source` entry from the archive.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
@@ -264,9 +267,10 @@ impl FileArchive {
         Ok(())
     }
 
-    /// Create a directory tree at `dest` from the tree of archive entries at `source`.
+    /// Copy a directory tree from the archive into the file system.
     ///
-    /// This does not remove the `source` entry or its descendants from the archive.
+    /// This creates a directory tree at `dest` from the tree of archive entries at `source`. This
+    /// does not remove the `source` entry or its descendants from the archive.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.

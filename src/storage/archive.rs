@@ -54,6 +54,9 @@ pub struct Archive {
 
     /// The checksums of all the blocks in the archive and their addresses.
     block_checksums: HashMap<Checksum, BlockAddress>,
+
+    /// A reference to the open archive file.
+    archive_file: File,
 }
 
 impl Archive {
@@ -65,7 +68,7 @@ impl Archive {
     ///     - `PermissionDenied`: The user lack permission to open the archive file.
     /// - `Error::Deserialize`: The file is not a valid archive file.
     pub fn open(path: &Path) -> Result<Self> {
-        let mut archive_file = File::open(&path)?;
+        let mut archive_file = OpenOptions::new().read(true).write(true).open(path)?;
         let (header, header_address) = Header::read(&mut archive_file)?;
         let mut archive = Archive {
             path: path.to_owned(),
@@ -73,6 +76,7 @@ impl Archive {
             header,
             header_address,
             block_checksums: HashMap::new(),
+            archive_file,
         };
         archive.read_checksums()?;
         Ok(archive)
@@ -102,9 +106,8 @@ impl Archive {
 
     /// Reads the checksums of the blocks in this archive and updates `block_checksums`.
     fn read_checksums(&mut self) -> io::Result<()> {
-        let mut archive = File::open(&self.path)?;
         for block_address in self.header.data_blocks() {
-            let checksum = block_address.read_checksum(&mut archive)?;
+            let checksum = block_address.read_checksum(&mut self.archive_file)?;
             self.block_checksums.insert(checksum, block_address);
         }
         Ok(())
@@ -131,12 +134,7 @@ impl Archive {
     /// If the given `block` already exists in the archive, this method does nothing and returns the
     /// address of the existing block. Otherwise, this method adds the given `block` to the archive
     /// at the given `address` and returns that address.
-    fn write_block(
-        &mut self,
-        mut archive: &mut File,
-        block: &Block,
-        address: BlockAddress,
-    ) -> io::Result<BlockAddress> {
+    fn write_block(&mut self, block: &Block, address: BlockAddress) -> io::Result<BlockAddress> {
         // Check if the block already exists in the archive.
         match self.block_checksums.get(&block.checksum) {
             // Use the address of the existing block.
@@ -144,7 +142,7 @@ impl Archive {
 
             // Add the new block.
             None => {
-                block.write_at(&mut archive, address)?;
+                block.write_at(&mut self.archive_file, address)?;
                 self.block_checksums.insert(block.checksum, address);
                 Ok(address)
             }
@@ -158,7 +156,6 @@ impl Archive {
     /// written to.
     fn write_unused_blocks(
         &mut self,
-        mut archive: &mut File,
         blocks: &mut impl Iterator<Item = io::Result<Block>>,
     ) -> io::Result<Vec<BlockAddress>> {
         let unused_blocks = self.unused_blocks();
@@ -169,7 +166,7 @@ impl Archive {
                 // Fill an unused space with the next block.
                 Some(block_result) => {
                     let block = block_result?;
-                    addresses.push(self.write_block(&mut archive, &block, block_address)?);
+                    addresses.push(self.write_block(&block, block_address)?);
                 }
 
                 // There are no blocks left to write.
@@ -186,16 +183,15 @@ impl Archive {
     /// blocks have been written to.
     fn write_new_blocks(
         &mut self,
-        mut archive: &mut File,
         blocks: &mut impl Iterator<Item = io::Result<Block>>,
     ) -> io::Result<Vec<BlockAddress>> {
         let mut addresses = Vec::new();
 
         for block_result in blocks {
             let block = block_result?;
-            let block_offset = archive.seek(SeekFrom::Current(0))?;
+            let block_offset = self.archive_file.seek(SeekFrom::Current(0))?;
             let block_address = BlockAddress::from_offset(block_offset);
-            addresses.push(self.write_block(&mut archive, &block, block_address)?);
+            addresses.push(self.write_block(&block, block_address)?);
         }
 
         Ok(addresses)
@@ -240,12 +236,10 @@ impl Archive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn read(&self, handle: &DataHandle) -> Result<impl Read> {
-        let mut archive_file = File::open(&self.path)?;
+    pub fn read(&mut self, handle: &DataHandle) -> Result<impl Read> {
         let mut reader: Box<dyn Read> = Box::new(io::empty());
-
         for block_address in &handle.blocks {
-            reader = Box::new(reader.chain(block_address.new_reader(&mut archive_file)?));
+            reader = Box::new(reader.chain(block_address.new_reader(&mut self.archive_file)?));
         }
 
         Ok(reader)
@@ -256,20 +250,19 @@ impl Archive {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn write(&mut self, source: &mut impl Read) -> Result<DataHandle> {
-        let mut archive_file = OpenOptions::new().write(true).open(&self.path)?;
         let mut addresses = Vec::new();
         let mut source = CountingReader::new(source);
         let mut blocks = Block::iter_blocks(&mut source);
 
         // Fill unused blocks in the archive first.
-        addresses.extend(self.write_unused_blocks(&mut archive_file, &mut blocks)?);
+        addresses.extend(self.write_unused_blocks(&mut blocks)?);
 
         // Pad the archive to a multiple of `BLOCK_SIZE`.
-        archive_file.seek(SeekFrom::End(0))?;
-        pad_to_block_size(&mut archive_file)?;
+        self.archive_file.seek(SeekFrom::End(0))?;
+        pad_to_block_size(&mut self.archive_file)?;
 
         // Append the remaining blocks to the end of the archive.
-        addresses.extend(self.write_new_blocks(&mut archive_file, &mut blocks)?);
+        addresses.extend(self.write_new_blocks(&mut blocks)?);
 
         // All the blocks have been read from the source file.
         drop(blocks);
@@ -291,8 +284,7 @@ impl Archive {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn commit(&mut self) -> Result<()> {
-        let mut archive_file = OpenOptions::new().write(true).open(&self.path)?;
-        let new_address = self.header.write(&mut archive_file)?;
+        let new_address = self.header.write(&mut self.archive_file)?;
         self.header_address = new_address;
         self.old_header = self.header.clone();
         Ok(())
@@ -315,8 +307,6 @@ impl Archive {
     ///     - `AlreadyExists`: A file already exists at `dest`.
     pub fn compacted(&mut self, dest: &Path) -> Result<Archive> {
         let mut dest_archive = Self::create(dest)?;
-        let mut dest_file = OpenOptions::new().write(true).open(dest)?;
-        let mut source_file = File::open(&self.path)?;
 
         // Get the addresses of used blocks in this archive.
         let mut block_addresses = self.header.data_blocks();
@@ -325,10 +315,10 @@ impl Archive {
         // Lazily read blocks from this archive.
         let mut data_blocks = block_addresses
             .iter()
-            .map(|address| address.read_block(&mut source_file));
+            .map(|address| address.read_block(&mut self.archive_file));
 
         // Write blocks to the destination archive.
-        dest_archive.write_new_blocks(&mut dest_file, &mut data_blocks)?;
+        dest_archive.write_new_blocks(&mut data_blocks)?;
         dest_archive.commit()?;
 
         Ok(dest_archive)
