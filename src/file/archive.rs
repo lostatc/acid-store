@@ -14,12 +14,8 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
-use std::fs::{
-    create_dir, create_dir_all, read_dir, read_link, symlink_metadata, DirEntry, File, OpenOptions,
-};
+use std::fs::{create_dir, create_dir_all, read_link, symlink_metadata, File, OpenOptions};
 use std::io::{self, copy, ErrorKind, Read};
-use std::iter;
 use std::path::Path;
 
 use filetime::{set_file_mtime, FileTime};
@@ -78,7 +74,9 @@ impl FileArchive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    /// - `Error::Deserialize`: An error occurred deserializing the header.
+    ///     - `NotFound`: The archive file does not exist.
+    ///     - `PermissionDenied`: The user lack permission to open the archive file.
+    /// - `Error::Deserialize`: The file is not a valid archive file.
     pub fn open(path: &Path) -> Result<Self> {
         Ok(FileArchive {
             archive: Archive::open(path)?,
@@ -89,7 +87,8 @@ impl FileArchive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    /// - `Error::Deserialize`: An error occurred deserializing the header.
+    ///     - `PermissionDenied`: The user lack permission to create the archive file.
+    ///     - `AlreadyExists`: A file already exists at `path`.
     pub fn create(path: &Path) -> Result<Self> {
         Ok(FileArchive {
             archive: Archive::create(path)?,
@@ -163,6 +162,8 @@ impl FileArchive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
+    ///     - `NotFound`: The `source` file does not exist.
+    ///     - `PermissionDenied`: The user lack permission to read the `source` file.
     pub fn archive(&mut self, source: &Path, dest: &RelativePath) -> Result<()> {
         let metadata = symlink_metadata(source)?;
         let file_type = metadata.file_type();
@@ -204,6 +205,8 @@ impl FileArchive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
+    ///     - `NotFound`: The `source` file does not exist.
+    ///     - `PermissionDenied`: The user lack permission to read the `source` file.
     /// - `Error::Walk` There was an error walking the directory tree.
     pub fn archive_tree(&mut self, source: &Path, dest: &RelativePath) -> Result<()> {
         for result in WalkDir::new(source) {
@@ -222,6 +225,8 @@ impl FileArchive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
+    ///     - `PermissionDenied`: The user lack permission to create the `dest` file.
+    ///     - `AlreadyExists`: A file already exists at `dest`.
     pub fn extract(&mut self, source: &RelativePath, dest: &Path) -> Result<()> {
         let entry = match self.entry(source) {
             Some(value) => value,
@@ -265,6 +270,8 @@ impl FileArchive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
+    ///     - `PermissionDenied`: The user lack permission to create the `dest` file.
+    ///     - `AlreadyExists`: A file already exists at `dest`.
     pub fn extract_tree(&mut self, source: &RelativePath, dest: &Path) -> Result<()> {
         // We must convert to owned paths because we'll need a mutable reference to `self` later.
         let mut descendants = self
@@ -300,6 +307,8 @@ impl FileArchive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
+    ///     - `PermissionDenied`: The user lack permission to create the new archive.
+    ///     - `AlreadyExists`: A file already exists at `dest`.
     pub fn compacted(&mut self, dest: &Path) -> Result<FileArchive> {
         Ok(FileArchive {
             archive: self.archive.compacted(dest)?,

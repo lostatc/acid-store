@@ -61,7 +61,9 @@ impl Archive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    /// - `Error::Deserialize`: An error occurred deserializing the header.
+    ///     - `NotFound`: The archive file does not exist.
+    ///     - `PermissionDenied`: The user lack permission to open the archive file.
+    /// - `Error::Deserialize`: The file is not a valid archive file.
     pub fn open(path: &Path) -> Result<Self> {
         let mut archive_file = File::open(&path)?;
         let (header, header_address) = Header::read(&mut archive_file)?;
@@ -80,9 +82,13 @@ impl Archive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    /// - `Error::Deserialize`: An error occurred deserializing the header.
+    ///     - `PermissionDenied`: The user lack permission to create the archive file.
+    ///     - `AlreadyExists`: A file already exists at `path`.
     pub fn create(path: &Path) -> Result<Self> {
-        let mut archive_file = File::create(&path)?;
+        let mut archive_file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)?;
 
         // Allocate space for the header address.
         archive_file.set_len(BLOCK_OFFSET)?;
@@ -305,6 +311,8 @@ impl Archive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
+    ///     - `PermissionDenied`: The user lack permission to create the new archive.
+    ///     - `AlreadyExists`: A file already exists at `dest`.
     pub fn compacted(&mut self, dest: &Path) -> Result<Archive> {
         let mut dest_archive = Self::create(dest)?;
         let mut dest_file = OpenOptions::new().write(true).open(dest)?;
