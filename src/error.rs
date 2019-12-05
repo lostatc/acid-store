@@ -26,6 +26,10 @@ pub enum Error {
     #[error("{0}")]
     Io(#[from] io::Error),
 
+    /// An error walking a directory tree.
+    #[error("{0}")]
+    Walk(#[from] walkdir::Error),
+
     /// An error serializing data.
     #[error("{0}")]
     Serialize(#[from] encode::Error),
