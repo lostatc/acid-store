@@ -15,18 +15,20 @@
  */
 
 use std::collections::HashMap;
-use std::fs::{read_link, symlink_metadata, File};
-use std::io::{self, ErrorKind, Read};
-use std::os::unix::fs::PermissionsExt;
+use std::fs::{create_dir, create_dir_all, read_link, symlink_metadata, File, OpenOptions};
+use std::io::{self, copy, ErrorKind, Read};
 use std::path::Path;
 
+use filetime::{set_file_mtime, FileTime};
 use relative_path::RelativePath;
 use rmp_serde::{decode, encode};
 
 use crate::error::Result;
+use crate::file::platform::{set_extended_attrs, set_file_mode, soft_link};
 use crate::{Archive, ArchiveObject, DataHandle, EntryType};
 
 use super::entry::ArchiveEntry;
+use super::platform::{extended_attrs, file_mode};
 
 impl ArchiveObject {
     /// Convert this object into an entry.
@@ -179,28 +181,11 @@ impl FileArchive {
             .into());
         };
 
-        // Get file permissions if supported.
-        let permissions = if cfg!(unix) {
-            Some(metadata.permissions().mode())
-        } else {
-            None
-        };
-
-        // Get extended attributes if supported.
-        let mut attributes = HashMap::new();
-        if xattr::SUPPORTED_PLATFORM {
-            for attr_name in xattr::list(source)? {
-                if let Some(attr_value) = xattr::get(source, &attr_name)? {
-                    attributes.insert(attr_name, attr_value);
-                }
-            }
-        }
-
         // Create an entry.
         let entry = ArchiveEntry {
             modified_time: metadata.modified()?,
-            permissions,
-            attributes,
+            permissions: file_mode(&metadata),
+            attributes: extended_attrs(&source)?,
             entry_type,
         };
 
@@ -226,7 +211,40 @@ impl FileArchive {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn extract(&mut self, source: &RelativePath, dest: &Path) -> Result<()> {
-        unimplemented!()
+        let entry = match self.entry(source) {
+            Some(value) => value,
+            None => {
+                return Err(io::Error::new(ErrorKind::NotFound, "There is no such entry.").into())
+            }
+        };
+
+        // Create any necessary parent directories.
+        if let Some(parent) = dest.parent() {
+            create_dir_all(parent)?
+        }
+
+        // Create the file, directory, or symlink.
+        match entry.entry_type {
+            EntryType::File { data } => {
+                let mut file = OpenOptions::new().write(true).create_new(true).open(dest)?;
+                copy(&mut self.read(&data)?, &mut file)?;
+            }
+            EntryType::Directory => {
+                create_dir(dest)?;
+            }
+            EntryType::Link { target } => {
+                soft_link(dest, &target)?;
+            }
+        }
+
+        // Set the file metadata.
+        set_file_mtime(dest, FileTime::from_system_time(entry.modified_time))?;
+        if let Some(mode) = entry.permissions {
+            set_file_mode(dest, mode)?;
+        }
+        set_extended_attrs(dest, entry.attributes)?;
+
+        Ok(())
     }
 
     /// Create a directory tree at `dest` from the tree of archive entries at `source`.
