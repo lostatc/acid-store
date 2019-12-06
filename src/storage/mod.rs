@@ -15,7 +15,7 @@
  */
 
 pub use self::archive::ObjectArchive;
-pub use self::object::{ArchiveObject, DataHandle};
+pub use self::object::{DataHandle, Object};
 
 mod archive;
 mod block;

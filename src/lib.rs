@@ -36,8 +36,8 @@
 #![allow(dead_code)]
 
 pub use crate::error::{Error, Result};
-pub use crate::file::{ArchiveEntry, EntryType, FileArchive};
-pub use crate::storage::{ArchiveObject, DataHandle, ObjectArchive};
+pub use crate::file::{Entry, EntryType, FileArchive};
+pub use crate::storage::{DataHandle, Object, ObjectArchive};
 
 mod error;
 mod file;

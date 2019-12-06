@@ -25,13 +25,13 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 
 use super::block::{pad_to_block_size, BlockAddress, BLOCK_OFFSET};
-use super::object::ArchiveObject;
+use super::object::Object;
 
 /// Metadata about the archive.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Header {
     /// A map of object names to objects which are in this archive.
-    pub objects: HashMap<String, ArchiveObject>,
+    pub objects: HashMap<String, Object>,
 }
 
 impl Header {
