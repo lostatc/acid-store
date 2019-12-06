@@ -11,6 +11,7 @@ filetime = "0.2.8"
 fuse = "0.3.1"
 relative-path = "1.0.0"
 walkdir = "2.2.9"
+tempfile = "3.1.0"
 
 # Compression/encryption/hashing
 flate2 = "1.0.13"
