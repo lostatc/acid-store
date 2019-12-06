@@ -29,14 +29,15 @@ pub struct Object {
     pub metadata: Vec<u8>,
 
     /// A handle for accessing the data associated with this object.
-    pub data: Option<DataHandle>,
+    pub data: DataHandle,
 }
 
 impl Object {
+    /// Creates a new `Object` that has empty metadata and data.
     pub fn new() -> Self {
         Object {
             metadata: Vec::new(),
-            data: None,
+            data: DataHandle::empty(),
         }
     }
 }
@@ -51,7 +52,7 @@ impl Default for Object {
 ///
 /// A `DataHandle` does not store the data itself, but contains a reference to data stored in an
 /// archive file. Values of this type can be cloned to allow two or more objects to share the same
-/// data; two `DataHandle` values are equal when they reference the same data. When a `DataHandle`
+/// data. Two `DataHandle` values are equal when they reference the same data. When a `DataHandle`
 /// is dropped, the data it references is no longer accessible and can be overwritten by new data.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataHandle {
@@ -63,6 +64,14 @@ pub struct DataHandle {
 }
 
 impl DataHandle {
+    /// Returns a data handle which refers to no data.
+    fn empty() -> Self {
+        DataHandle {
+            size: 0,
+            blocks: Vec::new(),
+        }
+    }
+
     /// The size of the object's data in bytes.
     pub fn size(&self) -> u64 {
         self.size

@@ -40,15 +40,15 @@ impl Object {
 impl Entry {
     /// Convert this entry into an object.
     fn to_object(&self) -> Object {
+        let mut object = Object::new();
+
         // TODO: Avoid storing the data handle in the object twice.
-        let data = match &self.entry_type {
-            EntryType::File { data } => Some(data.clone()),
-            _ => None,
-        };
-        Object {
-            data,
-            metadata: encode::to_vec(&self).expect("Could not serialize file metadata."),
+        object.metadata = encode::to_vec(&self).expect("Could not serialize file metadata.");
+        if let EntryType::File { data } = &self.entry_type {
+            object.data = data.clone();
         }
+
+        object
     }
 }
 
