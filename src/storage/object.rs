@@ -20,11 +20,11 @@ use super::block::BlockAddress;
 
 /// An object in an archive.
 ///
-/// An `ArchiveObject` has `metadata` and `data` associated with it. An object's `metadata` must be
-/// small enough to be held in memory, while an object's data can be directly read from and written
-/// to an `Archive`.
+/// An `Object` has `metadata` and `data` associated with it. An object's `metadata` must be small
+/// enough to be held in memory, while an object's data can be directly read from and written to an
+/// `ObjectArchive`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ArchiveObject {
+pub struct Object {
     /// The metadata associated with this object.
     pub metadata: Vec<u8>,
 
@@ -32,16 +32,16 @@ pub struct ArchiveObject {
     pub data: Option<DataHandle>,
 }
 
-impl ArchiveObject {
+impl Object {
     pub fn new() -> Self {
-        ArchiveObject {
+        Object {
             metadata: Vec::new(),
             data: None,
         }
     }
 }
 
-impl Default for ArchiveObject {
+impl Default for Object {
     fn default() -> Self {
         Self::new()
     }
@@ -52,7 +52,7 @@ impl Default for ArchiveObject {
 /// A `DataHandle` does not store the data itself, but contains a reference to data stored in an
 /// archive file. Values of this type can be cloned to allow two or more objects to share the same
 /// data; two `DataHandle` values are equal when they reference the same data. When a `DataHandle`
-/// is not owned by any `ArchiveObject`, the data it references can be overwritten by new data.
+/// is dropped, the data it references is no longer accessible and can be overwritten by new data.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataHandle {
     /// The size of the object's data in bytes.

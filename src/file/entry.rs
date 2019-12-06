@@ -47,7 +47,7 @@ pub enum EntryType {
 
 /// Metadata about a file stored in an archive.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ArchiveEntry {
+pub struct Entry {
     /// The time the file was last modified.
     pub modified_time: SystemTime,
 

@@ -25,27 +25,27 @@ use walkdir::WalkDir;
 
 use crate::error::Result;
 use crate::file::platform::{set_extended_attrs, set_file_mode, soft_link};
-use crate::{ArchiveObject, DataHandle, EntryType, ObjectArchive};
+use crate::{DataHandle, EntryType, Object, ObjectArchive};
 
-use super::entry::ArchiveEntry;
+use super::entry::Entry;
 use super::platform::{extended_attrs, file_mode};
 
-impl ArchiveObject {
+impl Object {
     /// Convert this object into an entry.
-    fn to_entry(&self) -> ArchiveEntry {
+    fn to_entry(&self) -> Entry {
         decode::from_read_ref(&self.metadata).expect("Could not deserialize file metadata.")
     }
 }
 
-impl ArchiveEntry {
+impl Entry {
     /// Convert this entry into an object.
-    fn to_object(&self) -> ArchiveObject {
+    fn to_object(&self) -> Object {
         // TODO: Avoid storing the data handle in the object twice.
         let data = match &self.entry_type {
             EntryType::File { data } => Some(data.clone()),
             _ => None,
         };
-        ArchiveObject {
+        Object {
             data,
             metadata: encode::to_vec(&self).expect("Could not serialize file metadata."),
         }
@@ -55,7 +55,7 @@ impl ArchiveEntry {
 /// An archive for storing files.
 ///
 /// This is a wrapper over `ObjectArchive` which allows it to function as a file archive like `zip`
-/// or `tar` rather than an object store. A `FileArchive` consists of `ArchiveEntry` values which
+/// or `tar` rather than an object store. A `FileArchive` consists of `Entry` values which
 /// can represent a regular file, directory, or symbolic link.
 ///
 /// This type provides a high-level API through the methods `archive`, `archive_tree`, `extract`,
@@ -96,7 +96,7 @@ impl FileArchive {
     }
 
     /// Returns the entry at `path` or `None` if there is none.
-    pub fn entry(&self, path: &RelativePath) -> Option<ArchiveEntry> {
+    pub fn entry(&self, path: &RelativePath) -> Option<Entry> {
         Some(self.archive.get(path.as_str())?.to_entry())
     }
 
@@ -122,7 +122,7 @@ impl FileArchive {
     ///
     /// If an entry with the given `path` already existed in the archive, it is replaced and the
     /// old entry is returned. Otherwise, `None` is returned.
-    pub fn insert(&mut self, path: &RelativePath, entry: ArchiveEntry) -> Option<ArchiveEntry> {
+    pub fn insert(&mut self, path: &RelativePath, entry: Entry) -> Option<Entry> {
         Some(
             self.archive
                 .insert(path.as_str(), entry.to_object())?
@@ -133,7 +133,7 @@ impl FileArchive {
     /// Delete the entry in the archive with the given `path`.
     ///
     /// This returns the removed entry or `None` if there was no entry at `path`.
-    pub fn remove(&mut self, path: &RelativePath) -> Option<ArchiveEntry> {
+    pub fn remove(&mut self, path: &RelativePath) -> Option<Entry> {
         Some(self.archive.remove(path.as_str())?.to_entry())
     }
 
@@ -147,7 +147,7 @@ impl FileArchive {
 
     /// Writes the data from `source` to the archive and returns a handle to it.
     ///
-    /// The returned handle can be used to manually construct an `ArchiveEntry` that represents a
+    /// The returned handle can be used to manually construct an `Entry` that represents a
     /// regular file.
     ///
     /// # Errors
@@ -188,7 +188,7 @@ impl FileArchive {
         };
 
         // Create an entry.
-        let entry = ArchiveEntry {
+        let entry = Entry {
             modified_time: metadata.modified()?,
             permissions: file_mode(&metadata),
             attributes: extended_attrs(&source)?,

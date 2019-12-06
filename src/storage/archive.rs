@@ -25,7 +25,7 @@ use super::block::{
     pad_to_block_size, Block, BlockAddress, Checksum, CountingReader, BLOCK_OFFSET,
 };
 use super::header::{Header, HeaderAddress};
-use super::object::{ArchiveObject, DataHandle};
+use super::object::{DataHandle, Object};
 
 /// An object store which stores its data in a single file.
 ///
@@ -201,24 +201,24 @@ impl ObjectArchive {
     ///
     /// If an object with the given `name` already existed in the archive, it is replaced and the
     /// old object is returned. Otherwise, `None` is returned.
-    pub fn insert(&mut self, name: &str, object: ArchiveObject) -> Option<ArchiveObject> {
+    pub fn insert(&mut self, name: &str, object: Object) -> Option<Object> {
         self.header.objects.insert(name.to_string(), object)
     }
 
     /// Removes and returns the object with the given `name` from the archive.
     ///
     /// This returns `None` if there is no object with the given `name`.
-    pub fn remove(&mut self, name: &str) -> Option<ArchiveObject> {
+    pub fn remove(&mut self, name: &str) -> Option<Object> {
         self.header.objects.remove(name)
     }
 
     /// Returns the object with the given `name`, or `None` if it doesn't exist.
-    pub fn get(&self, name: &str) -> Option<&ArchiveObject> {
+    pub fn get(&self, name: &str) -> Option<&Object> {
         self.header.objects.get(name)
     }
 
     /// Returns a mutable reference to the object with the given `name`, or `None` if there is none.
-    pub fn get_mut(&mut self, name: &str) -> Option<&mut ArchiveObject> {
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut Object> {
         self.header.objects.get_mut(name)
     }
 
@@ -228,7 +228,7 @@ impl ObjectArchive {
     }
 
     /// Returns an iterator over all the names and objects in this archive.
-    pub fn objects(&self) -> impl Iterator<Item = (&String, &ArchiveObject)> {
+    pub fn objects(&self) -> impl Iterator<Item = (&String, &Object)> {
         self.header.objects.iter()
     }
 
