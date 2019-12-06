@@ -236,10 +236,10 @@ impl ObjectArchive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn read(&mut self, handle: &DataHandle) -> Result<impl Read> {
+    pub fn read(&self, handle: &DataHandle) -> Result<impl Read> {
         let mut reader: Box<dyn Read> = Box::new(io::empty());
         for block_address in &handle.blocks {
-            reader = Box::new(reader.chain(block_address.new_reader(&mut self.archive_file)?));
+            reader = Box::new(reader.chain(block_address.new_reader(&self.archive_file)?));
         }
 
         Ok(reader)

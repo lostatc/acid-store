@@ -141,7 +141,7 @@ impl FileArchive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn read(&mut self, handle: &DataHandle) -> Result<impl Read> {
+    pub fn read(&self, handle: &DataHandle) -> Result<impl Read> {
         self.archive.read(handle)
     }
 

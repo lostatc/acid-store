@@ -182,7 +182,7 @@ impl BlockAddress {
     }
 
     /// Returns a new reader for reading the contents of the block at this address.
-    pub fn new_reader(self, archive: &mut File) -> io::Result<impl Read> {
+    pub fn new_reader(self, mut archive: &File) -> io::Result<impl Read> {
         archive.seek(SeekFrom::Start(self.offset() + CHECKSUM_SIZE as u64))?;
 
         let mut length_buffer = [0u8; BLOCK_LENGTH_SIZE];
