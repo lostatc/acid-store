@@ -14,11 +14,30 @@
  * limitations under the License.
  */
 
+//! `disk-archive` is a file format and library for efficiently storing large chunks of binary data.
+//!
+//! The `disk-archive` file format works similarly to archive formats like ZIP and TAR, with
+//! some key differences. Files in a ZIP archive can't be updated in-place. New data can be written
+//! to the archive, but the old data sticks around, taking up space. The only way to reclaim space
+//! in a ZIP file is to unpack and repack the entire archive. The file format used by this crate
+//! doesn't have this limitation, and it provides other benefits like transparent block-level
+//! deduplication.
+//!
+//! While ZIP and TAR files are meant to be portable, archives created by this crate can be used to
+//! create high-performance file formats.
+//!
+//! This crate provides two abstractions for interacting with with the archive format:
+//!
+//! - `FileArchive` is a file archive like ZIP or TAR which supports modification times, POSIX file
+//! permissions, extended attributes, and symbolic links.
+//! - `ObjectArchive` is an object store which represents data as a flat list of objects each
+//! consisting of a unique name, data, and metadata.
+
 #![allow(dead_code)]
 
 pub use crate::error::{Error, Result};
 pub use crate::file::{ArchiveEntry, EntryType, FileArchive};
-pub use crate::storage::{Archive, ArchiveObject, DataHandle};
+pub use crate::storage::{ArchiveObject, DataHandle, ObjectArchive};
 
 mod error;
 mod file;

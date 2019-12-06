@@ -25,7 +25,7 @@ use walkdir::WalkDir;
 
 use crate::error::Result;
 use crate::file::platform::{set_extended_attrs, set_file_mode, soft_link};
-use crate::{Archive, ArchiveObject, DataHandle, EntryType};
+use crate::{ArchiveObject, DataHandle, EntryType, ObjectArchive};
 
 use super::entry::ArchiveEntry;
 use super::platform::{extended_attrs, file_mode};
@@ -54,9 +54,9 @@ impl ArchiveEntry {
 
 /// An archive for storing files.
 ///
-/// This is a wrapper over `Archive` which allows it to function as a file archive like `zip` or
-/// `tar` rather than an object store. A `FileArchive` consists of `ArchiveEntry` values which can
-/// represent a regular file, directory, or symbolic link.
+/// This is a wrapper over `ObjectArchive` which allows it to function as a file archive like `zip`
+/// or `tar` rather than an object store. A `FileArchive` consists of `ArchiveEntry` values which
+/// can represent a regular file, directory, or symbolic link.
 ///
 /// This type provides a high-level API through the methods `archive`, `archive_tree`, `extract`,
 /// and `extract_tree` for archiving and extracting files in the file system. It also provides
@@ -66,7 +66,7 @@ impl ArchiveEntry {
 /// identified by a `RelativePath`. A `RelativePath` is a platform-independent path representation
 /// that allows entries archived on one system to be extracted on another.
 pub struct FileArchive {
-    archive: Archive,
+    archive: ObjectArchive,
 }
 
 impl FileArchive {
@@ -79,7 +79,7 @@ impl FileArchive {
     /// - `Error::Deserialize`: The file is not a valid archive file.
     pub fn open(path: &Path) -> Result<Self> {
         Ok(FileArchive {
-            archive: Archive::open(path)?,
+            archive: ObjectArchive::open(path)?,
         })
     }
 
@@ -91,7 +91,7 @@ impl FileArchive {
     ///     - `AlreadyExists`: A file already exists at `path`.
     pub fn create(path: &Path) -> Result<Self> {
         Ok(FileArchive {
-            archive: Archive::create(path)?,
+            archive: ObjectArchive::create(path)?,
         })
     }
 

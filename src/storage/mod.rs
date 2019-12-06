@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-pub use self::archive::Archive;
+pub use self::archive::ObjectArchive;
 pub use self::object::{ArchiveObject, DataHandle};
 
 mod archive;
