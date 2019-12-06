@@ -187,6 +187,9 @@ impl ObjectArchive {
     ) -> io::Result<Vec<BlockAddress>> {
         let mut addresses = Vec::new();
 
+        // Pad the archive to a multiple of `BLOCK_SIZE`.
+        pad_to_block_size(&mut self.archive_file)?;
+
         for block_result in blocks {
             let block = block_result?;
             let block_offset = self.archive_file.seek(SeekFrom::Current(0))?;
@@ -256,10 +259,6 @@ impl ObjectArchive {
 
         // Fill unused blocks in the archive first.
         addresses.extend(self.write_unused_blocks(&mut blocks)?);
-
-        // Pad the archive to a multiple of `BLOCK_SIZE`.
-        self.archive_file.seek(SeekFrom::End(0))?;
-        pad_to_block_size(&mut self.archive_file)?;
 
         // Append the remaining blocks to the end of the archive.
         addresses.extend(self.write_new_blocks(&mut blocks)?);

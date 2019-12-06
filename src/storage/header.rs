@@ -91,7 +91,6 @@ impl Header {
     /// - `Error::Serialize`: An error occurred serializing the header.
     pub fn write(&self, mut archive: &mut File) -> Result<HeaderAddress> {
         // Pad the file to a multiple of `BLOCK_SIZE`.
-        archive.seek(SeekFrom::End(0))?;
         let offset = pad_to_block_size(&mut archive)?;
 
         // Append the new header size and header.
