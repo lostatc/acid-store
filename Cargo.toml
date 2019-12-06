@@ -13,14 +13,8 @@ relative-path = "1.0.0"
 walkdir = "2.2.9"
 tempfile = "3.1.0"
 
-# Compression/encryption/hashing
-flate2 = "1.0.13"
-zip = "0.5.3"
+# Hashing
 rust-crypto = "0.2.36"
-multihash = "0.8.0"
-
-# CLI argument parsing
-clap = "2.33.0"
 
 # Error handling
 thiserror = "1.0.4"
