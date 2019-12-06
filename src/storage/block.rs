@@ -243,16 +243,15 @@ pub fn read_all(source: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> 
     Ok(total_read)
 }
 
-/// Writes to the given `file` to pad it to a multiple of `BLOCK_SIZE`.
+/// Appends to the given `file` to pad it to a multiple of `BLOCK_SIZE`.
 ///
-/// This function assumes that the cursor is already at the end of the file. This returns the seek
-/// position after the padding bytes have been written.
+/// This returns the new size of the file.
 ///
 /// # Errors
 /// - `Error::Io`: An I/O error occurred.
 pub fn pad_to_block_size(file: &mut File) -> io::Result<u64> {
-    let position = file.seek(SeekFrom::Current(0))?;
-    let padding_size = (position - BLOCK_OFFSET) % BLOCK_SIZE as u64;
+    let position = file.seek(SeekFrom::End(0))?;
+    let padding_size = BLOCK_SIZE as u64 - ((position - BLOCK_OFFSET) % BLOCK_SIZE as u64);
     let padding = vec![0u8; padding_size as usize];
     file.write_all(&padding)?;
 
