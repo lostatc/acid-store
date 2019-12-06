@@ -92,25 +92,23 @@ impl Header {
     /// - `Error::Serialize`: An error occurred serializing the header.
     pub fn write(&self, mut archive: &mut File) -> Result<HeaderAddress> {
         // Pad the file to a multiple of `BLOCK_SIZE`.
-        let offset = archive.seek(SeekFrom::End(0))?;
-        pad_to_block_size(&mut archive)?;
+        archive.seek(SeekFrom::End(0))?;
+        let offset = pad_to_block_size(&mut archive)?;
 
         // Append the new header size and header.
         let serialized_header = encode::to_vec(&self)?;
-        archive.write_all(&serialized_header.len().to_be_bytes())?;
+        let header_size = serialized_header.len() as u64;
+        archive.write_all(&header_size.to_be_bytes())?;
         archive.write_all(&serialized_header)?;
 
         // Update the header offset to point to the new header.
         archive.seek(SeekFrom::Start(0))?;
         archive.write_all(&offset.to_be_bytes())?;
 
-        let archive_size = archive.metadata()?.len();
-        let header_size = archive_size - offset;
-
         Ok(HeaderAddress {
             offset,
             header_size,
-            archive_size,
+            archive_size: archive.metadata()?.len(),
         })
     }
 }
