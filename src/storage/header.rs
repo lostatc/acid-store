@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::mem::size_of;
@@ -42,12 +42,11 @@ impl Header {
         }
     }
 
-    /// Returns the list of addresses of blocks used for storing data.
-    pub fn data_blocks(&self) -> Vec<BlockAddress> {
+    /// Returns the set of addresses of blocks used for storing data.
+    pub fn data_blocks(&self) -> HashSet<BlockAddress> {
         self.objects
             .values()
-            .filter_map(|object| object.data.as_ref())
-            .flat_map(|handle| &handle.blocks)
+            .flat_map(|object| &object.data.blocks)
             .copied()
             .collect()
     }

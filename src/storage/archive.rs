@@ -309,7 +309,8 @@ impl ObjectArchive {
         let mut dest_archive = Self::create(dest)?;
 
         // Get the addresses of used blocks in this archive.
-        let mut block_addresses = self.header.data_blocks();
+        // Sort them so they'll be in the same order in the new archive.
+        let mut block_addresses = self.header.data_blocks().into_iter().collect::<Vec<_>>();
         block_addresses.sort();
 
         // Lazily read blocks from this archive.
