@@ -16,6 +16,10 @@ tempfile = "3.1.0"
 # Hashing
 rust-crypto = "0.2.36"
 
+# Compression
+flate2 = "1.0.13"
+xz2 = "0.1.6"
+
 # Error handling
 thiserror = "1.0.4"
 anyhow = "1.0.19"

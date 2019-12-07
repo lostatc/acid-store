@@ -67,9 +67,9 @@ impl Block {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn from_read(source: &mut impl Read) -> io::Result<Option<Self>> {
+    pub fn from_read(mut source: &mut impl Read) -> io::Result<Option<Self>> {
         let mut buffer = [0u8; BLOCK_BUFFER_SIZE];
-        let bytes_read = read_all(source, &mut buffer)?;
+        let bytes_read = read_all(&mut source, &mut buffer)?;
 
         if bytes_read == 0 {
             Ok(None)
@@ -89,9 +89,9 @@ impl Block {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn iter_blocks<'a>(
-        source: &'a mut impl Read,
+        mut source: &'a mut impl Read,
     ) -> impl Iterator<Item = io::Result<Self>> + 'a {
-        iter::from_fn(move || match Self::from_read(source) {
+        iter::from_fn(move || match Self::from_read(&mut source) {
             Ok(option) => option.map(Ok),
             Err(error) => Some(Err(error)),
         })
@@ -112,9 +112,9 @@ impl Block {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn write_at(&self, archive: &mut File, address: BlockAddress) -> io::Result<()> {
+    pub fn write_at(&self, mut archive: &File, address: BlockAddress) -> io::Result<()> {
         archive.seek(SeekFrom::Start(address.offset()))?;
-        self.write(archive)
+        self.write(&mut archive)
     }
 }
 
@@ -153,7 +153,7 @@ impl BlockAddress {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn read_checksum(self, archive: &mut File) -> io::Result<Checksum> {
+    pub fn read_checksum(self, mut archive: &File) -> io::Result<Checksum> {
         let mut checksum = [0u8; CHECKSUM_SIZE];
         archive.seek(SeekFrom::Start(self.offset()))?;
         archive.read_exact(&mut checksum)?;
@@ -164,7 +164,7 @@ impl BlockAddress {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn read_block(self, archive: &mut File) -> io::Result<Block> {
+    pub fn read_block(self, mut archive: &File) -> io::Result<Block> {
         let mut length_buffer = [0u8; BLOCK_LENGTH_SIZE];
         let mut buffer = [0u8; BLOCK_BUFFER_SIZE];
 
@@ -249,7 +249,7 @@ pub fn read_all(source: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> 
 ///
 /// # Errors
 /// - `Error::Io`: An I/O error occurred.
-pub fn pad_to_block_size(file: &mut File) -> io::Result<u64> {
+pub fn pad_to_block_size(mut file: &File) -> io::Result<u64> {
     let position = file.seek(SeekFrom::End(0))?;
     let padding_size = BLOCK_SIZE as u64 - ((position - BLOCK_OFFSET) % BLOCK_SIZE as u64);
     let padding = vec![0u8; padding_size as usize];

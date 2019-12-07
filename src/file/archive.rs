@@ -23,12 +23,10 @@ use relative_path::RelativePath;
 use rmp_serde::{decode, encode};
 use walkdir::WalkDir;
 
-use crate::error::Result;
-use crate::file::platform::{set_extended_attrs, set_file_mode, soft_link};
-use crate::{DataHandle, EntryType, Object, ObjectArchive};
+use crate::{ArchiveConfig, DataHandle, EntryType, Object, ObjectArchive, Result};
 
 use super::entry::Entry;
-use super::platform::{extended_attrs, file_mode};
+use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode, soft_link};
 
 impl Object {
     /// Convert this object into an entry.
@@ -83,15 +81,15 @@ impl FileArchive {
         })
     }
 
-    /// Creates and opens a new archive at the given `path`.
+    /// Creates and opens a new archive at the given `path` with the given `config`.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     ///     - `PermissionDenied`: The user lack permission to create the archive file.
     ///     - `AlreadyExists`: A file already exists at `path`.
-    pub fn create(path: &Path) -> Result<Self> {
+    pub fn create(path: &Path, config: ArchiveConfig) -> Result<Self> {
         Ok(FileArchive {
-            archive: ObjectArchive::create(path)?,
+            archive: ObjectArchive::create(path, config)?,
         })
     }
 
@@ -152,7 +150,7 @@ impl FileArchive {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn write(&mut self, source: &mut impl Read) -> Result<DataHandle> {
+    pub fn write(&mut self, source: impl Read) -> Result<DataHandle> {
         self.archive.write(source)
     }
 

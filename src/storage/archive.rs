@@ -24,6 +24,7 @@ use crate::error::Result;
 use super::block::{
     pad_to_block_size, Block, BlockAddress, Checksum, CountingReader, BLOCK_OFFSET,
 };
+use super::config::ArchiveConfig;
 use super::header::{Header, HeaderAddress};
 use super::object::{DataHandle, Object};
 
@@ -82,13 +83,13 @@ impl ObjectArchive {
         Ok(archive)
     }
 
-    /// Creates and opens a new archive at the given `path`.
+    /// Creates and opens a new archive at the given `path` with the given `config`.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     ///     - `PermissionDenied`: The user lack permission to create the archive file.
     ///     - `AlreadyExists`: A file already exists at `path`.
-    pub fn create(path: &Path) -> Result<Self> {
+    pub fn create(path: &Path, config: ArchiveConfig) -> Result<Self> {
         let mut archive_file = OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -98,7 +99,10 @@ impl ObjectArchive {
         archive_file.set_len(BLOCK_OFFSET)?;
         archive_file.seek(SeekFrom::End(0))?;
 
-        let header = Header::new();
+        let header = Header {
+            objects: HashMap::new(),
+            config,
+        };
         header.write(&mut archive_file)?;
 
         Self::open(path)
@@ -245,15 +249,16 @@ impl ObjectArchive {
             reader = Box::new(reader.chain(block_address.new_reader(&self.archive_file)?));
         }
 
-        Ok(reader)
+        Ok(self.header.config.compression.decode(reader))
     }
 
     /// Writes the data from `source` to the archive and returns a handle to it.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn write(&mut self, source: &mut impl Read) -> Result<DataHandle> {
+    pub fn write(&mut self, source: impl Read) -> Result<DataHandle> {
         let mut addresses = Vec::new();
+        let source = self.header.config.compression.encode(source);
         let mut source = CountingReader::new(source);
         let mut blocks = Block::iter_blocks(&mut source);
 
@@ -305,7 +310,7 @@ impl ObjectArchive {
     ///     - `PermissionDenied`: The user lack permission to create the new archive.
     ///     - `AlreadyExists`: A file already exists at `dest`.
     pub fn compacted(&mut self, dest: &Path) -> Result<ObjectArchive> {
-        let mut dest_archive = Self::create(dest)?;
+        let mut dest_archive = Self::create(dest, self.header.config.clone())?;
 
         // Get the addresses of used blocks in this archive.
         // Sort them so they'll be in the same order in the new archive.

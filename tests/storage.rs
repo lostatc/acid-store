@@ -8,7 +8,7 @@ use disk_archive::{Object, ObjectArchive, Result};
 fn metadata_is_persisted() -> Result<()> {
     let temp_dir = tempdir()?;
     let archive_path = temp_dir.path().join("archive");
-    let mut archive = ObjectArchive::create(archive_path.as_path())?;
+    let mut archive = ObjectArchive::create(archive_path.as_path(), Default::default())?;
 
     let metadata = b"This is metadata.";
     let mut object = Object::new();
@@ -30,7 +30,7 @@ fn metadata_is_persisted() -> Result<()> {
 fn data_is_persisted() -> Result<()> {
     let temp_dir = tempdir()?;
     let archive_path = temp_dir.path().join("archive");
-    let mut archive = ObjectArchive::create(archive_path.as_path())?;
+    let mut archive = ObjectArchive::create(archive_path.as_path(), Default::default())?;
 
     let expected_data = b"This is data.";
     let mut object = Object::new();
@@ -54,7 +54,7 @@ fn data_is_persisted() -> Result<()> {
 fn uncommitted_changes_are_not_saved() -> Result<()> {
     let temp_dir = tempdir()?;
     let archive_path = temp_dir.path().join("archive");
-    let mut archive = ObjectArchive::create(archive_path.as_path())?;
+    let mut archive = ObjectArchive::create(archive_path.as_path(), Default::default())?;
 
     let expected_data = b"This is data.";
     let mut object = Object::new();

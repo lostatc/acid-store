@@ -37,7 +37,7 @@
 
 pub use crate::error::{Error, Result};
 pub use crate::file::{Entry, EntryType, FileArchive};
-pub use crate::storage::{DataHandle, Object, ObjectArchive};
+pub use crate::storage::{ArchiveConfig, Compression, DataHandle, Object, ObjectArchive};
 
 mod error;
 mod file;
