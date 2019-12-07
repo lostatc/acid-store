@@ -15,9 +15,11 @@
  */
 
 pub use self::archive::ObjectArchive;
+pub use self::config::{ArchiveConfig, Compression};
 pub use self::object::{DataHandle, Object};
 
 mod archive;
 mod block;
+mod config;
 mod header;
 mod object;

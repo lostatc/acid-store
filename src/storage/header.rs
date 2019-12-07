@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 
 use super::block::{pad_to_block_size, BlockAddress, BLOCK_OFFSET};
+use super::config::ArchiveConfig;
 use super::object::Object;
 
 /// Metadata about the archive.
@@ -32,16 +33,12 @@ use super::object::Object;
 pub struct Header {
     /// A map of object names to objects which are in this archive.
     pub objects: HashMap<String, Object>,
+
+    /// The configuration for the archive.
+    pub config: ArchiveConfig,
 }
 
 impl Header {
-    /// Creates a new empty header.
-    pub fn new() -> Self {
-        Header {
-            objects: HashMap::new(),
-        }
-    }
-
     /// Returns the set of addresses of blocks used for storing data.
     pub fn data_blocks(&self) -> HashSet<BlockAddress> {
         self.objects
