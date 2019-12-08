@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 
 use super::block::{pad_to_block_size, BlockAddress, BLOCK_OFFSET};
-use super::config::ArchiveConfig;
+use super::encoding::Encryption;
 use super::object::Object;
 
 /// Metadata about the archive.
@@ -33,9 +33,6 @@ use super::object::Object;
 pub struct Header {
     /// A map of object names to objects which are in this archive.
     pub objects: HashMap<String, Object>,
-
-    /// The configuration for the archive.
-    pub config: ArchiveConfig,
 }
 
 impl Header {
@@ -53,7 +50,7 @@ impl Header {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred reading from the archive.
     /// - `Error::Deserialize`: An error occurred deserializing the header.
-    pub fn read(archive: &mut File) -> Result<(Header, HeaderAddress)> {
+    pub fn read(archive: &mut File, encryption: &Encryption) -> Result<(Header, HeaderAddress)> {
         let mut offset_buffer = [0u8; size_of::<u64>()];
         let archive_size = archive.metadata()?.len();
 
@@ -66,7 +63,7 @@ impl Header {
         archive.seek(SeekFrom::Start(offset))?;
         archive.read_exact(&mut offset_buffer)?;
         let header_size = u64::from_be_bytes(offset_buffer);
-        let header = decode::from_read(archive.take(header_size))?;
+        let header = decode::from_read(encryption.decode(archive.take(header_size))?)?;
 
         let header_address = HeaderAddress {
             offset,
@@ -86,15 +83,21 @@ impl Header {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred writing to the archive.
     /// - `Error::Serialize`: An error occurred serializing the header.
-    pub fn write(&self, mut archive: &mut File) -> Result<HeaderAddress> {
+    pub fn write(&self, mut archive: &mut File, encryption: &Encryption) -> Result<HeaderAddress> {
         // Pad the file to a multiple of `BLOCK_SIZE`.
         let offset = pad_to_block_size(&mut archive)?;
 
-        // Append the new header size and header.
+        // Serialize and encrypt the header.
         let serialized_header = encode::to_vec(&self)?;
-        let header_size = serialized_header.len() as u64;
+        let mut encrypted_header = Vec::new();
+        encryption
+            .encode(serialized_header.as_slice())
+            .read_to_end(&mut encrypted_header)?;
+
+        // Append the new header size and header.
+        let header_size = encrypted_header.len() as u64;
         archive.write_all(&header_size.to_be_bytes())?;
-        archive.write_all(&serialized_header)?;
+        archive.write_all(&encrypted_header)?;
 
         // Update the header offset to point to the new header.
         archive.seek(SeekFrom::Start(0))?;
