@@ -14,12 +14,9 @@
  * limitations under the License.
  */
 
-use std::io::Read;
-
-use flate2::read::{GzDecoder, GzEncoder};
-use flate2::Compression as CompressionLevel;
 use serde::{Deserialize, Serialize};
-use xz2::read::{XzDecoder, XzEncoder};
+
+use super::encoding::{Compression, Encryption};
 
 /// The configuration for an archive.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,53 +24,16 @@ use xz2::read::{XzDecoder, XzEncoder};
 pub struct ArchiveConfig {
     /// The compression method to use for data in the archive.
     pub compression: Compression,
+
+    /// The encryption method to use for data and metadata in the archive.
+    pub encryption: Encryption,
 }
 
 impl Default for ArchiveConfig {
     fn default() -> Self {
         ArchiveConfig {
             compression: Compression::None,
-        }
-    }
-}
-
-/// A data compression method.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Compression {
-    /// Do not compress data.
-    None,
-
-    /// Compress data using the DEFLATE compression algorithm.
-    Deflate {
-        /// The compression level to use as a number in the range 0-9.
-        level: u32,
-    },
-
-    /// Compress data using the LZMA compression algorithm.
-    Lzma {
-        /// The compression level to use as a number in the range 0-9.
-        level: u32,
-    },
-}
-
-impl Compression {
-    /// Wraps the given `reader` to encode its bytes using this compression method.
-    pub(super) fn encode<'a>(&self, reader: impl Read + 'a) -> Box<dyn Read + 'a> {
-        match self {
-            Compression::None => Box::new(reader),
-            Compression::Deflate { level } => {
-                Box::new(GzEncoder::new(reader, CompressionLevel::new(*level)))
-            }
-            Compression::Lzma { level } => Box::new(XzEncoder::new(reader, *level)),
-        }
-    }
-
-    /// Wraps the given `reader` to decode its bytes using this compression method.
-    pub(super) fn decode<'a>(&self, reader: impl Read + 'a) -> Box<dyn Read + 'a> {
-        match self {
-            Compression::None => Box::new(reader),
-            Compression::Deflate { .. } => Box::new(GzDecoder::new(reader)),
-            Compression::Lzma { .. } => Box::new(XzDecoder::new(reader)),
+            encryption: Encryption::None,
         }
     }
 }

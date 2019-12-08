@@ -20,6 +20,10 @@ rust-crypto = "0.2.36"
 flate2 = "1.0.13"
 xz2 = "0.1.6"
 
+# Encryption
+cryptostream = "0.1.0"
+openssl = "0.10.26"
+
 # Error handling
 thiserror = "1.0.4"
 anyhow = "1.0.19"

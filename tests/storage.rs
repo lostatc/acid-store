@@ -18,7 +18,7 @@ fn metadata_is_persisted() -> Result<()> {
     archive.commit()?;
     drop(archive);
 
-    let archive = ObjectArchive::open(archive_path.as_path())?;
+    let archive = ObjectArchive::open(archive_path.as_path(), Default::default())?;
     let object = archive.get("Test").unwrap();
 
     assert_eq!(object.metadata, metadata);
@@ -40,7 +40,7 @@ fn data_is_persisted() -> Result<()> {
     archive.commit()?;
     drop(archive);
 
-    let archive = ObjectArchive::open(archive_path.as_path())?;
+    let archive = ObjectArchive::open(archive_path.as_path(), Default::default())?;
     let object = archive.get("Test").unwrap();
     let mut actual_data = Vec::new();
     archive.read(&object.data)?.read_to_end(&mut actual_data)?;
@@ -63,7 +63,7 @@ fn uncommitted_changes_are_not_saved() -> Result<()> {
     archive.insert("Test", object);
     drop(archive);
 
-    let archive = ObjectArchive::open(archive_path.as_path())?;
+    let archive = ObjectArchive::open(archive_path.as_path(), Default::default())?;
 
     assert_eq!(archive.get("Test"), None);
 

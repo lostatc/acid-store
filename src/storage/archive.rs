@@ -53,6 +53,9 @@ pub struct ObjectArchive {
     /// The address of the archive's old header.
     header_address: HeaderAddress,
 
+    /// The config used to open the archive.
+    config: ArchiveConfig,
+
     /// The checksums of all the blocks in the archive and their addresses.
     block_checksums: HashMap<Checksum, BlockAddress>,
 
@@ -61,21 +64,22 @@ pub struct ObjectArchive {
 }
 
 impl ObjectArchive {
-    /// Opens the archive at the given `path`.
+    /// Opens the archive at the given `path` with the given `config`.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     ///     - `NotFound`: The archive file does not exist.
     ///     - `PermissionDenied`: The user lack permission to open the archive file.
     /// - `Error::Deserialize`: The file is not a valid archive file.
-    pub fn open(path: &Path) -> Result<Self> {
+    pub fn open(path: &Path, config: ArchiveConfig) -> Result<Self> {
         let mut archive_file = OpenOptions::new().read(true).write(true).open(path)?;
-        let (header, header_address) = Header::read(&mut archive_file)?;
+        let (header, header_address) = Header::read(&mut archive_file, &config.encryption)?;
         let mut archive = ObjectArchive {
             path: path.to_owned(),
             old_header: header.clone(),
             header,
             header_address,
+            config,
             block_checksums: HashMap::new(),
             archive_file,
         };
@@ -101,11 +105,10 @@ impl ObjectArchive {
 
         let header = Header {
             objects: HashMap::new(),
-            config,
         };
-        header.write(&mut archive_file)?;
+        header.write(&mut archive_file, &config.encryption)?;
 
-        Self::open(path)
+        Self::open(path, config)
     }
 
     /// Reads the checksums of the blocks in this archive and updates `block_checksums`.
@@ -249,7 +252,10 @@ impl ObjectArchive {
             reader = Box::new(reader.chain(block_address.new_reader(&self.archive_file)?));
         }
 
-        Ok(self.header.config.compression.decode(reader))
+        Ok(self
+            .config
+            .compression
+            .decode(self.config.encryption.decode(reader)?))
     }
 
     /// Writes the data from `source` to the archive and returns a handle to it.
@@ -258,7 +264,10 @@ impl ObjectArchive {
     /// - `Error::Io`: An I/O error occurred.
     pub fn write(&mut self, source: impl Read) -> Result<DataHandle> {
         let mut addresses = Vec::new();
-        let source = self.header.config.compression.encode(source);
+        let source = self
+            .config
+            .encryption
+            .encode(self.config.compression.encode(source));
         let mut source = CountingReader::new(source);
         let mut blocks = Block::iter_blocks(&mut source);
 
@@ -288,7 +297,9 @@ impl ObjectArchive {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn commit(&mut self) -> Result<()> {
-        let new_address = self.header.write(&mut self.archive_file)?;
+        let new_address = self
+            .header
+            .write(&mut self.archive_file, &self.config.encryption)?;
         self.header_address = new_address;
         self.old_header = self.header.clone();
         Ok(())
@@ -310,7 +321,7 @@ impl ObjectArchive {
     ///     - `PermissionDenied`: The user lack permission to create the new archive.
     ///     - `AlreadyExists`: A file already exists at `dest`.
     pub fn compacted(&mut self, dest: &Path) -> Result<ObjectArchive> {
-        let mut dest_archive = Self::create(dest, self.header.config.clone())?;
+        let mut dest_archive = Self::create(dest, self.config.clone())?;
 
         // Get the addresses of used blocks in this archive.
         // Sort them so they'll be in the same order in the new archive.

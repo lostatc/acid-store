@@ -68,16 +68,16 @@ pub struct FileArchive {
 }
 
 impl FileArchive {
-    /// Opens the archive at the given `path`.
+    /// Opens the archive at the given `path` with the given `config`.
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     ///     - `NotFound`: The archive file does not exist.
     ///     - `PermissionDenied`: The user lack permission to open the archive file.
     /// - `Error::Deserialize`: The file is not a valid archive file.
-    pub fn open(path: &Path) -> Result<Self> {
+    pub fn open(path: &Path, config: ArchiveConfig) -> Result<Self> {
         Ok(FileArchive {
-            archive: ObjectArchive::open(path)?,
+            archive: ObjectArchive::open(path, config)?,
         })
     }
 
