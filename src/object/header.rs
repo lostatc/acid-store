@@ -18,17 +18,19 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::chunk::Chunk;
 use super::object::{Checksum, Object};
 
 /// The header which stores metadata for a repository.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
-pub struct Header<K> where K: Eq + Hash + Clone + Serialize + Deserialize {
+pub struct Header<K>
+where
+    K: Eq + Hash + Clone,
+{
     /// A map of chunk hashes to information about those chunks.
     pub chunks: HashMap<Checksum, Chunk>,
 
     /// A map of object IDs to information about those objects.
-    pub objects: HashMap<K, Object>
+    pub objects: HashMap<K, Object>,
 }

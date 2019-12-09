@@ -16,10 +16,10 @@
 
 use std::io::Read;
 
-use flate2::read::GzDecoder;
-use flate2::read::GzEncoder;
-use xz2::read::XzDecoder;
-use xz2::read::XzEncoder;
+use flate2::Compression as CompressionLevel;
+use flate2::read::{GzDecoder, GzEncoder};
+use serde::{Deserialize, Serialize};
+use xz2::read::{XzDecoder, XzEncoder};
 
 /// A data compression method.
 #[derive(Debug, Clone, Serialize, Deserialize)]

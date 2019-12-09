@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+use serde::{Deserialize, Serialize};
+
 use crate::object::block::Extent;
 
 /// A chunk of data in a repository.
@@ -23,5 +25,5 @@ pub struct Chunk {
     pub size: u64,
 
     /// The extents containing the data for this chunk.
-    pub extents: Vec<Extent>
+    pub extents: Vec<Extent>,
 }

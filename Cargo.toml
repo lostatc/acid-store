@@ -22,7 +22,7 @@ xz2 = "0.1.6"
 
 # Encryption
 sodiumoxide = "0.2.5"
-secstr = "0.3.2"
+zeroize = { version = "1.1.0", features = ["zeroize_derive"] }
 
 # Error handling
 thiserror = "1.0.4"
@@ -35,4 +35,4 @@ rmp-serde = "0.14.0"
 
 # Misc
 num-integer = "0.1.41"
-uuid = "0.8.1"
+uuid = { version = "0.8.1", features = ["serde", "v4"] }
