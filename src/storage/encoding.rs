@@ -17,8 +17,8 @@
 use std::io::{self, Cursor, Read};
 
 use cryptostream::read::{Decryptor, Encryptor};
-use flate2::read::{GzDecoder, GzEncoder};
 use flate2::Compression as CompressionLevel;
+use flate2::read::{GzDecoder, GzEncoder};
 use openssl::rand::rand_bytes;
 use openssl::symm::Cipher;
 use serde::{Deserialize, Serialize};
@@ -121,5 +121,75 @@ impl Encryption {
                 Ok(Box::new(decryptor))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io;
+    use std::io::Read;
+
+    use rand::{Rng, SeedableRng};
+    use rand::rngs::StdRng;
+
+    use super::{CHACHA20_KEY_SIZE, Compression, Encryption};
+
+    /// Return a vector with `size` random bytes.
+    fn random_bytes(size: usize) -> Vec<u8> {
+        let mut bytes = vec![0u8; size];
+        StdRng::from_entropy().fill(&mut bytes[..size]);
+        bytes
+    }
+
+    /// Fill the given `buffer` with random bytes.
+    fn fill_random(buffer: &mut [u8]) {
+        StdRng::from_entropy().fill(buffer);
+    }
+
+    /// The size of test data to use.
+    const TEST_DATA_SIZE: usize = 1024 * 10;
+
+    #[test]
+    fn compress_deflate() -> io::Result<()> {
+        let expected = random_bytes(TEST_DATA_SIZE);
+        let mut actual = Vec::new();
+        let compression = Compression::Deflate { level: 2 };
+        compression
+            .decode(compression.encode(expected.as_slice()))
+            .read_to_end(&mut actual)?;
+
+        assert_eq!(expected, actual);
+        Ok(())
+    }
+
+    #[test]
+    fn compress_lzma() -> io::Result<()> {
+        let expected = random_bytes(TEST_DATA_SIZE);
+        let mut actual = Vec::new();
+
+        let compression = Compression::Lzma { level: 2 };
+        compression
+            .decode(compression.encode(expected.as_slice()))
+            .read_to_end(&mut actual)?;
+
+        assert_eq!(expected, actual);
+        Ok(())
+    }
+
+    #[test]
+    fn encrypt_chacha20poly1305() -> io::Result<()> {
+        let expected = random_bytes(TEST_DATA_SIZE);
+        let mut actual = Vec::new();
+
+        let mut key = [0u8; CHACHA20_KEY_SIZE];
+        fill_random(&mut key);
+
+        let encryption = Encryption::ChaCha20Poly1305 { key };
+        encryption
+            .decode(encryption.encode(expected.as_slice()))?
+            .read_to_end(&mut actual)?;
+
+        assert_eq!(expected, actual);
+        Ok(())
     }
 }

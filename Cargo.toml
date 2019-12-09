@@ -33,5 +33,6 @@ serde = { version = "1.0.103", features = ["derive"] }
 rmp = "0.8.8"
 rmp-serde = "0.14.0"
 
-# Math
+# Misc
 num-integer = "0.1.41"
+rand = "0.7.2"
