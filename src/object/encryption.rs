@@ -15,7 +15,7 @@
  */
 
 use secstr::SecVec;
-use sodiumoxide::crypto::aead::xchacha20poly1305_ietf::{gen_nonce, Key as ChaChaKey, Nonce, NONCEBYTES, open, seal};
+use sodiumoxide::crypto::aead::xchacha20poly1305_ietf::{gen_nonce, Key as ChaChaKey, KEYBYTES, Nonce, NONCEBYTES, open, seal};
 use sodiumoxide::crypto::pwhash::argon2id13::{derive_key, gen_salt, MEMLIMIT_INTERACTIVE, OPSLIMIT_INTERACTIVE, Salt, SALTBYTES};
 use sodiumoxide::randombytes::randombytes_into;
 
@@ -63,7 +63,7 @@ impl Encryption {
     pub fn key_size(&self) -> usize {
         match self {
             Encryption::None => 0,
-            Encryption::XChaCha20Poly1305 => 32
+            Encryption::XChaCha20Poly1305 => KEYBYTES
         }
     }
 }
