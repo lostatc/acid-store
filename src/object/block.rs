@@ -16,10 +16,17 @@
 
 use uuid::Uuid;
 
-use super::encoding::{Compression, Encryption};
+use super::compression::Compression;
+use super::encryption::Encryption;
 
-/// The size of the repository's superblock in bytes.
-const SUPERBLOCK_SIZE: usize = 4096;
+/// The offset of the superblock from the start of the file.
+const SUPERBLOCK_OFFSET: u64 = 0;
+
+/// The offset of the backup superblock from the start of the file.
+const SUPERBLOCK_BACKUP_OFFSET: u64 = 4096;
+
+/// The number of bytes reserved for the superblock and its backup.
+const RESERVED_SPACE: usize = 4096 * 2;
 
 /// An object for locating a block of data in a repository.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord, Serialize, Deserialize)]

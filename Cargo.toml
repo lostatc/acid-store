@@ -14,15 +14,15 @@ walkdir = "2.2.9"
 tempfile = "3.1.0"
 
 # Hashing
-rust-crypto = "0.2.36"
+blake2 = "0.8.1"
 
 # Compression
 flate2 = "1.0.13"
 xz2 = "0.1.6"
 
 # Encryption
-cryptostream = "0.1.0"
-openssl = "0.10.26"
+sodiumoxide = "0.2.5"
+secstr = "0.3.2"
 
 # Error handling
 thiserror = "1.0.4"
@@ -35,5 +35,4 @@ rmp-serde = "0.14.0"
 
 # Misc
 num-integer = "0.1.41"
-rand = "0.7.2"
 uuid = "0.8.1"
