@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-mod encoding;
+mod encryption;
 mod header;
 mod block;
 mod chunk;
 mod object;
+mod compression;
