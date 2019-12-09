@@ -36,3 +36,4 @@ rmp-serde = "0.14.0"
 # Misc
 num-integer = "0.1.41"
 rand = "0.7.2"
+uuid = "0.8.1"

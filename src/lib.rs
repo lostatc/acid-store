@@ -44,3 +44,4 @@ pub use crate::storage::{
 mod error;
 mod file;
 mod storage;
+mod object;
