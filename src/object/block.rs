@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::compression::Compression;
@@ -40,7 +41,7 @@ pub struct Extent {
     pub start: BlockAddress,
 
     /// The number of blocks in the extent.
-    pub blocks: u64
+    pub blocks: u64,
 }
 
 /// The repository's superblock.
@@ -66,5 +67,5 @@ pub struct SuperBlock {
     pub encryption: Encryption,
 
     /// The extent which stores the repository's header.
-    pub header: Extent
+    pub header: Extent,
 }

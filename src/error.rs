@@ -26,6 +26,10 @@ pub enum Error {
     #[error("{0}")]
     Io(#[from] io::Error),
 
+    /// An error occurred because data could not be verified.
+    #[error("Some data could not be verified.")]
+    Verify,
+
     /// An error walking a directory tree.
     #[error("{0}")]
     Walk(#[from] walkdir::Error),

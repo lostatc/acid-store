@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+use serde::{Deserialize, Serialize};
+
 /// The size of the checksums used for uniquely identifying data.
 const CHECKSUM_SIZE: usize = 32;
 
@@ -27,7 +29,7 @@ pub struct Object {
     size: u64,
 
     /// The checksums of the chunks which make up the data.
-    chunks: Vec<Checksum>
+    chunks: Vec<Checksum>,
 }
 
 impl Object {
