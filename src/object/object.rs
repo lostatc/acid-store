@@ -14,13 +14,24 @@
  * limitations under the License.
  */
 
+use blake2::digest::{Input, VariableOutput};
+use blake2::VarBlake2b;
 use serde::{Deserialize, Serialize};
 
 /// The size of the checksums used for uniquely identifying data.
-const CHECKSUM_SIZE: usize = 32;
+pub const CHECKSUM_SIZE: usize = 32;
 
 /// A 256-bit checksum used for uniquely identifying data.
 pub type Checksum = [u8; CHECKSUM_SIZE];
+
+/// Compute the BLAKE2b checksum of the given `data` and return the result.
+pub fn compute_checksum(data: &[u8]) -> Checksum {
+    let mut hasher = VarBlake2b::new(CHECKSUM_SIZE).unwrap();
+    hasher.input(data);
+    let mut checksum = [0u8; CHECKSUM_SIZE];
+    hasher.variable_result(|result| checksum.copy_from_slice(result));
+    checksum
+}
 
 /// An object in an archive.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
