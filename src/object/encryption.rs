@@ -38,7 +38,7 @@ pub enum Encryption {
 
 impl Encryption {
     /// Encrypt the given `cleartext` with the given `key`.
-    pub(super) fn encrypt(&self, cleartext: &[u8], key: Key) -> Vec<u8> {
+    pub(super) fn encrypt(&self, cleartext: &[u8], key: &Key) -> Vec<u8> {
         match self {
             Encryption::None => cleartext.to_vec(),
             Encryption::XChaCha20Poly1305 => {
@@ -56,7 +56,7 @@ impl Encryption {
     ///
     /// # Errors
     /// - `Error::Verify`: The ciphertext verification failed.
-    pub(super) fn decrypt(&self, ciphertext: &[u8], key: Key) -> Result<Vec<u8>> {
+    pub(super) fn decrypt(&self, ciphertext: &[u8], key: &Key) -> Result<Vec<u8>> {
         match self {
             Encryption::None => Ok(ciphertext.to_vec()),
             Encryption::XChaCha20Poly1305 => {

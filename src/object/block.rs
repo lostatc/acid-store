@@ -14,10 +14,12 @@
  * limitations under the License.
  */
 
+use std::cmp::min;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::mem::size_of;
 
+use num_integer::div_ceil;
 use rmp_serde::{from_read, to_vec};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -35,6 +37,39 @@ const SUPERBLOCK_BACKUP_OFFSET: u64 = 4096;
 
 /// The number of bytes reserved for the superblock and its backup.
 const RESERVED_SPACE: u64 = 4096 * 2;
+
+/// Appends to the given `file` to pad it to a multiple of `block_size`.
+///
+/// This returns the new size of the file.
+///
+/// # Errors
+/// - `Error::Io`: An I/O error occurred.
+pub fn pad_to_block_size(mut file: &File, block_size: u32) -> io::Result<u64> {
+    let position = file.seek(SeekFrom::End(0))?;
+    let padding_size = block_size as u64 - ((position - RESERVED_SPACE) % block_size as u64);
+    let padding = vec![0u8; padding_size as usize];
+    file.write_all(&padding)?;
+
+    Ok(position + padding_size)
+}
+
+/// Return the first `extents` which have a combined size of at least `size` bytes.
+pub fn allocate_extents(extents: Vec<Extent>, block_size: u32, size: u64) -> Vec<Extent> {
+    let mut output = Vec::new();
+    let mut bytes_remaining = size;
+
+    for extent in extents {
+        let blocks = min(extent.blocks, div_ceil(bytes_remaining, block_size as u64));
+        let new_extent = Extent {
+            index: extent.index,
+            blocks,
+        };
+        output.push(new_extent);
+        bytes_remaining -= min(bytes_remaining, new_extent.length(block_size));
+    }
+
+    output
+}
 
 /// A sequence of contiguous blocks in the archive.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
@@ -60,6 +95,20 @@ impl Extent {
     /// The length of the extent in bytes.
     pub fn length(&self, block_size: u32) -> u64 {
         self.blocks * block_size as u64
+    }
+
+    /// Returns the extent that is between this extent and `other`, or `None` if they are adjacent.
+    pub fn between(&self, other: Extent) -> Option<Extent> {
+        let new_extent = Extent {
+            index: self.index + self.blocks,
+            blocks: other.index - (self.index + self.blocks),
+        };
+
+        if new_extent.blocks <= 0 {
+            None
+        } else {
+            Some(new_extent)
+        }
     }
 }
 
