@@ -22,7 +22,7 @@ const CHECKSUM_SIZE: usize = 32;
 /// A 256-bit checksum used for uniquely identifying data.
 pub type Checksum = [u8; CHECKSUM_SIZE];
 
-/// An object in a repository.
+/// An object in an archive.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Object {
     /// The original size of the data in bytes.

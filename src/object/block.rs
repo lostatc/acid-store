@@ -34,46 +34,58 @@ const SUPERBLOCK_OFFSET: u64 = 0;
 const SUPERBLOCK_BACKUP_OFFSET: u64 = 4096;
 
 /// The number of bytes reserved for the superblock and its backup.
-const RESERVED_SPACE: usize = 4096 * 2;
+const RESERVED_SPACE: u64 = 4096 * 2;
 
-/// An object for locating a block of data in a repository.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct BlockAddress(u64);
-
-/// A sequence of contiguous blocks in the repository.
+/// A sequence of contiguous blocks in the archive.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
 pub struct Extent {
-    /// The address of the first block in the extent.
-    pub start: BlockAddress,
+    /// The index of the first block in the extent.
+    pub index: u64,
 
     /// The number of blocks in the extent.
     pub blocks: u64,
 }
 
-/// The repository's superblock.
+impl Extent {
+    /// The offset of start of the extent from the start of the archive in bytes.
+    pub fn start(&self, block_size: u32) -> u64 {
+        RESERVED_SPACE + (self.index * block_size as u64)
+    }
+
+    /// The offset of end of the extent from the start of the archive in bytes.
+    pub fn end(&self, block_size: u32) -> u64 {
+        self.start(block_size) + self.length(block_size)
+    }
+
+    /// The length of the extent in bytes.
+    pub fn length(&self, block_size: u32) -> u64 {
+        self.blocks * block_size as u64
+    }
+}
+
+/// The archive's superblock.
 ///
-/// This stores unencrypted metadata about the repository.
+/// This stores unencrypted metadata about the archive.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuperBlock {
-    /// The unique ID of this repository.
+    /// The unique ID of this archive.
     pub id: Uuid,
 
-    /// The block size of the repository in bytes.
-    pub block_size: u64,
+    /// The block size of the archive in bytes.
+    pub block_size: u32,
 
     /// The number of bits that define a chunk boundary.
     ///
     /// The average size of a chunk will be 2^`chunker_bits` bytes.
     pub chunker_bits: u32,
 
-    /// The compression method being used in this repository.
+    /// The compression method being used in this archive.
     pub compression: Compression,
 
-    /// The encryption method being used in this repository.
+    /// The encryption method being used in this archive.
     pub encryption: Encryption,
 
-    /// The extent which stores the repository's header.
+    /// The extent which stores the archive's header.
     pub header: Extent,
 }
 

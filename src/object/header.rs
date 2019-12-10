@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use super::chunk::Chunk;
 use super::object::{Checksum, Object};
 
-/// The header which stores metadata for a repository.
+/// The header which stores metadata for an archive.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Header<K>
 where
