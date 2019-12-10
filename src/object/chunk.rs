@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::object::block::Extent;
 
-/// A chunk of data in a repository.
+/// A chunk of data in an archive.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Chunk {
     /// The total size of the chunk in bytes.

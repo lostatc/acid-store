@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+mod archive;
 mod block;
 mod chunk;
 mod compression;
