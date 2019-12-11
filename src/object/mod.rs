@@ -16,7 +16,6 @@
 
 mod archive;
 mod block;
-mod chunk;
 mod compression;
 mod encryption;
 mod header;

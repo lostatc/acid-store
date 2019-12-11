@@ -34,13 +34,17 @@ pub fn compute_checksum(data: &[u8]) -> Checksum {
 }
 
 /// An object in an archive.
+///
+/// An object is a handle for accessing data in an archive. If two objects are equal, they represent
+/// the same underlying data. An object can be cloned to create multiple handles for accessing the
+/// same data.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Object {
     /// The original size of the data in bytes.
-    size: u64,
+    pub(super) size: u64,
 
     /// The checksums of the chunks which make up the data.
-    chunks: Vec<Checksum>,
+    pub(super) chunks: Vec<Checksum>,
 }
 
 impl Object {
