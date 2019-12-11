@@ -78,7 +78,10 @@ where
             chunker_bits: config.chunker_bits,
             compression: config.compression,
             encryption: config.encryption,
-            header: Extent { index: 0, blocks: 0 }
+            header: Extent {
+                index: 0,
+                blocks: 0,
+            },
         };
 
         // Return an error if a key was required but not provided.
@@ -229,12 +232,7 @@ where
 
     /// Compresses and encrypts the given `data` and returns it.
     fn encode_data(&self, data: &[u8]) -> io::Result<Vec<u8>> {
-        let mut compressed_data = Vec::new();
-
-        self.superblock
-            .compression
-            .compress(data)
-            .read_to_end(&mut compressed_data)?;
+        let compressed_data = self.superblock.compression.compress(data)?;
 
         Ok(self
             .superblock
@@ -246,13 +244,10 @@ where
     fn decode_data(&self, data: &[u8]) -> io::Result<Vec<u8>> {
         let decrypted_data = self.superblock.encryption.decrypt(data, &self.key)?;
 
-        let mut decompressed_data = Vec::new();
-        self.superblock
+        Ok(self
+            .superblock
             .compression
-            .decompress(decrypted_data.as_slice())
-            .read_to_end(&mut decompressed_data)?;
-
-        Ok(decompressed_data)
+            .decompress(decrypted_data.as_slice())?)
     }
 
     /// Writes the given `data` as a new chunk and returns its checksum.
