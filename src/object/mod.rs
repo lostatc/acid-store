@@ -14,6 +14,12 @@
  * limitations under the License.
  */
 
+pub use self::archive::ObjectArchive;
+pub use self::compression::Compression;
+pub use self::config::ArchiveConfig;
+pub use self::encryption::{Encryption, Key, KeySalt};
+pub use self::object::Object;
+
 mod archive;
 mod block;
 mod compression;

@@ -20,20 +20,22 @@
 //! some key differences. Files in a ZIP archive can't be updated in-place. New data can be written
 //! to the archive, but the old data sticks around, taking up space. The only way to reclaim space
 //! in a ZIP file is to unpack and repack the entire archive. The file format used by this crate
-//! doesn't have this limitation, and it provides other benefits like transparent block-level
+//! doesn't have this limitation, and it provides other benefits like content-defined block-level
 //! deduplication.
 //!
 //! While ZIP and TAR files are meant to be portable, archives created by this crate can be used to
-//! create high-performance file formats.
+//! create high-performance file formats. They also support transparent compression and encryption.
 //!
 //! This crate provides two abstractions for interacting with with the archive format:
 //!
 //! - `FileArchive` is a file archive like ZIP or TAR which supports modification times, POSIX file
 //! permissions, extended attributes, and symbolic links.
-//! - `ObjectArchive` is an object store which represents data as a flat list of objects each
-//! consisting of a unique name, data, and metadata.
+//! - `ObjectArchive` is an object store which represents data as a flat mapping of keys to binary
+//! blobs instead of a hierarchy of files.
 
 #![allow(dead_code)]
+
+pub use object::{ArchiveConfig, Compression, Encryption, Key, KeySalt, Object, ObjectArchive};
 
 mod error;
 mod object;
