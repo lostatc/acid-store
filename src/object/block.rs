@@ -112,6 +112,16 @@ impl Extent {
     }
 }
 
+/// A chunk of data in an archive.
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+pub struct Chunk {
+    /// The total size of the chunk in bytes.
+    pub size: u64,
+
+    /// The extents containing the data for this chunk.
+    pub extents: Vec<Extent>,
+}
+
 /// The archive's superblock.
 ///
 /// This stores unencrypted metadata about the archive.

@@ -26,15 +26,14 @@ use serde::Serialize;
 
 use crate::error::Result;
 
-use super::block::{allocate_extents, Extent, pad_to_block_size, SuperBlock};
-use super::chunk::Chunk;
+use super::block::{allocate_extents, Chunk, Extent, pad_to_block_size, SuperBlock};
 use super::encryption::Key;
 use super::header::Header;
-use super::object::{Checksum, compute_checksum};
+use super::object::{Checksum, compute_checksum, Object};
 
-struct ObjectArchive<K>
+pub struct ObjectArchive<K>
 where
-    K: Eq + Hash + Clone,
+    K: Eq + Hash + Clone + Serialize + DeserializeOwned,
 {
     /// The superblock for this archive.
     superblock: SuperBlock,
@@ -54,9 +53,10 @@ where
     K: Eq + Hash + Clone + Serialize + DeserializeOwned,
 {
     /// Returns the data in the given `extent`.
-    fn read_extent(&mut self, extent: Extent) -> io::Result<Vec<u8>> {
-        self.archive_file
-            .seek(SeekFrom::Start(extent.start(self.superblock.block_size)))?;
+    fn read_extent(&self, extent: Extent) -> io::Result<Vec<u8>> {
+        let mut archive_file = &self.archive_file;
+
+        archive_file.seek(SeekFrom::Start(extent.start(self.superblock.block_size)))?;
 
         let mut buffer = Vec::new();
 
@@ -205,7 +205,7 @@ where
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     /// - `Error::Verify`: The ciphertext verification failed.
-    fn read_chunk(&mut self, checksum: Checksum) -> Result<Option<Vec<u8>>> {
+    fn read_chunk(&self, checksum: Checksum) -> Result<Option<Vec<u8>>> {
         // Get the chunk with the given checksum if it exists.
         let chunk = match self.header.chunks.get(&checksum) {
             None => return Ok(None),
@@ -225,6 +225,53 @@ where
         let decoded_data = self.decode_data(&chunk_data)?;
 
         Ok(Some(decoded_data))
+    }
+
+    /// Adds an object with the given `id` to the archive and returns it.
+    ///
+    /// If an object with the given `id` already existed in the archive, it is replaced and the old
+    /// object is returned. Otherwise, `None` is returned.
+    pub fn insert(&mut self, id: K, object: Object) -> Option<Object> {
+        self.header.objects.insert(id, object)
+    }
+
+    /// Removes and returns the object with the given `id` from the archive.
+    ///
+    /// This returns `None` if there is no object with the given `id`.
+    pub fn remove(&mut self, id: &K) -> Option<Object> {
+        self.header.objects.remove(id)
+    }
+
+    /// Returns a reference to the object with the given `id`, or `None` if it doesn't exist.
+    pub fn get(&self, id: &K) -> Option<&Object> {
+        self.header.objects.get(id)
+    }
+
+    /// Returns an iterator over all the IDs of objects in this archive.
+    pub fn ids(&self) -> impl Iterator<Item = &K> {
+        self.header.objects.keys()
+    }
+
+    /// Returns an iterator over all the IDs and objects in this archive.
+    pub fn objects(&self) -> impl Iterator<Item = (&K, &Object)> {
+        self.header.objects.iter()
+    }
+
+    /// Writes the given `data` to the archive and returns a new object.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn write(&mut self, data: impl Read) -> Result<Object> {
+        unimplemented!()
+    }
+
+    /// Return a reader for reading the data associated with `object` from the archive.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    /// - `Error::Verify`: The data in the archive was corrupt or could not be verified.
+    pub fn read(&self, object: &Object) -> Result<impl Read> {
+        unimplemented!()
     }
 
     /// Commit changes which have been made to the archive.
@@ -258,5 +305,20 @@ where
         self.superblock.write(&mut self.archive_file)?;
 
         Ok(())
+    }
+
+    /// Compact the archive to reduce its size.
+    ///
+    /// Archives can reuse space left over from deleted objects, but they can not deallocate space
+    /// which has been allocated. This means that archive files can grow in size, but never shrink.
+    ///
+    /// This method rewrites data in the archive to free allocated space which is no longer being
+    /// used. This can result in a significantly smaller archive size if a lot of data has been
+    /// removed from this archive and not replaced with new data.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn compact(&mut self) -> Result<()> {
+        unimplemented!()
     }
 }
