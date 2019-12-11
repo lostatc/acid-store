@@ -21,6 +21,7 @@ blake2 = "0.8.1"
 # Compression
 flate2 = "1.0.13"
 xz2 = "0.1.6"
+lz4 = "1.23.1"
 
 # Encryption
 sodiumoxide = "0.2.5"

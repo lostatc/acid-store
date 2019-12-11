@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-use std::io::Read;
+use std::io::{self, Read, Write};
 
 use flate2::Compression as CompressionLevel;
 use flate2::read::{GzDecoder, GzEncoder};
+use lz4::{Decoder as Lz4Decoder, EncoderBuilder as Lz4EncoderBuilder};
 use serde::{Deserialize, Serialize};
 use xz2::read::{XzDecoder, XzEncoder};
 
@@ -29,35 +30,73 @@ pub enum Compression {
 
     /// Compress data using the DEFLATE compression algorithm.
     Deflate {
-        /// The compression level to use as a number in the range 0-9.
+        /// The compression level to use.
+        ///
+        /// This is usually a number in the range 0-9.
         level: u32,
     },
 
     /// Compress data using the LZMA compression algorithm.
     Lzma {
-        /// The compression level to use as a number in the range 0-9.
+        /// The compression level to use.
+        ///
+        /// This is usually a number in the range 0-9.
+        level: u32,
+    },
+
+    /// Compress data using the LZ4 compression algorithm.
+    Lz4 {
+        /// The compression level to use.
+        ///
+        /// This is usually a number in the range 0-9.
         level: u32,
     },
 }
 
 impl Compression {
-    /// Wraps the given `reader` to compress its bytes using this compression method.
-    pub(super) fn compress<'a>(&self, reader: impl Read + 'a) -> Box<dyn Read + 'a> {
+    /// Compresses the given `data` and returns it.
+    pub(super) fn compress(&self, data: &[u8]) -> io::Result<Vec<u8>> {
         match self {
-            Compression::None => Box::new(reader),
+            Compression::None => Ok(data.to_vec()),
             Compression::Deflate { level } => {
-                Box::new(GzEncoder::new(reader, CompressionLevel::new(*level)))
+                let mut output = Vec::with_capacity(data.len());
+                GzEncoder::new(data, CompressionLevel::new(*level)).read_to_end(&mut output)?;
+                Ok(output)
             }
-            Compression::Lzma { level } => Box::new(XzEncoder::new(reader, *level)),
+            Compression::Lzma { level } => {
+                let mut output = Vec::with_capacity(data.len());
+                XzEncoder::new(data, *level).read_to_end(&mut output)?;
+                Ok(output)
+            }
+            Compression::Lz4 { level } => {
+                let mut output = Vec::with_capacity(data.len());
+                let mut encoder = Lz4EncoderBuilder::new().level(*level).build(&mut output)?;
+                encoder.write_all(data)?;
+                drop(encoder);
+                Ok(output)
+            }
         }
     }
 
     /// Wraps the given `reader` to decompress its bytes using this compression method.
-    pub(super) fn decompress<'a>(&self, reader: impl Read + 'a) -> Box<dyn Read + 'a> {
+    pub(super) fn decompress<'a>(&self, data: &[u8]) -> io::Result<Vec<u8>> {
         match self {
-            Compression::None => Box::new(reader),
-            Compression::Deflate { .. } => Box::new(GzDecoder::new(reader)),
-            Compression::Lzma { .. } => Box::new(XzDecoder::new(reader)),
+            Compression::None => Ok(data.to_vec()),
+            Compression::Deflate { .. } => {
+                let mut output = Vec::with_capacity(data.len());
+                GzDecoder::new(data).read_to_end(&mut output)?;
+                Ok(output)
+            }
+            Compression::Lzma { .. } => {
+                let mut output = Vec::with_capacity(data.len());
+                XzDecoder::new(data).read_to_end(&mut output)?;
+                Ok(output)
+            }
+            Compression::Lz4 { .. } => {
+                let mut output = Vec::with_capacity(data.len());
+                Lz4Decoder::new(data)?.read_to_end(&mut output)?;
+                Ok(output)
+            }
         }
     }
 }
