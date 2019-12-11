@@ -20,6 +20,9 @@ use std::hash::Hash;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
 use num_integer::div_floor;
+use rmp_serde::to_vec;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 use crate::error::Result;
 
@@ -48,7 +51,7 @@ where
 
 impl<K> ObjectArchive<K>
 where
-    K: Eq + Hash + Clone,
+    K: Eq + Hash + Clone + Serialize + DeserializeOwned,
 {
     /// Returns the data in the given `extent`.
     fn read_extent(&mut self, extent: Extent) -> io::Result<Vec<u8>> {
@@ -81,6 +84,9 @@ where
     }
 
     /// Creates a new extent at the end of the file and returns it.
+    ///
+    /// This pads the file so that the new extent is aligned with the block size. The returned
+    /// extent has a length of `std::u64::MAX`, but the space for the new extent is not allocated.
     fn new_extent(&mut self) -> io::Result<Extent> {
         let offset = pad_to_block_size(&mut self.archive_file, self.superblock.block_size)?;
         let index = div_floor(offset, self.superblock.block_size as u64);
@@ -91,6 +97,9 @@ where
     }
 
     /// Returns a list of extents which are unused and can be overwritten.
+    ///
+    /// The returned extents are sorted by their location in the file. The final extent in the list
+    /// will be the extent at the end of the file, which has a length of `std::u64::MAX`.
     fn unused_extents(&mut self) -> io::Result<Vec<Extent>> {
         // Get all extents which are part of a chunk.
         let mut all_extents = self
@@ -118,7 +127,7 @@ where
         Ok(unused_extents)
     }
 
-    /// Compresses and encrypts the given `data`.
+    /// Compresses and encrypts the given `data` and returns it.
     fn encode_data(&self, data: &[u8]) -> io::Result<Vec<u8>> {
         let mut compressed_data = Vec::new();
 
@@ -133,7 +142,11 @@ where
             .encrypt(compressed_data.as_ref(), &self.key))
     }
 
-    /// Decrypts and decompresses the given `data`.
+    /// Decrypts and decompresses the given `data` and returns it.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    /// - `Error::Verify`: The ciphertext verification failed.
     fn decode_data(&self, data: &[u8]) -> Result<Vec<u8>> {
         let decrypted_data = self.superblock.encryption.decrypt(data, &self.key)?;
 
@@ -146,10 +159,20 @@ where
         Ok(decompressed_data)
     }
 
-    /// Writes the given `data` as a chunk and returns its checksum.
+    /// Writes the given `data` as a new chunk and returns its checksum.
+    ///
+    /// If a chunk with the given `data` already exists, its checksum is returned and no new data is
+    /// written.
     fn write_chunk(&mut self, data: &[u8]) -> io::Result<Checksum> {
-        // Get a checksum of the unencoded data and then encode it.
+        // Get a checksum of the unencoded data.
         let checksum = compute_checksum(data);
+
+        // Check if the chunk already exists.
+        if self.header.chunks.contains_key(&checksum) {
+            return Ok(checksum)
+        }
+
+        // Encode the data.
         let encoded_data = self.encode_data(data)?;
 
         // Get the list of extents which will hold the data.
@@ -165,7 +188,7 @@ where
             bytes_written += self.write_extent(*extent, &encoded_data[bytes_written..])?;
         }
 
-        // Write this chunk to the archive.
+        // Add this chunk to the header.
         self.header.chunks.insert(
             checksum,
             Chunk {
@@ -178,7 +201,12 @@ where
     }
 
     /// Returns the bytes of the chunk with the given checksum, or `None` if there is none.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    /// - `Error::Verify`: The ciphertext verification failed.
     fn read_chunk(&mut self, checksum: Checksum) -> Result<Option<Vec<u8>>> {
+        // Get the chunk with the given checksum if it exists.
         let chunk = match self.header.chunks.get(&checksum) {
             None => return Ok(None),
             Some(value) => value.clone()
@@ -197,5 +225,38 @@ where
         let decoded_data = self.decode_data(&chunk_data)?;
 
         Ok(Some(decoded_data))
+    }
+
+    /// Commit changes which have been made to the archive.
+    ///
+    /// No changes are saved persistently until this method is called.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn commit(&mut self) -> Result<()> {
+        // Serialize and encode the header.
+        let serialized_header = to_vec(&self.header)?;
+        let encoded_header = self.encode_data(&serialized_header)?;
+
+        // The entire header must be stored in a single extent.
+        // Find the first extent which is large enough to hold it.
+        let unused_extents = self.unused_extents()?;
+        let header_extent = unused_extents
+            .iter()
+            .find(|extent|
+                extent.length(self.superblock.block_size) >= encoded_header.len() as u64
+            )
+            .unwrap();
+
+        // Write the header to the chosen extent.
+        self.write_extent(*header_extent, &encoded_header)?;
+
+        // Update the superblock to point to the new header.
+        self.superblock.header = *header_extent;
+
+        // Write the new superblock, atomically completing the commit.
+        self.superblock.write(&mut self.archive_file)?;
+
+        Ok(())
     }
 }
