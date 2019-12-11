@@ -372,6 +372,17 @@ where
         })
     }
 
+    /// Serializes the given `value`, writes it to the archive, and returns a new object.
+    ///
+    /// # Errors
+    /// - `ErrorKind::InvalidInput`: The given `value` could not be serialized.
+    pub fn serialize(&mut self, value: &impl Serialize) -> io::Result<Object> {
+        let serialized_value = to_vec(&value).map_err(|error|
+            io::Error::new(io::ErrorKind::InvalidInput, error)
+        )?;
+        self.write(serialized_value.as_slice())
+    }
+
     /// Returns a reader for reading the data associated with `object` from the archive.
     pub fn read<'a>(&'a self, object: &'a Object) -> impl Read + 'a {
         let chunks = object
@@ -380,6 +391,24 @@ where
             .map(move |checksum| self.read_chunk(checksum));
 
         IterRead::new(chunks)
+    }
+
+    /// Returns a buffer containing the data associated with `object`.
+    pub fn read_all(&self, object: &Object) -> io::Result<Vec<u8>> {
+        let mut data = Vec::with_capacity(object.size() as usize);
+        self.read(object).read_to_end(&mut data)?;
+        Ok(data)
+    }
+
+    /// Deserializes and returns the data associated with `object`.
+    ///
+    /// # Errors
+    /// - `ErrorKind::InvalidData`: The data could not be deserialized as a value of type `T`.
+    pub fn deserialize<T: DeserializeOwned>(&self, object: &Object) -> io::Result<T> {
+        let serialized_value = self.read_all(object)?;
+        from_read(serialized_value.as_slice()).map_err(|error|
+            io::Error::new(io::ErrorKind::InvalidData, error)
+        )
     }
 
     /// Commit changes which have been made to the archive.
