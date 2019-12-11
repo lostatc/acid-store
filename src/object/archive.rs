@@ -35,6 +35,15 @@ use super::encryption::{Encryption, Key};
 use super::header::Header;
 use super::object::{Checksum, compute_checksum, Object};
 
+/// A persistent object store.
+///
+/// An `ObjectArchive` is a binary file format for efficiently storing large amounts of binary data.
+/// An object archive maps keys of type `K` to binary blobs called objects.
+///
+/// Data in an object archive is transparently deduplicated using content-defined block-level
+/// deduplication. The data and metadata in the archive can optionally be compressed and encrypted.
+///
+/// Changes made to an `ObjectArchive` are not persisted to disk until `commit` is called.
 pub struct ObjectArchive<K>
 where
     K: Eq + Hash + Clone + Serialize + DeserializeOwned,
@@ -49,7 +58,7 @@ where
     archive_file: File,
 
     /// The encryption key for the repository.
-    key: Key,
+    encryption_key: Key,
 }
 
 impl<K> ObjectArchive<K>
@@ -58,13 +67,14 @@ where
 {
     /// Create a new archive at the given `path` with the given `config`.
     ///
-    /// If encryption is enabled, a `key` must be provided. Otherwise, this argument can be `None`.
+    /// If encryption is enabled, an `encryption_key` must be provided. Otherwise, this argument
+    /// can be `None`.
     ///
     /// # Errors
     /// - `ErrorKind::PermissionDenied`: The user lack permission to create the archive file.
     /// - `ErrorKind::AlreadyExists`: A file already exists at `path`.
     /// - `ErrorKind::InvalidInput`: A key was required but not provided.
-    pub fn create(path: &Path, config: ArchiveConfig, key: Option<Key>) -> io::Result<Self> {
+    pub fn create(path: &Path, config: ArchiveConfig, encryption_key: Option<Key>) -> io::Result<Self> {
         let archive_file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -85,7 +95,7 @@ where
         };
 
         // Return an error if a key was required but not provided.
-        if key == None && superblock.encryption != Encryption::None {
+        if encryption_key == None && superblock.encryption != Encryption::None {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "A key was required but not provided",
@@ -93,14 +103,14 @@ where
         }
 
         // Create an empty key if a key is not needed.
-        let key = key.unwrap_or(Key::new(vec![0u8; 0]));
+        let encryption_key = encryption_key.unwrap_or(Key::new(vec![0u8; 0]));
 
         // Create a new archive with an empty header.
         let mut archive = ObjectArchive {
             superblock,
             header: Default::default(),
             archive_file,
-            key,
+            encryption_key,
         };
 
         // Write the header and superblock to disk.
@@ -111,7 +121,8 @@ where
 
     /// Opens the archive at the given `path`.
     ///
-    /// If encryption is enabled, a `key` must be provided. Otherwise, this argument can be `None`.
+    /// If encryption is enabled, an `encryption_key` must be provided. Otherwise, this argument can
+    /// be `None`.
     ///
     /// # Errors
     /// - `ErrorKind::NotFound`: The archive file does not exist.
@@ -119,14 +130,14 @@ where
     /// - `ErrorKind::InvalidInput`: A key was required but not provided.
     /// - `ErrorKind::InvalidData`: The header is corrupt.
     /// - `ErrorKind::InvalidData`: The wrong encryption key was provided.
-    pub fn open(path: &Path, key: Option<Key>) -> io::Result<Self> {
+    pub fn open(path: &Path, encryption_key: Option<Key>) -> io::Result<Self> {
         let mut archive_file = OpenOptions::new().read(true).write(true).open(path)?;
 
         // Read the superblock.
         let superblock = SuperBlock::read(&mut archive_file)?;
 
         // Return an error if a key was required but not provided.
-        if key == None && superblock.encryption != Encryption::None {
+        if encryption_key == None && superblock.encryption != Encryption::None {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "A key was required but not provided",
@@ -134,14 +145,14 @@ where
         }
 
         // Create an empty key if a key is not needed.
-        let key = key.unwrap_or(Key::new(vec![0u8; 0]));
+        let encryption_key = encryption_key.unwrap_or(Key::new(vec![0u8; 0]));
 
         // Create the new archive without its header.
         let mut archive = ObjectArchive {
             superblock,
             header: Default::default(),
             archive_file,
-            key,
+            encryption_key,
         };
 
         // Decode and deserialize the header.
@@ -237,12 +248,12 @@ where
         Ok(self
             .superblock
             .encryption
-            .encrypt(compressed_data.as_ref(), &self.key))
+            .encrypt(compressed_data.as_ref(), &self.encryption_key))
     }
 
     /// Decrypts and decompresses the given `data` and returns it.
     fn decode_data(&self, data: &[u8]) -> io::Result<Vec<u8>> {
-        let decrypted_data = self.superblock.encryption.decrypt(data, &self.key)?;
+        let decrypted_data = self.superblock.encryption.decrypt(data, &self.encryption_key)?;
 
         Ok(self
             .superblock
@@ -311,32 +322,32 @@ where
         Ok(decoded_data)
     }
 
-    /// Adds an object with the given `id` to the archive and returns it.
+    /// Adds an object with the given `key` to the archive and returns it.
     ///
-    /// If an object with the given `id` already existed in the archive, it is replaced and the old
+    /// If an object with the given `key` already existed in the archive, it is replaced and the old
     /// object is returned. Otherwise, `None` is returned.
-    pub fn insert(&mut self, id: K, object: Object) -> Option<Object> {
-        self.header.objects.insert(id, object)
+    pub fn insert(&mut self, key: K, object: Object) -> Option<Object> {
+        self.header.objects.insert(key, object)
     }
 
-    /// Removes and returns the object with the given `id` from the archive.
+    /// Removes and returns the object with the given `key` from the archive.
     ///
-    /// This returns `None` if there is no object with the given `id`.
-    pub fn remove(&mut self, id: &K) -> Option<Object> {
-        self.header.objects.remove(id)
+    /// This returns `None` if there is no object with the given `key`.
+    pub fn remove(&mut self, key: &K) -> Option<Object> {
+        self.header.objects.remove(key)
     }
 
-    /// Returns a reference to the object with the given `id`, or `None` if it doesn't exist.
-    pub fn get(&self, id: &K) -> Option<&Object> {
-        self.header.objects.get(id)
+    /// Returns a reference to the object with the given `key`, or `None` if it doesn't exist.
+    pub fn get(&self, key: &K) -> Option<&Object> {
+        self.header.objects.get(key)
     }
 
-    /// Returns an iterator over all the IDs of objects in this archive.
-    pub fn ids(&self) -> impl Iterator<Item = &K> {
+    /// Returns an iterator over all the keys in this archive.
+    pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.header.objects.keys()
     }
 
-    /// Returns an iterator over all the IDs and objects in this archive.
+    /// Returns an iterator over all the keys and objects in this archive.
     pub fn objects(&self) -> impl Iterator<Item = (&K, &Object)> {
         self.header.objects.iter()
     }

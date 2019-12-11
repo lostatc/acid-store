@@ -35,9 +35,9 @@ pub fn compute_checksum(data: &[u8]) -> Checksum {
 
 /// An object in an archive.
 ///
-/// An object is a handle for accessing data in an archive. If two objects are equal, they represent
-/// the same underlying data. An object can be cloned to create multiple handles for accessing the
-/// same data.
+/// An object is a handle for accessing data in an archive. It doesn't own or store the data itself.
+/// If two objects are equal, they represent the same underlying data. An object can be cloned to
+/// create multiple handles for accessing the same data.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Object {
     /// The original size of the data in bytes.
