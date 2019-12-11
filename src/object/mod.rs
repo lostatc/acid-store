@@ -17,6 +17,7 @@
 mod archive;
 mod block;
 mod compression;
+mod config;
 mod encryption;
 mod header;
 mod object;

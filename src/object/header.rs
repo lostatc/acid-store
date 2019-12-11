@@ -34,3 +34,15 @@ where
     /// A map of object IDs to information about those objects.
     pub objects: HashMap<K, Object>,
 }
+
+impl<K> Default for Header<K>
+where
+    K: Eq + Hash + Clone,
+{
+    fn default() -> Self {
+        Header {
+            chunks: HashMap::new(),
+            objects: HashMap::new(),
+        }
+    }
+}
