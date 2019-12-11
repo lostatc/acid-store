@@ -19,6 +19,8 @@ use std::fs::File;
 use std::hash::Hash;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
+use cdchunking::Chunker;
+use cdchunking::ZPAQ;
 use iter_read::IterRead;
 use num_integer::div_floor;
 use rmp_serde::to_vec;
@@ -247,7 +249,18 @@ where
 
     /// Writes the given `data` to the archive and returns a new object.
     pub fn write(&mut self, data: impl Read) -> io::Result<Object> {
-        unimplemented!()
+        let chunker = Chunker::new(ZPAQ::new(self.superblock.chunker_bits as usize));
+
+        let mut checksums = Vec::new();
+        let mut size = 0u64;
+
+        for chunk_result in chunker.whole_chunks(data) {
+            let chunk = chunk_result?;
+            size += chunk.len() as u64;
+            checksums.push(self.write_chunk(&chunk)?);
+        }
+
+        Ok(Object { size, chunks: checksums })
     }
 
     /// Returns a reader for reading the data associated with `object` from the archive.
