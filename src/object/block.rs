@@ -161,9 +161,9 @@ impl SuperBlock {
         let superblock_size = u32::from_be_bytes(size_buffer) as u64;
 
         // Deserialize the superblock.
-        let superblock = from_read(file.take(superblock_size)).map_err(|_|
+        let superblock = from_read(file.take(superblock_size)).map_err(|_| {
             io::Error::new(io::ErrorKind::InvalidData, "The superblock is corrupt.")
-        )?;
+        })?;
 
         Ok(superblock)
     }

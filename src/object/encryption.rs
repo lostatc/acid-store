@@ -26,7 +26,7 @@ use sodiumoxide::randombytes::randombytes_into;
 use zeroize::Zeroize;
 
 /// A data encryption method.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum Encryption {
     /// Do not encrypt data.
     None,
@@ -61,12 +61,12 @@ impl Encryption {
             Encryption::XChaCha20Poly1305 => {
                 let nonce = Nonce::from_slice(&ciphertext[..NONCEBYTES]).unwrap();
                 let chacha_key = ChaChaKey::from_slice(key.0.as_ref()).unwrap();
-                open(&ciphertext[NONCEBYTES..], None, &nonce, &chacha_key).map_err(|_|
+                open(&ciphertext[NONCEBYTES..], None, &nonce, &chacha_key).map_err(|_| {
                     io::Error::new(
                         io::ErrorKind::InvalidData,
                         "Ciphertext verification failed.",
                     )
-                )
+                })
             }
         }
     }
@@ -83,7 +83,7 @@ impl Encryption {
 }
 
 /// Salt for deriving an encryption `Key`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct KeySalt(Salt);
 
 impl KeySalt {
@@ -96,7 +96,7 @@ impl KeySalt {
 /// An encryption key.
 ///
 /// The bytes of the key are zeroed in memory when this value is dropped.
-#[derive(Debug, Clone, Zeroize, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Zeroize, Serialize, Deserialize)]
 pub struct Key(Vec<u8>);
 
 impl Key {

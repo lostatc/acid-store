@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use xz2::read::{XzDecoder, XzEncoder};
 
 /// A data compression method.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum Compression {
     /// Do not compress data.
     None,

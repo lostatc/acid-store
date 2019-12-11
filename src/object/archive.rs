@@ -15,20 +15,23 @@
  */
 
 use std::cmp::min;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::hash::Hash;
 use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::path::Path;
 
 use cdchunking::Chunker;
 use cdchunking::ZPAQ;
 use iter_read::IterRead;
 use num_integer::div_floor;
-use rmp_serde::to_vec;
+use rmp_serde::{from_read, to_vec};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use uuid::Uuid;
 
 use super::block::{allocate_extents, Chunk, Extent, pad_to_block_size, SuperBlock};
-use super::encryption::Key;
+use super::config::ArchiveConfig;
+use super::encryption::{Encryption, Key};
 use super::header::Header;
 use super::object::{Checksum, compute_checksum, Object};
 
@@ -53,6 +56,102 @@ impl<K> ObjectArchive<K>
 where
     K: Eq + Hash + Clone + Serialize + DeserializeOwned,
 {
+    /// Create a new archive at the given `path` with the given `config`.
+    ///
+    /// If encryption is enabled, a `key` must be provided. Otherwise, this argument can be `None`.
+    ///
+    /// # Errors
+    /// - `ErrorKind::PermissionDenied`: The user lack permission to create the archive file.
+    /// - `ErrorKind::AlreadyExists`: A file already exists at `path`.
+    /// - `ErrorKind::InvalidInput`: A key was required but not provided.
+    pub fn create(path: &Path, config: ArchiveConfig, key: Option<Key>) -> io::Result<Self> {
+        let archive_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(path)?;
+
+        // Create the superblock without a reference to a header.
+        let superblock = SuperBlock {
+            id: Uuid::new_v4(),
+            block_size: config.block_size,
+            chunker_bits: config.chunker_bits,
+            compression: config.compression,
+            encryption: config.encryption,
+            header: Extent { index: 0, blocks: 0 }
+        };
+
+        // Return an error if a key was required but not provided.
+        if key == None && superblock.encryption != Encryption::None {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "A key was required but not provided",
+            ));
+        }
+
+        // Create an empty key if a key is not needed.
+        let key = key.unwrap_or(Key::new(vec![0u8; 0]));
+
+        // Create a new archive with an empty header.
+        let mut archive = ObjectArchive {
+            superblock,
+            header: Default::default(),
+            archive_file,
+            key,
+        };
+
+        // Write the header and superblock to disk.
+        archive.commit()?;
+
+        Ok(archive)
+    }
+
+    /// Opens the archive at the given `path`.
+    ///
+    /// If encryption is enabled, a `key` must be provided. Otherwise, this argument can be `None`.
+    ///
+    /// # Errors
+    /// - `ErrorKind::NotFound`: The archive file does not exist.
+    /// - `ErrorKind::PermissionDenied`: The user lack permission to open the archive file.
+    /// - `ErrorKind::InvalidInput`: A key was required but not provided.
+    /// - `ErrorKind::InvalidData`: The header is corrupt.
+    /// - `ErrorKind::InvalidData`: The wrong encryption key was provided.
+    pub fn open(path: &Path, key: Option<Key>) -> io::Result<Self> {
+        let mut archive_file = OpenOptions::new().read(true).write(true).open(path)?;
+
+        // Read the superblock.
+        let superblock = SuperBlock::read(&mut archive_file)?;
+
+        // Return an error if a key was required but not provided.
+        if key == None && superblock.encryption != Encryption::None {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "A key was required but not provided",
+            ));
+        }
+
+        // Create an empty key if a key is not needed.
+        let key = key.unwrap_or(Key::new(vec![0u8; 0]));
+
+        // Create the new archive without its header.
+        let mut archive = ObjectArchive {
+            superblock,
+            header: Default::default(),
+            archive_file,
+            key,
+        };
+
+        // Decode and deserialize the header.
+        let header_bytes = archive.decode_data(&archive.read_extent(archive.superblock.header)?)?;
+        let header = from_read(header_bytes.as_slice())
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "The header is corrupt."))?;
+
+        // Add the header to the archive.
+        archive.header = header;
+
+        Ok(archive)
+    }
+
     /// Returns the data in the given `extent`.
     fn read_extent(&self, extent: Extent) -> io::Result<Vec<u8>> {
         let mut archive_file = &self.archive_file;
@@ -199,7 +298,7 @@ where
 
     /// Returns the bytes of the chunk with the given checksum, or `None` if there is none.
     fn read_chunk(&self, checksum: &Checksum) -> io::Result<Vec<u8>> {
-        // Get the chunk with the given checksum if it exists.
+        // Get the chunk with the given checksum.
         let chunk = self.header.chunks[checksum].clone();
 
         // Read the contents of each extent in the chunk into a buffer.
@@ -254,13 +353,17 @@ where
         let mut checksums = Vec::new();
         let mut size = 0u64;
 
+        // Split the data into content-defined chunks and write those chunks to the archive.
         for chunk_result in chunker.whole_chunks(data) {
             let chunk = chunk_result?;
             size += chunk.len() as u64;
             checksums.push(self.write_chunk(&chunk)?);
         }
 
-        Ok(Object { size, chunks: checksums })
+        Ok(Object {
+            size,
+            chunks: checksums,
+        })
     }
 
     /// Returns a reader for reading the data associated with `object` from the archive.
