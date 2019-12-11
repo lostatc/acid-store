@@ -24,8 +24,6 @@ use rmp_serde::{from_read, to_vec};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::error::Result;
-
 use super::compression::Compression;
 use super::encryption::Encryption;
 
@@ -154,7 +152,7 @@ impl SuperBlock {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     /// - `Error::Deserialize`: The superblock could not be deserialized.
-    fn read_at(file: &mut File, offset: u64) -> Result<Self> {
+    fn read_at(file: &mut File, offset: u64) -> io::Result<Self> {
         file.seek(SeekFrom::Start(offset))?;
 
         // Get the size of the superblock.
@@ -163,19 +161,19 @@ impl SuperBlock {
         let superblock_size = u32::from_be_bytes(size_buffer) as u64;
 
         // Deserialize the superblock.
-        Ok(from_read(file.take(superblock_size))?)
+        let superblock = from_read(file.take(superblock_size)).map_err(|_|
+            io::Error::new(io::ErrorKind::InvalidData, "The superblock is corrupt.")
+        )?;
+
+        Ok(superblock)
     }
 
     /// Write the superblock to the given `file` at the given `offset`.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    /// - `Error::Serialize`: The superblock could not be serialized.
-    fn write_at(&self, file: &mut File, offset: u64) -> Result<()> {
+    fn write_at(&self, file: &mut File, offset: u64) -> io::Result<()> {
         file.seek(SeekFrom::Start(offset))?;
 
         // Serialize the superblock.
-        let superblock = to_vec(&self)?;
+        let superblock = to_vec(&self).expect("Could not serialize the superblock.");
         let superblock_size = superblock.len();
 
         // Write the superblock size and the superblock itself.
@@ -186,13 +184,13 @@ impl SuperBlock {
     }
 
     /// Read the superblock from the given `file` or the backup superblock if it is corrupt.
-    pub fn read(file: &mut File) -> Result<Self> {
+    pub fn read(file: &mut File) -> io::Result<Self> {
         Self::read_at(file, SUPERBLOCK_OFFSET)
             .or_else(|_| Self::read_at(file, SUPERBLOCK_BACKUP_OFFSET))
     }
 
     /// Write this superblock to the given `file` twice, a primary and a backup.
-    pub fn write(&self, file: &mut File) -> Result<()> {
+    pub fn write(&self, file: &mut File) -> io::Result<()> {
         self.write_at(file, SUPERBLOCK_OFFSET)?;
         self.write_at(file, SUPERBLOCK_BACKUP_OFFSET)?;
 

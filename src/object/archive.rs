@@ -19,12 +19,11 @@ use std::fs::File;
 use std::hash::Hash;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 
+use iter_read::IterRead;
 use num_integer::div_floor;
 use rmp_serde::to_vec;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-
-use crate::error::Result;
 
 use super::block::{allocate_extents, Chunk, Extent, pad_to_block_size, SuperBlock};
 use super::encryption::Key;
@@ -143,11 +142,7 @@ where
     }
 
     /// Decrypts and decompresses the given `data` and returns it.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    /// - `Error::Verify`: The ciphertext verification failed.
-    fn decode_data(&self, data: &[u8]) -> Result<Vec<u8>> {
+    fn decode_data(&self, data: &[u8]) -> io::Result<Vec<u8>> {
         let decrypted_data = self.superblock.encryption.decrypt(data, &self.key)?;
 
         let mut decompressed_data = Vec::new();
@@ -169,7 +164,7 @@ where
 
         // Check if the chunk already exists.
         if self.header.chunks.contains_key(&checksum) {
-            return Ok(checksum)
+            return Ok(checksum);
         }
 
         // Encode the data.
@@ -201,16 +196,9 @@ where
     }
 
     /// Returns the bytes of the chunk with the given checksum, or `None` if there is none.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    /// - `Error::Verify`: The ciphertext verification failed.
-    fn read_chunk(&self, checksum: Checksum) -> Result<Option<Vec<u8>>> {
+    fn read_chunk(&self, checksum: &Checksum) -> io::Result<Vec<u8>> {
         // Get the chunk with the given checksum if it exists.
-        let chunk = match self.header.chunks.get(&checksum) {
-            None => return Ok(None),
-            Some(value) => value.clone()
-        };
+        let chunk = self.header.chunks[checksum].clone();
 
         // Read the contents of each extent in the chunk into a buffer.
         let mut chunk_data = Vec::new();
@@ -224,7 +212,7 @@ where
         // Decode the contents of the chunk.
         let decoded_data = self.decode_data(&chunk_data)?;
 
-        Ok(Some(decoded_data))
+        Ok(decoded_data)
     }
 
     /// Adds an object with the given `id` to the archive and returns it.
@@ -258,31 +246,26 @@ where
     }
 
     /// Writes the given `data` to the archive and returns a new object.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn write(&mut self, data: impl Read) -> Result<Object> {
+    pub fn write(&mut self, data: impl Read) -> io::Result<Object> {
         unimplemented!()
     }
 
-    /// Return a reader for reading the data associated with `object` from the archive.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    /// - `Error::Verify`: The data in the archive was corrupt or could not be verified.
-    pub fn read(&self, object: &Object) -> Result<impl Read> {
-        unimplemented!()
+    /// Returns a reader for reading the data associated with `object` from the archive.
+    pub fn read<'a>(&'a self, object: &'a Object) -> impl Read + 'a {
+        let chunks = object
+            .chunks
+            .iter()
+            .map(move |checksum| self.read_chunk(checksum));
+
+        IterRead::new(chunks)
     }
 
     /// Commit changes which have been made to the archive.
     ///
     /// No changes are saved persistently until this method is called.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn commit(&mut self) -> Result<()> {
+    pub fn commit(&mut self) -> io::Result<()> {
         // Serialize and encode the header.
-        let serialized_header = to_vec(&self.header)?;
+        let serialized_header = to_vec(&self.header).expect("Could not serialize header.");
         let encoded_header = self.encode_data(&serialized_header)?;
 
         // The entire header must be stored in a single extent.
@@ -290,9 +273,7 @@ where
         let unused_extents = self.unused_extents()?;
         let header_extent = unused_extents
             .iter()
-            .find(|extent|
-                extent.length(self.superblock.block_size) >= encoded_header.len() as u64
-            )
+            .find(|extent| extent.length(self.superblock.block_size) >= encoded_header.len() as u64)
             .unwrap();
 
         // Write the header to the chosen extent.
@@ -315,10 +296,7 @@ where
     /// This method rewrites data in the archive to free allocated space which is no longer being
     /// used. This can result in a significantly smaller archive size if a lot of data has been
     /// removed from this archive and not replaced with new data.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn compact(&mut self) -> Result<()> {
+    pub fn compact(&mut self) -> io::Result<()> {
         unimplemented!()
     }
 }

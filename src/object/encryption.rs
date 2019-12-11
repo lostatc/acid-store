@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use std::io;
 
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::aead::xchacha20poly1305_ietf::{
@@ -23,8 +24,6 @@ use sodiumoxide::crypto::pwhash::argon2id13::{
 };
 use sodiumoxide::randombytes::randombytes_into;
 use zeroize::Zeroize;
-
-use crate::error::{Error, Result};
 
 /// A data encryption method.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,14 +55,18 @@ impl Encryption {
     ///
     /// # Errors
     /// - `Error::Verify`: The ciphertext verification failed.
-    pub(super) fn decrypt(&self, ciphertext: &[u8], key: &Key) -> Result<Vec<u8>> {
+    pub(super) fn decrypt(&self, ciphertext: &[u8], key: &Key) -> io::Result<Vec<u8>> {
         match self {
             Encryption::None => Ok(ciphertext.to_vec()),
             Encryption::XChaCha20Poly1305 => {
                 let nonce = Nonce::from_slice(&ciphertext[..NONCEBYTES]).unwrap();
                 let chacha_key = ChaChaKey::from_slice(key.0.as_ref()).unwrap();
-                open(&ciphertext[NONCEBYTES..], None, &nonce, &chacha_key)
-                    .map_err(|_| Error::Verify)
+                open(&ciphertext[NONCEBYTES..], None, &nonce, &chacha_key).map_err(|_|
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Ciphertext verification failed.",
+                    )
+                )
             }
         }
     }
