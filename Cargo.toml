@@ -12,6 +12,7 @@ fuse = "0.3.1"
 relative-path = "1.0.0"
 walkdir = "2.2.9"
 tempfile = "3.1.0"
+iter-read = "0.2.1"
 
 # Hashing
 blake2 = "0.8.1"
