@@ -84,6 +84,7 @@ impl Encryption {
 
 /// Salt for deriving an encryption `Key`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct KeySalt(Salt);
 
 impl KeySalt {
@@ -97,6 +98,7 @@ impl KeySalt {
 ///
 /// The bytes of the key are zeroed in memory when this value is dropped.
 #[derive(Debug, PartialEq, Eq, Clone, Zeroize, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Key(Vec<u8>);
 
 impl Key {
