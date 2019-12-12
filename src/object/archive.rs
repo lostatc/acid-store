@@ -50,6 +50,10 @@ use super::object::{chunk_hash, ChunkHash, Object};
 /// Data in an object archive is transparently deduplicated using content-defined block-level
 /// deduplication. The data and metadata in the archive can optionally be compressed and encrypted.
 ///
+/// Object archives use file locking to prevent multiple processes from opening the same archive at
+/// the same time. This does not protect against the same archive being opened multiple times
+/// within the same process, however. Doing so breaks ACID guarantees.
+///
 /// Changes made to an `ObjectArchive` are not persisted to disk until `commit` is called.
 pub struct ObjectArchive<K>
 where
@@ -81,7 +85,7 @@ where
     /// can be `None`.
     ///
     /// # Errors
-    /// - `ErrorKind::PermissionDenied`: The user lack permission to create the archive file.
+    /// - `ErrorKind::PermissionDenied`: The user lacks permission to create the archive file.
     /// - `ErrorKind::AlreadyExists`: A file already exists at `path`.
     /// - `ErrorKind::InvalidInput`: A key was required but not provided.
     /// - `ErrorKind::WouldBlock`: The archive is in use by another process.
@@ -144,7 +148,7 @@ where
     ///
     /// # Errors
     /// - `ErrorKind::NotFound`: The archive file does not exist.
-    /// - `ErrorKind::PermissionDenied`: The user lack permission to open the archive file.
+    /// - `ErrorKind::PermissionDenied`: The user lacks permission to open the archive file.
     /// - `ErrorKind::InvalidInput`: A key was required but not provided.
     /// - `ErrorKind::InvalidData`: The header is corrupt.
     /// - `ErrorKind::InvalidData`: The wrong encryption key was provided.
@@ -524,7 +528,7 @@ where
     /// usable after this method returns. Uncommitted changes will not be copied to the new archive.
     ///
     /// # Errors
-    /// - `ErrorKind::PermissionDenied`: The user lack permission to create the archive file.
+    /// - `ErrorKind::PermissionDenied`: The user lacks permission to create the archive file.
     /// - `ErrorKind::AlreadyExists`: A file already exists at `destination`.
     pub fn repack(&self, destination: &Path) -> io::Result<ObjectArchive<K>> {
         let mut dest_archive = Self::create(
@@ -541,5 +545,30 @@ where
         dest_archive.commit()?;
 
         Ok(dest_archive)
+    }
+
+    /// Return the UUID of the archive.
+    ///
+    /// Every archive has a UUID associated with it.
+    pub fn uuid(&self) -> Uuid {
+        self.superblock.id
+    }
+
+    /// Return the UUID of the archive at `path` without opening it.
+    ///
+    /// Every archive has a UUID associated with it. Reading the UUID does not require decrypting
+    /// the archive.
+    ///
+    /// # Errors
+    /// - `ErrorKind::NotFound`: The archive file does not exist.
+    /// - `ErrorKind::PermissionDenied`: The user lacks permission to open the archive file.
+    /// - `ErrorKind::WouldBlock`: The archive is in use by another process.
+    pub fn peek_uuid(path: &Path) -> io::Result<Uuid> {
+        // We must open the file for writing because reading the superblock may involve repairing a
+        // corrupt superblock.
+        let mut archive_file = OpenOptions::new().read(true).write(true).open(path)?;
+        archive_file.try_lock_exclusive()?;
+        let superblock = SuperBlock::read(&mut archive_file)?;
+        Ok(superblock.id)
     }
 }
