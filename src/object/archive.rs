@@ -178,7 +178,7 @@ where
 
         archive_file.seek(SeekFrom::Start(extent.start(self.superblock.block_size)))?;
 
-        let mut buffer = Vec::new();
+        let mut buffer = Vec::with_capacity(extent.length(self.superblock.block_size) as usize);
 
         self.archive_file
             .try_clone()?
@@ -316,8 +316,13 @@ where
         // Get the chunk with the given checksum.
         let chunk = self.header.chunks[checksum].clone();
 
-        // Read the contents of each extent in the chunk into a buffer.
-        let mut chunk_data = Vec::new();
+        // Allocate a buffer big enough to hold the chunk's data and any extra data left at the end
+        // of the last extent.
+        let mut chunk_data = Vec::with_capacity(
+            chunk.size as usize + self.superblock.block_size as usize
+        );
+
+        // Read the contents of each extent in the chunk into the buffer.
         for extent in chunk.extents {
             chunk_data.append(&mut self.read_extent(extent)?);
         }
