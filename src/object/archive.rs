@@ -53,7 +53,10 @@ where
     /// The superblock for this archive.
     superblock: SuperBlock,
 
-    /// The header for this archive.
+    /// The header as of the last time changes were committed.
+    old_header: Header<K>,
+
+    /// The current header of the archive.
     header: Header<K>,
 
     /// The file handle for the archive.
@@ -114,6 +117,7 @@ where
         // Create a new archive with an empty header.
         let mut archive = ObjectArchive {
             superblock,
+            old_header: Default::default(),
             header: Default::default(),
             archive_file,
             encryption_key,
@@ -156,6 +160,7 @@ where
         // Create the new archive without its header.
         let mut archive = ObjectArchive {
             superblock,
+            old_header: Default::default(),
             header: Default::default(),
             archive_file,
             encryption_key,
@@ -163,10 +168,11 @@ where
 
         // Decode and deserialize the header.
         let header_bytes = archive.decode_data(&archive.read_extent(archive.superblock.header)?)?;
-        let header = from_read(header_bytes.as_slice())
+        let header: Header<K> = from_read(header_bytes.as_slice())
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "The header is corrupt."))?;
 
         // Add the header to the archive.
+        archive.old_header = header.clone();
         archive.header = header;
 
         Ok(archive)
@@ -221,22 +227,35 @@ where
     /// The returned extents are sorted by their location in the file. The final extent in the list
     /// will be the extent at the end of the file, which has a length of `std::u64::MAX`.
     fn unused_extents(&mut self) -> io::Result<Vec<Extent>> {
-        // Get all extents which are part of a chunk.
-        let mut all_extents = self
+        // Get all extents which are currently part of a chunk.
+        let mut used_extents = self
             .header
             .chunks
             .values()
             .flat_map(|chunk| chunk.extents.iter().copied())
             .collect::<Vec<_>>();
 
+        // Include all extents which were in use the last time changes were committed.
+        // We must not overwrite this data in case changes since then aren't committed.
+        used_extents.extend(self
+            .old_header
+            .chunks
+            .values()
+            .flat_map(|chunk| chunk.extents.iter().copied())
+            .collect::<Vec<_>>()
+        );
+
         // Include the extent storing the header.
-        all_extents.push(self.superblock.header);
+        used_extents.push(self.superblock.header);
 
         // Sort extents by their location in the file.
-        all_extents.sort_by_key(|extent| extent.index);
+        used_extents.sort_by_key(|extent| extent.index);
+
+        // Remove duplicate extents.
+        used_extents.dedup();
 
         // Get the extents which are unused.
-        let mut unused_extents = all_extents
+        let mut unused_extents = used_extents
             .windows(2)
             .filter_map(|pair| pair[0].between(pair[1]))
             .collect::<Vec<_>>();
@@ -347,6 +366,9 @@ where
     /// Removes and returns the object with the given `key` from the archive.
     ///
     /// This returns `None` if there is no object with the given `key`.
+    ///
+    /// The space used by the given object isn't freed and made available for new objects until
+    /// `commit` is called. The size of the archive file will not shrink unless `compact` is called.
     pub fn remove(&mut self, key: &K) -> Option<Object> {
         self.header.objects.remove(key)
     }
@@ -448,6 +470,9 @@ where
 
         // Write the new superblock, atomically completing the commit.
         self.superblock.write(&mut self.archive_file)?;
+
+        // Now that changes have been committed, the `old_header` field should be updated.
+        self.old_header = self.header.clone();
 
         Ok(())
     }
