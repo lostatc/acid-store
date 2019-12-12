@@ -22,6 +22,7 @@ use std::path::Path;
 
 use cdchunking::Chunker;
 use cdchunking::ZPAQ;
+use fs2::FileExt;
 use iter_read::IterRead;
 use num_integer::div_floor;
 use rmp_serde::{from_read, to_vec};
@@ -83,6 +84,7 @@ where
     /// - `ErrorKind::PermissionDenied`: The user lack permission to create the archive file.
     /// - `ErrorKind::AlreadyExists`: A file already exists at `path`.
     /// - `ErrorKind::InvalidInput`: A key was required but not provided.
+    /// - `ErrorKind::WouldBlock`: The archive is in use by another process.
     pub fn create(
         path: &Path,
         config: ArchiveConfig,
@@ -93,6 +95,8 @@ where
             .write(true)
             .create_new(true)
             .open(path)?;
+
+        archive_file.try_lock_exclusive()?;
 
         // Create a new superblock without a reference to a header.
         let superblock = SuperBlock {
@@ -144,8 +148,11 @@ where
     /// - `ErrorKind::InvalidInput`: A key was required but not provided.
     /// - `ErrorKind::InvalidData`: The header is corrupt.
     /// - `ErrorKind::InvalidData`: The wrong encryption key was provided.
+    /// - `ErrorKind::WouldBlock`: The archive is in use by another process.
     pub fn open(path: &Path, encryption_key: Option<Key>) -> io::Result<Self> {
         let mut archive_file = OpenOptions::new().read(true).write(true).open(path)?;
+
+        archive_file.try_lock_exclusive()?;
 
         // Read the superblock.
         let superblock = SuperBlock::read(&mut archive_file)?;
@@ -440,8 +447,8 @@ where
     /// Commit changes which have been made to the archive.
     ///
     /// No changes are saved persistently until this method is called. Committing an archive is an
-    /// atomic operation; leaving changes uncommitted or interrupting a commit should never leave
-    /// the database in an inconsistent state.
+    /// atomic and consistent operation; changes cannot be partially committed and interrupting a
+    /// commit will never leave the archive in an inconsistent state.
     pub fn commit(&mut self) -> io::Result<()> {
         // Serialize and encode the header.
         let serialized_header = to_vec(&self.header).expect("Could not serialize header.");
@@ -488,7 +495,7 @@ where
 
     /// Verify the integrity of all the data in the archive.
     ///
-    /// This returns `true` if the archive is valid and `false` if it is corrupt.
+    /// This returns `true` if the archive is valid and `false` if some data in it is corrupt.
     pub fn verify_archive(&self) -> io::Result<bool> {
         for expected_checksum in self.header.chunks.keys() {
             let data = self.read_chunk(expected_checksum)?;
