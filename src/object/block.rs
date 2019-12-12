@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::compression::Compression;
+use super::config::ArchiveConfig;
 use super::encryption::Encryption;
 
 /// The offset of the primary superblock from the start of the file.
@@ -214,5 +215,15 @@ impl SuperBlock {
         self.write_at(file, SUPERBLOCK_BACKUP_OFFSET)?;
 
         Ok(())
+    }
+
+    /// Returns the `ArchiveConfig` used to configure this archive.
+    pub fn to_config(&self) -> ArchiveConfig {
+        ArchiveConfig {
+            block_size: self.block_size,
+            chunker_bits: self.chunker_bits,
+            encryption: self.encryption.clone(),
+            compression: self.compression.clone(),
+        }
     }
 }

@@ -22,6 +22,9 @@ use super::encryption::Encryption;
 /// This type is used to configure an archive when it is created. Once an archive is created, the
 /// config values provided cannot be changed. This type implements `Default` to provide a reasonable
 /// default configuration.
+///
+/// The values in this struct are stored in the archive unencrypted, even when encryption is
+/// enabled.
 pub struct ArchiveConfig {
     /// The block size of the archive in bytes.
     ///
