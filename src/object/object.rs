@@ -18,17 +18,17 @@ use blake2::digest::{Input, VariableOutput};
 use blake2::VarBlake2b;
 use serde::{Deserialize, Serialize};
 
-/// The size of the checksums used for uniquely identifying data.
-pub const CHECKSUM_SIZE: usize = 32;
+/// The size of the checksums used for uniquely identifying chunks.
+pub const CHUNK_HASH_SIZE: usize = 32;
 
-/// A 256-bit checksum used for uniquely identifying data.
-pub type Checksum = [u8; CHECKSUM_SIZE];
+/// A 256-bit checksum used for uniquely identifying a chunk.
+pub type ChunkHash = [u8; CHUNK_HASH_SIZE];
 
-/// Compute the BLAKE2b checksum of the given `data` and return the result.
-pub fn compute_checksum(data: &[u8]) -> Checksum {
-    let mut hasher = VarBlake2b::new(CHECKSUM_SIZE).unwrap();
+/// Compute the BLAKE2 checksum of the given `data` and return the result.
+pub fn chunk_hash(data: &[u8]) -> ChunkHash {
+    let mut hasher = VarBlake2b::new(CHUNK_HASH_SIZE).unwrap();
     hasher.input(data);
-    let mut checksum = [0u8; CHECKSUM_SIZE];
+    let mut checksum = [0u8; CHUNK_HASH_SIZE];
     hasher.variable_result(|result| checksum.copy_from_slice(result));
     checksum
 }
@@ -47,7 +47,7 @@ pub struct Object {
     pub(super) size: u64,
 
     /// The checksums of the chunks which make up the data.
-    pub(super) chunks: Vec<Checksum>,
+    pub(super) chunks: Vec<ChunkHash>,
 }
 
 impl Object {

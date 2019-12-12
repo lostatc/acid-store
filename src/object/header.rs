@@ -20,7 +20,7 @@ use std::hash::Hash;
 use serde::{Deserialize, Serialize};
 
 use super::block::{Chunk, Extent};
-use super::object::{Checksum, Object};
+use super::object::{ChunkHash, Object};
 
 /// The header which stores metadata for an archive.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -29,7 +29,7 @@ where
     K: Eq + Hash + Clone,
 {
     /// A map of chunk hashes to information about those chunks.
-    pub chunks: HashMap<Checksum, Chunk>,
+    pub chunks: HashMap<ChunkHash, Chunk>,
 
     /// A map of object IDs to information about those objects.
     pub objects: HashMap<K, Object>,

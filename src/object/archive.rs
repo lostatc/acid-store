@@ -35,7 +35,7 @@ use super::block::{
 use super::config::ArchiveConfig;
 use super::encryption::{Encryption, Key};
 use super::header::Header;
-use super::object::{Checksum, compute_checksum, Object};
+use super::object::{chunk_hash, ChunkHash, Object};
 
 /// A persistent object store.
 ///
@@ -319,9 +319,9 @@ where
     ///
     /// If a chunk with the given `data` already exists, its checksum is returned and no new data is
     /// written.
-    fn write_chunk(&mut self, data: &[u8]) -> io::Result<Checksum> {
+    fn write_chunk(&mut self, data: &[u8]) -> io::Result<ChunkHash> {
         // Get a checksum of the unencoded data.
-        let checksum = compute_checksum(data);
+        let checksum = chunk_hash(data);
 
         // Check if the chunk already exists.
         if self.header.chunks.contains_key(&checksum) {
@@ -357,7 +357,7 @@ where
     }
 
     /// Returns the bytes of the chunk with the given checksum, or `None` if there is none.
-    fn read_chunk(&self, checksum: &Checksum) -> io::Result<Vec<u8>> {
+    fn read_chunk(&self, checksum: &ChunkHash) -> io::Result<Vec<u8>> {
         // Get the chunk with the given checksum.
         let chunk = self.header.chunks[checksum].clone();
 
@@ -477,7 +477,7 @@ where
     pub fn verify_object(&self, object: &Object) -> io::Result<bool> {
         for expected_checksum in &object.chunks {
             let data = self.read_chunk(expected_checksum)?;
-            let actual_checksum = compute_checksum(&data);
+            let actual_checksum = chunk_hash(&data);
             if *expected_checksum != actual_checksum {
                 return Ok(false);
             }
@@ -492,7 +492,7 @@ where
     pub fn verify_archive(&self) -> io::Result<bool> {
         for expected_checksum in self.header.chunks.keys() {
             let data = self.read_chunk(expected_checksum)?;
-            let actual_checksum = compute_checksum(&data);
+            let actual_checksum = chunk_hash(&data);
             if *expected_checksum != actual_checksum {
                 return Ok(false);
             }
