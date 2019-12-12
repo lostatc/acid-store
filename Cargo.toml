@@ -5,13 +5,16 @@ authors = ["Garrett Powell <garrett@gpowell.net>"]
 edition = "2018"
 
 [dependencies]
-# File I/O
+# File system
 xattr = "0.2.2"
 filetime = "0.2.8"
 fuse = "0.3.1"
 relative-path = "1.0.0"
 walkdir = "2.2.9"
 tempfile = "3.1.0"
+fs2 = "0.4.3"
+
+# I/O
 iter-read = "0.2.1"
 cdchunking = "1.0.0"
 
@@ -29,7 +32,6 @@ zeroize = { version = "1.1.0", features = ["zeroize_derive"] }
 
 # Error handling
 thiserror = "1.0.4"
-anyhow = "1.0.19"
 
 # Serialization
 serde = { version = "1.0.103", features = ["derive"] }
