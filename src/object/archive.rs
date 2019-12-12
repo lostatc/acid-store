@@ -228,22 +228,11 @@ where
     /// will be the extent at the end of the file, which has a length of `std::u64::MAX`.
     fn unused_extents(&mut self) -> io::Result<Vec<Extent>> {
         // Get all extents which are currently part of a chunk.
-        let mut used_extents = self
-            .header
-            .chunks
-            .values()
-            .flat_map(|chunk| chunk.extents.iter().copied())
-            .collect::<Vec<_>>();
+        let mut used_extents = self.header.extents();
 
         // Include all extents which were in use the last time changes were committed.
         // We must not overwrite this data in case changes since then aren't committed.
-        used_extents.extend(self
-            .old_header
-            .chunks
-            .values()
-            .flat_map(|chunk| chunk.extents.iter().copied())
-            .collect::<Vec<_>>()
-        );
+        used_extents.extend(self.old_header.extents());
 
         // Include the extent storing the header.
         used_extents.push(self.superblock.header);
@@ -368,7 +357,8 @@ where
     /// This returns `None` if there is no object with the given `key`.
     ///
     /// The space used by the given object isn't freed and made available for new objects until
-    /// `commit` is called. The size of the archive file will not shrink unless `compact` is called.
+    /// `commit` is called. The size of the archive file will not shrink unless `compact_to` is
+    /// called.
     pub fn remove(&mut self, key: &K) -> Option<Object> {
         self.header.objects.remove(key)
     }
@@ -482,10 +472,13 @@ where
     /// Archives can reuse space left over from deleted objects, but they can not deallocate space
     /// which has been allocated. This means that archive files can grow in size, but never shrink.
     ///
-    /// This method rewrites data in the archive to free allocated space which is no longer being
-    /// used. This can result in a significantly smaller archive size if a lot of data has been
-    /// removed from this archive and not replaced with new data.
-    pub fn compact(&mut self) -> io::Result<()> {
+    /// This method writes the data in this archive to a new file, allocating the minimum amount of
+    /// space necessary to store it. This can result in a significantly smaller archive if a lot of
+    /// data has been removed from this archive and not replaced with new data.
+    ///
+    /// Like file systems, archive files can become fragmented over time. This method also
+    /// defragments the archive.
+    pub fn compact_to(&mut self, destination: &Path) -> io::Result<ObjectArchive<K>> {
         unimplemented!()
     }
 }
