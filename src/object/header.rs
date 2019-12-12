@@ -19,7 +19,7 @@ use std::hash::Hash;
 
 use serde::{Deserialize, Serialize};
 
-use super::block::Chunk;
+use super::block::{Chunk, Extent};
 use super::object::{Checksum, Object};
 
 /// The header which stores metadata for an archive.
@@ -44,5 +44,19 @@ where
             chunks: HashMap::new(),
             objects: HashMap::new(),
         }
+    }
+}
+
+impl<K> Header<K>
+where
+    K: Eq + Hash + Clone
+{
+    /// An unsorted list of all the extents in all the chunks in this header.
+    pub fn extents(&self) -> Vec<Extent> {
+        self
+            .chunks
+            .values()
+            .flat_map(|chunk| chunk.extents.iter().copied())
+            .collect::<Vec<_>>()
     }
 }
