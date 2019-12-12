@@ -49,12 +49,11 @@ where
 
 impl<K> Header<K>
 where
-    K: Eq + Hash + Clone
+    K: Eq + Hash + Clone,
 {
     /// An unsorted list of all the extents in all the chunks in this header.
     pub fn extents(&self) -> Vec<Extent> {
-        self
-            .chunks
+        self.chunks
             .values()
             .flat_map(|chunk| chunk.extents.iter().copied())
             .collect::<Vec<_>>()

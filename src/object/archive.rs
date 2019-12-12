@@ -39,8 +39,8 @@ use super::object::{Checksum, compute_checksum, Object};
 
 /// A persistent object store.
 ///
-/// An `ObjectArchive` is a binary file format for efficiently storing large amounts of binary data.
-/// An object archive maps keys of type `K` to binary blobs called objects.
+/// An `ObjectArchive` is a binary file format for efficiently storing binary data. An object
+/// archive maps keys of type `K` to binary blobs called objects.
 ///
 /// Data in an object archive is transparently deduplicated using content-defined block-level
 /// deduplication. The data and metadata in the archive can optionally be compressed and encrypted.
@@ -326,9 +326,8 @@ where
 
         // Allocate a buffer big enough to hold the chunk's data and any extra data left at the end
         // of the last extent.
-        let mut chunk_data = Vec::with_capacity(
-            chunk.size as usize + self.superblock.block_size as usize
-        );
+        let mut chunk_data =
+            Vec::with_capacity(chunk.size as usize + self.superblock.block_size as usize);
 
         // Read the contents of each extent in the chunk into the buffer.
         for extent in chunk.extents {
@@ -437,7 +436,9 @@ where
 
     /// Commit changes which have been made to the archive.
     ///
-    /// No changes are saved persistently until this method is called.
+    /// No changes are saved persistently until this method is called. Committing an archive is an
+    /// atomic operation; leaving changes uncommitted or interrupting a commit should never leave
+    /// the database in an inconsistent state.
     pub fn commit(&mut self) -> io::Result<()> {
         // Serialize and encode the header.
         let serialized_header = to_vec(&self.header).expect("Could not serialize header.");
@@ -467,18 +468,38 @@ where
         Ok(())
     }
 
-    /// Compact the archive to reduce its size.
+    /// Copy the contents of this archive to a new archive file at `destination`.
     ///
     /// Archives can reuse space left over from deleted objects, but they can not deallocate space
     /// which has been allocated. This means that archive files can grow in size, but never shrink.
     ///
-    /// This method writes the data in this archive to a new file, allocating the minimum amount of
+    /// This method copies the data in this archive to a new file, allocating the minimum amount of
     /// space necessary to store it. This can result in a significantly smaller archive if a lot of
     /// data has been removed from this archive and not replaced with new data.
     ///
-    /// Like file systems, archive files can become fragmented over time. This method also
-    /// defragments the archive.
-    pub fn compact_to(&mut self, destination: &Path) -> io::Result<ObjectArchive<K>> {
-        unimplemented!()
+    /// Like file systems, archive files can become fragmented over time. The new archive will be
+    /// defragmented.
+    ///
+    /// This method returns the new archive. Both this archive and the returned archive will be
+    /// usable after this method returns. Uncommitted changes will not be copied to the new archive.
+    ///
+    /// # Errors
+    /// - `ErrorKind::PermissionDenied`: The user lack permission to create the archive file.
+    /// - `ErrorKind::AlreadyExists`: A file already exists at `destination`.
+    pub fn repack(&self, destination: &Path) -> io::Result<ObjectArchive<K>> {
+        let mut dest_archive = Self::create(
+            destination,
+            self.superblock.to_config(),
+            Some(self.encryption_key.clone()),
+        )?;
+
+        for (key, object) in self.header.objects.iter() {
+            let dest_object = dest_archive.write(self.read(&object))?;
+            dest_archive.insert(key.clone(), dest_object);
+        }
+
+        dest_archive.commit()?;
+
+        Ok(dest_archive)
     }
 }
