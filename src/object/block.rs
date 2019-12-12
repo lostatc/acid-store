@@ -205,8 +205,36 @@ impl SuperBlock {
 
     /// Read the superblock from the given `file` or the backup superblock if it is corrupt.
     pub fn read(file: &mut File) -> io::Result<Self> {
-        Self::read_at(file, SUPERBLOCK_OFFSET)
-            .or_else(|_| Self::read_at(file, SUPERBLOCK_BACKUP_OFFSET))
+        // Read both the primary and backup superblock.
+        let primary_superblock = Self::read_at(file, SUPERBLOCK_OFFSET);
+        let backup_superblock = Self::read_at(file, SUPERBLOCK_BACKUP_OFFSET);
+
+        // If one of the superblocks is corrupt, repair it with the other before proceeding. We can
+        // guarantee consistency because a superblock will only be written if the other is valid.
+        return match (primary_superblock, backup_superblock) {
+            (Ok(superblock), Ok(_)) => Ok(superblock),
+            (Ok(superblock), Err(_)) => {
+                superblock.write_at(file, SUPERBLOCK_BACKUP_OFFSET)?;
+                Ok(superblock)
+            }
+            (Err(_), Ok(superblock)) => {
+                superblock.write_at(file, SUPERBLOCK_OFFSET)?;
+                Ok(superblock)
+            }
+            (Err(primary_error), Err(backup_error)) => {
+                // Neither superblock could be read.
+                if primary_error.kind() == io::ErrorKind::InvalidData
+                    && backup_error.kind() == io::ErrorKind::InvalidData
+                {
+                    Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Both the primary and backup superblock are corrupt. This is most likely unrecoverable.",
+                    ))
+                } else {
+                    Err(primary_error)
+                }
+            }
+        };
     }
 
     /// Write this superblock to the given `file` twice, a primary and a backup.
