@@ -29,7 +29,9 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use uuid::Uuid;
 
-use super::block::{allocate_extents, Chunk, Extent, pad_to_block_size, SuperBlock};
+use super::block::{
+    allocate_contiguous_extent, allocate_extents, Chunk, Extent, pad_to_block_size, SuperBlock,
+};
 use super::config::ArchiveConfig;
 use super::encryption::{Encryption, Key};
 use super::header::Header;
@@ -74,14 +76,18 @@ where
     /// - `ErrorKind::PermissionDenied`: The user lack permission to create the archive file.
     /// - `ErrorKind::AlreadyExists`: A file already exists at `path`.
     /// - `ErrorKind::InvalidInput`: A key was required but not provided.
-    pub fn create(path: &Path, config: ArchiveConfig, encryption_key: Option<Key>) -> io::Result<Self> {
+    pub fn create(
+        path: &Path,
+        config: ArchiveConfig,
+        encryption_key: Option<Key>,
+    ) -> io::Result<Self> {
         let archive_file = OpenOptions::new()
             .read(true)
             .write(true)
             .create_new(true)
             .open(path)?;
 
-        // Create the superblock without a reference to a header.
+        // Create a new superblock without a reference to a header.
         let superblock = SuperBlock {
             id: Uuid::new_v4(),
             block_size: config.block_size,
@@ -253,7 +259,10 @@ where
 
     /// Decrypts and decompresses the given `data` and returns it.
     fn decode_data(&self, data: &[u8]) -> io::Result<Vec<u8>> {
-        let decrypted_data = self.superblock.encryption.decrypt(data, &self.encryption_key)?;
+        let decrypted_data = self
+            .superblock
+            .encryption
+            .decrypt(data, &self.encryption_key)?;
 
         Ok(self
             .superblock
@@ -377,9 +386,8 @@ where
     /// # Errors
     /// - `ErrorKind::InvalidInput`: The given `value` could not be serialized.
     pub fn serialize(&mut self, value: &impl Serialize) -> io::Result<Object> {
-        let serialized_value = to_vec(&value).map_err(|error|
-            io::Error::new(io::ErrorKind::InvalidInput, error)
-        )?;
+        let serialized_value =
+            to_vec(&value).map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
         self.write(serialized_value.as_slice())
     }
 
@@ -406,9 +414,8 @@ where
     /// - `ErrorKind::InvalidData`: The data could not be deserialized as a value of type `T`.
     pub fn deserialize<T: DeserializeOwned>(&self, object: &Object) -> io::Result<T> {
         let serialized_value = self.read_all(object)?;
-        from_read(serialized_value.as_slice()).map_err(|error|
-            io::Error::new(io::ErrorKind::InvalidData, error)
-        )
+        from_read(serialized_value.as_slice())
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
     }
 
     /// Commit changes which have been made to the archive.
@@ -422,16 +429,17 @@ where
         // The entire header must be stored in a single extent.
         // Find the first extent which is large enough to hold it.
         let unused_extents = self.unused_extents()?;
-        let header_extent = unused_extents
-            .iter()
-            .find(|extent| extent.length(self.superblock.block_size) >= encoded_header.len() as u64)
-            .unwrap();
+        let header_extent = allocate_contiguous_extent(
+            unused_extents,
+            self.superblock.block_size,
+            encoded_header.len() as u64,
+        );
 
         // Write the header to the chosen extent.
-        self.write_extent(*header_extent, &encoded_header)?;
+        self.write_extent(header_extent, &encoded_header)?;
 
         // Update the superblock to point to the new header.
-        self.superblock.header = *header_extent;
+        self.superblock.header = header_extent;
 
         // Write the new superblock, atomically completing the commit.
         self.superblock.write(&mut self.archive_file)?;
