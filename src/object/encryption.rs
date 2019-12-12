@@ -52,9 +52,6 @@ impl Encryption {
     }
 
     /// Decrypt the given `ciphertext` with the given `key`.
-    ///
-    /// # Errors
-    /// - `Error::Verify`: The ciphertext verification failed.
     pub(super) fn decrypt(&self, ciphertext: &[u8], key: &Key) -> io::Result<Vec<u8>> {
         match self {
             Encryption::None => Ok(ciphertext.to_vec()),
@@ -83,6 +80,8 @@ impl Encryption {
 }
 
 /// Salt for deriving an encryption `Key`.
+///
+/// This type can be serialized to persistently store the salt.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct KeySalt(Salt);
@@ -95,6 +94,8 @@ impl KeySalt {
 }
 
 /// An encryption key.
+///
+/// This type can be serialized to persistently store the key.
 ///
 /// The bytes of the key are zeroed in memory when this value is dropped.
 #[derive(Debug, PartialEq, Eq, Clone, Zeroize, Serialize, Deserialize)]

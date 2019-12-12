@@ -42,6 +42,10 @@ use super::object::{Checksum, compute_checksum, Object};
 /// An `ObjectArchive` is a binary file format for efficiently storing binary data. An object
 /// archive maps keys of type `K` to binary blobs called objects.
 ///
+/// To store data in an object archive, you first `write` or `serialize` data to the archive and
+/// receive an `Object` which represents that data. Then, you can `insert` that object into the
+/// archive with a key.
+///
 /// Data in an object archive is transparently deduplicated using content-defined block-level
 /// deduplication. The data and metadata in the archive can optionally be compressed and encrypted.
 ///
@@ -176,6 +180,39 @@ where
         archive.header = header;
 
         Ok(archive)
+    }
+
+    /// Adds an `object` with the given `key` to the archive and returns it.
+    ///
+    /// If an object with the given `key` already existed in the archive, it is replaced and the old
+    /// object is returned. Otherwise, `None` is returned.
+    pub fn insert(&mut self, key: K, object: Object) -> Option<Object> {
+        self.header.objects.insert(key, object)
+    }
+
+    /// Removes and returns the object with the given `key` from the archive.
+    ///
+    /// This returns `None` if there is no object with the given `key`.
+    ///
+    /// The space used by the given object isn't freed and made available for new objects until
+    /// `commit` is called. The size of the archive file will not shrink unless `repack` is called.
+    pub fn remove(&mut self, key: &K) -> Option<Object> {
+        self.header.objects.remove(key)
+    }
+
+    /// Returns a reference to the object with the given `key`, or `None` if it doesn't exist.
+    pub fn get(&self, key: &K) -> Option<&Object> {
+        self.header.objects.get(key)
+    }
+
+    /// Returns an iterator over all the keys in this archive.
+    pub fn keys(&self) -> impl Iterator<Item = &K> {
+        self.header.objects.keys()
+    }
+
+    /// Returns an iterator over all the keys and objects in this archive.
+    pub fn objects(&self) -> impl Iterator<Item = (&K, &Object)> {
+        self.header.objects.iter()
     }
 
     /// Returns the data in the given `extent`.
@@ -341,40 +378,6 @@ where
         let decoded_data = self.decode_data(&chunk_data)?;
 
         Ok(decoded_data)
-    }
-
-    /// Adds an object with the given `key` to the archive and returns it.
-    ///
-    /// If an object with the given `key` already existed in the archive, it is replaced and the old
-    /// object is returned. Otherwise, `None` is returned.
-    pub fn insert(&mut self, key: K, object: Object) -> Option<Object> {
-        self.header.objects.insert(key, object)
-    }
-
-    /// Removes and returns the object with the given `key` from the archive.
-    ///
-    /// This returns `None` if there is no object with the given `key`.
-    ///
-    /// The space used by the given object isn't freed and made available for new objects until
-    /// `commit` is called. The size of the archive file will not shrink unless `compact_to` is
-    /// called.
-    pub fn remove(&mut self, key: &K) -> Option<Object> {
-        self.header.objects.remove(key)
-    }
-
-    /// Returns a reference to the object with the given `key`, or `None` if it doesn't exist.
-    pub fn get(&self, key: &K) -> Option<&Object> {
-        self.header.objects.get(key)
-    }
-
-    /// Returns an iterator over all the keys in this archive.
-    pub fn keys(&self) -> impl Iterator<Item = &K> {
-        self.header.objects.keys()
-    }
-
-    /// Returns an iterator over all the keys and objects in this archive.
-    pub fn objects(&self) -> impl Iterator<Item = (&K, &Object)> {
-        self.header.objects.iter()
     }
 
     /// Writes the given `data` to the archive and returns a new object.
