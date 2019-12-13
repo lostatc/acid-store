@@ -66,28 +66,38 @@ impl FileArchive {
 
     /// Returns the entry at `path` or `None` if there is none.
     pub fn entry(&self, path: &RelativePath) -> Option<Entry> {
-        let object = self.archive.get(&EntryKey(path.to_owned(), KeyType::Metadata))?;
-        Some(self.archive.deserialize(&object).expect("Could not deserialize entry."))
+        let object = self
+            .archive
+            .get(&EntryKey(path.to_owned(), KeyType::Metadata))?;
+        Some(
+            self.archive
+                .deserialize(&object)
+                .expect("Could not deserialize entry."),
+        )
     }
 
-    /// Returns a list of paths which are children of `parent`.
-    pub fn list(&self, parent: &RelativePath) -> Vec<&RelativePath> {
+    /// Returns an iterator of paths which are children of `parent`.
+    pub fn list<'a>(
+        &'a self,
+        parent: &'a RelativePath,
+    ) -> impl Iterator<Item = &RelativePath> + 'a {
         self.archive
             .keys()
             .filter(|key| key.1 == KeyType::Metadata)
-            .filter(|key| key.0.parent() == Some(parent))
+            .filter(move |key| key.0.parent() == Some(parent))
             .map(|key| key.0.as_ref())
-            .collect()
     }
 
-    /// Returns a list of paths which are descendants of `parent`.
-    pub fn walk(&self, parent: &RelativePath) -> Vec<&RelativePath> {
+    /// Returns an iterator of paths which are descendants of `parent`.
+    pub fn walk<'a>(
+        &'a self,
+        parent: &'a RelativePath,
+    ) -> impl Iterator<Item = &RelativePath> + 'a {
         self.archive
             .keys()
             .filter(|key| key.1 == KeyType::Metadata)
-            .filter(|key| key.0.starts_with(parent))
+            .filter(move |key| key.0.starts_with(parent))
             .map(|key| key.0.as_ref())
-            .collect()
     }
 
     /// Copy a file from the file system into the archive.
@@ -211,7 +221,6 @@ impl FileArchive {
         // We must convert to owned paths because we'll need a mutable reference to `self` later.
         let mut descendants = self
             .walk(source)
-            .into_iter()
             .map(|path| path.to_relative_path_buf())
             .collect::<Vec<_>>();
 
@@ -235,12 +244,19 @@ impl FileArchive {
         let old_entry = self.entry(path)?;
 
         // Write the metadata object.
-        let metadata_object = self.archive.serialize(&entry).expect("Could not serialize entry.");
-        self.archive.insert(EntryKey(path.to_owned(), KeyType::Metadata), metadata_object)?;
+        let metadata_object = self
+            .archive
+            .serialize(&entry)
+            .expect("Could not serialize entry.");
+        self.archive.insert(
+            EntryKey(path.to_owned(), KeyType::Metadata),
+            metadata_object,
+        )?;
 
         // Write the data object.
         if let EntryType::File { data } = entry.entry_type {
-            self.archive.insert(EntryKey(path.to_owned(), KeyType::Data), data);
+            self.archive
+                .insert(EntryKey(path.to_owned(), KeyType::Data), data);
         }
 
         Some(old_entry)
@@ -250,13 +266,12 @@ impl FileArchive {
     ///
     /// This returns the removed entry or `None` if there was no entry at `path`.
     pub fn remove(&mut self, path: &RelativePath) -> Option<Entry> {
-        let old_entry = match self.entry(path) {
-            Some(value) => value,
-            None => return None
-        };
+        let old_entry = self.entry(path)?;
 
-        self.archive.remove(&EntryKey(path.to_owned(), KeyType::Data));
-        self.archive.remove(&EntryKey(path.to_owned(), KeyType::Metadata));
+        self.archive
+            .remove(&EntryKey(path.to_owned(), KeyType::Data));
+        self.archive
+            .remove(&EntryKey(path.to_owned(), KeyType::Metadata));
 
         Some(old_entry)
     }
@@ -286,7 +301,7 @@ impl FileArchive {
     /// See `ObjectArchive::repack` for details.
     pub fn repack(&mut self, dest: &Path) -> io::Result<FileArchive> {
         Ok(FileArchive {
-            archive: self.archive.repack(dest)?
+            archive: self.archive.repack(dest)?,
         })
     }
 

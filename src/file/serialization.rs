@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 #[serde(remote = "RelativePathBuf")]
 pub struct SerializableRelativePathBuf {
     #[serde(getter = "RelativePathBuf::to_string")]
-    path: String
+    path: String,
 }
 
 impl From<SerializableRelativePathBuf> for RelativePathBuf {
