@@ -15,6 +15,8 @@
  */
 use std::io;
 
+use rand::RngCore;
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::aead::xchacha20poly1305_ietf::{
     gen_nonce, Key as ChaChaKey, KEYBYTES, Nonce, NONCEBYTES, open, seal,
@@ -109,9 +111,12 @@ impl Key {
     }
 
     /// Generate a new random encryption key of the given `size`.
+    ///
+    /// This uses bytes retrieved from the operating system's cryptographically secure random number
+    /// generator.
     pub fn generate(size: usize) -> Self {
         let mut bytes = vec![0u8; size];
-        randombytes_into(&mut bytes);
+        OsRng.fill_bytes(&mut bytes);
         Key::new(bytes)
     }
 
