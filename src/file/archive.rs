@@ -20,7 +20,8 @@ use std::path::Path;
 
 use filetime::{FileTime, set_file_mtime};
 use relative_path::RelativePath;
-use walkdir::{Error, WalkDir};
+use uuid::Uuid;
+use walkdir::WalkDir;
 
 use crate::{ArchiveConfig, Key, Object, ObjectArchive};
 
@@ -29,8 +30,8 @@ use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mo
 
 /// An archive for storing files.
 ///
-/// This is a wrapper over `ObjectArchive` which allows it to function as a file archive like `zip`
-/// or `tar` rather than an object store. A `FileArchive` consists of `Entry` values which
+/// This is a wrapper over `ObjectArchive` which allows it to function as a file archive like ZIP
+/// or TAR rather than an object store. A `FileArchive` consists of `Entry` values which
 /// can represent a regular file, directory, or symbolic link.
 ///
 /// This type provides a high-level API through the methods `archive`, `archive_tree`, `extract`,
@@ -47,14 +48,7 @@ pub struct FileArchive {
 impl FileArchive {
     /// Create a new archive at the given `path` with the given `config`.
     ///
-    /// If encryption is enabled, an `encryption_key` must be provided. Otherwise, this argument
-    /// can be `None`.
-    ///
-    /// # Errors
-    /// - `ErrorKind::PermissionDenied`: The user lacks permission to create the archive file.
-    /// - `ErrorKind::AlreadyExists`: A file already exists at `path`.
-    /// - `ErrorKind::InvalidInput`: A key was required but not provided.
-    /// - `ErrorKind::WouldBlock`: The archive is in use by another process.
+    /// See `ObjectArchive::create` for details.
     pub fn create(path: &Path, config: ArchiveConfig, key: Option<Key>) -> io::Result<Self> {
         Ok(FileArchive {
             archive: ObjectArchive::create(path, config, key)?,
@@ -63,16 +57,7 @@ impl FileArchive {
 
     /// Opens the archive at the given `path`.
     ///
-    /// If encryption is enabled, an `encryption_key` must be provided. Otherwise, this argument can
-    /// be `None`.
-    ///
-    /// # Errors
-    /// - `ErrorKind::NotFound`: The archive file does not exist.
-    /// - `ErrorKind::PermissionDenied`: The user lacks permission to open the archive file.
-    /// - `ErrorKind::InvalidInput`: A key was required but not provided.
-    /// - `ErrorKind::InvalidData`: The header is corrupt.
-    /// - `ErrorKind::InvalidData`: The wrong encryption key was provided.
-    /// - `ErrorKind::WouldBlock`: The archive is in use by another process.
+    /// See `ObjectArchive::open` for details.
     pub fn open(path: &Path, key: Option<Key>) -> io::Result<Self> {
         Ok(FileArchive {
             archive: ObjectArchive::open(path, key)?,
@@ -85,7 +70,7 @@ impl FileArchive {
         Some(self.archive.deserialize(&object).expect("Could not deserialize entry."))
     }
 
-    /// Returns an unordered list of archive entries which are children of `parent`.
+    /// Returns a list of paths which are children of `parent`.
     pub fn list(&self, parent: &RelativePath) -> Vec<&RelativePath> {
         self.archive
             .keys()
@@ -95,7 +80,7 @@ impl FileArchive {
             .collect()
     }
 
-    /// Returns an unordered list of archive entries which are descendants of `parent`.
+    /// Returns a list of paths which are descendants of `parent`.
     pub fn walk(&self, parent: &RelativePath) -> Vec<&RelativePath> {
         self.archive
             .keys()
@@ -103,54 +88,6 @@ impl FileArchive {
             .filter(|key| key.0.starts_with(parent))
             .map(|key| key.0.as_ref())
             .collect()
-    }
-
-    /// Adds the given `entry` to the archive with the given `path`.
-    ///
-    /// If an entry with the given `path` already existed in the archive, it is replaced and the
-    /// old entry is returned. Otherwise, `None` is returned.
-    pub fn insert(&mut self, path: &RelativePath, entry: Entry) -> Option<Entry> {
-        // Check if the entry exists.
-        let old_entry = self.entry(path)?;
-
-        // Write the metadata object.
-        let metadata_object = self.archive.serialize(&entry).expect("Could not serialize entry.");
-        self.archive.insert(EntryKey(path.to_owned(), KeyType::Metadata), metadata_object)?;
-
-        // Write the data object.
-        if let EntryType::File { data } = entry.entry_type {
-            self.archive.insert(EntryKey(path.to_owned(), KeyType::Data), data);
-        }
-
-        Some(old_entry)
-    }
-
-    /// Delete the entry in the archive with the given `path`.
-    ///
-    /// This returns the removed entry or `None` if there was no entry at `path`.
-    pub fn remove(&mut self, path: &RelativePath) -> Option<Entry> {
-        let old_entry = match self.entry(path) {
-            Some(value) => value,
-            None => return None
-        };
-
-        self.archive.remove(&EntryKey(path.to_owned(), KeyType::Data));
-        self.archive.remove(&EntryKey(path.to_owned(), KeyType::Metadata));
-
-        Some(old_entry)
-    }
-
-    /// Writes the given `data` to the archive and returns a new object.
-    ///
-    /// The returned object can be used to manually construct an `Entry` that represents a
-    /// regular file.
-    pub fn write(&mut self, source: impl Read) -> io::Result<Object> {
-        self.archive.write(source)
-    }
-
-    /// Returns a reader for reading the data associated with `object` from the archive.
-    pub fn read<'a>(&'a self, object: &'a Object) -> impl Read + 'a {
-        self.archive.read(object)
     }
 
     /// Copy a file from the file system into the archive.
@@ -289,9 +226,57 @@ impl FileArchive {
         Ok(())
     }
 
+    /// Adds the given `entry` to the archive with the given `path`.
+    ///
+    /// If an entry with the given `path` already existed in the archive, it is replaced and the
+    /// old entry is returned. Otherwise, `None` is returned.
+    pub fn insert(&mut self, path: &RelativePath, entry: Entry) -> Option<Entry> {
+        // Check if the entry exists.
+        let old_entry = self.entry(path)?;
+
+        // Write the metadata object.
+        let metadata_object = self.archive.serialize(&entry).expect("Could not serialize entry.");
+        self.archive.insert(EntryKey(path.to_owned(), KeyType::Metadata), metadata_object)?;
+
+        // Write the data object.
+        if let EntryType::File { data } = entry.entry_type {
+            self.archive.insert(EntryKey(path.to_owned(), KeyType::Data), data);
+        }
+
+        Some(old_entry)
+    }
+
+    /// Delete the entry in the archive with the given `path`.
+    ///
+    /// This returns the removed entry or `None` if there was no entry at `path`.
+    pub fn remove(&mut self, path: &RelativePath) -> Option<Entry> {
+        let old_entry = match self.entry(path) {
+            Some(value) => value,
+            None => return None
+        };
+
+        self.archive.remove(&EntryKey(path.to_owned(), KeyType::Data));
+        self.archive.remove(&EntryKey(path.to_owned(), KeyType::Metadata));
+
+        Some(old_entry)
+    }
+
+    /// Writes the given `data` to the archive and returns a new object.
+    ///
+    /// The returned object can be used to manually construct an `Entry` that represents a
+    /// regular file.
+    pub fn write(&mut self, source: impl Read) -> io::Result<Object> {
+        self.archive.write(source)
+    }
+
+    /// Returns a reader for reading the data associated with `object` from the archive.
+    pub fn read<'a>(&'a self, object: &'a Object) -> impl Read + 'a {
+        self.archive.read(object)
+    }
+
     /// Commit changes which have been made to the archive.
     ///
-    /// See `Archive::commit` for details.
+    /// See `ObjectArchive::commit` for details.
     pub fn commit(&mut self) -> io::Result<()> {
         self.archive.commit()
     }
@@ -303,5 +288,33 @@ impl FileArchive {
         Ok(FileArchive {
             archive: self.archive.repack(dest)?
         })
+    }
+
+    /// Verify the integrity of the data associated with `object`.
+    ///
+    /// This returns `true` if the object is valid and `false` if it is corrupt.
+    pub fn verify_object(&self, object: &Object) -> io::Result<bool> {
+        self.archive.verify_object(object)
+    }
+
+    /// Verify the integrity of all the data in the archive.
+    ///
+    /// This returns `true` if the archive is valid and `false` if some data in it is corrupt.
+    pub fn verify_archive(&self) -> io::Result<bool> {
+        self.archive.verify_archive()
+    }
+
+    /// Return the UUID of the archive.
+    ///
+    /// Every archive has a UUID associated with it.
+    pub fn uuid(&self) -> Uuid {
+        self.archive.uuid()
+    }
+
+    /// Return the UUID of the archive at `path` without opening it.
+    ///
+    /// See `ObjectArchive::peek_uuid` for details.
+    pub fn peek_uuid(path: &Path) -> io::Result<Uuid> {
+        ObjectArchive::<EntryKey>::peek_uuid(path)
     }
 }
