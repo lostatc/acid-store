@@ -18,6 +18,7 @@ use std::cmp::min;
 use std::fs::{File, OpenOptions};
 use std::hash::Hash;
 use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::iter;
 use std::path::Path;
 
 use cdchunking::Chunker;
@@ -282,7 +283,10 @@ where
         used_extents.dedup();
 
         // Get the extents which are unused.
-        let unused_extents = used_extents
+        let initial_extent = Extent { index: 0, blocks: 0 };
+        let unused_extents = iter::once(initial_extent)
+            .chain(used_extents)
+            .collect::<Vec<_>>()
             .windows(2)
             .filter_map(|pair| pair[0].between(pair[1]))
             .collect::<Vec<_>>();
