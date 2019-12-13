@@ -113,6 +113,7 @@ where
                 index: 0,
                 blocks: 0,
             },
+            header_size: 0,
         };
 
         // Return an error if a key was required but not provided.
@@ -184,9 +185,13 @@ where
             encryption_key,
         };
 
-        // Decode and deserialize the header.
-        let header_bytes = archive.decode_data(&archive.read_extent(archive.superblock.header)?)?;
-        let header: Header<K> = from_read(header_bytes.as_slice())
+        // Decode the header.
+        let mut encoded_header = archive.read_extent(archive.superblock.header)?;
+        encoded_header.truncate(archive.superblock.header_size as usize);
+        let decoded_header = archive.decode_data(encoded_header.as_slice())?;
+
+        // Deserialize the header.
+        let header: Header<K> = from_read(decoded_header.as_slice())
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "The header is corrupt."))?;
 
         // Add the header to the archive.
@@ -357,7 +362,7 @@ where
         Ok(self
             .superblock
             .encryption
-            .encrypt(compressed_data.as_ref(), &self.encryption_key))
+            .encrypt(compressed_data.as_slice(), &self.encryption_key))
     }
 
     /// Decrypts and decompresses the given `data` and returns it.
@@ -509,6 +514,7 @@ where
 
         // Update the superblock to point to the new header.
         self.superblock.header = header_extent;
+        self.superblock.header_size = encoded_header.len() as u32;
 
         // Write the new superblock, atomically completing the commit.
         self.superblock.write(&mut self.archive_file)?;
