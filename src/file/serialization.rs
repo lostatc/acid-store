@@ -14,10 +14,18 @@
  * limitations under the License.
  */
 
-pub use self::archive::FileArchive;
-pub use self::entry::{Entry, EntryType};
+use relative_path::RelativePathBuf;
+use serde::{Deserialize, Serialize};
 
-mod archive;
-mod entry;
-mod platform;
-mod serialization;
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "RelativePathBuf")]
+pub struct SerializableRelativePathBuf {
+    #[serde(getter = "RelativePathBuf::to_string")]
+    path: String
+}
+
+impl From<SerializableRelativePathBuf> for RelativePathBuf {
+    fn from(serializable: SerializableRelativePathBuf) -> Self {
+        RelativePathBuf::from(serializable.path)
+    }
+}

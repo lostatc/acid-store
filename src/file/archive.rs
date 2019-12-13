@@ -14,41 +14,18 @@
  * limitations under the License.
  */
 
-use std::fs::{create_dir, create_dir_all, read_link, symlink_metadata, File, OpenOptions};
+use std::fs::{create_dir, create_dir_all, File, OpenOptions, read_link, symlink_metadata};
 use std::io::{self, copy, ErrorKind, Read};
 use std::path::Path;
 
-use filetime::{set_file_mtime, FileTime};
+use filetime::{FileTime, set_file_mtime};
 use relative_path::RelativePath;
-use rmp_serde::{decode, encode};
-use walkdir::WalkDir;
+use walkdir::{Error, WalkDir};
 
-use crate::{ArchiveConfig, DataHandle, EntryType, Object, ObjectArchive, Result};
+use crate::{ArchiveConfig, Key, Object, ObjectArchive};
 
-use super::entry::Entry;
+use super::entry::{Entry, EntryKey, EntryType, KeyType};
 use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode, soft_link};
-
-impl Object {
-    /// Convert this object into an entry.
-    fn to_entry(&self) -> Entry {
-        decode::from_read_ref(&self.metadata).expect("Could not deserialize file metadata.")
-    }
-}
-
-impl Entry {
-    /// Convert this entry into an object.
-    fn to_object(&self) -> Object {
-        let mut object = Object::new();
-
-        // TODO: Avoid storing the data handle in the object twice.
-        object.metadata = encode::to_vec(&self).expect("Could not serialize file metadata.");
-        if let EntryType::File { data } = &self.entry_type {
-            object.data = data.clone();
-        }
-
-        object
-    }
-}
 
 /// An archive for storing files.
 ///
@@ -64,55 +41,67 @@ impl Entry {
 /// identified by a `RelativePath`. A `RelativePath` is a platform-independent path representation
 /// that allows entries archived on one system to be extracted on another.
 pub struct FileArchive {
-    archive: ObjectArchive,
+    archive: ObjectArchive<EntryKey>,
 }
 
 impl FileArchive {
-    /// Opens the archive at the given `path` with the given `config`.
+    /// Create a new archive at the given `path` with the given `config`.
+    ///
+    /// If encryption is enabled, an `encryption_key` must be provided. Otherwise, this argument
+    /// can be `None`.
     ///
     /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    ///     - `NotFound`: The archive file does not exist.
-    ///     - `PermissionDenied`: The user lack permission to open the archive file.
-    /// - `Error::Deserialize`: The file is not a valid archive file.
-    pub fn open(path: &Path, config: ArchiveConfig) -> Result<Self> {
+    /// - `ErrorKind::PermissionDenied`: The user lacks permission to create the archive file.
+    /// - `ErrorKind::AlreadyExists`: A file already exists at `path`.
+    /// - `ErrorKind::InvalidInput`: A key was required but not provided.
+    /// - `ErrorKind::WouldBlock`: The archive is in use by another process.
+    pub fn create(path: &Path, config: ArchiveConfig, key: Option<Key>) -> io::Result<Self> {
         Ok(FileArchive {
-            archive: ObjectArchive::open(path, config)?,
+            archive: ObjectArchive::create(path, config, key)?,
         })
     }
 
-    /// Creates and opens a new archive at the given `path` with the given `config`.
+    /// Opens the archive at the given `path`.
+    ///
+    /// If encryption is enabled, an `encryption_key` must be provided. Otherwise, this argument can
+    /// be `None`.
     ///
     /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    ///     - `PermissionDenied`: The user lack permission to create the archive file.
-    ///     - `AlreadyExists`: A file already exists at `path`.
-    pub fn create(path: &Path, config: ArchiveConfig) -> Result<Self> {
+    /// - `ErrorKind::NotFound`: The archive file does not exist.
+    /// - `ErrorKind::PermissionDenied`: The user lacks permission to open the archive file.
+    /// - `ErrorKind::InvalidInput`: A key was required but not provided.
+    /// - `ErrorKind::InvalidData`: The header is corrupt.
+    /// - `ErrorKind::InvalidData`: The wrong encryption key was provided.
+    /// - `ErrorKind::WouldBlock`: The archive is in use by another process.
+    pub fn open(path: &Path, key: Option<Key>) -> io::Result<Self> {
         Ok(FileArchive {
-            archive: ObjectArchive::create(path, config)?,
+            archive: ObjectArchive::open(path, key)?,
         })
     }
 
     /// Returns the entry at `path` or `None` if there is none.
     pub fn entry(&self, path: &RelativePath) -> Option<Entry> {
-        Some(self.archive.get(path.as_str())?.to_entry())
+        let object = self.archive.get(&EntryKey(path.to_owned(), KeyType::Metadata))?;
+        Some(self.archive.deserialize(&object).expect("Could not deserialize entry."))
     }
 
     /// Returns an unordered list of archive entries which are children of `parent`.
     pub fn list(&self, parent: &RelativePath) -> Vec<&RelativePath> {
         self.archive
-            .names()
-            .map(|name| RelativePath::new(name))
-            .filter(|path| path.parent() == Some(parent))
+            .keys()
+            .filter(|key| key.1 == KeyType::Metadata)
+            .filter(|key| key.0.parent() == Some(parent))
+            .map(|key| key.0.as_ref())
             .collect()
     }
 
     /// Returns an unordered list of archive entries which are descendants of `parent`.
     pub fn walk(&self, parent: &RelativePath) -> Vec<&RelativePath> {
         self.archive
-            .names()
-            .map(|name| RelativePath::new(name))
-            .filter(|path| path.starts_with(parent))
+            .keys()
+            .filter(|key| key.1 == KeyType::Metadata)
+            .filter(|key| key.0.starts_with(parent))
+            .map(|key| key.0.as_ref())
             .collect()
     }
 
@@ -121,37 +110,47 @@ impl FileArchive {
     /// If an entry with the given `path` already existed in the archive, it is replaced and the
     /// old entry is returned. Otherwise, `None` is returned.
     pub fn insert(&mut self, path: &RelativePath, entry: Entry) -> Option<Entry> {
-        Some(
-            self.archive
-                .insert(path.as_str(), entry.to_object())?
-                .to_entry(),
-        )
+        // Check if the entry exists.
+        let old_entry = self.entry(path)?;
+
+        // Write the metadata object.
+        let metadata_object = self.archive.serialize(&entry).expect("Could not serialize entry.");
+        self.archive.insert(EntryKey(path.to_owned(), KeyType::Metadata), metadata_object)?;
+
+        // Write the data object.
+        if let EntryType::File { data } = entry.entry_type {
+            self.archive.insert(EntryKey(path.to_owned(), KeyType::Data), data);
+        }
+
+        Some(old_entry)
     }
 
     /// Delete the entry in the archive with the given `path`.
     ///
     /// This returns the removed entry or `None` if there was no entry at `path`.
     pub fn remove(&mut self, path: &RelativePath) -> Option<Entry> {
-        Some(self.archive.remove(path.as_str())?.to_entry())
+        let old_entry = match self.entry(path) {
+            Some(value) => value,
+            None => return None
+        };
+
+        self.archive.remove(&EntryKey(path.to_owned(), KeyType::Data));
+        self.archive.remove(&EntryKey(path.to_owned(), KeyType::Metadata));
+
+        Some(old_entry)
     }
 
-    /// Returns a reader for reading the data associated with the given `handle`.
+    /// Writes the given `data` to the archive and returns a new object.
     ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn read(&self, handle: &DataHandle) -> Result<impl Read> {
-        self.archive.read(handle)
-    }
-
-    /// Writes the data from `source` to the archive and returns a handle to it.
-    ///
-    /// The returned handle can be used to manually construct an `Entry` that represents a
+    /// The returned object can be used to manually construct an `Entry` that represents a
     /// regular file.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn write(&mut self, source: impl Read) -> Result<DataHandle> {
+    pub fn write(&mut self, source: impl Read) -> io::Result<Object> {
         self.archive.write(source)
+    }
+
+    /// Returns a reader for reading the data associated with `object` from the archive.
+    pub fn read<'a>(&'a self, object: &'a Object) -> impl Read + 'a {
+        self.archive.read(object)
     }
 
     /// Copy a file from the file system into the archive.
@@ -160,17 +159,17 @@ impl FileArchive {
     /// `source` file from the file system.
     ///
     /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    ///     - `NotFound`: The `source` file does not exist.
-    ///     - `PermissionDenied`: The user lack permission to read the `source` file.
-    pub fn archive(&mut self, source: &Path, dest: &RelativePath) -> Result<()> {
+    /// - `ErrorKind::NotFound`: The `source` file does not exist.
+    /// - `ErrorKind::PermissionDenied`: The user lack permission to read the `source` file.
+    /// - `ErrorKind::Other`: The file is not a regular file, symlink, or directory.
+    pub fn archive(&mut self, source: &Path, dest: &RelativePath) -> io::Result<()> {
         let metadata = symlink_metadata(source)?;
         let file_type = metadata.file_type();
 
         // Get the file type.
         let entry_type = if file_type.is_file() {
-            let handle = self.write(&mut File::open(source)?)?;
-            EntryType::File { data: handle }
+            let object = self.write(&mut File::open(source)?)?;
+            EntryType::File { data: object }
         } else if file_type.is_dir() {
             EntryType::Directory
         } else if file_type.is_symlink() {
@@ -181,8 +180,7 @@ impl FileArchive {
             return Err(io::Error::new(
                 ErrorKind::Other,
                 "This file is not a regular file, symlink or directory.",
-            )
-            .into());
+            ));
         };
 
         // Create an entry.
@@ -204,11 +202,10 @@ impl FileArchive {
     /// does not remove the `source` directory or its descendants from the file system.
     ///
     /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    ///     - `NotFound`: The `source` file does not exist.
-    ///     - `PermissionDenied`: The user lack permission to read the `source` file.
-    /// - `Error::Walk` There was an error walking the directory tree.
-    pub fn archive_tree(&mut self, source: &Path, dest: &RelativePath) -> Result<()> {
+    /// - `ErrorKind::NotFound`: The `source` file does not exist.
+    /// - `ErrorKind::PermissionDenied`: The user lack permission to read the `source` file.
+    /// - `ErrorKind::Other`: A cycle of symbolic links was detected.
+    pub fn archive_tree(&mut self, source: &Path, dest: &RelativePath) -> io::Result<()> {
         for result in WalkDir::new(source) {
             let dir_entry = result?;
             let relative_path = dir_entry.path().strip_prefix(source).unwrap();
@@ -225,10 +222,10 @@ impl FileArchive {
     /// `source` entry from the archive.
     ///
     /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    ///     - `PermissionDenied`: The user lack permission to create the `dest` file.
-    ///     - `AlreadyExists`: A file already exists at `dest`.
-    pub fn extract(&mut self, source: &RelativePath, dest: &Path) -> Result<()> {
+    /// - `ErrorKind::NotFound`: The `source` entry does not exist.
+    /// - `ErrorKind::PermissionDenied`: The user lack permission to create the `dest` file.
+    /// - `ErrorKind::AlreadyExists`: A file already exists at `dest`.
+    pub fn extract(&mut self, source: &RelativePath, dest: &Path) -> io::Result<()> {
         let entry = match self.entry(source) {
             Some(value) => value,
             None => {
@@ -245,7 +242,7 @@ impl FileArchive {
         match entry.entry_type {
             EntryType::File { data } => {
                 let mut file = OpenOptions::new().write(true).create_new(true).open(dest)?;
-                copy(&mut self.read(&data)?, &mut file)?;
+                copy(&mut self.read(&data), &mut file)?;
             }
             EntryType::Directory => {
                 create_dir(dest)?;
@@ -271,10 +268,9 @@ impl FileArchive {
     /// does not remove the `source` entry or its descendants from the archive.
     ///
     /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    ///     - `PermissionDenied`: The user lack permission to create the `dest` file.
-    ///     - `AlreadyExists`: A file already exists at `dest`.
-    pub fn extract_tree(&mut self, source: &RelativePath, dest: &Path) -> Result<()> {
+    /// - `ErrorKind::PermissionDenied`: The user lack permission to create the `dest` file.
+    /// - `ErrorKind::AlreadyExists`: A file already exists at `dest`.
+    pub fn extract_tree(&mut self, source: &RelativePath, dest: &Path) -> io::Result<()> {
         // We must convert to owned paths because we'll need a mutable reference to `self` later.
         let mut descendants = self
             .walk(source)
@@ -293,27 +289,19 @@ impl FileArchive {
         Ok(())
     }
 
-    /// Commits all changes that have been made to the archive.
+    /// Commit changes which have been made to the archive.
     ///
     /// See `Archive::commit` for details.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn commit(&mut self) -> Result<()> {
+    pub fn commit(&mut self) -> io::Result<()> {
         self.archive.commit()
     }
 
-    /// Creates a copy of this archive which is compacted to reduce its size.
+    /// Copy the contents of this archive to a new archive file at `destination`.
     ///
-    /// See `Archive::compacted` for details.
-    ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
-    ///     - `PermissionDenied`: The user lack permission to create the new archive.
-    ///     - `AlreadyExists`: A file already exists at `dest`.
-    pub fn compacted(&mut self, dest: &Path) -> Result<FileArchive> {
+    /// See `ObjectArchive::repack` for details.
+    pub fn repack(&mut self, dest: &Path) -> io::Result<FileArchive> {
         Ok(FileArchive {
-            archive: self.archive.compacted(dest)?,
+            archive: self.archive.repack(dest)?
         })
     }
 }

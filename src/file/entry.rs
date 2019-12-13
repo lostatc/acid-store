@@ -19,9 +19,12 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
+use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
 
-use crate::DataHandle;
+use crate::Object;
+
+use super::serialization::SerializableRelativePathBuf;
 
 /// A type of file which can be stored in an archive.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,7 +32,7 @@ pub enum EntryType {
     /// A regular file.
     File {
         /// The contents of the file.
-        data: DataHandle,
+        data: Object,
     },
 
     /// A directory.
@@ -60,3 +63,18 @@ pub struct Entry {
     /// The type of file this entry represents.
     pub entry_type: EntryType,
 }
+
+/// A type which determines whether a key represents the data or metadata for an entry.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
+pub enum KeyType {
+    Data,
+    Metadata
+}
+
+/// A key to use in the `ObjectArchive` which backs the `FileArchive`.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+pub struct EntryKey(
+    #[serde(with = "SerializableRelativePathBuf")]
+    pub RelativePathBuf,
+    pub KeyType
+);
