@@ -24,15 +24,14 @@ use cdchunking::Chunker;
 use cdchunking::ZPAQ;
 use fs2::FileExt;
 use iter_read::IterRead;
+use num_integer::div_ceil;
 use num_integer::div_floor;
 use rmp_serde::{from_read, to_vec};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use uuid::Uuid;
 
-use super::block::{
-    allocate_contiguous_extent, allocate_extents, Chunk, Extent, pad_to_block_size, SuperBlock,
-};
+use super::block::{Chunk, Extent, pad_to_block_size, SuperBlock};
 use super::config::ArchiveConfig;
 use super::encryption::{Encryption, Key};
 use super::header::Header;
@@ -260,28 +259,15 @@ where
         Ok(bytes_written)
     }
 
-    /// Creates a new extent at the end of the file and returns it.
-    ///
-    /// This pads the file so that the new extent is aligned with the block size. The returned
-    /// extent has a length of approximately `std::u64::MAX` bytes, but the space for the new extent
-    /// is not allocated.
-    fn new_extent(&mut self) -> io::Result<Extent> {
-        let offset = pad_to_block_size(&mut self.archive_file, self.superblock.block_size)?;
-        let index = div_floor(offset, self.superblock.block_size as u64);
-        let blocks = std::u64::MAX / self.superblock.block_size as u64;
-        Ok(Extent { index, blocks })
-    }
-
     /// Returns a list of extents which are unused and can be overwritten.
     ///
-    /// The returned extents are sorted by their location in the file. The final extent in the list
-    /// will be the extent at the end of the file, which has a length of `std::u64::MAX`.
+    /// The returned extents are sorted by their location in the file.
     fn unused_extents(&mut self) -> io::Result<Vec<Extent>> {
         // Get all extents which are currently part of a chunk.
         let mut used_extents = self.header.extents();
 
         // Include all extents which were in use the last time changes were committed.
-        // We must not overwrite this data in case changes since then aren't committed.
+        // We must not overwrite this data in case changes made since then aren't committed.
         used_extents.extend(self.old_header.extents());
 
         // Include the extent storing the header.
@@ -294,15 +280,68 @@ where
         used_extents.dedup();
 
         // Get the extents which are unused.
-        let mut unused_extents = used_extents
+        let unused_extents = used_extents
             .windows(2)
             .filter_map(|pair| pair[0].between(pair[1]))
             .collect::<Vec<_>>();
 
-        // Create a new extent at the end of the file and add it.
-        unused_extents.push(self.new_extent()?);
-
         Ok(unused_extents)
+    }
+
+    /// Allocate a new extent of at least `size` bytes at the end of the archive.
+    ///
+    /// This pads the file so that the new extent is aligned with the block size.
+    fn new_extent(&mut self, size: u64) -> io::Result<Extent> {
+        let offset = pad_to_block_size(&mut self.archive_file, self.superblock.block_size)?;
+        let index = div_floor(offset, self.superblock.block_size as u64);
+        let blocks = div_ceil(size, self.superblock.block_size as u64);
+        Ok(Extent { index, blocks })
+    }
+
+    /// Truncate the given extent so it is just large enough to hold `size` bytes.
+    fn truncate_extent(&self, extent: Extent, size: u64) -> Extent {
+        let blocks = min(extent.blocks, div_ceil(size, self.superblock.block_size as u64));
+        Extent {
+            index: extent.index,
+            blocks,
+        }
+    }
+
+    /// Allocate a contiguous extent of at least `size` bytes.
+    fn allocate_contiguous_extent(&mut self, size: u64) -> io::Result<Extent> {
+        // Look for an unused extent that is large enough.
+        let unused_extents = self.unused_extents()?;
+        let allocated_extent = unused_extents
+            .iter()
+            .find(|extent| extent.length(self.superblock.block_size) >= size);
+
+        // If there is no unused extent large enough, allocate a new extent at the end of the file.
+        let allocated_extent = match allocated_extent {
+            Some(extent) => self.truncate_extent(*extent, size),
+            None => self.new_extent(size)?
+        };
+
+        Ok(allocated_extent)
+    }
+
+    /// Allocate a list of extents with a combined size of at least `size` bytes.
+    fn allocate_extents(&mut self, size: u64) -> io::Result<Vec<Extent>> {
+        let mut allocated_extents = Vec::new();
+        let mut bytes_remaining = size;
+
+        // Try to fill all unused extents first.
+        for extent in self.unused_extents()? {
+            let new_extent = self.truncate_extent(extent, bytes_remaining);
+            allocated_extents.push(new_extent);
+            bytes_remaining -= min(bytes_remaining, new_extent.length(self.superblock.block_size));
+        }
+
+        // If there's still data left, allocate an extent at the end of the file to store the rest.
+        if bytes_remaining > 0 {
+            allocated_extents.push(self.new_extent(bytes_remaining)?);
+        }
+
+        Ok(allocated_extents)
     }
 
     /// Compresses and encrypts the given `data` and returns it.
@@ -345,11 +384,7 @@ where
         let encoded_data = self.encode_data(data)?;
 
         // Get the list of extents which will hold the data.
-        let extents = allocate_extents(
-            self.unused_extents()?,
-            self.superblock.block_size,
-            encoded_data.len() as u64,
-        );
+        let extents = self.allocate_extents(encoded_data.len() as u64)?;
 
         // Write the encoded data to the extents.
         let mut bytes_written = 0;
@@ -460,14 +495,8 @@ where
         let serialized_header = to_vec(&self.header).expect("Could not serialize header.");
         let encoded_header = self.encode_data(&serialized_header)?;
 
-        // The entire header must be stored in a single extent.
-        // Find the first extent which is large enough to hold it.
-        let unused_extents = self.unused_extents()?;
-        let header_extent = allocate_contiguous_extent(
-            unused_extents,
-            self.superblock.block_size,
-            encoded_header.len() as u64,
-        );
+        // The entire header must be stored in a single extent. Allocate space for it.
+        let header_extent = self.allocate_contiguous_extent(encoded_header.len() as u64)?;
 
         // Write the header to the chosen extent.
         self.write_extent(header_extent, &encoded_header)?;
