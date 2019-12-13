@@ -26,12 +26,12 @@ use crate::Object;
 
 use super::serialization::SerializableRelativePathBuf;
 
-/// A type of file which can be stored in an archive.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A type of file which can be stored in a `FileArchive`.
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum EntryType {
     /// A regular file.
     File {
-        /// The contents of the file.
+        /// A handle for accessing the contents of the file.
         data: Object,
     },
 
@@ -48,8 +48,8 @@ pub enum EntryType {
     },
 }
 
-/// Metadata about a file stored in an archive.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Metadata about a file stored in a `FileArchive`.
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Entry {
     /// The time the file was last modified.
     pub modified_time: SystemTime,

@@ -525,36 +525,6 @@ where
         Ok(())
     }
 
-    /// Verify the integrity of the data associated with `object`.
-    ///
-    /// This returns `true` if the object is valid and `false` if it is corrupt.
-    pub fn verify_object(&self, object: &Object) -> io::Result<bool> {
-        for expected_checksum in &object.chunks {
-            let data = self.read_chunk(expected_checksum)?;
-            let actual_checksum = chunk_hash(&data);
-            if *expected_checksum != actual_checksum {
-                return Ok(false);
-            }
-        }
-
-        Ok(true)
-    }
-
-    /// Verify the integrity of all the data in the archive.
-    ///
-    /// This returns `true` if the archive is valid and `false` if some data in it is corrupt.
-    pub fn verify_archive(&self) -> io::Result<bool> {
-        for expected_checksum in self.header.chunks.keys() {
-            let data = self.read_chunk(expected_checksum)?;
-            let actual_checksum = chunk_hash(&data);
-            if *expected_checksum != actual_checksum {
-                return Ok(false);
-            }
-        }
-
-        Ok(true)
-    }
-
     /// Copy the contents of this archive to a new archive file at `destination`.
     ///
     /// Archives can reuse space left over from deleted objects, but they can not deallocate space
@@ -588,6 +558,36 @@ where
         dest_archive.commit()?;
 
         Ok(dest_archive)
+    }
+
+    /// Verify the integrity of the data associated with `object`.
+    ///
+    /// This returns `true` if the object is valid and `false` if it is corrupt.
+    pub fn verify_object(&self, object: &Object) -> io::Result<bool> {
+        for expected_checksum in &object.chunks {
+            let data = self.read_chunk(expected_checksum)?;
+            let actual_checksum = chunk_hash(&data);
+            if *expected_checksum != actual_checksum {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
+
+    /// Verify the integrity of all the data in the archive.
+    ///
+    /// This returns `true` if the archive is valid and `false` if some data in it is corrupt.
+    pub fn verify_archive(&self) -> io::Result<bool> {
+        for expected_checksum in self.header.chunks.keys() {
+            let data = self.read_chunk(expected_checksum)?;
+            let actual_checksum = chunk_hash(&data);
+            if *expected_checksum != actual_checksum {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 
     /// Return the UUID of the archive.

@@ -32,7 +32,7 @@
 //! - Integrity checking of data
 //! - Atomic commits
 //!
-//! This crate provides two abstractions for interacting with with the archive format:
+//! This crate provides two abstractions over the archive format:
 //! - `FileArchive` is a file archive like ZIP or TAR which supports modification times, POSIX file
 //! permissions, extended attributes, and symbolic links.
 //! - `ObjectArchive` is an object store which represents data as a flat mapping of keys to binary
@@ -40,8 +40,10 @@
 
 #![allow(dead_code)]
 
+pub use relative_path;
+
+pub use file::{Entry, EntryType, FileArchive};
 pub use object::{ArchiveConfig, Compression, Encryption, Key, KeySalt, Object, ObjectArchive};
 
-mod error;
-mod object;
 mod file;
+mod object;
