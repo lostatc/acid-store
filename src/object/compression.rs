@@ -72,7 +72,8 @@ impl Compression {
                 let mut output = Vec::with_capacity(data.len());
                 let mut encoder = Lz4EncoderBuilder::new().level(*level).build(&mut output)?;
                 encoder.write_all(data)?;
-                drop(encoder);
+                let (_, result) = encoder.finish();
+                result?;
                 Ok(output)
             }
         }
@@ -94,7 +95,10 @@ impl Compression {
             }
             Compression::Lz4 { .. } => {
                 let mut output = Vec::with_capacity(data.len());
-                Lz4Decoder::new(data)?.read_to_end(&mut output)?;
+                let mut decoder = Lz4Decoder::new(data)?;
+                decoder.read_to_end(&mut output)?;
+                let (_, result) = decoder.finish();
+                result?;
                 Ok(output)
             }
         }
