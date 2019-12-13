@@ -29,20 +29,20 @@ use super::config::ArchiveConfig;
 use super::encryption::Encryption;
 
 /// The offset of the primary superblock from the start of the file.
-const SUPERBLOCK_OFFSET: u64 = 0;
+const PRIMARY_SUPERBLOCK_OFFSET: u64 = 0;
 
 /// The offset of the backup superblock from the start of the file.
-const SUPERBLOCK_BACKUP_OFFSET: u64 = 4096;
+const BACKUP_SUPERBLOCK_OFFSET: u64 = 4096;
+
+/// The length of a superblock.
+const SUPERBLOCK_SIZE: usize = 4096;
 
 /// The number of bytes reserved for the superblock and its backup.
-const RESERVED_SPACE: u64 = 4096 * 2;
+const RESERVED_SPACE: u64 = SUPERBLOCK_SIZE as u64 * 2;
 
 /// Appends to the given `file` to pad it to a multiple of `block_size`.
 ///
 /// This returns the new size of the file.
-///
-/// # Errors
-/// - `Error::Io`: An I/O error occurred.
 pub fn pad_to_block_size(mut file: &File, block_size: u32) -> io::Result<u64> {
     let position = file.seek(SeekFrom::End(0))?;
     let padding_size = block_size as u64 - ((position - RESERVED_SPACE) % block_size as u64);
@@ -194,11 +194,17 @@ impl SuperBlock {
 
         // Serialize the superblock.
         let superblock = to_vec(&self).expect("Could not serialize the superblock.");
-        let superblock_size = superblock.len();
+        let superblock_size = superblock.len() as u32;
+
+        // We need to pad the superblock to ensure that the space is allocated when an archive is
+        // first created.
+        let padding_size = SUPERBLOCK_SIZE - superblock_size as usize - size_of::<u32>();
+        let padding = vec![0u8; padding_size];
 
         // Write the superblock size and the superblock itself.
         file.write_all(&superblock_size.to_be_bytes())?;
         file.write_all(&superblock)?;
+        file.write_all(&padding)?;
 
         Ok(())
     }
@@ -206,19 +212,19 @@ impl SuperBlock {
     /// Read the superblock from the given `file` or the backup superblock if it is corrupt.
     pub fn read(file: &mut File) -> io::Result<Self> {
         // Read both the primary and backup superblock.
-        let primary_superblock = Self::read_at(file, SUPERBLOCK_OFFSET);
-        let backup_superblock = Self::read_at(file, SUPERBLOCK_BACKUP_OFFSET);
+        let primary_superblock = Self::read_at(file, PRIMARY_SUPERBLOCK_OFFSET);
+        let backup_superblock = Self::read_at(file, BACKUP_SUPERBLOCK_OFFSET);
 
         // If one of the superblocks is corrupt, repair it with the other before proceeding. We can
         // guarantee consistency because a superblock will only be written if the other is valid.
         return match (primary_superblock, backup_superblock) {
             (Ok(superblock), Ok(_)) => Ok(superblock),
             (Ok(superblock), Err(_)) => {
-                superblock.write_at(file, SUPERBLOCK_BACKUP_OFFSET)?;
+                superblock.write_at(file, BACKUP_SUPERBLOCK_OFFSET)?;
                 Ok(superblock)
             }
             (Err(_), Ok(superblock)) => {
-                superblock.write_at(file, SUPERBLOCK_OFFSET)?;
+                superblock.write_at(file, PRIMARY_SUPERBLOCK_OFFSET)?;
                 Ok(superblock)
             }
             (Err(primary_error), Err(backup_error)) => {
@@ -239,8 +245,8 @@ impl SuperBlock {
 
     /// Write this superblock to the given `file` twice, a primary and a backup.
     pub fn write(&self, file: &mut File) -> io::Result<()> {
-        self.write_at(file, SUPERBLOCK_OFFSET)?;
-        self.write_at(file, SUPERBLOCK_BACKUP_OFFSET)?;
+        self.write_at(file, PRIMARY_SUPERBLOCK_OFFSET)?;
+        self.write_at(file, BACKUP_SUPERBLOCK_OFFSET)?;
 
         Ok(())
     }

@@ -94,7 +94,7 @@ where
         config: ArchiveConfig,
         encryption_key: Option<Key>,
     ) -> io::Result<Self> {
-        let archive_file = OpenOptions::new()
+        let mut archive_file = OpenOptions::new()
             .read(true)
             .write(true)
             .create_new(true)
@@ -126,6 +126,9 @@ where
         // Create an empty key if a key is not needed.
         let encryption_key = encryption_key.unwrap_or(Key::new(vec![0u8; 0]));
 
+        // Write the superblock to disk.
+        superblock.write(&mut archive_file)?;
+
         // Create a new archive with an empty header.
         let mut archive = ObjectArchive {
             superblock,
@@ -135,7 +138,7 @@ where
             encryption_key,
         };
 
-        // Write the header and superblock to disk.
+        // Write the header to disk.
         archive.commit()?;
 
         Ok(archive)
@@ -260,14 +263,13 @@ where
     /// Creates a new extent at the end of the file and returns it.
     ///
     /// This pads the file so that the new extent is aligned with the block size. The returned
-    /// extent has a length of `std::u64::MAX`, but the space for the new extent is not allocated.
+    /// extent has a length of approximately `std::u64::MAX` bytes, but the space for the new extent
+    /// is not allocated.
     fn new_extent(&mut self) -> io::Result<Extent> {
         let offset = pad_to_block_size(&mut self.archive_file, self.superblock.block_size)?;
         let index = div_floor(offset, self.superblock.block_size as u64);
-        Ok(Extent {
-            index,
-            blocks: std::u64::MAX,
-        })
+        let blocks = std::u64::MAX / self.superblock.block_size as u64;
+        Ok(Extent { index, blocks })
     }
 
     /// Returns a list of extents which are unused and can be overwritten.
