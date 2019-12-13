@@ -210,7 +210,9 @@ where
     /// The space used by the given object isn't freed and made available for new objects until
     /// `commit` is called. The size of the archive file will not shrink unless `repack` is called.
     pub fn remove(&mut self, key: &K) -> Option<Object> {
-        self.header.objects.remove(key)
+        let result = self.header.objects.remove(key);
+        self.header.clean_chunks();
+        result
     }
 
     /// Returns a reference to the object with the given `key`, or `None` if it doesn't exist.

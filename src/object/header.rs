@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::hash::Hash;
 
 use serde::{Deserialize, Serialize};
@@ -57,5 +57,15 @@ where
             .values()
             .flat_map(|chunk| chunk.extents.iter().copied())
             .collect::<Vec<_>>()
+    }
+
+    /// Remove chunks not referenced by any object from the header.
+    pub fn clean_chunks(&mut self) {
+        let referenced_chunks = self.objects
+            .values()
+            .flat_map(|object| &object.chunks)
+            .collect::<HashSet<_>>();
+
+        self.chunks.retain(|hash, _| referenced_chunks.contains(hash));
     }
 }
