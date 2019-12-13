@@ -288,7 +288,10 @@ where
         used_extents.dedup();
 
         // Get the extents which are unused.
-        let initial_extent = Extent { index: 0, blocks: 0 };
+        let initial_extent = Extent {
+            index: 0,
+            blocks: 0,
+        };
         let unused_extents = iter::once(initial_extent)
             .chain(used_extents)
             .collect::<Vec<_>>()
@@ -311,7 +314,10 @@ where
 
     /// Truncate the given extent so it is just large enough to hold `size` bytes.
     fn truncate_extent(&self, extent: Extent, size: u64) -> Extent {
-        let blocks = min(extent.blocks, div_ceil(size, self.superblock.block_size as u64));
+        let blocks = min(
+            extent.blocks,
+            div_ceil(size, self.superblock.block_size as u64),
+        );
         Extent {
             index: extent.index,
             blocks,
@@ -329,7 +335,7 @@ where
         // If there is no unused extent large enough, allocate a new extent at the end of the file.
         let allocated_extent = match allocated_extent {
             Some(extent) => self.truncate_extent(*extent, size),
-            None => self.new_extent(size)?
+            None => self.new_extent(size)?,
         };
 
         Ok(allocated_extent)
@@ -344,7 +350,10 @@ where
         for extent in self.unused_extents()? {
             let new_extent = self.truncate_extent(extent, bytes_remaining);
             allocated_extents.push(new_extent);
-            bytes_remaining -= min(bytes_remaining, new_extent.length(self.superblock.block_size));
+            bytes_remaining -= min(
+                bytes_remaining,
+                new_extent.length(self.superblock.block_size),
+            );
         }
 
         // If there's still data left, allocate an extent at the end of the file to store the rest.

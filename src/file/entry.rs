@@ -68,13 +68,12 @@ pub struct Entry {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub enum KeyType {
     Data,
-    Metadata
+    Metadata,
 }
 
 /// A key to use in the `ObjectArchive` which backs the `FileArchive`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct EntryKey(
-    #[serde(with = "SerializableRelativePathBuf")]
-    pub RelativePathBuf,
-    pub KeyType
+    #[serde(with = "SerializableRelativePathBuf")] pub RelativePathBuf,
+    pub KeyType,
 );

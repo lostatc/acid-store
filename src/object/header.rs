@@ -61,11 +61,13 @@ where
 
     /// Remove chunks not referenced by any object from the header.
     pub fn clean_chunks(&mut self) {
-        let referenced_chunks = self.objects
+        let referenced_chunks = self
+            .objects
             .values()
             .flat_map(|object| &object.chunks)
             .collect::<HashSet<_>>();
 
-        self.chunks.retain(|hash, _| referenced_chunks.contains(hash));
+        self.chunks
+            .retain(|hash, _| referenced_chunks.contains(hash));
     }
 }

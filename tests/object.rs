@@ -55,7 +55,7 @@ const ARCHIVE_CONFIG: ArchiveConfig = ArchiveConfig {
     block_size: 4096,
     chunker_bits: 18,
     encryption: Encryption::None,
-    compression: Compression::None
+    compression: Compression::None,
 };
 
 #[test]
