@@ -21,7 +21,7 @@ use rand::{RngCore, SeedableRng};
 use rand::rngs::SmallRng;
 use tempfile::tempdir;
 
-use disk_archive::{ArchiveConfig, Compression, Encryption, ObjectArchive};
+use disk_archive::{ArchiveConfig, Compression, Encryption, Key, ObjectArchive};
 
 /// Return a buffer containing `size` random bytes for testing purposes.
 fn random_bytes(size: usize) -> Vec<u8> {
@@ -57,8 +57,6 @@ const ARCHIVE_CONFIG: ArchiveConfig = ArchiveConfig {
     encryption: Encryption::None,
     compression: Compression::None
 };
-
-// TODO: Use macros to generate similar tests.
 
 #[test]
 fn object_is_persisted() -> io::Result<()> {
@@ -142,6 +140,100 @@ fn uncommitted_changes_are_not_saved() -> io::Result<()> {
     let archive = ObjectArchive::open(archive_path.as_path(), None)?;
 
     assert_eq!(archive.get(&"Test".to_string()), None);
+
+    Ok(())
+}
+
+#[test]
+fn encrypted_objects_is_decoded() -> io::Result<()> {
+    let mut config = ARCHIVE_CONFIG;
+    config.encryption = Encryption::XChaCha20Poly1305;
+    let key = Key::generate(Encryption::XChaCha20Poly1305.key_size());
+
+    let temp_dir = tempdir()?;
+    let archive_path = temp_dir.path().join("archive");
+    let mut archive = ObjectArchive::create(archive_path.as_path(), config, Some(key.clone()))?;
+
+    let expected_data = insert_data("Test", &mut archive)?;
+
+    archive.commit()?;
+    drop(archive);
+
+    let archive = ObjectArchive::open(archive_path.as_path(), Some(key))?;
+
+    let actual_data = read_data("Test", &archive)?;
+
+    assert_eq!(expected_data, actual_data);
+
+    Ok(())
+}
+
+#[test]
+fn compressed_object_is_decoded() -> io::Result<()> {
+    let mut config = ARCHIVE_CONFIG;
+    config.compression = Compression::Lz4 { level: 6 };
+
+    let temp_dir = tempdir()?;
+    let archive_path = temp_dir.path().join("archive");
+    let mut archive = ObjectArchive::create(archive_path.as_path(), config, None)?;
+
+    let expected_data = insert_data("Test", &mut archive)?;
+
+    archive.commit()?;
+    drop(archive);
+
+    let archive = ObjectArchive::open(archive_path.as_path(), None)?;
+
+    let actual_data = read_data("Test", &archive)?;
+
+    assert_eq!(expected_data, actual_data);
+
+    Ok(())
+}
+
+#[test]
+fn compressed_and_encrypted_object_is_decoded() -> io::Result<()> {
+    let mut config = ARCHIVE_CONFIG;
+    config.compression = Compression::Lz4 { level: 6 };
+    config.encryption = Encryption::XChaCha20Poly1305;
+    let key = Key::generate(Encryption::XChaCha20Poly1305.key_size());
+
+    let temp_dir = tempdir()?;
+    let archive_path = temp_dir.path().join("archive");
+    let mut archive = ObjectArchive::create(archive_path.as_path(), config, Some(key.clone()))?;
+
+    let expected_data = insert_data("Test", &mut archive)?;
+
+    archive.commit()?;
+    drop(archive);
+
+    let archive = ObjectArchive::open(archive_path.as_path(), Some(key))?;
+
+    let actual_data = read_data("Test", &archive)?;
+
+    assert_eq!(expected_data, actual_data);
+
+    Ok(())
+}
+
+#[test]
+fn serialized_object_is_deserialized() -> io::Result<()> {
+    let temp_dir = tempdir()?;
+    let archive_path = temp_dir.path().join("archive");
+    let mut archive = ObjectArchive::create(archive_path.as_path(), ARCHIVE_CONFIG, None)?;
+
+    let expected_data = (true, 42u32, "Hello!".to_string());
+    let object = archive.serialize(&expected_data)?;
+    archive.insert("Test".to_string(), object);
+
+    archive.commit()?;
+    drop(archive);
+
+    let archive: ObjectArchive<String> = ObjectArchive::open(archive_path.as_path(), None)?;
+    let object = archive.get(&"Test".to_string()).unwrap();
+    let actual_data = archive.deserialize::<(bool, u32, String)>(&object)?;
+
+    assert_eq!(expected_data, actual_data);
 
     Ok(())
 }
