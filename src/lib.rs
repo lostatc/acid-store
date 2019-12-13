@@ -44,3 +44,4 @@ pub use object::{ArchiveConfig, Compression, Encryption, Key, KeySalt, Object, O
 
 mod error;
 mod object;
+mod file;
