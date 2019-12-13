@@ -125,6 +125,9 @@ pub struct SuperBlock {
 
     /// The extent which stores the archive's header.
     pub header: Extent,
+
+    /// The size of the header in bytes.
+    pub header_size: u32,
 }
 
 impl SuperBlock {
