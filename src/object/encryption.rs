@@ -24,7 +24,6 @@ use sodiumoxide::crypto::aead::xchacha20poly1305_ietf::{
 use sodiumoxide::crypto::pwhash::argon2id13::{
     derive_key, gen_salt, MEMLIMIT_INTERACTIVE, OPSLIMIT_INTERACTIVE, Salt,
 };
-use sodiumoxide::randombytes::randombytes_into;
 use zeroize::Zeroize;
 
 /// A data encryption method.

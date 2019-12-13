@@ -14,12 +14,10 @@
  * limitations under the License.
  */
 
-use std::cmp::min;
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::mem::size_of;
 
-use num_integer::div_ceil;
 use rmp_serde::{from_read, to_vec};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -50,43 +48,6 @@ pub fn pad_to_block_size(mut file: &File, block_size: u32) -> io::Result<u64> {
     file.write_all(&padding)?;
 
     Ok(position + padding_size)
-}
-
-/// Truncate the given extent so it is just large enough to hold `size` bytes.
-fn truncate_extent(extent: Extent, block_size: u32, size: u64) -> Extent {
-    let blocks = min(extent.blocks, div_ceil(size, block_size as u64));
-    Extent {
-        index: extent.index,
-        blocks,
-    }
-}
-
-/// Return the first extent that is at least `size` bytes in length and truncate it.
-///
-/// The returned extent will be just large enough to hold `size` bytes.
-pub fn allocate_contiguous_extent(extents: Vec<Extent>, block_size: u32, size: u64) -> Extent {
-    let allocated_extent = extents
-        .iter()
-        .find(|extent| extent.length(block_size) >= size)
-        .unwrap();
-    truncate_extent(*allocated_extent, block_size, size)
-}
-
-/// Truncate and return a list of `extents`.
-///
-/// The combined size of all the extents in the returned list will be just large enough to hold
-/// `size` bytes.
-pub fn allocate_extents(extents: Vec<Extent>, block_size: u32, size: u64) -> Vec<Extent> {
-    let mut output = Vec::new();
-    let mut bytes_remaining = size;
-
-    for extent in extents {
-        let new_extent = truncate_extent(extent, block_size, bytes_remaining);
-        output.push(new_extent);
-        bytes_remaining -= min(bytes_remaining, new_extent.length(block_size));
-    }
-
-    output
 }
 
 /// A sequence of contiguous blocks in the archive.
