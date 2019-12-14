@@ -456,7 +456,10 @@ where
             checksums.push(self.write_chunk(&chunk)?);
         }
 
-        let object = Object { size, chunks: checksums };
+        let object = Object {
+            size,
+            chunks: checksums,
+        };
         self.header.objects.remove(&key);
         Ok(self.header.objects.entry(key).or_insert(object))
     }
