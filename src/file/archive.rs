@@ -35,8 +35,8 @@ use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mo
 /// can represent a regular file, directory, or symbolic link.
 ///
 /// This type provides a high-level API through the methods `archive`, `archive_tree`, `extract`,
-/// and `extract_tree` for archiving and extracting files in the file system. It also provides
-/// low-level access for manually creating, deleting, and querying entries in the archive.
+/// and `extract_tree` for archiving and extracting files in the file system. It also allows for
+/// querying entries in the archive.
 ///
 /// While files in the file system are identified by their `Path`, entries in the archive are
 /// identified by a `RelativePath`. A `RelativePath` is a platform-independent path representation
@@ -69,11 +69,29 @@ impl FileArchive {
         let object = self
             .archive
             .get(&EntryKey(path.to_owned(), KeyType::Metadata))?;
+
         Some(
             self.archive
                 .deserialize(&object)
                 .expect("Could not deserialize entry."),
         )
+    }
+
+    /// Removes and returns the entry with the given `path` from the archive.
+    ///
+    /// This returns `None` if there is no entry with the given `path`.
+    ///
+    /// The space used by the given entry isn't freed and made available for new entries until
+    /// `commit` is called. The size of the archive file will not shrink unless `repack` is called.
+    pub fn remove(&mut self, path: &RelativePath) -> Option<Entry> {
+        let old_entry = self.entry(path)?;
+
+        self.archive
+            .remove(&EntryKey(path.to_owned(), KeyType::Data));
+        self.archive
+            .remove(&EntryKey(path.to_owned(), KeyType::Metadata));
+
+        Some(old_entry)
     }
 
     /// Returns an iterator of paths which are children of `parent`.
@@ -108,15 +126,17 @@ impl FileArchive {
     /// # Errors
     /// - `ErrorKind::NotFound`: The `source` file does not exist.
     /// - `ErrorKind::PermissionDenied`: The user lack permission to read the `source` file.
-    /// - `ErrorKind::Other`: The file is not a regular file, symlink, or directory.
+    /// - `ErrorKind::InvalidInput`: The file is not a regular file, symlink, or directory.
     pub fn archive(&mut self, source: &Path, dest: &RelativePath) -> io::Result<()> {
         let metadata = symlink_metadata(source)?;
         let file_type = metadata.file_type();
 
         // Get the file type.
         let entry_type = if file_type.is_file() {
-            let object = self.write(&mut File::open(source)?)?;
-            EntryType::File { data: object }
+            // Write the file contents.
+            let data_key = EntryKey(dest.to_owned(), KeyType::Data);
+            let object = self.archive.write(data_key, &mut File::open(source)?)?;
+            EntryType::File { data: object.clone() }
         } else if file_type.is_dir() {
             EntryType::Directory
         } else if file_type.is_symlink() {
@@ -125,7 +145,7 @@ impl FileArchive {
             }
         } else {
             return Err(io::Error::new(
-                ErrorKind::Other,
+                ErrorKind::InvalidInput,
                 "This file is not a regular file, symlink or directory.",
             ));
         };
@@ -138,7 +158,11 @@ impl FileArchive {
             entry_type,
         };
 
-        self.insert(dest, entry);
+        // Serialize and store the entry.
+        self
+            .archive
+            .serialize(EntryKey(dest.to_owned(), KeyType::Metadata), &entry)
+            .expect("Could not serialize entry.");
 
         Ok(())
     }
@@ -235,55 +259,6 @@ impl FileArchive {
         Ok(())
     }
 
-    /// Adds the given `entry` to the archive with the given `path`.
-    ///
-    /// If an entry with the given `path` already existed in the archive, it is replaced and the
-    /// old entry is returned. Otherwise, `None` is returned.
-    pub fn insert(&mut self, path: &RelativePath, entry: Entry) -> Option<Entry> {
-        // Check if the entry exists.
-        let old_entry = self.entry(path)?;
-
-        // Write the metadata object.
-        let metadata_object = self
-            .archive
-            .serialize(&entry)
-            .expect("Could not serialize entry.");
-        self.archive.insert(
-            EntryKey(path.to_owned(), KeyType::Metadata),
-            metadata_object,
-        )?;
-
-        // Write the data object.
-        if let EntryType::File { data } = entry.entry_type {
-            self.archive
-                .insert(EntryKey(path.to_owned(), KeyType::Data), data);
-        }
-
-        Some(old_entry)
-    }
-
-    /// Delete the entry in the archive with the given `path`.
-    ///
-    /// This returns the removed entry or `None` if there was no entry at `path`.
-    pub fn remove(&mut self, path: &RelativePath) -> Option<Entry> {
-        let old_entry = self.entry(path)?;
-
-        self.archive
-            .remove(&EntryKey(path.to_owned(), KeyType::Data));
-        self.archive
-            .remove(&EntryKey(path.to_owned(), KeyType::Metadata));
-
-        Some(old_entry)
-    }
-
-    /// Writes the given `data` to the archive and returns a new object.
-    ///
-    /// The returned object can be used to manually construct an `Entry` that represents a
-    /// regular file.
-    pub fn write(&mut self, source: impl Read) -> io::Result<Object> {
-        self.archive.write(source)
-    }
-
     /// Returns a reader for reading the data associated with `object` from the archive.
     pub fn read<'a>(&'a self, object: &'a Object) -> impl Read + 'a {
         self.archive.read(object)
@@ -308,7 +283,7 @@ impl FileArchive {
     /// Verify the integrity of the data associated with `object`.
     ///
     /// This returns `true` if the object is valid and `false` if it is corrupt.
-    pub fn verify_object(&self, object: &Object) -> io::Result<bool> {
+    pub fn verify_entry(&self, object: &Object) -> io::Result<bool> {
         self.archive.verify_object(object)
     }
 
