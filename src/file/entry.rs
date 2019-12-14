@@ -50,7 +50,7 @@ pub enum EntryType {
 
 /// Metadata about a file stored in a `FileArchive`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
-pub struct Entry {
+pub struct EntryMetadata {
     /// The time the file was last modified.
     pub modified_time: SystemTime,
 
@@ -59,6 +59,13 @@ pub struct Entry {
 
     /// The file's extended attributes.
     pub attributes: HashMap<OsString, Vec<u8>>,
+}
+
+/// A file stored in a `FileArchive`.
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+pub struct Entry {
+    /// The file's metadata.
+    pub metadata: EntryMetadata,
 
     /// The type of file this entry represents.
     pub entry_type: EntryType,

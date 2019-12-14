@@ -42,7 +42,7 @@
 
 pub use relative_path;
 
-pub use file::{Entry, EntryType, FileArchive};
+pub use file::{Entry, EntryMetadata, EntryType, FileArchive};
 pub use object::{ArchiveConfig, Compression, Encryption, Key, KeySalt, Object, ObjectArchive};
 
 mod file;

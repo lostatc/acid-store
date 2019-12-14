@@ -16,7 +16,7 @@
 
 use std::fs::{create_dir, create_dir_all, File, OpenOptions, read_link, symlink_metadata};
 use std::io::{self, copy, ErrorKind, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use filetime::{FileTime, set_file_mtime};
 use relative_path::RelativePath;
@@ -25,7 +25,7 @@ use walkdir::WalkDir;
 
 use crate::{ArchiveConfig, Key, Object, ObjectArchive};
 
-use super::entry::{Entry, EntryKey, EntryType, KeyType};
+use super::entry::{Entry, EntryKey, EntryMetadata, EntryType, KeyType};
 use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode, soft_link};
 
 /// An archive for storing files.
@@ -36,7 +36,8 @@ use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mo
 ///
 /// This type provides a high-level API through the methods `archive`, `archive_tree`, `extract`,
 /// and `extract_tree` for archiving and extracting files in the file system. It also allows for
-/// querying entries in the archive.
+/// manually adding entries through the methods `add_file`, `add_directory`, and `add_link`. Entries
+/// can be queries with `entry`, `list`, and `walk`. They can be removed using `remove`.
 ///
 /// While files in the file system are identified by their `Path`, entries in the archive are
 /// identified by a `RelativePath`. A `RelativePath` is a platform-independent path representation
@@ -120,51 +121,38 @@ impl FileArchive {
 
     /// Copy a file from the file system into the archive.
     ///
-    /// This creates an archive entry at `dest` from the file at `source`. This does not remove the
-    /// `source` file from the file system.
+    /// This creates an archive entry at `dest` from the file at `source` and returns the entry.
+    /// This does not remove the `source` file from the file system.
     ///
     /// # Errors
     /// - `ErrorKind::NotFound`: The `source` file does not exist.
     /// - `ErrorKind::PermissionDenied`: The user lack permission to read the `source` file.
     /// - `ErrorKind::InvalidInput`: The file is not a regular file, symlink, or directory.
-    pub fn archive(&mut self, source: &Path, dest: &RelativePath) -> io::Result<()> {
-        let metadata = symlink_metadata(source)?;
-        let file_type = metadata.file_type();
+    pub fn archive(&mut self, source: &Path, dest: &RelativePath) -> io::Result<Entry> {
+        let file_metadata = symlink_metadata(source)?;
+        let file_type = file_metadata.file_type();
 
-        // Get the file type.
-        let entry_type = if file_type.is_file() {
-            // Write the file contents.
-            let data_key = EntryKey(dest.to_owned(), KeyType::Data);
-            let object = self.archive.write(data_key, &mut File::open(source)?)?;
-            EntryType::File { data: object.clone() }
+        // Get the file metadata.
+        let metadata = EntryMetadata {
+            modified_time: file_metadata.modified()?,
+            permissions: file_mode(&file_metadata),
+            attributes: extended_attrs(&source)?,
+        };
+
+        // Add the entry.
+        if file_type.is_file() {
+            self.add_file(dest, metadata, &mut File::open(source)?)
         } else if file_type.is_dir() {
-            EntryType::Directory
+            self.add_directory(dest, metadata)
         } else if file_type.is_symlink() {
-            EntryType::Link {
-                target: read_link(source)?,
-            }
+            let target = read_link(source)?;
+            self.add_link(dest, metadata, target)
         } else {
-            return Err(io::Error::new(
+            Err(io::Error::new(
                 ErrorKind::InvalidInput,
                 "This file is not a regular file, symlink or directory.",
-            ));
-        };
-
-        // Create an entry.
-        let entry = Entry {
-            modified_time: metadata.modified()?,
-            permissions: file_mode(&metadata),
-            attributes: extended_attrs(&source)?,
-            entry_type,
-        };
-
-        // Serialize and store the entry.
-        self
-            .archive
-            .serialize(EntryKey(dest.to_owned(), KeyType::Metadata), &entry)
-            .expect("Could not serialize entry.");
-
-        Ok(())
+            ))
+        }
     }
 
     /// Copy a directory tree from the file system into the archive.
@@ -224,11 +212,14 @@ impl FileArchive {
         }
 
         // Set the file metadata.
-        set_file_mtime(dest, FileTime::from_system_time(entry.modified_time))?;
-        if let Some(mode) = entry.permissions {
+        set_file_mtime(
+            dest,
+            FileTime::from_system_time(entry.metadata.modified_time),
+        )?;
+        if let Some(mode) = entry.metadata.permissions {
             set_file_mode(dest, mode)?;
         }
-        set_extended_attrs(dest, entry.attributes)?;
+        set_extended_attrs(dest, entry.metadata.attributes)?;
 
         Ok(())
     }
@@ -259,7 +250,60 @@ impl FileArchive {
         Ok(())
     }
 
-    /// Returns a reader for reading the data associated with `object` from the archive.
+    /// Write the given entry to the archive at the given `path`.
+    fn add_entry(&mut self, path: &RelativePath, entry: &Entry) {
+        self.archive
+            .serialize(EntryKey(path.to_owned(), KeyType::Metadata), &entry)
+            .expect("Could not serialize entry.");
+    }
+
+    /// Add a regular file with the given `metadata` and `data` to the archive at `path`.
+    pub fn add_file(
+        &mut self,
+        path: &RelativePath,
+        metadata: EntryMetadata,
+        data: impl Read,
+    ) -> io::Result<Entry> {
+        let data_key = EntryKey(path.to_owned(), KeyType::Data);
+        let object = self.archive.write(data_key, data)?;
+        let entry_type = EntryType::File { data: object.clone() };
+        let entry = Entry { metadata, entry_type };
+
+        self.add_entry(&path, &entry);
+
+        Ok(entry)
+    }
+
+    /// Add a directory with the given `metadata` to the archive at `path`.
+    pub fn add_directory(
+        &mut self,
+        path: &RelativePath,
+        metadata: EntryMetadata,
+    ) -> io::Result<Entry> {
+        let entry_type = EntryType::Directory;
+        let entry = Entry { metadata, entry_type };
+
+        self.add_entry(&path, &entry);
+
+        Ok(entry)
+    }
+
+    /// Add a symbolic link with the given `metadata` and `target` to the archive at `path`.
+    pub fn add_link(
+        &mut self,
+        path: &RelativePath,
+        metadata: EntryMetadata,
+        target: PathBuf,
+    ) -> io::Result<Entry> {
+        let entry_type = EntryType::Link { target };
+        let entry = Entry { metadata, entry_type };
+
+        self.add_entry(&path, &entry);
+
+        Ok(entry)
+    }
+
+    /// Return a reader for reading the data associated with `object` from the archive.
     pub fn read<'a>(&'a self, object: &'a Object) -> impl Read + 'a {
         self.archive.read(object)
     }

@@ -15,7 +15,7 @@
  */
 
 pub use self::archive::FileArchive;
-pub use self::entry::{Entry, EntryType};
+pub use self::entry::{Entry, EntryMetadata, EntryType};
 
 mod archive;
 mod entry;
