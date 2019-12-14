@@ -43,9 +43,9 @@ use super::object::{chunk_hash, ChunkHash, Object};
 /// An `ObjectArchive` is a binary file format for efficiently storing binary data. An object
 /// archive maps keys of type `K` to binary blobs called objects.
 ///
-/// To store data in an object archive, you first `write` or `serialize` data to the archive and
-/// receive an `Object` which represents that data. Then, you can `insert` that object into the
-/// archive with a key.
+/// To store data in the archive, use `write` or `serialize`. To read data from the archive, `get`
+/// the `Object` associated with a key and use `read`, `read_all`, or `deserialize` to read the data
+/// it represents.
 ///
 /// Data in an object archive is transparently deduplicated using content-defined block-level
 /// deduplication. The data and metadata in the archive can optionally be compressed and encrypted.
@@ -199,14 +199,6 @@ where
         archive.header = header;
 
         Ok(archive)
-    }
-
-    /// Adds an `object` with the given `key` to the archive and returns it.
-    ///
-    /// If an object with the given `key` already existed in the archive, it is replaced and the old
-    /// object is returned. Otherwise, `None` is returned.
-    pub fn insert(&mut self, key: K, object: Object) -> Option<Object> {
-        self.header.objects.insert(key, object)
     }
 
     /// Removes and returns the object with the given `key` from the archive.
@@ -448,8 +440,10 @@ where
         Ok(decoded_data)
     }
 
-    /// Writes the given `data` to the archive and returns a new object.
-    pub fn write(&mut self, data: impl Read) -> io::Result<Object> {
+    /// Writes the given `data` to the archive for a given `key` and returns the object.
+    ///
+    /// If the given `key` is already in the archive, its data is replaced.
+    pub fn write(&mut self, key: K, data: impl Read) -> io::Result<&Object> {
         let chunker = Chunker::new(ZPAQ::new(self.superblock.chunker_bits as usize));
 
         let mut checksums = Vec::new();
@@ -462,20 +456,21 @@ where
             checksums.push(self.write_chunk(&chunk)?);
         }
 
-        Ok(Object {
-            size,
-            chunks: checksums,
-        })
+        let object = Object { size, chunks: checksums };
+        self.header.objects.remove(&key);
+        Ok(self.header.objects.entry(key).or_insert(object))
     }
 
-    /// Serializes the given `value`, writes it to the archive, and returns a new object.
+    /// Serializes the given `value` to the archive for a given `key` and returns the object.
+    ///
+    /// If the given `key` is already in the archive, its data is replaced.
     ///
     /// # Errors
     /// - `ErrorKind::InvalidInput`: The given `value` could not be serialized.
-    pub fn serialize(&mut self, value: &impl Serialize) -> io::Result<Object> {
+    pub fn serialize(&mut self, key: K, value: &impl Serialize) -> io::Result<&Object> {
         let serialized_value =
             to_vec(&value).map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
-        self.write(serialized_value.as_slice())
+        self.write(key, serialized_value.as_slice())
     }
 
     /// Returns a reader for reading the data associated with `object` from the archive.
@@ -560,8 +555,7 @@ where
         )?;
 
         for (key, object) in self.header.objects.iter() {
-            let dest_object = dest_archive.write(self.read(&object))?;
-            dest_archive.insert(key.clone(), dest_object);
+            dest_archive.write(key.clone(), self.read(&object))?;
         }
 
         dest_archive.commit()?;
