@@ -34,8 +34,7 @@ fn random_bytes(size: usize) -> Vec<u8> {
 /// Insert random data into the `archive` with the given `key`.
 fn insert_data(key: &str, archive: &mut ObjectArchive<String>) -> io::Result<Vec<u8>> {
     let data = random_bytes(DATA_SIZE);
-    let object = archive.write(data.as_slice())?;
-    archive.insert(key.to_string(), object);
+    archive.write(key.to_string(), data.as_slice())?;
     Ok(data)
 }
 
@@ -223,8 +222,7 @@ fn serialized_object_is_deserialized() -> io::Result<()> {
     let mut archive = ObjectArchive::create(archive_path.as_path(), ARCHIVE_CONFIG, None)?;
 
     let expected_data = (true, 42u32, "Hello!".to_string());
-    let object = archive.serialize(&expected_data)?;
-    archive.insert("Test".to_string(), object);
+    archive.serialize("Test".to_string(), &expected_data)?;
 
     archive.commit()?;
     drop(archive);
