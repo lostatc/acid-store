@@ -35,9 +35,9 @@ pub fn chunk_hash(data: &[u8]) -> ChunkHash {
     checksum
 }
 
-/// An object in an archive.
+/// A handle for accessing data in an archive.
 ///
-/// An object is a handle for accessing data in an archive. It doesn't own or store the data itself.
+/// An `Object` doesn't own or store data itself, but references data stored in an archive.
 ///
 /// If two objects from the same archive are equal, they represent the same underlying data.
 /// Comparisons between objects from different archives are meaningless.
@@ -62,6 +62,8 @@ impl Object {
     }
 
     /// The checksum of the data.
+    ///
+    /// This does not compute the checksum, but returns a stored checksum.
     pub fn checksum(&self) -> &Checksum {
         &self.checksum
     }
