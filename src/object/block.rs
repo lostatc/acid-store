@@ -25,6 +25,7 @@ use uuid::Uuid;
 use super::compression::Compression;
 use super::config::ArchiveConfig;
 use super::encryption::Encryption;
+use super::hashing::HashAlgorithm;
 
 /// The offset of the primary superblock from the start of the file.
 const PRIMARY_SUPERBLOCK_OFFSET: u64 = 0;
@@ -122,6 +123,9 @@ pub struct SuperBlock {
 
     /// The encryption method being used in this archive.
     pub encryption: Encryption,
+
+    /// The hash algorithm used for computing object checksums.
+    pub hash_algorithm: HashAlgorithm,
 
     /// The extent which stores the archive's header.
     pub header: Extent,
@@ -222,6 +226,7 @@ impl SuperBlock {
             chunker_bits: self.chunker_bits,
             encryption: self.encryption.clone(),
             compression: self.compression.clone(),
+            hash_algorithm: self.hash_algorithm,
         }
     }
 }

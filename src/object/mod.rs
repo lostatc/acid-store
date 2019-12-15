@@ -18,6 +18,7 @@ pub use self::archive::ObjectArchive;
 pub use self::compression::Compression;
 pub use self::config::ArchiveConfig;
 pub use self::encryption::{Encryption, Key, KeySalt};
+pub use self::hashing::{Checksum, HashAlgorithm};
 pub use self::object::Object;
 
 mod archive;
@@ -25,5 +26,6 @@ mod block;
 mod compression;
 mod config;
 mod encryption;
+mod hashing;
 mod header;
 mod object;

@@ -35,6 +35,7 @@ use uuid::Uuid;
 use super::block::{Chunk, Extent, pad_to_block_size, SuperBlock};
 use super::config::ArchiveConfig;
 use super::encryption::{Encryption, Key};
+use super::hashing::Checksum;
 use super::header::Header;
 use super::object::{chunk_hash, ChunkHash, Object};
 
@@ -109,6 +110,7 @@ where
             chunker_bits: config.chunker_bits,
             compression: config.compression,
             encryption: config.encryption,
+            hash_algorithm: config.hash_algorithm,
             header: Extent {
                 index: 0,
                 blocks: 0,
@@ -446,20 +448,27 @@ where
     pub fn write(&mut self, key: K, data: impl Read) -> io::Result<&Object> {
         let chunker = Chunker::new(ZPAQ::new(self.superblock.chunker_bits as usize));
 
-        let mut checksums = Vec::new();
+        let mut chunk_hashes = Vec::new();
+        let mut digest = self.superblock.hash_algorithm.digest();
         let mut size = 0u64;
 
         // Split the data into content-defined chunks and write those chunks to the archive.
         for chunk_result in chunker.whole_chunks(data) {
             let chunk = chunk_result?;
+            digest.input(&chunk);
             size += chunk.len() as u64;
-            checksums.push(self.write_chunk(&chunk)?);
+            chunk_hashes.push(self.write_chunk(&chunk)?);
         }
 
         let object = Object {
             size,
-            chunks: checksums,
+            checksum: Checksum {
+                algorithm: self.superblock.hash_algorithm,
+                digest: digest.result_reset().to_vec(),
+            },
+            chunks: chunk_hashes,
         };
+
         self.header.objects.remove(&key);
         Ok(self.header.objects.entry(key).or_insert(object))
     }

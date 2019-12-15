@@ -18,6 +18,8 @@ use blake2::digest::{Input, VariableOutput};
 use blake2::VarBlake2b;
 use serde::{Deserialize, Serialize};
 
+use super::hashing::Checksum;
+
 /// The size of the checksums used for uniquely identifying chunks.
 pub const CHUNK_HASH_SIZE: usize = 32;
 
@@ -46,6 +48,9 @@ pub struct Object {
     /// The original size of the data in bytes.
     pub(super) size: u64,
 
+    /// The self-describing checksum of the data.
+    pub(super) checksum: Checksum,
+
     /// The checksums of the chunks which make up the data.
     pub(super) chunks: Vec<ChunkHash>,
 }
@@ -54,5 +59,10 @@ impl Object {
     /// The size of the data in bytes.
     pub fn size(&self) -> u64 {
         self.size
+    }
+
+    /// The checksum of the data.
+    pub fn checksum(&self) -> &Checksum {
+        &self.checksum
     }
 }
