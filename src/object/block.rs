@@ -184,25 +184,36 @@ impl SuperBlock {
         let backup_superblock = Self::read_at(file, BACKUP_SUPERBLOCK_OFFSET);
 
         // If one of the superblocks is corrupt, repair it with the other before proceeding. We can
-        // guarantee consistency because a superblock will only be written if the other is valid.
+        // guarantee consistency because a superblock will only be written if the other is valid. We
+        // should never end up with two corrupt (partially written) superblocks.
         return match (primary_superblock, backup_superblock) {
-            (Ok(superblock), Ok(_)) => Ok(superblock),
+            (Ok(superblock), Ok(_)) => {
+                // The primary superblock is the single source of truth, so we need to ensure that
+                // the backup superblock matches the primary superblock. If the program is
+                // interrupted after the primary superblock is written but before the backup
+                // superblock is written, we could end up in a situation where the backup superblock
+                // is incorrect without being corrupt.
+                superblock.write_at(file, BACKUP_SUPERBLOCK_OFFSET)?;
+                Ok(superblock)
+            },
             (Ok(superblock), Err(_)) => {
+                // The backup superblock is corrupt, so repair it using the primary superblock.
                 superblock.write_at(file, BACKUP_SUPERBLOCK_OFFSET)?;
                 Ok(superblock)
             }
             (Err(_), Ok(superblock)) => {
+                // The primary superblock is corrupt, so repair it using the backup superblock.
                 superblock.write_at(file, PRIMARY_SUPERBLOCK_OFFSET)?;
                 Ok(superblock)
             }
             (Err(primary_error), Err(backup_error)) => {
-                // Neither superblock could be read.
+                // Neither superblock could be read. This should never happen.
                 if primary_error.kind() == io::ErrorKind::InvalidData
                     && backup_error.kind() == io::ErrorKind::InvalidData
                 {
                     Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        "Both the primary and backup superblock are corrupt. This is most likely unrecoverable.",
+                        "Both the primary and backup superblock are corrupt. This is most likely an unrecoverable error.",
                     ))
                 } else {
                     Err(primary_error)
