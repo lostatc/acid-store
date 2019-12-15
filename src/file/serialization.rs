@@ -19,13 +19,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "RelativePathBuf")]
-pub struct SerializableRelativePathBuf {
-    #[serde(getter = "RelativePathBuf::to_string")]
-    path: String,
-}
+pub struct SerializableRelativePathBuf(#[serde(getter = "RelativePathBuf::to_string")] String);
 
 impl From<SerializableRelativePathBuf> for RelativePathBuf {
     fn from(serializable: SerializableRelativePathBuf) -> Self {
-        RelativePathBuf::from(serializable.path)
+        RelativePathBuf::from(serializable.0)
     }
 }

@@ -266,8 +266,13 @@ impl FileArchive {
     ) -> io::Result<Entry> {
         let data_key = EntryKey(path.to_owned(), KeyType::Data);
         let object = self.archive.write(data_key, data)?;
-        let entry_type = EntryType::File { data: object.clone() };
-        let entry = Entry { metadata, entry_type };
+        let entry_type = EntryType::File {
+            data: object.clone(),
+        };
+        let entry = Entry {
+            metadata,
+            entry_type,
+        };
 
         self.add_entry(&path, &entry);
 
@@ -281,7 +286,10 @@ impl FileArchive {
         metadata: EntryMetadata,
     ) -> io::Result<Entry> {
         let entry_type = EntryType::Directory;
-        let entry = Entry { metadata, entry_type };
+        let entry = Entry {
+            metadata,
+            entry_type,
+        };
 
         self.add_entry(&path, &entry);
 
@@ -296,7 +304,10 @@ impl FileArchive {
         target: PathBuf,
     ) -> io::Result<Entry> {
         let entry_type = EntryType::Link { target };
-        let entry = Entry { metadata, entry_type };
+        let entry = Entry {
+            metadata,
+            entry_type,
+        };
 
         self.add_entry(&path, &entry);
 

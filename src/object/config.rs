@@ -16,6 +16,7 @@
 
 use super::compression::Compression;
 use super::encryption::Encryption;
+use super::hashing::HashAlgorithm;
 
 /// The configuration for an archive.
 ///
@@ -53,6 +54,14 @@ pub struct ArchiveConfig {
     ///
     /// The default value is `Encryption::None`.
     pub encryption: Encryption,
+
+    /// The hash algorithm used for computing object checksums.
+    ///
+    /// The archive computes a checksum for each object written to it. This checksum is available
+    /// through `Object::checksum`. This value determines the hash algorithm used to compute it.
+    ///
+    /// The default value is `HashAlgorithm::Blake2b512`.
+    pub hash_algorithm: HashAlgorithm,
 }
 
 impl Default for ArchiveConfig {
@@ -62,6 +71,7 @@ impl Default for ArchiveConfig {
             chunker_bits: 20,
             compression: Compression::None,
             encryption: Encryption::None,
+            hash_algorithm: HashAlgorithm::Blake2b512,
         }
     }
 }
