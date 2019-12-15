@@ -64,11 +64,23 @@ pub struct EntryMetadata {
 /// A file stored in a `FileArchive`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Entry {
-    /// The file's metadata.
-    pub metadata: EntryMetadata,
+    /// The metadata of the file this entry represents.
+    pub(super) metadata: EntryMetadata,
 
     /// The type of file this entry represents.
-    pub entry_type: EntryType,
+    pub(super) entry_type: EntryType,
+}
+
+impl Entry {
+    /// The metadata of the file this entry represents.
+    pub fn metadata(&self) -> &EntryMetadata {
+        &self.metadata
+    }
+
+    /// The type of file this entry represents.
+    pub fn entry_type(&self) -> &EntryType {
+        &self.entry_type
+    }
 }
 
 /// A type which determines whether a key represents the data or metadata for an entry.

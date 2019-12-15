@@ -338,7 +338,7 @@ impl FileArchive {
     /// Verify the integrity of the data associated with `object`.
     ///
     /// This returns `true` if the object is valid and `false` if it is corrupt.
-    pub fn verify_entry(&self, object: &Object) -> io::Result<bool> {
+    pub fn verify_object(&self, object: &Object) -> io::Result<bool> {
         self.archive.verify_object(object)
     }
 
