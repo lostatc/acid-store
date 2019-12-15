@@ -37,7 +37,7 @@ use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mo
 /// This type provides a high-level API through the methods `archive`, `archive_tree`, `extract`,
 /// and `extract_tree` for archiving and extracting files in the file system. It also allows for
 /// manually adding entries through the methods `add_file`, `add_directory`, and `add_link`. Entries
-/// can be queries with `entry`, `list`, and `walk`. They can be removed using `remove`.
+/// can be queried with `entry`, `list`, and `walk`. They can be removed using `remove`.
 ///
 /// While files in the file system are identified by their `Path`, entries in the archive are
 /// identified by a `RelativePath`. A `RelativePath` is a platform-independent path representation
