@@ -22,6 +22,7 @@ use rand::rngs::SmallRng;
 use tempfile::tempdir;
 
 use disk_archive::{ArchiveConfig, Compression, Encryption, HashAlgorithm, Key, ObjectArchive};
+use disk_archive::Checksum;
 
 /// Return a buffer containing `size` random bytes for testing purposes.
 fn random_bytes(size: usize) -> Vec<u8> {
@@ -233,6 +234,66 @@ fn serialized_object_is_deserialized() -> io::Result<()> {
     let actual_data = archive.deserialize::<(bool, u32, String)>(&object)?;
 
     assert_eq!(expected_data, actual_data);
+
+    Ok(())
+}
+
+#[test]
+fn correct_checksum_is_calculated() -> io::Result<()> {
+    let temp_dir = tempdir()?;
+    let archive_path = temp_dir.path().join("archive");
+    let mut archive = ObjectArchive::create(archive_path.as_path(), ARCHIVE_CONFIG, None)?;
+
+    let expected_data = b"Trans rights are human rights";
+    let object = archive.write("Tautology".to_string(), expected_data.as_ref())?;
+
+    let expected_checksum = Checksum {
+        algorithm: HashAlgorithm::Blake2b512,
+        digest: vec![
+            68, 253, 151, 219, 84, 177, 131, 43, 134, 246, 20, 99, 249, 39, 95, 171, 143, 125, 127,
+            16, 23, 46, 55, 197, 230, 114, 58, 207, 111, 210, 215, 42, 219, 49, 240, 211, 226, 148,
+            200, 83, 238, 64, 99, 118, 160, 38, 83, 168, 74, 126, 131, 252, 112, 173, 185, 89, 136,
+            16, 92, 118, 172, 214, 69, 128,
+        ],
+    };
+    let actual_checksum = object.checksum();
+
+    assert_eq!(*actual_checksum, expected_checksum);
+
+    Ok(())
+}
+
+#[test]
+fn peeking_uuid_returns_correct_value() -> io::Result<()> {
+    let temp_dir = tempdir()?;
+    let archive_path = temp_dir.path().join("archive");
+    let mut archive = ObjectArchive::<String>::create(archive_path.as_path(), ARCHIVE_CONFIG, None)?;
+
+    let expected_uuid = archive.uuid();
+    drop(archive);
+    let actual_uuid = ObjectArchive::<String>::peek_uuid(archive_path.as_ref())?;
+
+    assert_eq!(actual_uuid, expected_uuid);
+
+    Ok(())
+}
+
+#[test]
+fn object_is_saved_in_repacked_archive() -> io::Result<()> {
+    let temp_dir = tempdir()?;
+    let archive_path = temp_dir.path().join("archive");
+    let new_archive_path = temp_dir.path().join("repacked_archive");
+    let mut archive = ObjectArchive::create(archive_path.as_path(), ARCHIVE_CONFIG, None)?;
+
+    let expected_data = insert_data("Test", &mut archive)?;
+
+    archive.commit()?;
+    archive.repack(new_archive_path.as_ref())?;
+
+    let new_archive = ObjectArchive::<String>::open(new_archive_path.as_ref(), None)?;
+    let actual_data = read_data("Test", &mut archive)?;
+
+    assert_eq!(actual_data, expected_data);
 
     Ok(())
 }
