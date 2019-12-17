@@ -195,7 +195,7 @@ impl SuperBlock {
                 // is incorrect without being corrupt.
                 superblock.write_at(file, BACKUP_SUPERBLOCK_OFFSET)?;
                 Ok(superblock)
-            },
+            }
             (Ok(superblock), Err(_)) => {
                 // The backup superblock is corrupt, so repair it using the primary superblock.
                 superblock.write_at(file, BACKUP_SUPERBLOCK_OFFSET)?;

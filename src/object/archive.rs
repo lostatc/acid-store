@@ -15,6 +15,7 @@
  */
 
 use std::cmp::min;
+use std::collections::{HashMap, HashSet};
 use std::fs::{File, OpenOptions};
 use std::hash::Hash;
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -592,17 +593,31 @@ where
 
     /// Verify the integrity of all the data in the archive.
     ///
-    /// This returns `true` if the archive is valid and `false` if some data in it is corrupt.
-    pub fn verify_archive(&self) -> io::Result<bool> {
-        for expected_checksum in self.header.chunks.keys() {
-            let data = self.read_chunk(expected_checksum)?;
-            let actual_checksum = chunk_hash(&data);
-            if *expected_checksum != actual_checksum {
-                return Ok(false);
+    /// This returns the set of keys of objects which are corrupt.
+    pub fn verify_archive(&self) -> io::Result<HashSet<&K>> {
+        let mut corrupt_objects = HashSet::new();
+
+        // Get a map of all the chunks in the archive to the set of objects they belong to.
+        let mut chunks_to_objects = HashMap::new();
+        for (key, object) in self.header.objects.iter() {
+            for chunk in object.chunks {
+                chunks_to_objects
+                    .entry(chunk)
+                    .or_insert(HashSet::new())
+                    .insert(key);
             }
         }
 
-        Ok(true)
+        for expected_checksum in self.header.chunks.keys() {
+            let data = self.read_chunk(expected_checksum)?;
+            let actual_checksum = chunk_hash(&data);
+
+            if *expected_checksum != actual_checksum {
+                corrupt_objects.extend(chunks_to_objects[expected_checksum]);
+            }
+        }
+
+        Ok(corrupt_objects)
     }
 
     /// Return the UUID of the archive.

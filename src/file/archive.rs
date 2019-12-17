@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use std::collections::HashSet;
 use std::fs::{create_dir, create_dir_all, File, OpenOptions, read_link, symlink_metadata};
 use std::io::{self, copy, ErrorKind, Read};
 use std::path::{Path, PathBuf};
@@ -344,9 +345,11 @@ impl FileArchive {
 
     /// Verify the integrity of all the data in the archive.
     ///
-    /// This returns `true` if the archive is valid and `false` if some data in it is corrupt.
-    pub fn verify_archive(&self) -> io::Result<bool> {
-        self.archive.verify_archive()
+    /// This returns the set of paths of entries which are corrupt.
+    pub fn verify_archive(&self) -> io::Result<HashSet<&RelativePath>> {
+        self.archive
+            .verify_archive()
+            .map(|set| set.iter().map(|key| key.0.as_ref()).collect())
     }
 
     /// Return the UUID of the archive.
