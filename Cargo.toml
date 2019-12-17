@@ -6,9 +6,7 @@ edition = "2018"
 
 [dependencies]
 # File system
-xattr = "0.2.2"
 filetime = "0.2.8"
-fuse = "0.3.1"
 relative-path = "1.0.0"
 walkdir = "2.2.9"
 tempfile = "3.1.0"
@@ -42,3 +40,7 @@ rmp-serde = "0.14.0"
 # Misc
 num-integer = "0.1.41"
 uuid = { version = "0.8.1", features = ["serde", "v4"] }
+
+[target.'cfg(linux)'.dependencies]
+fuse = "0.3.1"
+xattr = "0.2.2"
