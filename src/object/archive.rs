@@ -600,7 +600,7 @@ where
         // Get a map of all the chunks in the archive to the set of objects they belong to.
         let mut chunks_to_objects = HashMap::new();
         for (key, object) in self.header.objects.iter() {
-            for chunk in object.chunks {
+            for chunk in &object.chunks {
                 chunks_to_objects
                     .entry(chunk)
                     .or_insert(HashSet::new())
@@ -613,7 +613,7 @@ where
             let actual_checksum = chunk_hash(&data);
 
             if *expected_checksum != actual_checksum {
-                corrupt_objects.extend(chunks_to_objects[expected_checksum]);
+                corrupt_objects.extend(chunks_to_objects.remove(expected_checksum).unwrap());
             }
         }
 

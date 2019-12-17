@@ -14,23 +14,28 @@
  * limitations under the License.
  */
 
-//! `disk-archive` is a file format and library for efficiently storing large chunks of binary data.
+//! `disk-archive` is a library for creating high-performance file formats.
 //!
-//! The `disk-archive` file format works similarly to archive formats like ZIP and TAR, with
-//! some key differences. Files in a ZIP archive can't be updated in-place. New data can be written
-//! to the archive, but the old data sticks around, taking up space. The only way to reclaim space
-//! in a ZIP file is to unpack and repack the entire archive. The file format used by this crate
-//! doesn't have this limitation; it can reclaim unused space.
+//! Many application file formats are built on ZIP archives or SQLite databases. ZIP archives are
+//! difficult to update in-place, requiring the entire archive to be unpacked and repacked, which
+//! can be expensive for large archives. SQLite databases aren't well-suited for storing large
+//! binary blobs, which can be problematic for applications where this is a requirement.
 //!
-//! While ZIP and TAR files are meant to be portable, archives created by this crate can be used to
-//! create high-performance file formats.
+//! This crate provides a custom file format that is designed for storing large binary blobs. It's
+//! meant to be used as an alternative to ZIP archives or SQLite databases for creating
+//! high-performance file formats. The archive format supports atomic transactions and in-place
+//! updates like SQLite while being more suited for storing large blobs.
 //!
 //! Archives created with this crate support the following features:
 //! - Content-defined block-level deduplication
 //! - Transparent compression
 //! - Transparent encryption
 //! - Integrity checking of data
-//! - Atomic commits
+//! - Atomicity, consistency, isolation, and durability (ACID)
+//!
+//! For applications which only need to store small (<100KiB) blobs, a SQLite database may be a
+//! better choice. For applications which require an open/transparent format, consider using a ZIP
+//! archive.
 //!
 //! This crate provides two abstractions over the archive format:
 //! - `FileArchive` is a file archive like ZIP or TAR which supports modification times, POSIX file
