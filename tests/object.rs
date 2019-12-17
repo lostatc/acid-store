@@ -21,7 +21,7 @@ use rand::{RngCore, SeedableRng};
 use rand::rngs::SmallRng;
 use tempfile::tempdir;
 
-use disk_archive::{ArchiveConfig, Compression, Encryption, Key, ObjectArchive};
+use disk_archive::{ArchiveConfig, Compression, Encryption, HashAlgorithm, Key, ObjectArchive};
 
 /// Return a buffer containing `size` random bytes for testing purposes.
 fn random_bytes(size: usize) -> Vec<u8> {
@@ -55,6 +55,7 @@ const ARCHIVE_CONFIG: ArchiveConfig = ArchiveConfig {
     chunker_bits: 18,
     encryption: Encryption::None,
     compression: Compression::None,
+    hash_algorithm: HashAlgorithm::Blake2b512,
 };
 
 #[test]
