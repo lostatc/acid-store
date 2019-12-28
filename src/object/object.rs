@@ -35,12 +35,12 @@ pub fn chunk_hash(data: &[u8]) -> ChunkHash {
     checksum
 }
 
-/// A handle for accessing data in an archive.
+/// A handle for accessing data in a repository.
 ///
-/// An `Object` doesn't own or store data itself, but references data stored in an archive.
+/// An `Object` doesn't own or store data itself, but references data stored in a repository.
 ///
-/// If two objects from the same archive are equal, they represent the same underlying data.
-/// Comparisons between objects from different archives are meaningless.
+/// If two objects from the same repository are equal, they represent the same underlying data.
+/// Comparisons between objects from different repositories are meaningless.
 ///
 /// An object can be cloned to create multiple handles for accessing the same data.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]

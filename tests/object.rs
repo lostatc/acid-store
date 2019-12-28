@@ -21,7 +21,7 @@ use rand::{RngCore, SeedableRng};
 use rand::rngs::SmallRng;
 use tempfile::tempdir;
 
-use disk_archive::{ArchiveConfig, Compression, Encryption, HashAlgorithm, Key, ObjectArchive};
+use disk_archive::{Compression, Encryption, HashAlgorithm, Key, ObjectArchive, RepositoryConfig};
 use disk_archive::Checksum;
 
 /// Return a buffer containing `size` random bytes for testing purposes.
@@ -51,7 +51,7 @@ fn read_data(key: &str, archive: &ObjectArchive<String>) -> io::Result<Vec<u8>> 
 const DATA_SIZE: usize = (1024 * 1024 * 4) + 200;
 
 /// The archive config to use for testing.
-const ARCHIVE_CONFIG: ArchiveConfig = ArchiveConfig {
+const ARCHIVE_CONFIG: RepositoryConfig = RepositoryConfig {
     block_size: 4096,
     chunker_bits: 18,
     encryption: Encryption::None,

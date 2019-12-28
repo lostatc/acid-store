@@ -74,7 +74,7 @@ impl DirectoryStore {
     }
 
     /// Return the path of the chunk with the given `id`.
-    fn chunk_path(&self, id: Uuid) -> PathBuf {
+    fn chunk_path(&self, id: &Uuid) -> PathBuf {
         let hex = id.to_simple().encode_lower(&mut Uuid::encode_buffer());
         self.chunks_directory.join(&hex[..2]).join(hex)
     }
@@ -85,27 +85,27 @@ impl ChunkStore for DirectoryStore {
 
     fn write_chunk(&mut self, data: &[u8]) -> io::Result<Self::ChunkId> {
         let chunk_id = Uuid::new_v4();
-        let chunk_path = self.chunk_path(chunk_id);
+        let chunk_path = self.chunk_path(&chunk_id);
         create_dir_all(chunk_path.parent().unwrap())?;
         let mut file = File::create(chunk_path)?;
         file.write_all(data)?;
         Ok(chunk_id)
     }
 
-    fn read_chunk(&self, id: Self::ChunkId) -> io::Result<Option<Vec<u8>>> {
+    fn read_chunk(&self, id: &Self::ChunkId) -> io::Result<Vec<u8>> {
         let chunk_path = self.chunk_path(id);
 
         if chunk_path.exists() {
             let mut file = File::open(chunk_path)?;
             let mut buffer = Vec::with_capacity(file.metadata()?.len() as usize);
             file.read_to_end(&mut buffer)?;
-            Ok(Some(buffer))
+            Ok(buffer)
         } else {
-            Ok(None)
+            Ok(Vec::new())
         }
     }
 
-    fn remove_chunk(&mut self, id: Self::ChunkId) -> io::Result<()> {
+    fn remove_chunk(&mut self, id: &Self::ChunkId) -> io::Result<()> {
         remove_file(self.chunk_path(id))
     }
 

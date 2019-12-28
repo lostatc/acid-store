@@ -14,28 +14,22 @@
  * limitations under the License.
  */
 
-use std::cmp::min;
 use std::collections::{HashMap, HashSet};
-use std::fs::{File, OpenOptions};
 use std::hash::Hash;
-use std::io::{self, Read, Seek, SeekFrom, Write};
-use std::iter;
-use std::path::Path;
+use std::io::{self, Read};
 
 use cdchunking::Chunker;
 use cdchunking::ZPAQ;
-use fs2::FileExt;
 use iter_read::IterRead;
 use rmp_serde::{from_read, to_vec};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::KeySalt;
 use crate::store::DataStore;
 
-use super::config::ArchiveConfig;
-use super::encryption::{Encryption, Key};
+use super::config::RepositoryConfig;
+use super::encryption::{Encryption, Key, KeySalt};
 use super::hashing::Checksum;
 use super::header::Header;
 use super::metadata::RepositoryMetadata;
@@ -61,7 +55,7 @@ use super::object::{chunk_hash, ChunkHash, Object};
 pub struct ObjectRepository<K, S>
 where
     K: Eq + Hash + Clone + Serialize + DeserializeOwned,
-    S: DataStore
+    S: DataStore,
 {
     /// The data store which backs this repository.
     store: S,
@@ -70,19 +64,19 @@ where
     metadata: RepositoryMetadata<S::ChunkId>,
 
     /// The header as of the last time changes were committed.
-    old_header: Header<K>,
+    old_header: Header<K, S::ChunkId>,
 
     /// The current header of the archive.
-    header: Header<K>,
+    header: Header<K, S::ChunkId>,
 
     /// The master encryption key for the repository.
-    encryption_key: Key,
+    master_key: Key,
 }
 
 impl<K, S> ObjectRepository<K, S>
 where
     K: Eq + Hash + Clone + Serialize + DeserializeOwned,
-    S: DataStore
+    S: DataStore,
 {
     /// Create a new repository backed by the given data `store`.
     ///
@@ -90,13 +84,11 @@ where
     /// `password` must be provided. Otherwise, this argument can be `None`.
     ///
     /// # Errors
-    /// - `ErrorKind::AlreadyExists`: A file already exists at `path`.
-    /// - `ErrorKind::PermissionDenied`: The user lacks permission to create the archive file.
     /// - `ErrorKind::InvalidInput`: A key was required but not provided or provided but not
     /// required.
     pub fn create(
         mut store: S,
-        config: ArchiveConfig,
+        config: RepositoryConfig,
         password: Option<&[u8]>,
     ) -> io::Result<Self> {
         // Return an error if a key was required but not provided.
@@ -144,71 +136,57 @@ where
         let serialized_metadata = to_vec(&metadata).expect("Could not serialize metadata.");
         store.write_metadata(&serialized_metadata)?;
 
-        Ok(
-            ObjectRepository {
-                store,
-                metadata,
-                old_header: header.clone(),
-                header,
-                encryption_key: master_key,
-            }
-        )
+        Ok(ObjectRepository {
+            store,
+            metadata,
+            old_header: header.clone(),
+            header,
+            master_key,
+        })
     }
 
-    /// Opens the archive at the given `path`.
+    /// Opens the repository with the given data `store`.
     ///
-    /// If encryption is enabled, an `encryption_key` must be provided. Otherwise, this argument can
-    /// be `None`.
+    /// If encryption is enabled, a `password` must be provided. Otherwise, this argument can be
+    /// `None`.
     ///
     /// # Errors
-    /// - `ErrorKind::NotFound`: The archive file does not exist.
-    /// - `ErrorKind::PermissionDenied`: The user lacks permission to open the archive file.
-    /// - `ErrorKind::InvalidInput`: A key was required but not provided.
-    /// - `ErrorKind::InvalidData`: The header is corrupt.
+    /// - `ErrorKind::InvalidData`: The repository is corrupt.
     /// - `ErrorKind::InvalidData`: The wrong encryption key was provided.
-    /// - `ErrorKind::WouldBlock`: The archive is in use by another process.
-    pub fn open(path: &Path, encryption_key: Option<Key>) -> io::Result<Self> {
-        let mut archive_file = OpenOptions::new().read(true).write(true).open(path)?;
+    pub fn open(store: S, password: Option<&[u8]>) -> io::Result<Self> {
+        // Read and deserialize the metadata.
+        let serialized_metadata = store.read_metadata()?;
+        let metadata: RepositoryMetadata<S::ChunkId> = from_read(serialized_metadata.as_slice())
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
-        archive_file.try_lock_exclusive()?;
+        // Decrypt the master key for the repository.
+        let user_key = Key::derive(
+            password.unwrap_or(&[]),
+            &metadata.salt,
+            metadata.encryption.key_size(),
+        );
+        let master_key = Key::new(
+            metadata
+                .encryption
+                .decrypt(&metadata.master_key, &user_key)?,
+        );
 
-        // Read the superblock.
-        let superblock = SuperBlock::read(&mut archive_file)?;
+        // Read, decrypt, decompress, and deserialize the header.
+        let encrypted_header = store.read_chunk(&metadata.header)?;
+        let compressed_header = metadata
+            .encryption
+            .decrypt(&encrypted_header, &master_key)?;
+        let serialized_header = metadata.compression.decompress(&compressed_header)?;
+        let header: Header<K, S::ChunkId> = from_read(serialized_header.as_slice())
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
-        // Return an error if a key was required but not provided.
-        if encryption_key == None && superblock.encryption != Encryption::None {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "A key was required but not provided",
-            ));
-        }
-
-        // Create an empty key if a key is not needed.
-        let encryption_key = encryption_key.unwrap_or(Key::new(vec![0u8; 0]));
-
-        // Create the new archive without its header.
-        let mut archive = ObjectArchive {
-            superblock,
-            old_header: Default::default(),
-            header: Default::default(),
-            archive_file,
-            encryption_key,
-        };
-
-        // Decode the header.
-        let mut encoded_header = archive.read_extent(archive.superblock.header)?;
-        encoded_header.truncate(archive.superblock.header_size as usize);
-        let decoded_header = archive.decode_data(encoded_header.as_slice())?;
-
-        // Deserialize the header.
-        let header: Header<K> = from_read(decoded_header.as_slice())
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "The header is corrupt."))?;
-
-        // Add the header to the archive.
-        archive.old_header = header.clone();
-        archive.header = header;
-
-        Ok(archive)
+        Ok(ObjectRepository {
+            store,
+            metadata,
+            old_header: header.clone(),
+            header,
+            master_key,
+        })
     }
 
     /// Removes and returns the object with the given `key` from the archive.
@@ -240,23 +218,23 @@ where
 
     /// Compresses and encrypts the given `data` and returns it.
     fn encode_data(&self, data: &[u8]) -> io::Result<Vec<u8>> {
-        let compressed_data = self.superblock.compression.compress(data)?;
+        let compressed_data = self.metadata.compression.compress(data)?;
 
         Ok(self
-            .superblock
+            .metadata
             .encryption
-            .encrypt(compressed_data.as_slice(), &self.encryption_key))
+            .encrypt(compressed_data.as_slice(), &self.master_key))
     }
 
     /// Decrypts and decompresses the given `data` and returns it.
     fn decode_data(&self, data: &[u8]) -> io::Result<Vec<u8>> {
         let decrypted_data = self
-            .superblock
+            .metadata
             .encryption
-            .decrypt(data, &self.encryption_key)?;
+            .decrypt(data, &self.master_key)?;
 
         Ok(self
-            .superblock
+            .metadata
             .compression
             .decompress(decrypted_data.as_slice())?)
     }
@@ -274,62 +252,30 @@ where
             return Ok(checksum);
         }
 
-        // Encode the data.
+        // Encode the data and write it to the data store.
         let encoded_data = self.encode_data(data)?;
+        let chunk_id = self.store.write_chunk(&encoded_data)?;
 
-        // Get the list of extents which will hold the data.
-        let extents = self.allocate_extents(encoded_data.len() as u64)?;
-
-        // Write the encoded data to the extents.
-        let mut bytes_written = 0;
-        for extent in &extents {
-            bytes_written += self.write_extent(*extent, &encoded_data[bytes_written..])?;
-        }
-
-        // Add this chunk to the header.
-        self.header.chunks.insert(
-            checksum,
-            Chunk {
-                size: encoded_data.len() as u64,
-                extents,
-            },
-        );
+        // Add the chunk to the header.
+        self.header.chunks.insert(checksum, chunk_id);
 
         Ok(checksum)
     }
 
-    /// Returns the bytes of the chunk with the given checksum, or `None` if there is none.
+    /// Returns the bytes of the chunk with the given checksum or `None` if there is none.
     fn read_chunk(&self, checksum: &ChunkHash) -> io::Result<Vec<u8>> {
-        // Get the chunk with the given checksum.
-        let chunk = self.header.chunks[checksum].clone();
-
-        // Allocate a buffer big enough to hold the chunk's data and any extra data left at the end
-        // of the last extent.
-        let mut chunk_data =
-            Vec::with_capacity(chunk.size as usize + self.superblock.block_size as usize);
-
-        // Read the contents of each extent in the chunk into the buffer.
-        for extent in chunk.extents {
-            chunk_data.append(&mut self.read_extent(extent)?);
-        }
-
-        // Drop bytes which aren't part of this chunk.
-        chunk_data.truncate(chunk.size as usize);
-
-        // Decode the contents of the chunk.
-        let decoded_data = self.decode_data(&chunk_data)?;
-
-        Ok(decoded_data)
+        let chunk_id = &self.header.chunks[checksum];
+        self.decode_data(self.store.read_chunk(chunk_id)?.as_slice())
     }
 
     /// Writes the given `data` to the archive for a given `key` and returns the object.
     ///
     /// If the given `key` is already in the archive, its data is replaced.
     pub fn write(&mut self, key: K, data: impl Read) -> io::Result<&Object> {
-        let chunker = Chunker::new(ZPAQ::new(self.superblock.chunker_bits as usize));
+        let chunker = Chunker::new(ZPAQ::new(self.metadata.chunker_bits as usize));
 
         let mut chunk_hashes = Vec::new();
-        let mut digest = self.superblock.hash_algorithm.digest();
+        let mut digest = self.metadata.hash_algorithm.digest();
         let mut size = 0u64;
 
         // Split the data into content-defined chunks and write those chunks to the archive.
@@ -343,7 +289,7 @@ where
         let object = Object {
             size,
             checksum: Checksum {
-                algorithm: self.superblock.hash_algorithm,
+                algorithm: self.metadata.hash_algorithm,
                 digest: digest.result_reset().to_vec(),
             },
             chunks: chunk_hashes,
@@ -402,57 +348,18 @@ where
         let serialized_header = to_vec(&self.header).expect("Could not serialize header.");
         let encoded_header = self.encode_data(&serialized_header)?;
 
-        // The entire header must be stored in a single extent. Allocate space for it.
-        let header_extent = self.allocate_contiguous_extent(encoded_header.len() as u64)?;
+        // Write the new header to the data store.
+        let header_id = self.store.write_chunk(&encoded_header)?;
+        self.metadata.header = header_id;
 
-        // Write the header to the chosen extent.
-        self.write_extent(header_extent, &encoded_header)?;
-
-        // Update the superblock to point to the new header.
-        self.superblock.header = header_extent;
-        self.superblock.header_size = encoded_header.len() as u32;
-
-        // Write the new superblock, atomically completing the commit.
-        self.superblock.write(&mut self.archive_file)?;
+        // Write the repository metadata, atomically completing the commit.
+        let serialized_metadata = to_vec(&self.metadata).expect("Could not serialize metadata.");
+        self.store.write_metadata(&serialized_metadata)?;
 
         // Now that changes have been committed, the `old_header` field should be updated.
         self.old_header = self.header.clone();
 
         Ok(())
-    }
-
-    /// Copy the contents of this archive to a new archive file at `destination`.
-    ///
-    /// Archives can reuse space left over from deleted objects, but they can not deallocate space
-    /// which has been allocated. This means that archive files can grow in size, but never shrink.
-    ///
-    /// This method copies the data in this archive to a new file, allocating the minimum amount of
-    /// space necessary to store it. This can result in a significantly smaller archive if a lot of
-    /// data has been removed from this archive and not replaced with new data.
-    ///
-    /// Like file systems, archive files can become fragmented over time. The new archive will be
-    /// defragmented.
-    ///
-    /// This method returns the new archive. Both this archive and the returned archive will be
-    /// usable after this method returns. Uncommitted changes will not be copied to the new archive.
-    ///
-    /// # Errors
-    /// - `ErrorKind::PermissionDenied`: The user lacks permission to create the archive file.
-    /// - `ErrorKind::AlreadyExists`: A file already exists at `destination`.
-    pub fn repack(&self, destination: &Path) -> io::Result<ObjectArchive<K>> {
-        let mut dest_archive = Self::create(
-            destination,
-            self.superblock.to_config(),
-            Some(self.encryption_key.clone()),
-        )?;
-
-        for (key, object) in self.header.objects.iter() {
-            dest_archive.write(key.clone(), self.read(&object))?;
-        }
-
-        dest_archive.commit()?;
-
-        Ok(dest_archive)
     }
 
     /// Verify the integrity of the data associated with `object`.
@@ -503,7 +410,7 @@ where
     ///
     /// Every archive has a UUID associated with it.
     pub fn uuid(&self) -> Uuid {
-        self.superblock.id
+        self.metadata.id
     }
 
     /// Return the UUID of the archive at `path` without opening it.
@@ -512,15 +419,13 @@ where
     /// the archive.
     ///
     /// # Errors
-    /// - `ErrorKind::NotFound`: The archive file does not exist.
-    /// - `ErrorKind::PermissionDenied`: The user lacks permission to open the archive file.
-    /// - `ErrorKind::WouldBlock`: The archive is in use by another process.
-    pub fn peek_uuid(path: &Path) -> io::Result<Uuid> {
-        // We must open the file for writing because reading the superblock may involve repairing a
-        // corrupt superblock.
-        let mut archive_file = OpenOptions::new().read(true).write(true).open(path)?;
-        archive_file.try_lock_exclusive()?;
-        let superblock = SuperBlock::read(&mut archive_file)?;
-        Ok(superblock.id)
+    /// - `ErrorKind::InvalidData`: The repository is corrupt.
+    pub fn peek_uuid(store: S) -> io::Result<Uuid> {
+        // Read and deserialize the metadata.
+        let serialized_metadata = store.read_metadata()?;
+        let metadata: RepositoryMetadata<S::ChunkId> = from_read(serialized_metadata.as_slice())
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+
+        Ok(metadata.id)
     }
 }

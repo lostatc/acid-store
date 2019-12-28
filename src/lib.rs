@@ -49,8 +49,8 @@ pub use relative_path;
 
 pub use file::{Entry, EntryMetadata, EntryType, FileArchive};
 pub use object::{
-    ArchiveConfig, Checksum, Compression, Encryption, HashAlgorithm, Key, KeySalt, Object,
-    ObjectArchive,
+    Checksum, Compression, Encryption, HashAlgorithm, Key, KeySalt, Object, ObjectArchive,
+    RepositoryConfig,
 };
 
 mod file;
