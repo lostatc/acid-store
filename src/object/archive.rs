@@ -58,13 +58,10 @@ where
     store: S,
 
     /// The metadata for the repository.
-    metadata: RepositoryMetadata<S::ChunkId>,
+    metadata: RepositoryMetadata,
 
-    /// The header as of the last time changes were committed.
-    old_header: Header<K, S::ChunkId>,
-
-    /// The current header of the repository.
-    header: Header<K, S::ChunkId>,
+    /// The repository's header.
+    header: Header<K>,
 
     /// The master encryption key for the repository.
     master_key: Key,
@@ -136,24 +133,24 @@ where
         Ok(ObjectRepository {
             store,
             metadata,
-            old_header: header.clone(),
             header,
             master_key,
         })
     }
 
-    /// Opens the repository with the given data `store`.
+    /// Open the repository in the given data `store`.
     ///
     /// If encryption is enabled, a `password` must be provided. Otherwise, this argument can be
     /// `None`.
     ///
     /// # Errors
-    /// - `ErrorKind::InvalidData`: The repository is corrupt.
     /// - `ErrorKind::InvalidData`: The wrong encryption key was provided.
+    /// - `ErrorKind::InvalidData`: The repository is corrupt.
+    /// - `ErrorKind::InvalidData`: The type `K` does not match the data in the repository.
     pub fn open(store: S, password: Option<&[u8]>) -> io::Result<Self> {
         // Read and deserialize the metadata.
         let serialized_metadata = store.read_metadata()?;
-        let metadata: RepositoryMetadata<S::ChunkId> = from_read(serialized_metadata.as_slice())
+        let metadata: RepositoryMetadata = from_read(serialized_metadata.as_slice())
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
         // Decrypt the master key for the repository.
@@ -174,13 +171,12 @@ where
             .encryption
             .decrypt(&encrypted_header, &master_key)?;
         let serialized_header = metadata.compression.decompress(&compressed_header)?;
-        let header: Header<K, S::ChunkId> = from_read(serialized_header.as_slice())
+        let header: Header<K> = from_read(serialized_header.as_slice())
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
         Ok(ObjectRepository {
             store,
             metadata,
-            old_header: header.clone(),
             header,
             master_key,
         })
@@ -353,8 +349,14 @@ where
         let serialized_metadata = to_vec(&self.metadata).expect("Could not serialize metadata.");
         self.store.write_metadata(&serialized_metadata)?;
 
-        // Now that changes have been committed, the `old_header` field should be updated.
-        self.old_header = self.header.clone();
+        // After changes are committed, remove any unused chunks from the data store.
+        let referenced_chunks = self.header.chunks.values().collect::<HashSet<_>>();
+        for chunk_result in self.store.list_chunks()? {
+            let stored_chunk = chunk_result?;
+            if !referenced_chunks.contains(&stored_chunk) {
+                self.store.remove_chunk(&stored_chunk)?;
+            }
+        }
 
         Ok(())
     }
@@ -417,10 +419,11 @@ where
     ///
     /// # Errors
     /// - `ErrorKind::InvalidData`: The repository is corrupt.
+    /// - `ErrorKind::InvalidData`: The type `K` does not match the data in the repository.
     pub fn peek_uuid(store: S) -> io::Result<Uuid> {
         // Read and deserialize the metadata.
         let serialized_metadata = store.read_metadata()?;
-        let metadata: RepositoryMetadata<S::ChunkId> = from_read(serialized_metadata.as_slice())
+        let metadata: RepositoryMetadata<> = from_read(serialized_metadata.as_slice())
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
         Ok(metadata.id)

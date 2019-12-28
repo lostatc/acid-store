@@ -22,7 +22,7 @@ use super::encryption::KeySalt;
 
 /// Metadata for a repository.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RepositoryMetadata<ID> {
+pub struct RepositoryMetadata {
     /// The unique ID of this repository.
     pub id: Uuid,
 
@@ -47,10 +47,10 @@ pub struct RepositoryMetadata<ID> {
     pub salt: KeySalt,
 
     /// The ID of the chunk which stores the repository's header.
-    pub header: ID,
+    pub header: Uuid,
 }
 
-impl<ID> RepositoryMetadata<ID> {
+impl RepositoryMetadata {
     /// Return the config used to create this repository.
     pub fn to_config(&self) -> RepositoryConfig {
         RepositoryConfig {

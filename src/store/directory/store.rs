@@ -81,9 +81,7 @@ impl DirectoryStore {
 }
 
 impl ChunkStore for DirectoryStore {
-    type ChunkId = Uuid;
-
-    fn write_chunk(&mut self, data: &[u8]) -> io::Result<Self::ChunkId> {
+    fn write_chunk(&mut self, data: &[u8]) -> io::Result<Uuid> {
         let chunk_id = Uuid::new_v4();
         let chunk_path = self.chunk_path(&chunk_id);
         create_dir_all(chunk_path.parent().unwrap())?;
@@ -92,7 +90,7 @@ impl ChunkStore for DirectoryStore {
         Ok(chunk_id)
     }
 
-    fn read_chunk(&self, id: &Self::ChunkId) -> io::Result<Vec<u8>> {
+    fn read_chunk(&self, id: &Uuid) -> io::Result<Vec<u8>> {
         let chunk_path = self.chunk_path(id);
 
         if chunk_path.exists() {
@@ -101,15 +99,15 @@ impl ChunkStore for DirectoryStore {
             file.read_to_end(&mut buffer)?;
             Ok(buffer)
         } else {
-            Ok(Vec::new())
+            panic!("There is no chunk with the given ID.")
         }
     }
 
-    fn remove_chunk(&mut self, id: &Self::ChunkId) -> io::Result<()> {
+    fn remove_chunk(&mut self, id: &Uuid) -> io::Result<()> {
         remove_file(self.chunk_path(id))
     }
 
-    fn list_chunks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Self::ChunkId>>>> {
+    fn list_chunks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Uuid>>>> {
         Ok(Box::new(
             WalkDir::new(self.path)
                 .min_depth(2)

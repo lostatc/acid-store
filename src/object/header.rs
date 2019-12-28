@@ -18,27 +18,26 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use super::object::{ChunkHash, Object};
 
 /// The header for an `ObjectRepository`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
-pub struct Header<K, ID>
+pub struct Header<K>
 where
     K: Eq + Hash + Clone,
-    ID: Clone
 {
     /// A map of chunk hashes to the IDs of those chunks.
-    pub chunks: HashMap<ChunkHash, ID>,
+    pub chunks: HashMap<ChunkHash, Uuid>,
 
     /// A map of object keys to information about those objects.
     pub objects: HashMap<K, Object>,
 }
 
-impl<K, ID> Default for Header<K, ID>
+impl<K> Default for Header<K>
 where
     K: Eq + Hash + Clone,
-    ID: Clone
 {
     fn default() -> Self {
         Header {
@@ -48,10 +47,9 @@ where
     }
 }
 
-impl<K, ID> Header<K, ID>
+impl<K> Header<K>
 where
     K: Eq + Hash + Clone,
-    ID: Clone
 {
     /// Remove chunks not referenced by any object from the header.
     pub fn clean_chunks(&mut self) {
