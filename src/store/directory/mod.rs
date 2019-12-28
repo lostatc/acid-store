@@ -14,15 +14,6 @@
  * limitations under the License.
  */
 
-/// Configuration for a `FileDataStore`.
-pub struct FileDataStoreConfig {
-    block_size: u32
-}
+pub use self::store::DirectoryStore;
 
-impl Default for FileDataStoreConfig {
-    fn default() -> Self {
-        FileDataStoreConfig {
-            block_size: 4096
-        }
-    }
-}
+mod store;

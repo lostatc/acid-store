@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::fs::{Metadata, set_permissions};
+use std::fs::{Metadata, Permissions, set_permissions};
 use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::{PermissionsExt, symlink};

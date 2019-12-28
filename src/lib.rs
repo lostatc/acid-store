@@ -55,3 +55,4 @@ pub use object::{
 
 mod file;
 mod object;
+mod store;
