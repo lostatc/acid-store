@@ -22,10 +22,10 @@ pub use self::hashing::{Checksum, HashAlgorithm};
 pub use self::object::Object;
 
 mod archive;
-mod block;
 mod compression;
 mod config;
 mod encryption;
 mod hashing;
 mod header;
 mod object;
+mod metadata;

@@ -14,6 +14,11 @@
  * limitations under the License.
  */
 
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use super::{Compression, Encryption, HashAlgorithm, Key, KeySalt};
+
 /// Metadata for a repository.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepositoryMetadata<ID> {
@@ -34,9 +39,12 @@ pub struct RepositoryMetadata<ID> {
     /// The hash algorithm used for computing object checksums.
     pub hash_algorithm: HashAlgorithm,
 
+    /// The master encryption key encrypted with the user's password.
+    pub master_key: Vec<u8>,
+
+    /// The salt used to derive a key from the user's password.
+    pub salt: KeySalt,
+
     /// The ID of the chunk which stores the repository's header.
     pub header: ID,
-
-    /// The size of the header in bytes.
-    pub header_size: u32,
 }

@@ -103,6 +103,12 @@ impl KeySalt {
 #[serde(transparent)]
 pub struct Key(Vec<u8>);
 
+impl AsRef<[u8]> for Key {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_slice()
+    }
+}
+
 impl Key {
     /// Create an encryption key containing the given `bytes`.
     pub fn new(bytes: Vec<u8>) -> Self {
