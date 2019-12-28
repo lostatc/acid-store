@@ -16,29 +16,26 @@
 
 use std::io;
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use uuid::Uuid;
 
 /// A persistent store for storing chunks of data.
 pub trait ChunkStore {
-    /// A value which uniquely identifies a chunk.
-    type ChunkId: Eq + Clone + Serialize + DeserializeOwned;
-
     /// Write the given `data` as a new chunk and return its ID.
     ///
     /// If a chunk with the same ID already exists, it is overwritten.
-    fn write_chunk(&mut self, data: &[u8]) -> io::Result<Self::ChunkId>;
+    fn write_chunk(&mut self, data: &[u8]) -> io::Result<Uuid>;
 
     /// Return the bytes of the chunk with the given `id`.
     ///
-    /// If there is no chunk with the given id, the contents of the returned buffer is undefined.
-    fn read_chunk(&self, id: &Self::ChunkId) -> io::Result<Vec<u8>>;
+    /// # Panics
+    /// - There is no chunk with the given `id`.
+    fn read_chunk(&self, id: &Uuid) -> io::Result<Vec<u8>>;
 
     /// Remove the chunk with the given `id` from the store if it exists.
-    fn remove_chunk(&mut self, id: &Self::ChunkId) -> io::Result<()>;
+    fn remove_chunk(&mut self, id: &Uuid) -> io::Result<()>;
 
     /// Return an iterator of IDs of chunks in the store.
-    fn list_chunks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Self::ChunkId>>>>;
+    fn list_chunks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Uuid>>>>;
 }
 
 /// A persistent store for storing metadata.
