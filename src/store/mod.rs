@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-pub use self::file::FileDataStore;
-pub use self::file::FileDataStoreConfig;
-pub use self::store::DataStore;
+pub use self::directory::DirectoryStore;
+pub use self::store::{ChunkStore, DataStore, MetadataStore};
 
+mod directory;
 mod store;
-mod file;

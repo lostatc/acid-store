@@ -267,7 +267,8 @@ fn correct_checksum_is_calculated() -> io::Result<()> {
 fn peeking_uuid_returns_correct_value() -> io::Result<()> {
     let temp_dir = tempdir()?;
     let archive_path = temp_dir.path().join("archive");
-    let mut archive = ObjectArchive::<String>::create(archive_path.as_path(), ARCHIVE_CONFIG, None)?;
+    let mut archive =
+        ObjectArchive::<String>::create(archive_path.as_path(), ARCHIVE_CONFIG, None)?;
 
     let expected_uuid = archive.uuid();
     drop(archive);

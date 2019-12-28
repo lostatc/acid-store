@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-pub use self::config::FileDataStoreConfig;
-pub use self::store::FileDataStore;
+pub use self::store::DirectoryStore;
 
-mod block;
 mod store;
-mod config;

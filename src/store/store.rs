@@ -14,53 +14,36 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
-use std::hash::Hash;
 use std::io;
 
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-
-use crate::Compression;
-use crate::Encryption;
-use crate::HashAlgorithm;
-use crate::Object;
-
-/// A persistent storage backend for a repository.
-pub trait DataStore: Sized {
-    /// A value which can be used to locate a chunk.
+/// A persistent store for storing chunks of data.
+pub trait ChunkStore {
+    /// A value which uniquely identifies a chunk.
     type ChunkId;
 
-    /// Open the data store.
-    fn open(&self) -> io::Result<Self>;
-
     /// Write the given `data` as a new chunk and return its ID.
-    ///
-    /// Once this method returns `Ok`, the `data` is persistently stored. Until the chunk is freed
-    /// with `free_chunk`, calling `read_chunk` with the returned chunk ID will return the `data`
-    /// which was written.
-    ///
-    /// If this method returns `Err` or panics, it is up to the implementation to ensure that any
-    /// space allocated to store the given `data` is freed.
     fn write_chunk(&mut self, data: &[u8]) -> io::Result<Self::ChunkId>;
 
-    /// Return the bytes of the chunk with the given `id`.
-    ///
-    /// If there is no chunk with the given `id` or the chunk has been freed with `free_chunk`, the
-    /// contents of the returned buffer is undefined.
-    fn read_chunk(&self, id: Self::ChunkId) -> io::Result<Vec<u8>>;
+    /// Return the bytes of the chunk with the given `id` or `None` if there is no such chunk.
+    fn read_chunk(&self, id: Self::ChunkId) -> io::Result<Option<Vec<u8>>>;
 
-    /// Free the space used by the chunk with the given `id`.
-    ///
-    /// This is called to mark that a chunk is no longer being referenced and can be deleted or
-    /// overwritten with new data by the implementation.
-    fn free_chunk(&mut self, id: Self::ChunkId) -> io::Result<()>;
+    /// Remove the chunk with the given `id` from the store.
+    fn remove_chunk(&mut self, id: Self::ChunkId) -> io::Result<()>;
 
-    /// Write the given `metadata` to the repository, overwriting the existing metadata.
+    /// Return an iterator of IDs of chunks in the store.
+    fn list_chunks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Self::ChunkId>>>>;
+}
+
+/// A persistent store for storing metadata.
+pub trait MetadataStore {
+    /// Write the given `metadata` to the store, overwriting the existing metadata.
     ///
-    /// Writing the metadata must be an atomic and consistent operation.
+    /// Writing the metadata must be an atomic operation.
     fn write_metadata(&mut self, metadata: &[u8]) -> io::Result<()>;
 
-    /// Return the metadata for this repository.
+    /// Return the metadata in the store.
     fn read_metadata(&self) -> io::Result<Vec<u8>>;
 }
+
+/// A storage backend for a repository.
+pub trait DataStore: ChunkStore + MetadataStore {}
