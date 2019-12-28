@@ -19,25 +19,26 @@ use std::hash::Hash;
 
 use serde::{Deserialize, Serialize};
 
-use super::block::{Chunk, Extent};
 use super::object::{ChunkHash, Object};
 
-/// The header which stores metadata for an archive.
+/// The header for an `ObjectRepository`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
-pub struct Header<K>
+pub struct Header<K, ID>
 where
     K: Eq + Hash + Clone,
+    ID: Clone
 {
-    /// A map of chunk hashes to information about those chunks.
-    pub chunks: HashMap<ChunkHash, Chunk>,
+    /// A map of chunk hashes to the IDs of those chunks.
+    pub chunks: HashMap<ChunkHash, ID>,
 
-    /// A map of object IDs to information about those objects.
+    /// A map of object keys to information about those objects.
     pub objects: HashMap<K, Object>,
 }
 
-impl<K> Default for Header<K>
+impl<K, ID> Default for Header<K, ID>
 where
     K: Eq + Hash + Clone,
+    ID: Clone
 {
     fn default() -> Self {
         Header {
@@ -47,18 +48,11 @@ where
     }
 }
 
-impl<K> Header<K>
+impl<K, ID> Header<K, ID>
 where
     K: Eq + Hash + Clone,
+    ID: Clone
 {
-    /// An unsorted list of all the extents in all the chunks in this header.
-    pub fn extents(&self) -> Vec<Extent> {
-        self.chunks
-            .values()
-            .flat_map(|chunk| chunk.extents.iter().copied())
-            .collect::<Vec<_>>()
-    }
-
     /// Remove chunks not referenced by any object from the header.
     pub fn clean_chunks(&mut self) {
         let referenced_chunks = self

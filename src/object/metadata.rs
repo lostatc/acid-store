@@ -17,7 +17,8 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{Compression, Encryption, HashAlgorithm, Key, KeySalt};
+use super::{Compression, Encryption, HashAlgorithm, RepositoryConfig};
+use super::encryption::KeySalt;
 
 /// Metadata for a repository.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,4 +48,16 @@ pub struct RepositoryMetadata<ID> {
 
     /// The ID of the chunk which stores the repository's header.
     pub header: ID,
+}
+
+impl<ID> RepositoryMetadata<ID> {
+    /// Return the config used to create this repository.
+    pub fn to_config(&self) -> RepositoryConfig {
+        RepositoryConfig {
+            chunker_bits: self.chunker_bits,
+            compression: self.compression,
+            encryption: self.encryption,
+            hash_algorithm: self.hash_algorithm,
+        }
+    }
 }

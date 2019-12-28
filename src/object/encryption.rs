@@ -27,7 +27,7 @@ use sodiumoxide::crypto::pwhash::argon2id13::{
 use zeroize::Zeroize;
 
 /// A data encryption method.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
 pub enum Encryption {
     /// Do not encrypt data.
     None,

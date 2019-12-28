@@ -22,16 +22,20 @@ use serde::Serialize;
 /// A persistent store for storing chunks of data.
 pub trait ChunkStore {
     /// A value which uniquely identifies a chunk.
-    type ChunkId: Eq + Serialize + DeserializeOwned;
+    type ChunkId: Eq + Clone + Serialize + DeserializeOwned;
 
     /// Write the given `data` as a new chunk and return its ID.
+    ///
+    /// If a chunk with the same ID already exists, it is overwritten.
     fn write_chunk(&mut self, data: &[u8]) -> io::Result<Self::ChunkId>;
 
-    /// Return the bytes of the chunk with the given `id` or `None` if there is no such chunk.
-    fn read_chunk(&self, id: Self::ChunkId) -> io::Result<Option<Vec<u8>>>;
+    /// Return the bytes of the chunk with the given `id`.
+    ///
+    /// If there is no chunk with the given id, the contents of the returned buffer is undefined.
+    fn read_chunk(&self, id: &Self::ChunkId) -> io::Result<Vec<u8>>;
 
-    /// Remove the chunk with the given `id` from the store.
-    fn remove_chunk(&mut self, id: Self::ChunkId) -> io::Result<()>;
+    /// Remove the chunk with the given `id` from the store if it exists.
+    fn remove_chunk(&mut self, id: &Self::ChunkId) -> io::Result<()>;
 
     /// Return an iterator of IDs of chunks in the store.
     fn list_chunks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Self::ChunkId>>>>;

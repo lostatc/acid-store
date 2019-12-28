@@ -24,7 +24,7 @@ use relative_path::RelativePath;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::{ArchiveConfig, Key, Object, ObjectArchive};
+use crate::{Key, Object, ObjectArchive, RepositoryConfig};
 
 use super::entry::{Entry, EntryKey, EntryMetadata, EntryType, KeyType};
 use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode, soft_link};
@@ -51,7 +51,7 @@ impl FileArchive {
     /// Create a new archive at the given `path` with the given `config`.
     ///
     /// See `ObjectArchive::create` for details.
-    pub fn create(path: &Path, config: ArchiveConfig, key: Option<Key>) -> io::Result<Self> {
+    pub fn create(path: &Path, config: RepositoryConfig, key: Option<Key>) -> io::Result<Self> {
         Ok(FileArchive {
             archive: ObjectArchive::create(path, config, key)?,
         })
