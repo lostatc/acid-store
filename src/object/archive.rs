@@ -37,21 +37,18 @@ use super::object::{chunk_hash, ChunkHash, Object};
 
 /// A persistent object store.
 ///
-/// An `ObjectArchive` is a binary file format for efficiently storing binary data. An object
-/// archive maps keys of type `K` to binary blobs called objects.
+/// An `ObjectRepository` maps keys of type `K` to binary blobs called objects and stores them
+/// persistently in a `DataStore`.
 ///
-/// To store data in the archive, use `write` or `serialize`. To read data from the archive, `get`
-/// the `Object` associated with a key and use `read`, `read_all`, or `deserialize` to read the data
-/// it represents.
+/// To store data in the repository, use `write` or `serialize`. To read data from the repository,
+/// `get` the `Object` associated with a key and use `read`, `read_all`, or `deserialize` to read
+/// the data it represents.
 ///
-/// Data in an object archive is transparently deduplicated using content-defined block-level
-/// deduplication. The data and metadata in the archive can optionally be compressed and encrypted.
+/// Data in a repository is transparently deduplicated using content-defined block-level
+/// deduplication. The data and metadata in the repository can optionally be compressed and
+/// encrypted.
 ///
-/// Object archives use file locking to prevent multiple processes from opening the same archive at
-/// the same time. This does not protect against the same archive being opened multiple times
-/// within the same process, however. Doing so breaks ACID guarantees.
-///
-/// Changes made to an `ObjectArchive` are not persisted to disk until `commit` is called.
+/// Changes made to a repository are not persisted to disk until `commit` is called.
 pub struct ObjectRepository<K, S>
 where
     K: Eq + Hash + Clone + Serialize + DeserializeOwned,
@@ -66,7 +63,7 @@ where
     /// The header as of the last time changes were committed.
     old_header: Header<K, S::ChunkId>,
 
-    /// The current header of the archive.
+    /// The current header of the repository.
     header: Header<K, S::ChunkId>,
 
     /// The master encryption key for the repository.
@@ -189,12 +186,12 @@ where
         })
     }
 
-    /// Removes and returns the object with the given `key` from the archive.
+    /// Removes and returns the object with the given `key` from the repository.
     ///
     /// This returns `None` if there is no object with the given `key`.
     ///
     /// The space used by the given object isn't freed and made available for new objects until
-    /// `commit` is called. The size of the archive file will not shrink unless `repack` is called.
+    /// `commit` is called.
     pub fn remove(&mut self, key: &K) -> Option<Object> {
         let result = self.header.objects.remove(key);
         self.header.clean_chunks();
@@ -206,12 +203,12 @@ where
         self.header.objects.get(key)
     }
 
-    /// Returns an iterator over all the keys in this archive.
+    /// Returns an iterator over all the keys in this repository.
     pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.header.objects.keys()
     }
 
-    /// Returns an iterator over all the keys and objects in this archive.
+    /// Returns an iterator over all the keys and objects in this repository.
     pub fn objects(&self) -> impl Iterator<Item = (&K, &Object)> {
         self.header.objects.iter()
     }
@@ -268,9 +265,9 @@ where
         self.decode_data(self.store.read_chunk(chunk_id)?.as_slice())
     }
 
-    /// Writes the given `data` to the archive for a given `key` and returns the object.
+    /// Writes the given `data` to the repository for a given `key` and returns the object.
     ///
-    /// If the given `key` is already in the archive, its data is replaced.
+    /// If the given `key` is already in the repository, its data is replaced.
     pub fn write(&mut self, key: K, data: impl Read) -> io::Result<&Object> {
         let chunker = Chunker::new(ZPAQ::new(self.metadata.chunker_bits as usize));
 
@@ -278,7 +275,7 @@ where
         let mut digest = self.metadata.hash_algorithm.digest();
         let mut size = 0u64;
 
-        // Split the data into content-defined chunks and write those chunks to the archive.
+        // Split the data into content-defined chunks and write those chunks to the data store.
         for chunk_result in chunker.whole_chunks(data) {
             let chunk = chunk_result?;
             digest.input(&chunk);
@@ -299,9 +296,9 @@ where
         Ok(self.header.objects.entry(key).or_insert(object))
     }
 
-    /// Serializes the given `value` to the archive for a given `key` and returns the object.
+    /// Serialize the given `value` to the repository for a given `key` and return the object.
     ///
-    /// If the given `key` is already in the archive, its data is replaced.
+    /// If the given `key` is already in the repository, its data is replaced.
     ///
     /// # Errors
     /// - `ErrorKind::InvalidInput`: The given `value` could not be serialized.
@@ -311,7 +308,7 @@ where
         self.write(key, serialized_value.as_slice())
     }
 
-    /// Returns a reader for reading the data associated with `object` from the archive.
+    /// Returns a reader for reading the data associated with `object` from the repository.
     pub fn read<'a>(&'a self, object: &'a Object) -> impl Read + 'a {
         let chunks = object
             .chunks
@@ -338,11 +335,11 @@ where
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
     }
 
-    /// Commit changes which have been made to the archive.
+    /// Commit changes which have been made to the repository.
     ///
-    /// No changes are saved persistently until this method is called. Committing an archive is an
+    /// No changes are saved persistently until this method is called. Committing a repository is an
     /// atomic and consistent operation; changes cannot be partially committed and interrupting a
-    /// commit will never leave the archive in an inconsistent state.
+    /// commit will never leave the repository in an inconsistent state.
     pub fn commit(&mut self) -> io::Result<()> {
         // Serialize and encode the header.
         let serialized_header = to_vec(&self.header).expect("Could not serialize header.");
@@ -377,13 +374,13 @@ where
         Ok(true)
     }
 
-    /// Verify the integrity of all the data in the archive.
+    /// Verify the integrity of all the data in the repository.
     ///
     /// This returns the set of keys of objects which are corrupt.
-    pub fn verify_archive(&self) -> io::Result<HashSet<&K>> {
+    pub fn verify_repository(&self) -> io::Result<HashSet<&K>> {
         let mut corrupt_objects = HashSet::new();
 
-        // Get a map of all the chunks in the archive to the set of objects they belong to.
+        // Get a map of all the chunks in the repository to the set of objects they belong to.
         let mut chunks_to_objects = HashMap::new();
         for (key, object) in self.header.objects.iter() {
             for chunk in &object.chunks {
@@ -406,17 +403,17 @@ where
         Ok(corrupt_objects)
     }
 
-    /// Return the UUID of the archive.
+    /// Return the UUID of the repository.
     ///
-    /// Every archive has a UUID associated with it.
+    /// Every repository has a UUID associated with it.
     pub fn uuid(&self) -> Uuid {
         self.metadata.id
     }
 
-    /// Return the UUID of the archive at `path` without opening it.
+    /// Return the UUID of the repository at `path` without opening it.
     ///
-    /// Every archive has a UUID associated with it. Reading the UUID does not require decrypting
-    /// the archive.
+    /// Every repository has a UUID associated with it. Reading the UUID does not require decrypting
+    /// the repository.
     ///
     /// # Errors
     /// - `ErrorKind::InvalidData`: The repository is corrupt.
