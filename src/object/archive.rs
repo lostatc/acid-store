@@ -26,18 +26,19 @@ use cdchunking::Chunker;
 use cdchunking::ZPAQ;
 use fs2::FileExt;
 use iter_read::IterRead;
-use num_integer::div_ceil;
-use num_integer::div_floor;
 use rmp_serde::{from_read, to_vec};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use uuid::Uuid;
 
-use super::block::{Chunk, Extent, pad_to_block_size, SuperBlock};
+use crate::KeySalt;
+use crate::store::DataStore;
+
 use super::config::ArchiveConfig;
 use super::encryption::{Encryption, Key};
 use super::hashing::Checksum;
 use super::header::Header;
+use super::metadata::RepositoryMetadata;
 use super::object::{chunk_hash, ChunkHash, Object};
 
 /// A persistent object store.
@@ -57,12 +58,16 @@ use super::object::{chunk_hash, ChunkHash, Object};
 /// within the same process, however. Doing so breaks ACID guarantees.
 ///
 /// Changes made to an `ObjectArchive` are not persisted to disk until `commit` is called.
-pub struct ObjectArchive<K>
+pub struct ObjectRepository<K, S>
 where
     K: Eq + Hash + Clone + Serialize + DeserializeOwned,
+    S: DataStore
 {
-    /// The superblock for this archive.
-    superblock: SuperBlock,
+    /// The data store which backs this repository.
+    store: S,
+
+    /// The metadata for the repository.
+    metadata: RepositoryMetadata<S::ChunkId>,
 
     /// The header as of the last time changes were committed.
     old_header: Header<K>,
@@ -70,82 +75,84 @@ where
     /// The current header of the archive.
     header: Header<K>,
 
-    /// The file handle for the archive.
-    archive_file: File,
-
-    /// The encryption key for the repository.
+    /// The master encryption key for the repository.
     encryption_key: Key,
 }
 
-impl<K> ObjectArchive<K>
+impl<K, S> ObjectRepository<K, S>
 where
     K: Eq + Hash + Clone + Serialize + DeserializeOwned,
+    S: DataStore
 {
-    /// Create a new archive at the given `path` with the given `config`.
+    /// Create a new repository backed by the given data `store`.
     ///
-    /// If encryption is enabled, an `encryption_key` must be provided. Otherwise, this argument
-    /// can be `None`.
+    /// A `config` must be provided to configure the new repository. If encryption is enabled, a
+    /// `password` must be provided. Otherwise, this argument can be `None`.
     ///
     /// # Errors
-    /// - `ErrorKind::PermissionDenied`: The user lacks permission to create the archive file.
     /// - `ErrorKind::AlreadyExists`: A file already exists at `path`.
-    /// - `ErrorKind::InvalidInput`: A key was required but not provided.
-    /// - `ErrorKind::WouldBlock`: The archive is in use by another process.
+    /// - `ErrorKind::PermissionDenied`: The user lacks permission to create the archive file.
+    /// - `ErrorKind::InvalidInput`: A key was required but not provided or provided but not
+    /// required.
     pub fn create(
-        path: &Path,
+        mut store: S,
         config: ArchiveConfig,
-        encryption_key: Option<Key>,
+        password: Option<&[u8]>,
     ) -> io::Result<Self> {
-        let mut archive_file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .open(path)?;
-
-        archive_file.try_lock_exclusive()?;
-
-        // Create a new superblock without a reference to a header.
-        let superblock = SuperBlock {
-            id: Uuid::new_v4(),
-            block_size: config.block_size,
-            chunker_bits: config.chunker_bits,
-            compression: config.compression,
-            encryption: config.encryption,
-            hash_algorithm: config.hash_algorithm,
-            header: Extent {
-                index: 0,
-                blocks: 0,
-            },
-            header_size: 0,
-        };
-
         // Return an error if a key was required but not provided.
-        if encryption_key == None && superblock.encryption != Encryption::None {
+        if password.is_none() && config.encryption != Encryption::None {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "A key was required but not provided",
             ));
         }
 
-        // Create an empty key if a key is not needed.
-        let encryption_key = encryption_key.unwrap_or(Key::new(vec![0u8; 0]));
+        // Return an error is a key was provided but not required.
+        if password.is_some() && config.encryption == Encryption::None {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "A key was provided but not required",
+            ));
+        }
 
-        // Write the superblock to disk.
-        superblock.write(&mut archive_file)?;
+        // Generate and encrypt the master encryption key.
+        let salt = KeySalt::generate();
+        let user_key = Key::derive(password.unwrap_or(&[]), &salt, config.encryption.key_size());
+        let master_key = Key::generate(config.encryption.key_size());
+        let encrypted_master_key = config.encryption.encrypt(master_key.as_ref(), &user_key);
 
-        // Create a new archive with an empty header.
-        let mut archive = ObjectArchive {
-            superblock,
-            old_header: Default::default(),
-            header: Default::default(),
-            archive_file,
-            encryption_key,
+        // Generate and write the header.
+        let header = Header::default();
+        let serialized_header = to_vec(&header).expect("Could not serialize header.");
+        let compressed_header = config.compression.compress(&serialized_header)?;
+        let encrypted_header = config.encryption.encrypt(&compressed_header, &master_key);
+        let header_id = store.write_chunk(&encrypted_header)?;
+
+        // Create the repository metadata with a reference to the newly-written header.
+        let metadata = RepositoryMetadata {
+            id: Uuid::new_v4(),
+            chunker_bits: config.chunker_bits,
+            compression: config.compression,
+            encryption: config.encryption,
+            hash_algorithm: config.hash_algorithm,
+            master_key: encrypted_master_key,
+            salt,
+            header: header_id,
         };
 
-        // Write the header to disk.
-        archive.commit()?;
+        // Write the repository metadata.
+        let serialized_metadata = to_vec(&metadata).expect("Could not serialize metadata.");
+        store.write_metadata(&serialized_metadata)?;
 
-        Ok(archive)
+        Ok(
+            ObjectRepository {
+                store,
+                metadata,
+                old_header: header.clone(),
+                header,
+                encryption_key: master_key,
+            }
+        )
     }
 
     /// Opens the archive at the given `path`.
@@ -229,134 +236,6 @@ where
     /// Returns an iterator over all the keys and objects in this archive.
     pub fn objects(&self) -> impl Iterator<Item = (&K, &Object)> {
         self.header.objects.iter()
-    }
-
-    /// Returns the data in the given `extent`.
-    fn read_extent(&self, extent: Extent) -> io::Result<Vec<u8>> {
-        let mut archive_file = &self.archive_file;
-
-        archive_file.seek(SeekFrom::Start(extent.start(self.superblock.block_size)))?;
-
-        let mut buffer = Vec::with_capacity(extent.length(self.superblock.block_size) as usize);
-
-        self.archive_file
-            .try_clone()?
-            .take(extent.length(self.superblock.block_size))
-            .read_to_end(&mut buffer)?;
-
-        Ok(buffer)
-    }
-
-    /// Writes the given `data` to the given `extent` and returns the number of bytes written.
-    fn write_extent(&mut self, extent: Extent, data: &[u8]) -> io::Result<usize> {
-        self.archive_file
-            .seek(SeekFrom::Start(extent.start(self.superblock.block_size)))?;
-
-        let bytes_written = min(
-            data.len(),
-            extent.length(self.superblock.block_size) as usize,
-        );
-
-        self.archive_file.write_all(&data[..bytes_written])?;
-
-        Ok(bytes_written)
-    }
-
-    /// Returns a list of extents which are unused and can be overwritten.
-    ///
-    /// The returned extents are sorted by their location in the file.
-    fn unused_extents(&mut self) -> io::Result<Vec<Extent>> {
-        // Get all extents which are currently part of a chunk.
-        let mut used_extents = self.header.extents();
-
-        // Include all extents which were in use the last time changes were committed.
-        // We must not overwrite this data in case changes made since then aren't committed.
-        used_extents.extend(self.old_header.extents());
-
-        // Include the extent storing the header.
-        used_extents.push(self.superblock.header);
-
-        // Sort extents by their location in the file.
-        used_extents.sort_by_key(|extent| extent.index);
-
-        // Remove duplicate extents.
-        used_extents.dedup();
-
-        // Get the extents which are unused.
-        let initial_extent = Extent {
-            index: 0,
-            blocks: 0,
-        };
-        let unused_extents = iter::once(initial_extent)
-            .chain(used_extents)
-            .collect::<Vec<_>>()
-            .windows(2)
-            .filter_map(|pair| pair[0].between(pair[1]))
-            .collect::<Vec<_>>();
-
-        Ok(unused_extents)
-    }
-
-    /// Allocate a new extent of at least `size` bytes at the end of the archive.
-    ///
-    /// This pads the file so that the new extent is aligned with the block size.
-    fn new_extent(&mut self, size: u64) -> io::Result<Extent> {
-        let offset = pad_to_block_size(&mut self.archive_file, self.superblock.block_size)?;
-        let index = div_floor(offset, self.superblock.block_size as u64);
-        let blocks = div_ceil(size, self.superblock.block_size as u64);
-        Ok(Extent { index, blocks })
-    }
-
-    /// Truncate the given extent so it is just large enough to hold `size` bytes.
-    fn truncate_extent(&self, extent: Extent, size: u64) -> Extent {
-        let blocks = min(
-            extent.blocks,
-            div_ceil(size, self.superblock.block_size as u64),
-        );
-        Extent {
-            index: extent.index,
-            blocks,
-        }
-    }
-
-    /// Allocate a contiguous extent of at least `size` bytes.
-    fn allocate_contiguous_extent(&mut self, size: u64) -> io::Result<Extent> {
-        // Look for an unused extent that is large enough.
-        let unused_extents = self.unused_extents()?;
-        let allocated_extent = unused_extents
-            .iter()
-            .find(|extent| extent.length(self.superblock.block_size) >= size);
-
-        // If there is no unused extent large enough, allocate a new extent at the end of the file.
-        let allocated_extent = match allocated_extent {
-            Some(extent) => self.truncate_extent(*extent, size),
-            None => self.new_extent(size)?,
-        };
-
-        Ok(allocated_extent)
-    }
-
-    /// Allocate a list of extents with a combined size of at least `size` bytes.
-    fn allocate_extents(&mut self, size: u64) -> io::Result<Vec<Extent>> {
-        let mut allocated_extents = Vec::new();
-        let mut bytes_remaining = size;
-
-        // Try to fill all unused extents first.
-        for extent in self.unused_extents()? {
-            let new_extent = self.truncate_extent(extent, bytes_remaining);
-            allocated_extents.push(new_extent);
-            bytes_remaining -= min(
-                bytes_remaining,
-                new_extent.length(self.superblock.block_size),
-            );
-        }
-
-        // If there's still data left, allocate an extent at the end of the file to store the rest.
-        if bytes_remaining > 0 {
-            allocated_extents.push(self.new_extent(bytes_remaining)?);
-        }
-
-        Ok(allocated_extents)
     }
 
     /// Compresses and encrypts the given `data` and returns it.

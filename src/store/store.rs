@@ -16,10 +16,13 @@
 
 use std::io;
 
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+
 /// A persistent store for storing chunks of data.
 pub trait ChunkStore {
     /// A value which uniquely identifies a chunk.
-    type ChunkId;
+    type ChunkId: Eq + Serialize + DeserializeOwned;
 
     /// Write the given `data` as a new chunk and return its ID.
     fn write_chunk(&mut self, data: &[u8]) -> io::Result<Self::ChunkId>;

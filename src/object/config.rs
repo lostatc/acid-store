@@ -27,14 +27,6 @@ use super::hashing::HashAlgorithm;
 /// The values in this struct are stored in the archive unencrypted, even when encryption is
 /// enabled.
 pub struct ArchiveConfig {
-    /// The block size of the archive in bytes.
-    ///
-    /// Data in the archive is allocated in blocks of this size. Choosing a smaller value may make
-    /// the archive more space-efficient, but will hurt performance.
-    ///
-    /// The default value is `4096` (4KiB).
-    pub block_size: u32,
-
     /// A value which determines the chunk size for content-defined deduplication.
     ///
     /// Data is deduplicated by splitting it into chunks. If two or more objects have a chunk in
@@ -67,7 +59,6 @@ pub struct ArchiveConfig {
 impl Default for ArchiveConfig {
     fn default() -> Self {
         ArchiveConfig {
-            block_size: 4096,
             chunker_bits: 20,
             compression: Compression::None,
             encryption: Encryption::None,
