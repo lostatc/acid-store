@@ -20,8 +20,10 @@ use uuid::Uuid;
 
 /// A persistent store for blocks of data.
 ///
-/// A `DataStore` persistently stores blocks of data uniquely identified by UUIDs. Data stores may
-/// or may not protect against concurrent access; implementations must implement their own locking.
+/// A `DataStore` persistently stores blocks of data uniquely identified by UUIDs. Data stores are
+/// used as the storage backend for `ObjectRepository` and `FileRepository`. Data stores may or may
+/// not provide locking mechanisms to protect against concurrent access; the marker trait
+/// `ConcurrentDataStore` denotes that a `DataStore` supports this.
 pub trait DataStore {
     /// Write the given `data` as a new block with the given `id`.
     ///
@@ -57,3 +59,10 @@ pub trait DataStore {
     /// This only lists the IDs of blocks which are stored persistently.
     fn list_blocks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Uuid>>>>;
 }
+
+/// A `DataStore` which supports concurrent access.
+///
+/// This is a marker trait which denotes that a `DataStore` can be safely accessed by multiple
+/// processes or machines. A `ConcurrentStore` does not necessarily support parallel reads and does
+/// not provide any guarantees about concurrent access within the same process.
+pub trait ConcurrentDataStore: DataStore {}
