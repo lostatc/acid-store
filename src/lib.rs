@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+// TODO: Rewrite crate-level documentation.
+
 //! `disk-archive` is a library for creating high-performance file formats.
 //!
 //! Many application file formats are built on ZIP archives or SQLite databases. ZIP archives are
@@ -49,9 +51,9 @@ pub use relative_path;
 
 pub use file::{Entry, EntryMetadata, EntryType, FileArchive};
 pub use object::{
-    Checksum, Compression, Encryption, HashAlgorithm, Key, KeySalt, Object, ObjectArchive,
-    RepositoryConfig,
+    Checksum, Compression, Encryption, HashAlgorithm, Object, ObjectRepository, RepositoryConfig,
 };
+pub use store::{DataStore, DirectoryStore};
 
 mod file;
 mod object;
