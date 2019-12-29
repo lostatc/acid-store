@@ -42,6 +42,6 @@ num-integer = "0.1.41"
 uuid = { version = "0.8.1", features = ["serde", "v4"] }
 lazy_static = "1.4.0"
 
-[target.'cfg(linux)'.dependencies]
+[target.'cfg(unix)'.dependencies]
 fuse = "0.3.1"
 xattr = "0.2.2"

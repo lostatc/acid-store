@@ -63,13 +63,13 @@ impl DirectoryStore {
         if let Some(parent_directory) = path.parent() {
             create_dir_all(parent_directory)?;
         }
-        create_dir(path)?;
-        create_dir(path.join(BLOCKS_DIRECTORY))?;
-        File::create(path.join(LOCK_FILE))?;
+        create_dir(&path)?;
+        create_dir(&path.join(BLOCKS_DIRECTORY))?;
+        File::create(&path.join(LOCK_FILE))?;
 
         // Write the version ID file.
-        let mut version_file = File::create(path.join(VERSION_FILE))?;
-        version_file.write_all(CURRENT_VERSION.as_bytes());
+        let mut version_file = File::create(&path.join(VERSION_FILE))?;
+        version_file.write_all(CURRENT_VERSION.as_bytes())?;
 
         Self::open(path)
     }
@@ -95,7 +95,7 @@ impl DirectoryStore {
         }
 
         Ok(DirectoryStore {
-            path,
+            path: path.clone(),
             blocks_directory: path.join(BLOCKS_DIRECTORY),
             staging_directory: path.join(STAGING_DIRECTORY),
             lock_file: path.join(LOCK_FILE)
@@ -104,13 +104,15 @@ impl DirectoryStore {
 
     /// Return the path where a block with the given `id` will be stored.
     fn block_path(&self, id: &Uuid) -> PathBuf {
-        let hex = id.to_simple().encode_lower(&mut Uuid::encode_buffer());
+        let mut buffer = Uuid::encode_buffer();
+        let hex = id.to_simple().encode_lower(&mut buffer);
         self.blocks_directory.join(&hex[..2]).join(hex)
     }
 
     /// Return the path where a block with the given `id` will be staged.
     fn staging_path(&self, id: &Uuid) -> PathBuf {
-        let hex = id.to_simple().encode_lower(&mut Uuid::encode_buffer());
+        let mut buffer = Uuid::encode_buffer();
+        let hex = id.to_simple().encode_lower(&mut buffer);
         self.staging_directory.join(hex)
     }
 }
@@ -118,7 +120,7 @@ impl DirectoryStore {
 impl DataStore for DirectoryStore {
     fn write_block(&mut self, id: &Uuid, data: &[u8]) -> io::Result<()> {
         // Get an exclusive lock on the data store.
-        let lock_file = File::open(self.lock_file)?;
+        let lock_file = File::open(&self.lock_file)?;
         lock_file.lock_exclusive()?;
 
         let staging_path = self.staging_path(id);
@@ -127,12 +129,12 @@ impl DataStore for DirectoryStore {
         create_dir_all(block_path.parent().unwrap())?;
 
         // Write to a staging file and then atomically move it to its final destination.
-        let mut staging_file = File::create(staging_path)?;
+        let mut staging_file = File::create(&staging_path)?;
         staging_file.write_all(data)?;
-        rename(staging_path, block_path)?;
+        rename(&staging_path, &block_path)?;
 
         // Remove any unused staging files.
-        remove_dir_all(self.staging_directory)?;
+        remove_dir_all(&self.staging_directory)?;
 
         lock_file.unlock()?;
         Ok(())
@@ -140,7 +142,7 @@ impl DataStore for DirectoryStore {
 
     fn read_block(&self, id: &Uuid) -> io::Result<Vec<u8>> {
         // Get a shared lock on the data store.
-        let lock_file = File::open(self.lock_file)?;
+        let lock_file = File::open(&self.lock_file)?;
         lock_file.lock_shared()?;
 
         let block_path = self.block_path(id);
@@ -160,22 +162,22 @@ impl DataStore for DirectoryStore {
 
     fn remove_block(&mut self, id: &Uuid) -> io::Result<()> {
         // Get an exclusive lock on the data store.
-        let lock_file = File::open(self.lock_file)?;
+        let lock_file = File::open(&self.lock_file)?;
         lock_file.lock_exclusive()?;
 
         remove_file(self.block_path(id))?;
 
-        lock_file.unlock();
+        lock_file.unlock()?;
         Ok(())
     }
 
     fn list_blocks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Uuid>>>> {
         // Get a shared lock on the data store.
-        let lock_file = File::open(self.lock_file)?;
+        let lock_file = File::open(&self.lock_file)?;
         lock_file.lock_shared()?;
 
         // Collect the results into a vector so that we can release the lock on the data store.
-        let results = WalkDir::new(self.blocks_directory)
+        let results = WalkDir::new(&self.blocks_directory)
             .min_depth(2)
             .into_iter()
             .map(|result| match result {

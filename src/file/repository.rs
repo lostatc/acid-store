@@ -54,7 +54,7 @@ impl<S: DataStore> FileRepository<S> {
     ///
     /// See `ObjectRepository::create` for details.
     pub fn create(
-        mut store: S,
+        store: S,
         config: RepositoryConfig,
         password: Option<&[u8]>,
     ) -> io::Result<Self> {
