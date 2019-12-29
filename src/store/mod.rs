@@ -15,7 +15,7 @@
  */
 
 pub use self::directory::DirectoryStore;
-pub use self::store::DataStore;
+pub use self::store::{ConcurrentDataStore, DataStore};
 
 mod store;
 mod directory;

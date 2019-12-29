@@ -54,7 +54,7 @@ pub use file::{Entry, EntryMetadata, EntryType, FileRepository};
 pub use object::{
     Checksum, Compression, Encryption, HashAlgorithm, Object, ObjectRepository, RepositoryConfig,
 };
-pub use store::{DataStore, DirectoryStore};
+pub use store::{ConcurrentDataStore, DataStore, DirectoryStore};
 
 mod file;
 mod object;
