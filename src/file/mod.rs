@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-pub use self::archive::FileArchive;
 pub use self::entry::{Entry, EntryMetadata, EntryType};
+pub use self::repository::FileRepository;
 
-mod archive;
+mod repository;
 mod entry;
 mod platform;
 mod serialization;
