@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-use std::fs::{create_dir_all, File, remove_dir_all, remove_file, rename};
+use std::fs::{create_dir, create_dir_all, File, remove_dir_all, remove_file, rename};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
+use fs2::FileExt;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
@@ -26,7 +27,17 @@ use crate::store::DataStore;
 /// A UUID which acts as the version ID of the directory store format.
 const CURRENT_VERSION: &str = "2891c3da-297e-11ea-a7c9-1b8f8be4fc9b";
 
+/// The names of files in the data store.
+const BLOCKS_DIRECTORY: &str = "blocks";
+const STAGING_DIRECTORY: &str = "stage";
+const VERSION_FILE: &str = "version";
+const LOCK_FILE: &str = "store.lock";
+
 /// A `DataStore` which stores data in a directory in the local file system.
+///
+/// This data store protects against concurrent access by multiple processes using the operating
+/// system's native file locking facilities. The program blocks until a lock can be acquired. File
+/// locks do not protect against concurrent access within the same process.
 pub struct DirectoryStore {
     /// The path of the store's root directory.
     path: PathBuf,
@@ -36,6 +47,9 @@ pub struct DirectoryStore {
 
     /// The path of the directory were blocks are staged while being written to.
     staging_directory: PathBuf,
+
+    /// The path of the data store's lock file.
+    lock_file: PathBuf,
 }
 
 impl DirectoryStore {
@@ -45,9 +59,18 @@ impl DirectoryStore {
     /// - `ErrorKind::AlreadyExists`: There is already a file at the given path.
     /// - `ErrorKind::PermissionDenied`: The user lacks permissions to create the directory.
     pub fn create(path: PathBuf) -> io::Result<Self> {
-        create_dir_all(path)?;
-        let mut version_file = File::create(path.join("version"))?;
+        // Create the files and directories in the data store.
+        if let Some(parent_directory) = path.parent() {
+            create_dir_all(parent_directory)?;
+        }
+        create_dir(path)?;
+        create_dir(path.join(BLOCKS_DIRECTORY))?;
+        File::create(path.join(LOCK_FILE))?;
+
+        // Write the version ID file.
+        let mut version_file = File::create(path.join(VERSION_FILE))?;
         version_file.write_all(CURRENT_VERSION.as_bytes());
+
         Self::open(path)
     }
 
@@ -58,10 +81,12 @@ impl DirectoryStore {
     /// - `ErrorKind::InvalidData`: The directory at `path` is not a valid directory store.
     /// - `ErrorKind::PermissionDenied`: The user lacks permissions to read the directory.
     pub fn open(path: PathBuf) -> io::Result<Self> {
-        let mut version_file = File::open(path.join("version"))?;
+        // Read the version ID file.
+        let mut version_file = File::open(path.join(VERSION_FILE))?;
         let mut version_id = String::new();
         version_file.read_to_string(&mut version_id)?;
 
+        // Verify the version ID.
         if version_id != CURRENT_VERSION {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -71,8 +96,9 @@ impl DirectoryStore {
 
         Ok(DirectoryStore {
             path,
-            blocks_directory: path.join("blocks"),
-            staging_directory: path.join("stage")
+            blocks_directory: path.join(BLOCKS_DIRECTORY),
+            staging_directory: path.join(STAGING_DIRECTORY),
+            lock_file: path.join(LOCK_FILE)
         })
     }
 
@@ -91,6 +117,10 @@ impl DirectoryStore {
 
 impl DataStore for DirectoryStore {
     fn write_block(&mut self, id: &Uuid, data: &[u8]) -> io::Result<()> {
+        // Get an exclusive lock on the data store.
+        let lock_file = File::open(self.lock_file)?;
+        lock_file.lock_exclusive()?;
+
         let staging_path = self.staging_path(id);
         let block_path = self.block_path(id);
         create_dir_all(staging_path.parent().unwrap())?;
@@ -104,41 +134,63 @@ impl DataStore for DirectoryStore {
         // Remove any unused staging files.
         remove_dir_all(self.staging_directory)?;
 
+        lock_file.unlock()?;
         Ok(())
     }
 
     fn read_block(&self, id: &Uuid) -> io::Result<Vec<u8>> {
+        // Get a shared lock on the data store.
+        let lock_file = File::open(self.lock_file)?;
+        lock_file.lock_shared()?;
+
         let block_path = self.block_path(id);
 
-        if block_path.exists() {
+        let buffer = if block_path.exists() {
             let mut file = File::open(block_path)?;
             let mut buffer = Vec::with_capacity(file.metadata()?.len() as usize);
             file.read_to_end(&mut buffer)?;
-            Ok(buffer)
+            buffer
         } else {
-            panic!("There is no block with the given ID.")
-        }
+            panic!("There is no block with the given ID.");
+        };
+
+        lock_file.unlock()?;
+        Ok(buffer)
     }
 
     fn remove_block(&mut self, id: &Uuid) -> io::Result<()> {
-        remove_file(self.block_path(id))
+        // Get an exclusive lock on the data store.
+        let lock_file = File::open(self.lock_file)?;
+        lock_file.lock_exclusive()?;
+
+        remove_file(self.block_path(id))?;
+
+        lock_file.unlock();
+        Ok(())
     }
 
     fn list_blocks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Uuid>>>> {
-        Ok(Box::new(
-            WalkDir::new(self.blocks_directory)
-                .min_depth(2)
-                .into_iter()
-                .map(|result| match result {
-                    Ok(entry) => Ok(Uuid::parse_str(
-                        entry
-                            .file_name()
-                            .to_str()
-                            .expect("Block file name is invalid."),
-                    )
-                        .expect("Block file name is invalid.")),
-                    Err(error) => Err(io::Error::from(error)),
-                }),
-        ))
+        // Get a shared lock on the data store.
+        let lock_file = File::open(self.lock_file)?;
+        lock_file.lock_shared()?;
+
+        // Collect the results into a vector so that we can release the lock on the data store.
+        let results = WalkDir::new(self.blocks_directory)
+            .min_depth(2)
+            .into_iter()
+            .map(|result| match result {
+                Ok(entry) => Ok(Uuid::parse_str(
+                    entry
+                        .file_name()
+                        .to_str()
+                        .expect("Block file name is invalid."),
+                )
+                    .expect("Block file name is invalid.")),
+                Err(error) => Err(io::Error::from(error)),
+            })
+            .collect::<Vec<_>>();
+
+        lock_file.unlock()?;
+        Ok(Box::new(results.into_iter()))
     }
 }

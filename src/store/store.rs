@@ -20,7 +20,8 @@ use uuid::Uuid;
 
 /// A persistent store for blocks of data.
 ///
-/// A `DataStore` persistently stores blocks of data uniquely identified by UUIDs.
+/// A `DataStore` persistently stores blocks of data uniquely identified by UUIDs. Data stores may
+/// or may not protect against concurrent access; implementations must implement their own locking.
 pub trait DataStore {
     /// Write the given `data` as a new block with the given `id`.
     ///

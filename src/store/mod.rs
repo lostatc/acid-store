@@ -15,7 +15,7 @@
  */
 
 pub use self::directory::DirectoryStore;
-pub use self::store::{AtomicStore, ChunkStore, DataStore};
+pub use self::store::DataStore;
 
-mod directory;
 mod store;
+mod directory;
