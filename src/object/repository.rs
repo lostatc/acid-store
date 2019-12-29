@@ -52,10 +52,22 @@ lazy_static! {
 /// the data it represents.
 ///
 /// Data in a repository is transparently deduplicated using content-defined block-level
-/// deduplication. The data and metadata in the repository can optionally be compressed and
-/// encrypted.
+/// deduplication via the ZPAQ chunking algorithm. The data and metadata in the repository can
+/// optionally be compressed and encrypted.
 ///
 /// Changes made to a repository are not persisted to disk until `commit` is called.
+///
+/// # Encryption
+/// If encryption is enabled, the Argon2id key derivation function is used to derive a key from a
+/// user-supplied password. This key is used to encrypt the repository's randomly generated master
+/// key, which is used to encrypt all data in the repository. This setup means that the repository's
+/// password can be changed without re-encrypting any data.
+///
+/// The following information is not encrypted:
+/// - The repository's UUID
+/// - The configuration values provided via `RepositoryConfig`
+/// - The salt used to derive the encryption key
+/// - The UUID of the block which stores encrypted metadata
 pub struct ObjectRepository<K, S>
 where
     K: Eq + Hash + Clone + Serialize + DeserializeOwned,
@@ -82,7 +94,7 @@ where
     /// Create a new repository backed by the given data `store`.
     ///
     /// A `config` must be provided to configure the new repository. If encryption is enabled, a
-    /// `password` must be provided. Otherwise, this argument can be `None`.
+    /// `password` must be provided; otherwise, this argument can be `None`.
     ///
     /// # Errors
     /// - `ErrorKind::InvalidInput`: A key was required but not provided or provided but not
@@ -415,17 +427,25 @@ where
         Ok(corrupt_objects)
     }
 
-    /// Return the UUID of the repository.
+    /// Change the password for this repository.
     ///
-    /// Every repository has a UUID associated with it.
+    /// This replaces the existing password with `new_password`. Changing the password does not
+    /// require re-encrypting any data. The change does not take effect until `commit` is called.
+    /// If encryption is disabled, this method does nothing.
+    pub fn change_password(&mut self, new_password: &[u8]) {
+        let salt = KeySalt::generate();
+        let user_key = Key::derive(new_password, &salt, self.metadata.encryption.key_size());
+        self.metadata.salt = salt;
+        self.metadata.master_key =
+            self.metadata.encryption.encrypt(self.master_key.as_ref(), &user_key);
+    }
+
+    /// Return the UUID of the repository.
     pub fn uuid(&self) -> Uuid {
         self.metadata.id
     }
 
-    /// Return the UUID of the repository at `path` without opening it.
-    ///
-    /// Every repository has a UUID associated with it. Reading the UUID does not require decrypting
-    /// the repository.
+    /// Return the UUID of the repository at `store` without opening it.
     ///
     /// # Errors
     /// - `ErrorKind::InvalidData`: The repository is corrupt.
@@ -433,7 +453,7 @@ where
     pub fn peek_uuid(store: S) -> io::Result<Uuid> {
         // Read and deserialize the metadata.
         let serialized_metadata = store.read_block(&METADATA_BLOCK_ID)?;
-        let metadata: RepositoryMetadata<> = from_read(serialized_metadata.as_slice())
+        let metadata: RepositoryMetadata = from_read(serialized_metadata.as_slice())
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
         Ok(metadata.id)

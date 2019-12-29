@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-pub use self::archive::ObjectRepository;
 pub use self::compression::Compression;
 pub use self::config::RepositoryConfig;
 pub use self::encryption::Encryption;
 pub use self::hashing::{Checksum, HashAlgorithm};
 pub use self::object::Object;
+pub use self::repository::ObjectRepository;
 
-mod archive;
+mod repository;
 mod compression;
 mod config;
 mod encryption;
