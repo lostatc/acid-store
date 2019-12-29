@@ -18,36 +18,41 @@ use std::io;
 
 use uuid::Uuid;
 
-/// A persistent store for storing chunks of data.
-pub trait ChunkStore {
-    /// Write the given `data` as a new chunk and return its ID.
+/// A persistent store for blocks of data.
+///
+/// A `DataStore` persistently stores blocks of data uniquely identified by UUIDs.
+pub trait DataStore {
+    /// Write the given `data` as a new block with the given `id`.
     ///
-    /// If a chunk with the same ID already exists, it is overwritten.
-    fn write_chunk(&mut self, data: &[u8]) -> io::Result<Uuid>;
+    /// If this method returns `Ok`, the block is stored persistently until it is removed with
+    /// `remove_block`. If this method returns `Err` or panics, the block is not stored persistently
+    /// and it is up to the implementation to ensure that any data which may have been written is
+    /// cleaned up.
+    ///
+    /// If a block with the given `id` already exists, it is overwritten.
+    ///
+    /// This is an atomic operation.
+    fn write_block(&mut self, id: &Uuid, data: &[u8]) -> io::Result<()>;
 
-    /// Return the bytes of the chunk with the given `id`.
+    /// Return the bytes of the block with the given `id`.
     ///
     /// # Panics
-    /// - There is no chunk with the given `id`.
-    fn read_chunk(&self, id: &Uuid) -> io::Result<Vec<u8>>;
+    /// - There is no block with the given `id`.
+    fn read_block(&self, id: &Uuid) -> io::Result<Vec<u8>>;
 
-    /// Remove the chunk with the given `id` from the store if it exists.
-    fn remove_chunk(&mut self, id: &Uuid) -> io::Result<()>;
-
-    /// Return an iterator of IDs of chunks in the store.
-    fn list_chunks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Uuid>>>>;
-}
-
-/// A persistent store for storing metadata.
-pub trait MetadataStore {
-    /// Write the given `metadata` to the store, overwriting the existing metadata.
+    /// Remove the block with the given `id` from the store.
     ///
-    /// Writing the metadata must be an atomic operation.
-    fn write_metadata(&mut self, metadata: &[u8]) -> io::Result<()>;
+    /// If this method returns `Ok`, the given `id` is no longer stored persistently and any space
+    /// allocated for it will be freed. If this method returns `Err` or panics, the block is still
+    /// stored persistently.
+    ///
+    /// If there is no block with the given `id`, this method does nothing and returns `Ok`.
+    ///
+    /// This is an atomic operation.
+    fn remove_block(&mut self, id: &Uuid) -> io::Result<()>;
 
-    /// Return the metadata in the store.
-    fn read_metadata(&self) -> io::Result<Vec<u8>>;
+    /// Return an iterator of IDs of blocks in the store.
+    ///
+    /// This only lists the IDs of blocks which are stored persistently.
+    fn list_blocks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Uuid>>>>;
 }
-
-/// A storage backend for a repository.
-pub trait DataStore: ChunkStore + MetadataStore {}

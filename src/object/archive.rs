@@ -21,6 +21,7 @@ use std::io::{self, Read};
 use cdchunking::Chunker;
 use cdchunking::ZPAQ;
 use iter_read::IterRead;
+use lazy_static::lazy_static;
 use rmp_serde::{from_read, to_vec};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -34,6 +35,12 @@ use super::hashing::Checksum;
 use super::header::Header;
 use super::metadata::RepositoryMetadata;
 use super::object::{chunk_hash, ChunkHash, Object};
+
+lazy_static! {
+    /// The block ID of the block which stores unencrypted metadata for the repository.
+    static ref METADATA_BLOCK_ID: Uuid =
+        Uuid::parse_str("8691d360-29c6-11ea-8bc1-2fc8cfe66f33").unwrap();
+}
 
 /// A persistent object store.
 ///
@@ -112,7 +119,8 @@ where
         let serialized_header = to_vec(&header).expect("Could not serialize header.");
         let compressed_header = config.compression.compress(&serialized_header)?;
         let encrypted_header = config.encryption.encrypt(&compressed_header, &master_key);
-        let header_id = store.write_chunk(&encrypted_header)?;
+        let header_id = Uuid::new_v4();
+        store.write_block(&header_id, &encrypted_header)?;
 
         // Create the repository metadata with a reference to the newly-written header.
         let metadata = RepositoryMetadata {
@@ -128,7 +136,7 @@ where
 
         // Write the repository metadata.
         let serialized_metadata = to_vec(&metadata).expect("Could not serialize metadata.");
-        store.write_metadata(&serialized_metadata)?;
+        store.write_block(&METADATA_BLOCK_ID, &serialized_metadata)?;
 
         Ok(ObjectRepository {
             store,
@@ -149,7 +157,7 @@ where
     /// - `ErrorKind::InvalidData`: The type `K` does not match the data in the repository.
     pub fn open(store: S, password: Option<&[u8]>) -> io::Result<Self> {
         // Read and deserialize the metadata.
-        let serialized_metadata = store.read_metadata()?;
+        let serialized_metadata = store.read_block(&METADATA_BLOCK_ID)?;
         let metadata: RepositoryMetadata = from_read(serialized_metadata.as_slice())
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
@@ -166,7 +174,7 @@ where
         );
 
         // Read, decrypt, decompress, and deserialize the header.
-        let encrypted_header = store.read_chunk(&metadata.header)?;
+        let encrypted_header = store.read_block(&metadata.header)?;
         let compressed_header = metadata
             .encryption
             .decrypt(&encrypted_header, &master_key)?;
@@ -247,10 +255,11 @@ where
 
         // Encode the data and write it to the data store.
         let encoded_data = self.encode_data(data)?;
-        let chunk_id = self.store.write_chunk(&encoded_data)?;
+        let block_id = Uuid::new_v4();
+        self.store.write_block(&block_id, &encoded_data)?;
 
         // Add the chunk to the header.
-        self.header.chunks.insert(checksum, chunk_id);
+        self.header.chunks.insert(checksum, block_id);
 
         Ok(checksum)
     }
@@ -258,7 +267,7 @@ where
     /// Returns the bytes of the chunk with the given checksum or `None` if there is none.
     fn read_chunk(&self, checksum: &ChunkHash) -> io::Result<Vec<u8>> {
         let chunk_id = &self.header.chunks[checksum];
-        self.decode_data(self.store.read_chunk(chunk_id)?.as_slice())
+        self.decode_data(self.store.read_block(chunk_id)?.as_slice())
     }
 
     /// Writes the given `data` to the repository for a given `key` and returns the object.
@@ -342,19 +351,20 @@ where
         let encoded_header = self.encode_data(&serialized_header)?;
 
         // Write the new header to the data store.
-        let header_id = self.store.write_chunk(&encoded_header)?;
+        let header_id = Uuid::new_v4();
+        self.store.write_block(&header_id, &encoded_header)?;
         self.metadata.header = header_id;
 
         // Write the repository metadata, atomically completing the commit.
         let serialized_metadata = to_vec(&self.metadata).expect("Could not serialize metadata.");
-        self.store.write_metadata(&serialized_metadata)?;
+        self.store.write_block(&METADATA_BLOCK_ID, &serialized_metadata)?;
 
         // After changes are committed, remove any unused chunks from the data store.
         let referenced_chunks = self.header.chunks.values().collect::<HashSet<_>>();
-        for chunk_result in self.store.list_chunks()? {
+        for chunk_result in self.store.list_blocks()? {
             let stored_chunk = chunk_result?;
             if !referenced_chunks.contains(&stored_chunk) {
-                self.store.remove_chunk(&stored_chunk)?;
+                self.store.remove_block(&stored_chunk)?;
             }
         }
 
@@ -422,7 +432,7 @@ where
     /// - `ErrorKind::InvalidData`: The type `K` does not match the data in the repository.
     pub fn peek_uuid(store: S) -> io::Result<Uuid> {
         // Read and deserialize the metadata.
-        let serialized_metadata = store.read_metadata()?;
+        let serialized_metadata = store.read_block(&METADATA_BLOCK_ID)?;
         let metadata: RepositoryMetadata<> = from_read(serialized_metadata.as_slice())
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
