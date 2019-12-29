@@ -14,24 +14,28 @@
  * limitations under the License.
  */
 
-use std::fs::{create_dir_all, File, remove_file, rename};
+use std::fs::{create_dir_all, File, remove_dir_all, remove_file, rename};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::store::{ChunkStore, MetadataStore};
+use crate::store::DataStore;
 
 /// A UUID which acts as the version ID of the directory store format.
 const CURRENT_VERSION: &str = "2891c3da-297e-11ea-a7c9-1b8f8be4fc9b";
 
 /// A `DataStore` which stores data in a directory in the local file system.
 pub struct DirectoryStore {
+    /// The path of the store's root directory.
     path: PathBuf,
-    chunks_directory: PathBuf,
-    metadata_path: PathBuf,
-    metadata_tmp_path: PathBuf,
+
+    /// The path of the directory where blocks are stored.
+    blocks_directory: PathBuf,
+
+    /// The path of the directory were blocks are staged while being written to.
+    staging_directory: PathBuf,
 }
 
 impl DirectoryStore {
@@ -67,49 +71,62 @@ impl DirectoryStore {
 
         Ok(DirectoryStore {
             path,
-            chunks_directory: path.join("chunks"),
-            metadata_path: path.join("metadata"),
-            metadata_tmp_path: path.join("~metadata"),
+            blocks_directory: path.join("blocks"),
+            staging_directory: path.join("stage")
         })
     }
 
-    /// Return the path of the chunk with the given `id`.
-    fn chunk_path(&self, id: &Uuid) -> PathBuf {
+    /// Return the path where a block with the given `id` will be stored.
+    fn block_path(&self, id: &Uuid) -> PathBuf {
         let hex = id.to_simple().encode_lower(&mut Uuid::encode_buffer());
-        self.chunks_directory.join(&hex[..2]).join(hex)
+        self.blocks_directory.join(&hex[..2]).join(hex)
+    }
+
+    /// Return the path where a block with the given `id` will be staged.
+    fn staging_path(&self, id: &Uuid) -> PathBuf {
+        let hex = id.to_simple().encode_lower(&mut Uuid::encode_buffer());
+        self.staging_directory.join(hex)
     }
 }
 
-impl ChunkStore for DirectoryStore {
-    fn write_chunk(&mut self, data: &[u8]) -> io::Result<Uuid> {
-        let chunk_id = Uuid::new_v4();
-        let chunk_path = self.chunk_path(&chunk_id);
-        create_dir_all(chunk_path.parent().unwrap())?;
-        let mut file = File::create(chunk_path)?;
-        file.write_all(data)?;
-        Ok(chunk_id)
+impl DataStore for DirectoryStore {
+    fn write_block(&mut self, id: &Uuid, data: &[u8]) -> io::Result<()> {
+        let staging_path = self.staging_path(id);
+        let block_path = self.block_path(id);
+        create_dir_all(staging_path.parent().unwrap())?;
+        create_dir_all(block_path.parent().unwrap())?;
+
+        // Write to a staging file and then atomically move it to its final destination.
+        let mut staging_file = File::create(staging_path)?;
+        staging_file.write_all(data)?;
+        rename(staging_path, block_path)?;
+
+        // Remove any unused staging files.
+        remove_dir_all(self.staging_directory)?;
+
+        Ok(())
     }
 
-    fn read_chunk(&self, id: &Uuid) -> io::Result<Vec<u8>> {
-        let chunk_path = self.chunk_path(id);
+    fn read_block(&self, id: &Uuid) -> io::Result<Vec<u8>> {
+        let block_path = self.block_path(id);
 
-        if chunk_path.exists() {
-            let mut file = File::open(chunk_path)?;
+        if block_path.exists() {
+            let mut file = File::open(block_path)?;
             let mut buffer = Vec::with_capacity(file.metadata()?.len() as usize);
             file.read_to_end(&mut buffer)?;
             Ok(buffer)
         } else {
-            panic!("There is no chunk with the given ID.")
+            panic!("There is no block with the given ID.")
         }
     }
 
-    fn remove_chunk(&mut self, id: &Uuid) -> io::Result<()> {
-        remove_file(self.chunk_path(id))
+    fn remove_block(&mut self, id: &Uuid) -> io::Result<()> {
+        remove_file(self.block_path(id))
     }
 
-    fn list_chunks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Uuid>>>> {
+    fn list_blocks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Uuid>>>> {
         Ok(Box::new(
-            WalkDir::new(self.path)
+            WalkDir::new(self.blocks_directory)
                 .min_depth(2)
                 .into_iter()
                 .map(|result| match result {
@@ -117,26 +134,11 @@ impl ChunkStore for DirectoryStore {
                         entry
                             .file_name()
                             .to_str()
-                            .expect("Chunk file name is invalid."),
+                            .expect("Block file name is invalid."),
                     )
-                        .expect("Chunk file name is invalid.")),
+                        .expect("Block file name is invalid.")),
                     Err(error) => Err(io::Error::from(error)),
                 }),
         ))
-    }
-}
-
-impl MetadataStore for DirectoryStore {
-    fn write_metadata(&mut self, metadata: &[u8]) -> io::Result<()> {
-        let mut file = File::create(self.metadata_tmp_path)?;
-        file.write_all(&metadata)?;
-        rename(&self.metadata_tmp_path, &self.metadata_path)
-    }
-
-    fn read_metadata(&self) -> io::Result<Vec<u8>> {
-        let mut file = File::open(self.metadata_path)?;
-        let mut buffer = Vec::with_capacity(file.metadata()?.len() as usize);
-        file.read_to_end(&mut buffer)?;
-        Ok(buffer)
     }
 }
