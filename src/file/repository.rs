@@ -24,73 +24,79 @@ use relative_path::RelativePath;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::{Key, Object, ObjectArchive, RepositoryConfig};
+use crate::{DataStore, Object, ObjectRepository, RepositoryConfig};
 
 use super::entry::{Entry, EntryKey, EntryMetadata, EntryType, KeyType};
 use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode, soft_link};
 
-/// An archive for storing files.
+/// A persistent file store.
 ///
-/// This is a wrapper over `ObjectArchive` which allows it to function as a file archive like ZIP
-/// or TAR rather than an object store. A `FileArchive` consists of `Entry` values which
-/// can represent a regular file, directory, or symbolic link.
+/// This is a wrapper around `ObjectRepository` which allows it to function as a file archive like
+/// ZIP or TAR rather than an object store. A `FileArchive` consists of `Entry` values which can
+/// represent a regular file, directory, or symbolic link.
 ///
 /// This type provides a high-level API through the methods `archive`, `archive_tree`, `extract`,
 /// and `extract_tree` for archiving and extracting files in the file system. It also allows for
-/// manually adding entries through the methods `add_file`, `add_directory`, and `add_link`. Entries
-/// can be queried with `entry`, `list`, and `walk`. They can be removed using `remove`.
+/// manually adding entries through the methods `add_file`, `add_directory`, and `add_link`.
 ///
 /// While files in the file system are identified by their `Path`, entries in the archive are
 /// identified by a `RelativePath`. A `RelativePath` is a platform-independent path representation
 /// that allows entries archived on one system to be extracted on another.
-pub struct FileArchive {
-    archive: ObjectArchive<EntryKey>,
+///
+/// Like `ObjectRepository`, changes made to the repository are not persisted to disk until `commit`
+/// is called. For details about deduplication, compression, and encryption, see `ObjectRepository`.
+pub struct FileRepository<S: DataStore> {
+    repository: ObjectRepository<EntryKey, S>,
 }
 
-impl FileArchive {
-    /// Create a new archive at the given `path` with the given `config`.
+impl<S: DataStore> FileRepository<S> {
+    /// Create a new repository backed by the given data `store`.
     ///
-    /// See `ObjectArchive::create` for details.
-    pub fn create(path: &Path, config: RepositoryConfig, key: Option<Key>) -> io::Result<Self> {
-        Ok(FileArchive {
-            archive: ObjectArchive::create(path, config, key)?,
+    /// See `ObjectRepository::create` for details.
+    pub fn create(
+        mut store: S,
+        config: RepositoryConfig,
+        password: Option<&[u8]>,
+    ) -> io::Result<Self> {
+        Ok(FileRepository {
+            repository: ObjectRepository::create(store, config, password)?,
         })
     }
 
-    /// Opens the archive at the given `path`.
+    /// Open the repository in the given data `store`.
     ///
-    /// See `ObjectArchive::open` for details.
-    pub fn open(path: &Path, key: Option<Key>) -> io::Result<Self> {
-        Ok(FileArchive {
-            archive: ObjectArchive::open(path, key)?,
+    /// See `ObjectRepository::open` for details.
+    pub fn open(store: S, password: Option<&[u8]>) -> io::Result<Self> {
+        Ok(FileRepository {
+            repository: ObjectRepository::open(store, password)?,
         })
     }
 
-    /// Returns the entry at `path` or `None` if there is none.
+    /// Return the entry at `path` or `None` if there is none.
     pub fn entry(&self, path: &RelativePath) -> Option<Entry> {
         let object = self
-            .archive
+            .repository
             .get(&EntryKey(path.to_owned(), KeyType::Metadata))?;
 
         Some(
-            self.archive
+            self.repository
                 .deserialize(&object)
                 .expect("Could not deserialize entry."),
         )
     }
 
-    /// Removes and returns the entry with the given `path` from the archive.
+    /// Remove and return the entry with the given `path` from the repository.
     ///
     /// This returns `None` if there is no entry with the given `path`.
     ///
     /// The space used by the given entry isn't freed and made available for new entries until
-    /// `commit` is called. The size of the archive file will not shrink unless `repack` is called.
+    /// `commit` is called.
     pub fn remove(&mut self, path: &RelativePath) -> Option<Entry> {
         let old_entry = self.entry(path)?;
 
-        self.archive
+        self.repository
             .remove(&EntryKey(path.to_owned(), KeyType::Data));
-        self.archive
+        self.repository
             .remove(&EntryKey(path.to_owned(), KeyType::Metadata));
 
         Some(old_entry)
@@ -101,7 +107,7 @@ impl FileArchive {
         &'a self,
         parent: &'a RelativePath,
     ) -> impl Iterator<Item = &RelativePath> + 'a {
-        self.archive
+        self.repository
             .keys()
             .filter(|key| key.1 == KeyType::Metadata)
             .filter(move |key| key.0.parent() == Some(parent))
@@ -113,16 +119,16 @@ impl FileArchive {
         &'a self,
         parent: &'a RelativePath,
     ) -> impl Iterator<Item = &RelativePath> + 'a {
-        self.archive
+        self.repository
             .keys()
             .filter(|key| key.1 == KeyType::Metadata)
             .filter(move |key| key.0.starts_with(parent))
             .map(|key| key.0.as_ref())
     }
 
-    /// Copy a file from the file system into the archive.
+    /// Copy a file from the file system into the repository.
     ///
-    /// This creates an archive entry at `dest` from the file at `source` and returns the entry.
+    /// This creates a repository entry at `dest` from the file at `source` and returns the entry.
     /// This does not remove the `source` file from the file system.
     ///
     /// # Errors
@@ -156,10 +162,10 @@ impl FileArchive {
         }
     }
 
-    /// Copy a directory tree from the file system into the archive.
+    /// Copy a directory tree from the file system into the repository.
     ///
-    /// This creates a tree of archive entries at `dest` from the directory tree at `source`. This
-    /// does not remove the `source` directory or its descendants from the file system.
+    /// This creates a tree of repository entries at `dest` from the directory tree at `source`.
+    /// This does not remove the `source` directory or its descendants from the file system.
     ///
     /// # Errors
     /// - `ErrorKind::NotFound`: The `source` file does not exist.
@@ -176,10 +182,10 @@ impl FileArchive {
         Ok(())
     }
 
-    /// Copy a file from the archive into the file system.
+    /// Copy a file from the repository into the file system.
     ///
     /// This creates a file at `dest` from the archive entry at `source`. This does not remove the
-    /// `source` entry from the archive.
+    /// `source` entry from the repository.
     ///
     /// # Errors
     /// - `ErrorKind::NotFound`: The `source` entry does not exist.
@@ -225,10 +231,10 @@ impl FileArchive {
         Ok(())
     }
 
-    /// Copy a directory tree from the archive into the file system.
+    /// Copy a directory tree from the repository into the file system.
     ///
-    /// This creates a directory tree at `dest` from the tree of archive entries at `source`. This
-    /// does not remove the `source` entry or its descendants from the archive.
+    /// This creates a directory tree at `dest` from the tree of repository entries at `source`.
+    /// This does not remove the `source` entry or its descendants from the repository.
     ///
     /// # Errors
     /// - `ErrorKind::PermissionDenied`: The user lack permission to create the `dest` file.
@@ -251,14 +257,14 @@ impl FileArchive {
         Ok(())
     }
 
-    /// Write the given entry to the archive at the given `path`.
+    /// Write the given entry to the repository at the given `path`.
     fn add_entry(&mut self, path: &RelativePath, entry: &Entry) {
-        self.archive
+        self.repository
             .serialize(EntryKey(path.to_owned(), KeyType::Metadata), &entry)
             .expect("Could not serialize entry.");
     }
 
-    /// Add a regular file with the given `metadata` and `data` to the archive at `path`.
+    /// Add a regular file with the given `path`, `metadata`, and `data` to the repository.
     pub fn add_file(
         &mut self,
         path: &RelativePath,
@@ -266,7 +272,7 @@ impl FileArchive {
         data: impl Read,
     ) -> io::Result<Entry> {
         let data_key = EntryKey(path.to_owned(), KeyType::Data);
-        let object = self.archive.write(data_key, data)?;
+        let object = self.repository.write(data_key, data)?;
         let entry_type = EntryType::File {
             data: object.clone(),
         };
@@ -280,7 +286,7 @@ impl FileArchive {
         Ok(entry)
     }
 
-    /// Add a directory with the given `metadata` to the archive at `path`.
+    /// Add a directory with the given `path` and `metadata` to the repository.
     pub fn add_directory(
         &mut self,
         path: &RelativePath,
@@ -297,7 +303,7 @@ impl FileArchive {
         Ok(entry)
     }
 
-    /// Add a symbolic link with the given `metadata` and `target` to the archive at `path`.
+    /// Add a symbolic link with the given `path`, `metadata`, and `target` to the repository.
     pub fn add_link(
         &mut self,
         path: &RelativePath,
@@ -315,54 +321,50 @@ impl FileArchive {
         Ok(entry)
     }
 
-    /// Return a reader for reading the data associated with `object` from the archive.
+    /// Return a reader for reading the data associated with `object` from the repository.
     pub fn read<'a>(&'a self, object: &'a Object) -> impl Read + 'a {
-        self.archive.read(object)
+        self.repository.read(object)
     }
 
-    /// Commit changes which have been made to the archive.
+    /// Commit changes which have been made to the repository.
     ///
-    /// See `ObjectArchive::commit` for details.
+    /// See `ObjectRepository::commit` for details.
     pub fn commit(&mut self) -> io::Result<()> {
-        self.archive.commit()
-    }
-
-    /// Copy the contents of this archive to a new archive file at `destination`.
-    ///
-    /// See `ObjectArchive::repack` for details.
-    pub fn repack(&mut self, dest: &Path) -> io::Result<FileArchive> {
-        Ok(FileArchive {
-            archive: self.archive.repack(dest)?,
-        })
+        self.repository.commit()
     }
 
     /// Verify the integrity of the data associated with `object`.
     ///
-    /// This returns `true` if the object is valid and `false` if it is corrupt.
+    /// See `ObjectRepository::verify_object` for details.
     pub fn verify_object(&self, object: &Object) -> io::Result<bool> {
-        self.archive.verify_object(object)
+        self.repository.verify_object(object)
     }
 
-    /// Verify the integrity of all the data in the archive.
+    /// Verify the integrity of all the data in the repository.
     ///
-    /// This returns the set of paths of entries which are corrupt.
-    pub fn verify_archive(&self) -> io::Result<HashSet<&RelativePath>> {
-        self.archive
-            .verify_archive()
+    /// See `ObjectRepository::verify_repository` for details.
+    pub fn verify_repository(&self) -> io::Result<HashSet<&RelativePath>> {
+        self.repository
+            .verify_repository()
             .map(|set| set.iter().map(|key| key.0.as_ref()).collect())
     }
 
-    /// Return the UUID of the archive.
+    /// Change the password for this repository.
     ///
-    /// Every archive has a UUID associated with it.
-    pub fn uuid(&self) -> Uuid {
-        self.archive.uuid()
+    /// See `ObjectRepository::change_password` for details.
+    pub fn change_password(&mut self, new_password: &[u8]) {
+        self.repository.change_password(new_password);
     }
 
-    /// Return the UUID of the archive at `path` without opening it.
+    /// Return the UUID of the repository.
+    pub fn uuid(&self) -> Uuid {
+        self.repository.uuid()
+    }
+
+    /// Return the UUID of the repository at `store` without opening it.
     ///
-    /// See `ObjectArchive::peek_uuid` for details.
-    pub fn peek_uuid(path: &Path) -> io::Result<Uuid> {
-        ObjectArchive::<EntryKey>::peek_uuid(path)
+    /// See `ObjectRepository::peek_uuid` for details.
+    pub fn peek_uuid(store: S) -> io::Result<Uuid> {
+        ObjectRepository::<EntryKey, S>::peek_uuid(store)
     }
 }
