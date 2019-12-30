@@ -38,7 +38,6 @@ rmp = "0.8.8"
 rmp-serde = "0.14.0"
 
 # Misc
-num-integer = "0.1.41"
 uuid = { version = "0.8.1", features = ["serde", "v4"] }
 lazy_static = "1.4.0"
 
