@@ -14,11 +14,14 @@
  * limitations under the License.
  */
 
+use std::collections::HashSet;
 use std::fs::{create_dir, create_dir_all, File, remove_dir_all, remove_file, rename};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
+use std::sync::RwLock;
 
 use fs2::FileExt;
+use lazy_static::lazy_static;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
@@ -33,11 +36,16 @@ const STAGING_DIRECTORY: &str = "stage";
 const VERSION_FILE: &str = "version";
 const LOCK_FILE: &str = "store.lock";
 
+lazy_static! {
+    /// The set of paths of directory stores which are currently open.
+    static ref OPEN_STORES: RwLock<HashSet<PathBuf>> = RwLock::new(HashSet::new());
+}
+
 /// A `DataStore` which stores data in a directory in the local file system.
 ///
 /// This data store protects against concurrent access by multiple processes using the operating
-/// system's native file locking facilities. The program blocks until a lock can be acquired. File
-/// locks do not protect against concurrent access within the same process.
+/// system's native file locking facilities. The program blocks until a lock can be acquired. A
+/// data store of this type cannot be opened more than once within the same process.
 pub struct DirectoryStore {
     /// The path of the store's root directory.
     path: PathBuf,
@@ -50,6 +58,13 @@ pub struct DirectoryStore {
 
     /// The path of the data store's lock file.
     lock_file: PathBuf,
+}
+
+impl Drop for DirectoryStore {
+    fn drop(&mut self) {
+        // Remove this store from the set of open stores.
+        OPEN_STORES.write().unwrap().remove(&self.path);
+    }
 }
 
 impl DirectoryStore {
@@ -80,7 +95,19 @@ impl DirectoryStore {
     /// - `ErrorKind::NotFound`: There is not a directory at `path`.
     /// - `ErrorKind::InvalidData`: The directory at `path` is not a valid directory store.
     /// - `ErrorKind::PermissionDenied`: The user lacks permissions to read the directory.
+    /// - `ErrorKind::WouldBlock`: This store is already open in this process.
     pub fn open(path: PathBuf) -> io::Result<Self> {
+        // Check if this store is already open in this process.
+        let mut open_stores = OPEN_STORES.write().unwrap();
+        if open_stores.contains(&path) {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "This store is already open in this process.",
+            ))
+        } else {
+            open_stores.insert(path.clone());
+        }
+
         // Read the version ID file.
         let mut version_file = File::open(path.join(VERSION_FILE))?;
         let mut version_id = String::new();
