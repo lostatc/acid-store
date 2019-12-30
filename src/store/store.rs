@@ -57,7 +57,7 @@ pub trait DataStore {
     /// Return an iterator of IDs of blocks in the store.
     ///
     /// This only lists the IDs of blocks which are stored persistently.
-    fn list_blocks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Uuid>>>>;
+    fn list_blocks<'a>(&'a self) -> io::Result<Box<dyn Iterator<Item=io::Result<Uuid>> + 'a>>;
 }
 
 /// A `DataStore` which supports concurrent access.
