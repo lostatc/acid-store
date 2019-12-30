@@ -22,9 +22,43 @@ use sodiumoxide::crypto::aead::xchacha20poly1305_ietf::{
     gen_nonce, Key as ChaChaKey, KEYBYTES, Nonce, NONCEBYTES, open, seal,
 };
 use sodiumoxide::crypto::pwhash::argon2id13::{
-    derive_key, gen_salt, MEMLIMIT_INTERACTIVE, OPSLIMIT_INTERACTIVE, Salt,
+    derive_key, gen_salt, MemLimit, MEMLIMIT_INTERACTIVE, MEMLIMIT_MODERATE, MEMLIMIT_SENSITIVE,
+    OpsLimit, OPSLIMIT_INTERACTIVE, OPSLIMIT_MODERATE, OPSLIMIT_SENSITIVE, Salt,
 };
 use zeroize::Zeroize;
+
+/// A limit on the resources used by a key derivation function.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+pub enum ResourceLimit {
+    /// Suitable for interactive use.
+    Interactive,
+
+    /// Suitable for moderately sensitive data.
+    Moderate,
+
+    /// Suitable for highly sensitive data.
+    Sensitive,
+}
+
+impl ResourceLimit {
+    /// Get a memory limit based on this resource limit.
+    pub(super) fn to_mem_limit(&self) -> MemLimit {
+        match self {
+            ResourceLimit::Interactive => MEMLIMIT_INTERACTIVE,
+            ResourceLimit::Moderate => MEMLIMIT_MODERATE,
+            ResourceLimit::Sensitive => MEMLIMIT_SENSITIVE,
+        }
+    }
+
+    /// Get an operations limit based on this resource limit.
+    pub(super) fn to_ops_limit(&self) -> OpsLimit {
+        match self {
+            ResourceLimit::Interactive => OPSLIMIT_INTERACTIVE,
+            ResourceLimit::Moderate => OPSLIMIT_MODERATE,
+            ResourceLimit::Sensitive => OPSLIMIT_SENSITIVE,
+        }
+    }
+}
 
 /// A data encryption method.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
@@ -128,14 +162,20 @@ impl Key {
     /// Derive a new encryption key of the given `size` from the given `password` and `salt`.
     ///
     /// This uses the Argon2id key derivation function.
-    pub fn derive(password: &[u8], salt: &KeySalt, size: usize) -> Self {
+    pub fn derive(
+        password: &[u8],
+        salt: &KeySalt,
+        size: usize,
+        memory: MemLimit,
+        operations: OpsLimit,
+    ) -> Self {
         let mut bytes = vec![0u8; size];
         derive_key(
             &mut bytes,
             &password,
             &salt.0,
-            OPSLIMIT_INTERACTIVE,
-            MEMLIMIT_INTERACTIVE,
+            operations,
+            memory,
         )
         .expect("Failed to derive an encryption key.");
         Key::new(bytes)
