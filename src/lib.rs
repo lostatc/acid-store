@@ -55,7 +55,7 @@ pub use object::{
     Checksum, Compression, Encryption, HashAlgorithm, Object, ObjectRepository, RepositoryConfig,
     ResourceLimit,
 };
-pub use store::{ConcurrentDataStore, DataStore, DirectoryStore};
+pub use store::{ConcurrentDataStore, DataStore, DirectoryStore, MemoryStore};
 
 mod file;
 mod object;
