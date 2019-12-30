@@ -22,8 +22,8 @@ use sodiumoxide::crypto::aead::xchacha20poly1305_ietf::{
     gen_nonce, Key as ChaChaKey, KEYBYTES, Nonce, NONCEBYTES, open, seal,
 };
 use sodiumoxide::crypto::pwhash::argon2id13::{
-    derive_key, gen_salt, MemLimit, MEMLIMIT_INTERACTIVE, MEMLIMIT_MODERATE, MEMLIMIT_SENSITIVE,
-    OpsLimit, OPSLIMIT_INTERACTIVE, OPSLIMIT_MODERATE, OPSLIMIT_SENSITIVE, Salt,
+    derive_key, gen_salt, MemLimit, MEMLIMIT_INTERACTIVE, MEMLIMIT_MODERATE, MEMLIMIT_SENSITIVE, OpsLimit,
+    OPSLIMIT_INTERACTIVE, OPSLIMIT_MODERATE, OPSLIMIT_SENSITIVE, Salt,
 };
 use zeroize::Zeroize;
 
@@ -170,14 +170,8 @@ impl Key {
         operations: OpsLimit,
     ) -> Self {
         let mut bytes = vec![0u8; size];
-        derive_key(
-            &mut bytes,
-            &password,
-            &salt.0,
-            operations,
-            memory,
-        )
-        .expect("Failed to derive an encryption key.");
+        derive_key(&mut bytes, &password, &salt.0, operations, memory)
+            .expect("Failed to derive an encryption key.");
         Key::new(bytes)
     }
 }

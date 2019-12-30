@@ -17,7 +17,7 @@
 pub use self::entry::{Entry, EntryMetadata, EntryType};
 pub use self::repository::FileRepository;
 
-mod repository;
 mod entry;
 mod platform;
+mod repository;
 mod serialization;

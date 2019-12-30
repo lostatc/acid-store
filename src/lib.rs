@@ -48,7 +48,7 @@ pub use object::{
 };
 pub use store::{ConcurrentDataStore, DataStore, DirectoryStore, MemoryStore};
 
+mod env;
 mod file;
 mod object;
 mod store;
-mod env;

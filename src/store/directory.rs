@@ -103,7 +103,7 @@ impl DirectoryStore {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
                 "This store is already open in this process.",
-            ))
+            ));
         } else {
             open_stores.insert(path.clone());
         }
@@ -125,7 +125,7 @@ impl DirectoryStore {
             path: path.clone(),
             blocks_directory: path.join(BLOCKS_DIRECTORY),
             staging_directory: path.join(STAGING_DIRECTORY),
-            lock_file: path.join(LOCK_FILE)
+            lock_file: path.join(LOCK_FILE),
         })
     }
 
