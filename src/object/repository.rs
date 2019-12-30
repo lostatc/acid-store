@@ -384,8 +384,7 @@ where
 
         // After changes are committed, remove any unused chunks from the data store.
         let referenced_chunks = self.header.chunks.values().collect::<HashSet<_>>();
-        for chunk_result in self.store.list_blocks()? {
-            let stored_chunk = chunk_result?;
+        for stored_chunk in self.store.list_blocks()? {
             if !referenced_chunks.contains(&stored_chunk) {
                 self.store.remove_block(&stored_chunk)?;
             }

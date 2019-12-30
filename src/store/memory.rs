@@ -53,7 +53,7 @@ impl DataStore for MemoryStore {
         Ok(())
     }
 
-    fn list_blocks<'a>(&'a self) -> io::Result<Box<dyn Iterator<Item=io::Result<Uuid>> + 'a>> {
-        Ok(Box::new(self.blocks.keys().map(|key| Ok(*key))))
+    fn list_blocks(&self) -> io::Result<Vec<Uuid>> {
+        Ok(self.blocks.keys().copied().collect())
     }
 }

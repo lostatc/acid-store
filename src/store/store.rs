@@ -54,10 +54,10 @@ pub trait DataStore {
     /// This is an atomic operation.
     fn remove_block(&mut self, id: &Uuid) -> io::Result<()>;
 
-    /// Return an iterator of IDs of blocks in the store.
+    /// Return a list of IDs of blocks in the store.
     ///
     /// This only lists the IDs of blocks which are stored persistently.
-    fn list_blocks<'a>(&'a self) -> io::Result<Box<dyn Iterator<Item=io::Result<Uuid>> + 'a>>;
+    fn list_blocks(&self) -> io::Result<Vec<Uuid>>;
 }
 
 /// A `DataStore` which supports concurrent access.
