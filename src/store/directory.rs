@@ -171,7 +171,7 @@ impl DataStore for DirectoryStore {
         Ok(())
     }
 
-    fn list_blocks(&self) -> io::Result<Box<dyn Iterator<Item=io::Result<Uuid>>>> {
+    fn list_blocks(&self) -> io::Result<Vec<Uuid>> {
         // Get a shared lock on the data store.
         let lock_file = File::open(&self.lock_file)?;
         lock_file.lock_shared()?;
@@ -190,10 +190,10 @@ impl DataStore for DirectoryStore {
                     .expect("Block file name is invalid.")),
                 Err(error) => Err(io::Error::from(error)),
             })
-            .collect::<Vec<_>>();
+            .collect::<io::Result<Vec<_>>>();
 
         lock_file.unlock()?;
-        Ok(Box::new(results.into_iter()))
+        results
     }
 }
 
