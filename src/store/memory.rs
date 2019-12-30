@@ -34,7 +34,9 @@ pub struct MemoryStore {
 impl MemoryStore {
     /// Open a new memory store.
     pub fn open() -> Self {
-        MemoryStore { blocks: HashMap::new() }
+        MemoryStore {
+            blocks: HashMap::new(),
+        }
     }
 }
 

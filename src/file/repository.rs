@@ -53,11 +53,7 @@ impl<S: DataStore> FileRepository<S> {
     /// Create a new repository backed by the given data `store`.
     ///
     /// See `ObjectRepository::create` for details.
-    pub fn create(
-        store: S,
-        config: RepositoryConfig,
-        password: Option<&[u8]>,
-    ) -> io::Result<Self> {
+    pub fn create(store: S, config: RepositoryConfig, password: Option<&[u8]>) -> io::Result<Self> {
         Ok(FileRepository {
             repository: ObjectRepository::create(store, config, password)?,
         })

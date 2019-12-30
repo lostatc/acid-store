@@ -252,10 +252,7 @@ where
 
     /// Decrypts and decompresses the given `data` and returns it.
     fn decode_data(&self, data: &[u8]) -> io::Result<Vec<u8>> {
-        let decrypted_data = self
-            .metadata
-            .encryption
-            .decrypt(data, &self.master_key)?;
+        let decrypted_data = self.metadata.encryption.decrypt(data, &self.master_key)?;
 
         Ok(self
             .metadata
@@ -380,7 +377,8 @@ where
 
         // Write the repository metadata, atomically completing the commit.
         let serialized_metadata = to_vec(&self.metadata).expect("Could not serialize metadata.");
-        self.store.write_block(&METADATA_BLOCK_ID, &serialized_metadata)?;
+        self.store
+            .write_block(&METADATA_BLOCK_ID, &serialized_metadata)?;
 
         // After changes are committed, remove any unused chunks from the data store.
         let referenced_chunks = self.header.chunks.values().collect::<HashSet<_>>();
@@ -452,8 +450,10 @@ where
             OpsLimit(self.metadata.operations_limit),
         );
         self.metadata.salt = salt;
-        self.metadata.master_key =
-            self.metadata.encryption.encrypt(self.master_key.as_ref(), &user_key);
+        self.metadata.master_key = self
+            .metadata
+            .encryption
+            .encrypt(self.master_key.as_ref(), &user_key);
     }
 
     /// Return the UUID of the repository.

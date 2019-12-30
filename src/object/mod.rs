@@ -21,7 +21,6 @@ pub use self::hashing::{Checksum, HashAlgorithm};
 pub use self::object::Object;
 pub use self::repository::ObjectRepository;
 
-mod repository;
 mod compression;
 mod config;
 mod encryption;
@@ -29,3 +28,4 @@ mod hashing;
 mod header;
 mod metadata;
 mod object;
+mod repository;
