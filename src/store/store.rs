@@ -63,6 +63,6 @@ pub trait DataStore {
 /// A `DataStore` which supports concurrent access.
 ///
 /// This is a marker trait which denotes that a `DataStore` can be safely accessed by multiple
-/// processes or machines. A `ConcurrentStore` does not necessarily support parallel reads and does
-/// not provide any guarantees about concurrent access within the same process.
+/// processes or machines without breaking ACID guarantees. How this is achieved is up to the
+/// implementation.
 pub trait ConcurrentDataStore: DataStore {}
