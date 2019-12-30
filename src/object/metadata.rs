@@ -17,7 +17,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{Compression, Encryption, HashAlgorithm, RepositoryConfig};
+use super::{Compression, Encryption, HashAlgorithm};
 use super::encryption::KeySalt;
 
 /// Metadata for a repository.
@@ -37,6 +37,12 @@ pub struct RepositoryMetadata {
     /// The encryption method being used in this repository.
     pub encryption: Encryption,
 
+    /// The maximum amount of memory the key derivation function will use in bytes.
+    pub memory_limit: usize,
+
+    /// The maximum number of computations the key derivation function will perform.
+    pub operations_limit: usize,
+
     /// The hash algorithm used for computing object checksums.
     pub hash_algorithm: HashAlgorithm,
 
@@ -48,16 +54,4 @@ pub struct RepositoryMetadata {
 
     /// The ID of the chunk which stores the repository's header.
     pub header: Uuid,
-}
-
-impl RepositoryMetadata {
-    /// Return the config used to create this repository.
-    pub fn to_config(&self) -> RepositoryConfig {
-        RepositoryConfig {
-            chunker_bits: self.chunker_bits,
-            compression: self.compression,
-            encryption: self.encryption,
-            hash_algorithm: self.hash_algorithm,
-        }
-    }
 }

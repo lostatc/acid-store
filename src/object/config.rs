@@ -15,7 +15,7 @@
  */
 
 use super::compression::Compression;
-use super::encryption::Encryption;
+use super::encryption::{Encryption, ResourceLimit};
 use super::hashing::HashAlgorithm;
 
 /// The configuration for an repository.
@@ -29,7 +29,9 @@ pub struct RepositoryConfig {
     /// Data is deduplicated by splitting it into chunks. If two or more objects have a chunk in
     /// common, it will only be stored once. This value determines the average size of those chunks,
     /// which will be 2^`chunker_bits` bytes. Smaller chunks will generally result in better
-    /// deduplication ratios and thus a smaller repository, but may hurt performance.
+    /// deduplication ratios and thus a smaller repository, but may hurt performance. Chunks that
+    /// are too small may result in worse deduplication rations due to the overhead of compression
+    /// and encryption.
     ///
     /// The default value is `20` (1MiB average chunk size).
     pub chunker_bits: u32,
@@ -43,6 +45,16 @@ pub struct RepositoryConfig {
     ///
     /// The default value is `Encryption::None`.
     pub encryption: Encryption,
+
+    /// The maximum amount of memory key derivation will use if encryption is enabled.
+    ///
+    /// The default value is `ResourceLimit::Interactive`.
+    pub memory_limit: ResourceLimit,
+
+    /// The maximum number of computations key derivation will perform if encryption is enabled.
+    ///
+    /// The default value is `ResourceLimit::Interactive`.
+    pub operations_limit: ResourceLimit,
 
     /// The hash algorithm used for computing object checksums.
     ///
@@ -59,6 +71,8 @@ impl Default for RepositoryConfig {
             chunker_bits: 20,
             compression: Compression::None,
             encryption: Encryption::None,
+            memory_limit: ResourceLimit::Interactive,
+            operations_limit: ResourceLimit::Interactive,
             hash_algorithm: HashAlgorithm::Blake2b512,
         }
     }

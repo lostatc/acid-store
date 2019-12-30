@@ -25,6 +25,7 @@ use lazy_static::lazy_static;
 use rmp_serde::{from_read, to_vec};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use sodiumoxide::crypto::pwhash::argon2id13::{MemLimit, OpsLimit};
 use uuid::Uuid;
 
 use crate::store::DataStore;
@@ -122,7 +123,13 @@ where
 
         // Generate and encrypt the master encryption key.
         let salt = KeySalt::generate();
-        let user_key = Key::derive(password.unwrap_or(&[]), &salt, config.encryption.key_size());
+        let user_key = Key::derive(
+            password.unwrap_or(&[]),
+            &salt,
+            config.encryption.key_size(),
+            config.memory_limit.to_mem_limit(),
+            config.operations_limit.to_ops_limit(),
+        );
         let master_key = Key::generate(config.encryption.key_size());
         let encrypted_master_key = config.encryption.encrypt(master_key.as_ref(), &user_key);
 
@@ -140,6 +147,8 @@ where
             chunker_bits: config.chunker_bits,
             compression: config.compression,
             encryption: config.encryption,
+            memory_limit: config.memory_limit.to_mem_limit().0,
+            operations_limit: config.operations_limit.to_ops_limit().0,
             hash_algorithm: config.hash_algorithm,
             master_key: encrypted_master_key,
             salt,
@@ -178,6 +187,8 @@ where
             password.unwrap_or(&[]),
             &metadata.salt,
             metadata.encryption.key_size(),
+            MemLimit(metadata.memory_limit),
+            OpsLimit(metadata.operations_limit),
         );
         let master_key = Key::new(
             metadata
@@ -434,7 +445,13 @@ where
     /// If encryption is disabled, this method does nothing.
     pub fn change_password(&mut self, new_password: &[u8]) {
         let salt = KeySalt::generate();
-        let user_key = Key::derive(new_password, &salt, self.metadata.encryption.key_size());
+        let user_key = Key::derive(
+            new_password,
+            &salt,
+            self.metadata.encryption.key_size(),
+            MemLimit(self.metadata.memory_limit),
+            OpsLimit(self.metadata.operations_limit),
+        );
         self.metadata.salt = salt;
         self.metadata.master_key =
             self.metadata.encryption.encrypt(self.master_key.as_ref(), &user_key);

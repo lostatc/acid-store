@@ -53,6 +53,7 @@ pub use uuid;
 pub use file::{Entry, EntryMetadata, EntryType, FileRepository};
 pub use object::{
     Checksum, Compression, Encryption, HashAlgorithm, Object, ObjectRepository, RepositoryConfig,
+    ResourceLimit,
 };
 pub use store::{ConcurrentDataStore, DataStore, DirectoryStore};
 
