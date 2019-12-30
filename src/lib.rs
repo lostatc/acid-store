@@ -50,6 +50,7 @@
 pub use relative_path;
 pub use uuid;
 
+pub use env::init;
 pub use file::{Entry, EntryMetadata, EntryType, FileRepository};
 pub use object::{
     Checksum, Compression, Encryption, HashAlgorithm, Object, ObjectRepository, RepositoryConfig,
@@ -60,3 +61,4 @@ pub use store::{ConcurrentDataStore, DataStore, DirectoryStore, MemoryStore};
 mod file;
 mod object;
 mod store;
+mod env;
