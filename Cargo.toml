@@ -1,5 +1,5 @@
 [package]
-name = "disk-archive"
+name = "data-store"
 version = "0.1.0"
 authors = ["Garrett Powell <garrett@gpowell.net>"]
 edition = "2018"
