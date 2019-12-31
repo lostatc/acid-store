@@ -19,7 +19,7 @@ pub use self::config::RepositoryConfig;
 pub use self::encryption::{Encryption, ResourceLimit};
 pub use self::hashing::{Checksum, HashAlgorithm};
 pub use self::object::Object;
-pub use self::repository::ObjectRepository;
+pub use self::repository::{LockStrategy, ObjectRepository};
 
 mod compression;
 mod config;
