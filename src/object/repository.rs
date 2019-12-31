@@ -37,9 +37,9 @@ use uuid::Uuid;
 use crate::store::DataStore;
 
 use super::config::RepositoryConfig;
-use super::encryption::{Encryption, Key, KeySalt};
+use super::encryption::{Encryption, EncryptionKey, KeySalt};
 use super::hashing::Checksum;
-use super::header::Header;
+use super::header::{Header, Key};
 use super::metadata::RepositoryMetadata;
 use super::object::{chunk_hash, ChunkHash, Object};
 
@@ -106,11 +106,7 @@ pub enum LockStrategy {
 /// - The configuration values provided via `RepositoryConfig`
 /// - The salt used to derive the encryption key
 /// - The UUID of the block which stores encrypted metadata
-pub struct ObjectRepository<K, S>
-where
-    K: Eq + Hash + Clone + Serialize + DeserializeOwned,
-    S: DataStore,
-{
+pub struct ObjectRepository<K: Key, S: DataStore> {
     /// The data store which backs this repository.
     store: S,
 
@@ -121,17 +117,13 @@ where
     header: Header<K>,
 
     /// The master encryption key for the repository.
-    master_key: Key,
+    master_key: EncryptionKey,
 
     /// The lock file for this repository.
     lock_file: File
 }
 
-impl<K, S> ObjectRepository<K, S>
-where
-    K: Eq + Hash + Clone + Serialize + DeserializeOwned,
-    S: DataStore,
-{
+impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// Create a new repository backed by the given data `store`.
     ///
     /// A `config` must be provided to configure the new repository. If encryption is enabled, a
@@ -169,14 +161,14 @@ where
 
         // Generate and encrypt the master encryption key.
         let salt = KeySalt::generate();
-        let user_key = Key::derive(
+        let user_key = EncryptionKey::derive(
             password.unwrap_or(&[]),
             &salt,
             config.encryption.key_size(),
             config.memory_limit.to_mem_limit(),
             config.operations_limit.to_ops_limit(),
         );
-        let master_key = Key::generate(config.encryption.key_size());
+        let master_key = EncryptionKey::generate(config.encryption.key_size());
         let encrypted_master_key = config.encryption.encrypt(master_key.as_ref(), &user_key);
 
         // Generate and write the header.
@@ -233,14 +225,14 @@ where
         let lock_file = Self::acquire_lock(metadata.id, strategy)?;
 
         // Decrypt the master key for the repository.
-        let user_key = Key::derive(
+        let user_key = EncryptionKey::derive(
             password.unwrap_or(&[]),
             &metadata.salt,
             metadata.encryption.key_size(),
             MemLimit(metadata.memory_limit),
             OpsLimit(metadata.operations_limit),
         );
-        let master_key = Key::new(
+        let master_key = EncryptionKey::new(
             metadata
                 .encryption
                 .decrypt(&metadata.master_key, &user_key)?,
@@ -521,7 +513,7 @@ where
     /// If encryption is disabled, this method does nothing.
     pub fn change_password(&mut self, new_password: &[u8]) {
         let salt = KeySalt::generate();
-        let user_key = Key::derive(
+        let user_key = EncryptionKey::derive(
             new_password,
             &salt,
             self.metadata.encryption.key_size(),
@@ -555,11 +547,7 @@ where
     }
 }
 
-impl<K, S> Drop for ObjectRepository<K, S>
-    where
-        K: Eq + Hash + Clone + Serialize + DeserializeOwned,
-        S: DataStore,
-{
+impl<K: Key, S: DataStore> Drop for ObjectRepository<K, S> {
     fn drop(&mut self) {
         // Remove this repository from the set of open stores.
         OPEN_REPOSITORIES.write().unwrap().remove(&self.metadata.id);

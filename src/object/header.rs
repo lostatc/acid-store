@@ -18,16 +18,19 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 use uuid::Uuid;
 
 use super::object::{ChunkHash, Object};
 
+/// A type which can be used as a key in an `ObjectRepository`.
+pub trait Key: Eq + Hash + Clone + Serialize + DeserializeOwned {}
+
+impl<T: Eq + Hash + Clone + Serialize + DeserializeOwned> Key for T {}
+
 /// The header for an `ObjectRepository`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
-pub struct Header<K>
-where
-    K: Eq + Hash + Clone,
-{
+pub struct Header<K: Eq + Hash> {
     /// A map of chunk hashes to the IDs of those chunks.
     pub chunks: HashMap<ChunkHash, Uuid>,
 
@@ -35,9 +38,7 @@ where
     pub objects: HashMap<K, Object>,
 }
 
-impl<K> Default for Header<K>
-where
-    K: Eq + Hash + Clone,
+impl<K: Key> Default for Header<K>
 {
     fn default() -> Self {
         Header {
@@ -47,10 +48,7 @@ where
     }
 }
 
-impl<K> Header<K>
-where
-    K: Eq + Hash + Clone,
-{
+impl<K: Key> Header<K> {
     /// Remove chunks not referenced by any object from the header.
     pub fn clean_chunks(&mut self) {
         let referenced_chunks = self

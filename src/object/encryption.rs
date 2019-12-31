@@ -72,7 +72,7 @@ pub enum Encryption {
 
 impl Encryption {
     /// Encrypt the given `cleartext` with the given `key`.
-    pub(super) fn encrypt(&self, cleartext: &[u8], key: &Key) -> Vec<u8> {
+    pub(super) fn encrypt(&self, cleartext: &[u8], key: &EncryptionKey) -> Vec<u8> {
         match self {
             Encryption::None => cleartext.to_vec(),
             Encryption::XChaCha20Poly1305 => {
@@ -87,7 +87,7 @@ impl Encryption {
     }
 
     /// Decrypt the given `ciphertext` with the given `key`.
-    pub(super) fn decrypt(&self, ciphertext: &[u8], key: &Key) -> io::Result<Vec<u8>> {
+    pub(super) fn decrypt(&self, ciphertext: &[u8], key: &EncryptionKey) -> io::Result<Vec<u8>> {
         match self {
             Encryption::None => Ok(ciphertext.to_vec()),
             Encryption::XChaCha20Poly1305 => {
@@ -135,18 +135,18 @@ impl KeySalt {
 /// The bytes of the key are zeroed in memory when this value is dropped.
 #[derive(Debug, PartialEq, Eq, Clone, Zeroize, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct Key(Vec<u8>);
+pub struct EncryptionKey(Vec<u8>);
 
-impl AsRef<[u8]> for Key {
+impl AsRef<[u8]> for EncryptionKey {
     fn as_ref(&self) -> &[u8] {
         self.0.as_slice()
     }
 }
 
-impl Key {
+impl EncryptionKey {
     /// Create an encryption key containing the given `bytes`.
     pub fn new(bytes: Vec<u8>) -> Self {
-        Key(bytes)
+        EncryptionKey(bytes)
     }
 
     /// Generate a new random encryption key of the given `size`.
@@ -156,7 +156,7 @@ impl Key {
     pub fn generate(size: usize) -> Self {
         let mut bytes = vec![0u8; size];
         OsRng.fill_bytes(&mut bytes);
-        Key::new(bytes)
+        EncryptionKey::new(bytes)
     }
 
     /// Derive a new encryption key of the given `size` from the given `password` and `salt`.
@@ -172,6 +172,6 @@ impl Key {
         let mut bytes = vec![0u8; size];
         derive_key(&mut bytes, &password, &salt.0, operations, memory)
             .expect("Failed to derive an encryption key.");
-        Key::new(bytes)
+        EncryptionKey::new(bytes)
     }
 }
