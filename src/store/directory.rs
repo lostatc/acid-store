@@ -25,7 +25,7 @@ use lazy_static::lazy_static;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use super::store::{ConcurrentDataStore, DataStore};
+use super::store::{ConcurrentDataStore, DataStore, LockStrategy};
 
 /// A UUID which acts as the version ID of the directory store format.
 const CURRENT_VERSION: &str = "2891c3da-297e-11ea-a7c9-1b8f8be4fc9b";
@@ -45,7 +45,7 @@ lazy_static! {
 ///
 /// This data store protects against concurrent access by multiple processes using the operating
 /// system's native file locking facilities. The program blocks until a lock can be acquired. A
-/// data store of this type cannot be opened more than once within the same process.
+/// data store of this type cannot be open more than once within the same process.
 pub struct DirectoryStore {
     /// The path of the store's root directory.
     path: PathBuf,
@@ -57,7 +57,7 @@ pub struct DirectoryStore {
     staging_directory: PathBuf,
 
     /// The path of the data store's lock file.
-    lock_file: PathBuf,
+    lock_file: File,
 }
 
 impl Drop for DirectoryStore {
@@ -86,7 +86,7 @@ impl DirectoryStore {
         let mut version_file = File::create(&path.join(VERSION_FILE))?;
         version_file.write_all(CURRENT_VERSION.as_bytes())?;
 
-        Self::open(path)
+        Self::open(path, LockStrategy::Abort)
     }
 
     /// Open an existing directory store at `path`.
@@ -96,15 +96,24 @@ impl DirectoryStore {
     /// - `ErrorKind::InvalidData`: The directory at `path` is not a valid directory store.
     /// - `ErrorKind::PermissionDenied`: The user lacks permissions to read the directory.
     /// - `ErrorKind::WouldBlock`: This store is already open in this process.
-    pub fn open(path: PathBuf) -> io::Result<Self> {
-        // Check if this store is already open in this process.
+    /// - `ErrorKind::WouldBlock`: The store is locked and `LockStrategy::Abort` was used.
+    pub fn open(path: PathBuf, strategy: LockStrategy) -> io::Result<Self> {
         let mut open_stores = OPEN_STORES.write().unwrap();
+        let lock_file = File::create(path.join(LOCK_FILE))?;
+
+        // Check if this store is already open in this process.
         if open_stores.contains(&path) {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
                 "This store is already open in this process.",
             ));
         } else {
+            // Get an exclusive lock on the data store.
+            match strategy {
+                LockStrategy::Abort => lock_file.try_lock_exclusive()?,
+                LockStrategy::Wait => lock_file.lock_exclusive()?
+            };
+
             open_stores.insert(path.clone());
         }
 
@@ -125,7 +134,7 @@ impl DirectoryStore {
             path: path.clone(),
             blocks_directory: path.join(BLOCKS_DIRECTORY),
             staging_directory: path.join(STAGING_DIRECTORY),
-            lock_file: path.join(LOCK_FILE),
+            lock_file
         })
     }
 
@@ -146,10 +155,6 @@ impl DirectoryStore {
 
 impl DataStore for DirectoryStore {
     fn write_block(&mut self, id: &Uuid, data: &[u8]) -> io::Result<()> {
-        // Get an exclusive lock on the data store.
-        let lock_file = File::open(&self.lock_file)?;
-        lock_file.lock_exclusive()?;
-
         let staging_path = self.staging_path(id);
         let block_path = self.block_path(id);
         create_dir_all(staging_path.parent().unwrap())?;
@@ -163,15 +168,10 @@ impl DataStore for DirectoryStore {
         // Remove any unused staging files.
         remove_dir_all(&self.staging_directory)?;
 
-        lock_file.unlock()?;
         Ok(())
     }
 
     fn read_block(&self, id: &Uuid) -> io::Result<Vec<u8>> {
-        // Get a shared lock on the data store.
-        let lock_file = File::open(&self.lock_file)?;
-        lock_file.lock_shared()?;
-
         let block_path = self.block_path(id);
 
         let buffer = if block_path.exists() {
@@ -183,28 +183,16 @@ impl DataStore for DirectoryStore {
             panic!("There is no block with the given ID.");
         };
 
-        lock_file.unlock()?;
         Ok(buffer)
     }
 
     fn remove_block(&mut self, id: &Uuid) -> io::Result<()> {
-        // Get an exclusive lock on the data store.
-        let lock_file = File::open(&self.lock_file)?;
-        lock_file.lock_exclusive()?;
-
-        remove_file(self.block_path(id))?;
-
-        lock_file.unlock()?;
-        Ok(())
+        remove_file(self.block_path(id))
     }
 
     fn list_blocks(&self) -> io::Result<Vec<Uuid>> {
-        // Get a shared lock on the data store.
-        let lock_file = File::open(&self.lock_file)?;
-        lock_file.lock_shared()?;
-
         // Collect the results into a vector so that we can release the lock on the data store.
-        let results = WalkDir::new(&self.blocks_directory)
+        WalkDir::new(&self.blocks_directory)
             .min_depth(2)
             .into_iter()
             .map(|result| match result {
@@ -217,10 +205,7 @@ impl DataStore for DirectoryStore {
                     .expect("Block file name is invalid.")),
                 Err(error) => Err(io::Error::from(error)),
             })
-            .collect::<io::Result<Vec<_>>>();
-
-        lock_file.unlock()?;
-        results
+            .collect::<io::Result<Vec<_>>>()
     }
 }
 
