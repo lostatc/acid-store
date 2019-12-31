@@ -16,7 +16,7 @@
 
 pub use self::directory::DirectoryStore;
 pub use self::memory::MemoryStore;
-pub use self::store::{ConcurrentDataStore, DataStore};
+pub use self::store::{ConcurrentDataStore, DataStore, LockStrategy};
 
 mod directory;
 mod memory;

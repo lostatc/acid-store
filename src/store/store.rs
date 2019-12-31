@@ -18,6 +18,16 @@ use std::io;
 
 use uuid::Uuid;
 
+/// A strategy for handling a data store which is already locked.
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum LockStrategy {
+    /// Return immediately with an `Err`.
+    Abort,
+
+    /// Block and wait for the lock on the data store to be released.
+    Wait,
+}
+
 /// A persistent store for blocks of data.
 ///
 /// A `DataStore` persistently stores blocks of data uniquely identified by UUIDs. Data stores are
@@ -63,6 +73,7 @@ pub trait DataStore {
 /// A `DataStore` which supports concurrent access.
 ///
 /// This is a marker trait which denotes that a `DataStore` can be safely accessed by multiple
-/// processes or machines without breaking ACID guarantees. How this is achieved is up to the
-/// implementation.
+/// processes or machines without breaking ACID guarantees. A `ConcurrentDataStore` must secure an
+/// exclusive lock on the data store when it is opened and only release it once the data store has
+/// been dropped.
 pub trait ConcurrentDataStore: DataStore {}
