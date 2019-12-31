@@ -43,8 +43,8 @@ pub use uuid;
 pub use env::init;
 pub use file::{Entry, EntryMetadata, EntryType, FileRepository};
 pub use object::{
-    Checksum, Compression, Encryption, HashAlgorithm, LockStrategy, Object, ObjectRepository,
-    RepositoryConfig, ResourceLimit,
+    Checksum, Compression, Encryption, HashAlgorithm, Key, LockStrategy, Object,
+    ObjectRepository, RepositoryConfig, ResourceLimit
 };
 pub use store::{DataStore, DirectoryStore, MemoryStore};
 
