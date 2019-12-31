@@ -15,11 +15,17 @@
  */
 
 use std::collections::{HashMap, HashSet};
+use std::fs::{create_dir_all, File};
+use std::fs::OpenOptions;
 use std::hash::Hash;
 use std::io::{self, Read};
+use std::path::PathBuf;
+use std::sync::RwLock;
 
 use cdchunking::Chunker;
 use cdchunking::ZPAQ;
+use dirs::{data_dir, runtime_dir};
+use fs2::FileExt;
 use iter_read::IterRead;
 use lazy_static::lazy_static;
 use rmp_serde::{from_read, to_vec};
@@ -41,6 +47,25 @@ lazy_static! {
     /// The block ID of the block which stores unencrypted metadata for the repository.
     static ref METADATA_BLOCK_ID: Uuid =
         Uuid::parse_str("8691d360-29c6-11ea-8bc1-2fc8cfe66f33").unwrap();
+
+    /// The path of the directory where repository lock files are stored.
+    static ref LOCKS_DIR: PathBuf = runtime_dir()
+        .unwrap_or(data_dir().expect("Unsupported platform"))
+        .join("data-store")
+        .join("locks");
+
+    /// The set of UUIDs of repositories which are currently open.
+    static ref OPEN_REPOSITORIES: RwLock<HashSet<Uuid>> = RwLock::new(HashSet::new());
+}
+
+/// A strategy for handling a repository which is already locked.
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum LockStrategy {
+    /// Return immediately with an `Err`.
+    Abort,
+
+    /// Block and wait for the lock on the repository to be released.
+    Wait,
 }
 
 /// A persistent object store.
@@ -56,6 +81,11 @@ lazy_static! {
 /// deduplication via the ZPAQ chunking algorithm. The data and metadata in the repository can
 /// optionally be compressed and encrypted.
 ///
+/// A repository cannot be open more than once at a time. Once it is opened, it is locked from
+/// further open attempts until it is dropped. These locks are only valid for the current user on
+/// the local machine and do not protect against multiple users or multiple machines trying to open
+/// a repository simultaneously.
+///
 /// Changes made to a repository are not persisted to disk until `commit` is called.
 ///
 /// # Encryption
@@ -63,6 +93,13 @@ lazy_static! {
 /// user-supplied password. This key is used to encrypt the repository's randomly generated master
 /// key, which is used to encrypt all data in the repository. This setup means that the repository's
 /// password can be changed without re-encrypting any data.
+///
+/// The master key is generated using the operating system's secure random number generator. Both
+/// the master key and the derived key are zeroed in memory once they go out of scope.
+///
+/// Data in a data store is identified by UUIDs and not hashes, so data hashes are not leaked. The
+/// repository does not attempt to hide the size of chunks produced by the chunking algorithm, but
+/// information about which chunks belong to which objects is encrypted.
 ///
 /// The following information is not encrypted:
 /// - The repository's UUID
@@ -85,6 +122,9 @@ where
 
     /// The master encryption key for the repository.
     master_key: Key,
+
+    /// The lock file for this repository.
+    lock_file: File
 }
 
 impl<K, S> ObjectRepository<K, S>
@@ -100,10 +140,12 @@ where
     /// # Errors
     /// - `ErrorKind::InvalidInput`: A key was required but not provided or provided but not
     /// required.
+    /// - `ErrorKind::WouldBlock`: The repository is locked and `LockStrategy::Abort` was used.
     pub fn create(
         mut store: S,
         config: RepositoryConfig,
         password: Option<&[u8]>,
+        strategy: LockStrategy,
     ) -> io::Result<Self> {
         // Return an error if a key was required but not provided.
         if password.is_none() && config.encryption != Encryption::None {
@@ -120,6 +162,10 @@ where
                 "A key was provided but not required",
             ));
         }
+
+        // Acquire an exclusive lock on the repository.
+        let id = Uuid::new_v4();
+        let lock_file = Self::acquire_lock(id, strategy)?;
 
         // Generate and encrypt the master encryption key.
         let salt = KeySalt::generate();
@@ -143,7 +189,7 @@ where
 
         // Create the repository metadata with a reference to the newly-written header.
         let metadata = RepositoryMetadata {
-            id: Uuid::new_v4(),
+            id,
             chunker_bits: config.chunker_bits,
             compression: config.compression,
             encryption: config.encryption,
@@ -164,6 +210,7 @@ where
             metadata,
             header,
             master_key,
+            lock_file,
         })
     }
 
@@ -176,11 +223,14 @@ where
     /// - `ErrorKind::InvalidData`: The wrong encryption key was provided.
     /// - `ErrorKind::InvalidData`: The repository is corrupt.
     /// - `ErrorKind::InvalidData`: The type `K` does not match the data in the repository.
-    pub fn open(store: S, password: Option<&[u8]>) -> io::Result<Self> {
+    /// - `ErrorKind::WouldBlock`: The repository is locked and `LockStrategy::Abort` was used.
+    pub fn open(store: S, password: Option<&[u8]>, strategy: LockStrategy) -> io::Result<Self> {
         // Read and deserialize the metadata.
         let serialized_metadata = store.read_block(&METADATA_BLOCK_ID)?;
         let metadata: RepositoryMetadata = from_read(serialized_metadata.as_slice())
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+
+        let lock_file = Self::acquire_lock(metadata.id, strategy)?;
 
         // Decrypt the master key for the repository.
         let user_key = Key::derive(
@@ -210,7 +260,36 @@ where
             metadata,
             header,
             master_key,
+            lock_file,
         })
+    }
+
+    /// Acquire a lock on this repository and return the lock file.
+    fn acquire_lock(id: Uuid, strategy: LockStrategy) -> io::Result<File> {
+        create_dir_all(LOCKS_DIR.as_path())?;
+        let mut buffer = Uuid::encode_buffer();
+        let file_name = format!("{}.lock", id.to_hyphenated().encode_lower(&mut buffer));
+        let lock_file = OpenOptions::new().write(true).create(true).open(LOCKS_DIR.join(file_name))?;
+
+        // File locks are held on behalf of the entire process, so we need another method of
+        // checking if this repository is already open within this process.
+        let mut open_repositories = OPEN_REPOSITORIES.write().unwrap();
+
+        if open_repositories.contains(&id) {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "This repository is already open.",
+            ));
+        } else {
+            match strategy {
+                LockStrategy::Abort => lock_file.try_lock_exclusive()?,
+                LockStrategy::Wait => lock_file.lock_exclusive()?
+            };
+
+            open_repositories.insert(id);
+        }
+
+        Ok(lock_file)
     }
 
     /// Removes and returns the object with the given `key` from the repository.
@@ -473,5 +552,16 @@ where
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
         Ok(metadata.id)
+    }
+}
+
+impl<K, S> Drop for ObjectRepository<K, S>
+    where
+        K: Eq + Hash + Clone + Serialize + DeserializeOwned,
+        S: DataStore,
+{
+    fn drop(&mut self) {
+        // Remove this repository from the set of open stores.
+        OPEN_REPOSITORIES.write().unwrap().remove(&self.metadata.id);
     }
 }

@@ -24,7 +24,7 @@ use relative_path::RelativePath;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::{DataStore, Object, ObjectRepository, RepositoryConfig};
+use crate::{DataStore, LockStrategy, Object, ObjectRepository, RepositoryConfig};
 
 use super::entry::{Entry, EntryKey, EntryMetadata, EntryType, KeyType};
 use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode, soft_link};
@@ -44,7 +44,8 @@ use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mo
 /// that allows entries archived on one system to be extracted on another.
 ///
 /// Like `ObjectRepository`, changes made to the repository are not persisted to disk until `commit`
-/// is called. For details about deduplication, compression, and encryption, see `ObjectRepository`.
+/// is called. For details about deduplication, compression, encryption, and locking, see
+/// `ObjectRepository`.
 pub struct FileRepository<S: DataStore> {
     repository: ObjectRepository<EntryKey, S>,
 }
@@ -53,18 +54,23 @@ impl<S: DataStore> FileRepository<S> {
     /// Create a new repository backed by the given data `store`.
     ///
     /// See `ObjectRepository::create` for details.
-    pub fn create(store: S, config: RepositoryConfig, password: Option<&[u8]>) -> io::Result<Self> {
+    pub fn create(
+        store: S,
+        config: RepositoryConfig,
+        password: Option<&[u8]>,
+        strategy: LockStrategy,
+    ) -> io::Result<Self> {
         Ok(FileRepository {
-            repository: ObjectRepository::create(store, config, password)?,
+            repository: ObjectRepository::create(store, config, password, strategy)?,
         })
     }
 
     /// Open the repository in the given data `store`.
     ///
     /// See `ObjectRepository::open` for details.
-    pub fn open(store: S, password: Option<&[u8]>) -> io::Result<Self> {
+    pub fn open(store: S, password: Option<&[u8]>, strategy: LockStrategy) -> io::Result<Self> {
         Ok(FileRepository {
-            repository: ObjectRepository::open(store, password)?,
+            repository: ObjectRepository::open(store, password, strategy)?,
         })
     }
 
