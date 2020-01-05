@@ -16,7 +16,6 @@
 
 use super::compression::Compression;
 use super::encryption::{Encryption, ResourceLimit};
-use super::hashing::HashAlgorithm;
 
 /// The configuration for an repository.
 ///
@@ -55,14 +54,6 @@ pub struct RepositoryConfig {
     ///
     /// The default value is `ResourceLimit::Interactive`.
     pub operations_limit: ResourceLimit,
-
-    /// The hash algorithm used for computing object checksums.
-    ///
-    /// The repository computes a checksum for each object written to it. This checksum is available
-    /// through `Object::checksum`. This value determines the hash algorithm used to compute it.
-    ///
-    /// The default value is `HashAlgorithm::Blake2b512`.
-    pub hash_algorithm: HashAlgorithm,
 }
 
 impl Default for RepositoryConfig {
@@ -73,7 +64,6 @@ impl Default for RepositoryConfig {
             encryption: Encryption::None,
             memory_limit: ResourceLimit::Interactive,
             operations_limit: ResourceLimit::Interactive,
-            hash_algorithm: HashAlgorithm::Blake2b512,
         }
     }
 }

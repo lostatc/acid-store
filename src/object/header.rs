@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use uuid::Uuid;
 
-use super::object::{ChunkHash, Object};
+use super::object::{ChunkHash, ObjectHandle};
 
 /// A type which can be used as a key in an `ObjectRepository`.
 pub trait Key: Eq + Hash + Clone + Serialize + DeserializeOwned {}
@@ -35,7 +35,7 @@ pub struct Header<K: Eq + Hash> {
     pub chunks: HashMap<ChunkHash, Uuid>,
 
     /// A map of object keys to information about those objects.
-    pub objects: HashMap<K, Object>,
+    pub objects: HashMap<K, ObjectHandle>,
 }
 
 impl<K: Key> Default for Header<K>
@@ -55,6 +55,7 @@ impl<K: Key> Header<K> {
             .objects
             .values()
             .flat_map(|object| &object.chunks)
+            .map(|chunk| chunk.hash)
             .collect::<HashSet<_>>();
 
         self.chunks

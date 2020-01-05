@@ -24,7 +24,7 @@ use relative_path::RelativePath;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::{DataStore, LockStrategy, Object, ObjectRepository, RepositoryConfig};
+use crate::{DataStore, LockStrategy, ObjectHandle, ObjectRepository, RepositoryConfig};
 
 use super::entry::{Entry, EntryKey, EntryMetadata, EntryType, KeyType};
 use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode, soft_link};
@@ -324,7 +324,7 @@ impl<S: DataStore> FileRepository<S> {
     }
 
     /// Return a reader for reading the data associated with `object` from the repository.
-    pub fn read<'a>(&'a self, object: &'a Object) -> impl Read + 'a {
+    pub fn read<'a>(&'a self, object: &'a ObjectHandle) -> impl Read + 'a {
         self.repository.read(object)
     }
 
@@ -338,7 +338,7 @@ impl<S: DataStore> FileRepository<S> {
     /// Verify the integrity of the data associated with `object`.
     ///
     /// See `ObjectRepository::verify_object` for details.
-    pub fn verify_object(&self, object: &Object) -> io::Result<bool> {
+    pub fn verify_object(&self, object: &ObjectHandle) -> io::Result<bool> {
         self.repository.verify_object(object)
     }
 

@@ -22,7 +22,7 @@ use std::time::SystemTime;
 use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
 
-use crate::Object;
+use crate::ObjectHandle;
 
 use super::serialization::SerializableRelativePathBuf;
 
@@ -32,7 +32,7 @@ pub enum EntryType {
     /// A regular file.
     File {
         /// A handle for accessing the contents of the file.
-        data: Object,
+        data: ObjectHandle,
     },
 
     /// A directory.

@@ -18,30 +18,26 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, File};
 use std::fs::OpenOptions;
 use std::hash::Hash;
-use std::io::{self, Read};
+use std::io;
 use std::path::PathBuf;
 use std::sync::RwLock;
 
-use cdchunking::Chunker;
 use cdchunking::ZPAQ;
 use dirs::{data_dir, runtime_dir};
 use fs2::FileExt;
-use iter_read::IterRead;
 use lazy_static::lazy_static;
 use rmp_serde::{from_read, to_vec};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use sodiumoxide::crypto::pwhash::argon2id13::{MemLimit, OpsLimit};
 use uuid::Uuid;
 
 use crate::store::DataStore;
 
+use super::chunking::{ChunkReader, ChunkWriter};
 use super::config::RepositoryConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt};
-use super::hashing::Checksum;
 use super::header::{Header, Key};
 use super::metadata::RepositoryMetadata;
-use super::object::{chunk_hash, ChunkHash, Object};
+use super::object::{chunk_hash, ChunkHash, Object, ObjectHandle};
 
 lazy_static! {
     /// The block ID of the block which stores unencrypted metadata for the repository.
@@ -72,10 +68,6 @@ pub enum LockStrategy {
 ///
 /// An `ObjectRepository` maps keys of type `K` to binary blobs called objects and stores them
 /// persistently in a `DataStore`.
-///
-/// To store data in the repository, use `write` or `serialize`. To read data from the repository,
-/// `get` the `Object` associated with a key and use `read`, `read_all`, or `deserialize` to read
-/// the data it represents.
 ///
 /// Data in a repository is transparently deduplicated using content-defined block-level
 /// deduplication via the ZPAQ chunking algorithm. The data and metadata in the repository can
@@ -187,7 +179,6 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             encryption: config.encryption,
             memory_limit: config.memory_limit.to_mem_limit().0,
             operations_limit: config.operations_limit.to_ops_limit().0,
-            hash_algorithm: config.hash_algorithm,
             master_key: encrypted_master_key,
             salt,
             header: header_id,
@@ -284,34 +275,52 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         Ok(lock_file)
     }
 
-    /// Removes and returns the object with the given `key` from the repository.
+    /// Create a new object from the given `handle`.
+    fn new_object<'a>(&'a self, mut handle: &'a ObjectHandle) -> Object<'a, Self, ZPAQ> {
+        Object::new(&self, &mut handle, ZPAQ::new(self.metadata.chunker_bits as usize))
+    }
+
+    /// Insert the given `key` into the repository and return its object.
     ///
-    /// This returns `None` if there is no object with the given `key`.
+    /// The returned object represents the data associated with the `key`.
+    pub fn insert(&mut self, key: K) -> Object<Self, ZPAQ> {
+        let mut handle = ObjectHandle::default();
+        self.header.objects.insert(key, handle);
+        self.new_object(&handle)
+    }
+
+    /// Remove the object associated with `key` from the repository.
+    ///
+    /// This returns `true` if the object was removed or `false` if an object with the given `key`
+    /// didn't exist.
     ///
     /// The space used by the given object isn't freed and made available for new objects until
     /// `commit` is called.
-    pub fn remove(&mut self, key: &K) -> Option<Object> {
-        let result = self.header.objects.remove(key);
+    pub fn remove(&mut self, key: &K) -> bool {
+        let handle = self.header.objects.remove(key);
         self.header.clean_chunks();
-        result
+        handle.is_some()
     }
 
-    /// Returns a reference to the object with the given `key`, or `None` if it doesn't exist.
-    pub fn get(&self, key: &K) -> Option<&Object> {
-        self.header.objects.get(key)
+    /// Return the object associated with `key` or `None` if it doesn't exist.
+    pub fn get(&self, key: &K) -> Option<Object<Self, ZPAQ>> {
+        let mut handle = self.header.objects.get(key)?;
+        Some(self.new_object(&handle))
     }
 
-    /// Returns an iterator over all the keys in this repository.
+    /// Return an iterator over all the keys in this repository.
     pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.header.objects.keys()
     }
 
-    /// Returns an iterator over all the keys and objects in this repository.
-    pub fn objects(&self) -> impl Iterator<Item = (&K, &Object)> {
-        self.header.objects.iter()
+    /// Return an iterator over all the keys and objects in this repository.
+    pub fn objects(&self) -> impl Iterator<Item=(&K, Object<Self, ZPAQ>)> {
+        self.header.objects
+            .iter()
+            .map(|(key, handle)| (key, self.new_object(&handle)))
     }
 
-    /// Compresses and encrypts the given `data` and returns it.
+    /// Compress and encrypt the given `data` and return it.
     fn encode_data(&self, data: &[u8]) -> io::Result<Vec<u8>> {
         let compressed_data = self.metadata.compression.compress(data)?;
 
@@ -321,7 +330,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             .encrypt(compressed_data.as_slice(), &self.master_key))
     }
 
-    /// Decrypts and decompresses the given `data` and returns it.
+    /// Decrypt and decompress the given `data` and return it.
     fn decode_data(&self, data: &[u8]) -> io::Result<Vec<u8>> {
         let decrypted_data = self.metadata.encryption.decrypt(data, &self.master_key)?;
 
@@ -329,106 +338,6 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             .metadata
             .compression
             .decompress(decrypted_data.as_slice())?)
-    }
-
-    /// Writes the given `data` as a new chunk and returns its checksum.
-    ///
-    /// If a chunk with the given `data` already exists, its checksum is returned and no new data is
-    /// written.
-    fn write_chunk(&mut self, data: &[u8]) -> io::Result<ChunkHash> {
-        // Get a checksum of the unencoded data.
-        let checksum = chunk_hash(data);
-
-        // Check if the chunk already exists.
-        if self.header.chunks.contains_key(&checksum) {
-            return Ok(checksum);
-        }
-
-        // Encode the data and write it to the data store.
-        let encoded_data = self.encode_data(data)?;
-        let block_id = Uuid::new_v4();
-        self.store.write_block(&block_id, &encoded_data)?;
-
-        // Add the chunk to the header.
-        self.header.chunks.insert(checksum, block_id);
-
-        Ok(checksum)
-    }
-
-    /// Returns the bytes of the chunk with the given checksum or `None` if there is none.
-    fn read_chunk(&self, checksum: &ChunkHash) -> io::Result<Vec<u8>> {
-        let chunk_id = &self.header.chunks[checksum];
-        self.decode_data(self.store.read_block(chunk_id)?.as_slice())
-    }
-
-    /// Writes the given `data` to the repository for a given `key` and returns the object.
-    ///
-    /// If the given `key` is already in the repository, its data is replaced.
-    pub fn write(&mut self, key: K, data: impl Read) -> io::Result<&Object> {
-        let chunker = Chunker::new(ZPAQ::new(self.metadata.chunker_bits as usize));
-
-        let mut chunk_hashes = Vec::new();
-        let mut digest = self.metadata.hash_algorithm.digest();
-        let mut size = 0u64;
-
-        // Split the data into content-defined chunks and write those chunks to the data store.
-        for chunk_result in chunker.whole_chunks(data) {
-            let chunk = chunk_result?;
-            digest.input(&chunk);
-            size += chunk.len() as u64;
-            chunk_hashes.push(self.write_chunk(&chunk)?);
-        }
-
-        let object = Object {
-            size,
-            checksum: Checksum {
-                algorithm: self.metadata.hash_algorithm,
-                digest: digest.result_reset().to_vec(),
-            },
-            chunks: chunk_hashes,
-        };
-
-        self.header.objects.remove(&key);
-        Ok(self.header.objects.entry(key).or_insert(object))
-    }
-
-    /// Serialize the given `value` to the repository for a given `key` and return the object.
-    ///
-    /// If the given `key` is already in the repository, its data is replaced.
-    ///
-    /// # Errors
-    /// - `ErrorKind::InvalidInput`: The given `value` could not be serialized.
-    pub fn serialize(&mut self, key: K, value: &impl Serialize) -> io::Result<&Object> {
-        let serialized_value =
-            to_vec(&value).map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
-        self.write(key, serialized_value.as_slice())
-    }
-
-    /// Returns a reader for reading the data associated with `object` from the repository.
-    pub fn read<'a>(&'a self, object: &'a Object) -> impl Read + 'a {
-        let chunks = object
-            .chunks
-            .iter()
-            .map(move |checksum| self.read_chunk(checksum));
-
-        IterRead::new(chunks)
-    }
-
-    /// Returns a buffer containing the data associated with `object`.
-    pub fn read_all(&self, object: &Object) -> io::Result<Vec<u8>> {
-        let mut data = Vec::with_capacity(object.size() as usize);
-        self.read(object).read_to_end(&mut data)?;
-        Ok(data)
-    }
-
-    /// Deserializes and returns the data associated with `object`.
-    ///
-    /// # Errors
-    /// - `ErrorKind::InvalidData`: The data could not be deserialized as a value of type `T`.
-    pub fn deserialize<T: DeserializeOwned>(&self, object: &Object) -> io::Result<T> {
-        let serialized_value = self.read_all(object)?;
-        from_read(serialized_value.as_slice())
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
     }
 
     /// Commit changes which have been made to the repository.
@@ -465,11 +374,11 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// Verify the integrity of the data associated with `object`.
     ///
     /// This returns `true` if the object is valid and `false` if it is corrupt.
-    pub fn verify_object(&self, object: &Object) -> io::Result<bool> {
-        for expected_checksum in &object.chunks {
-            let data = self.read_chunk(expected_checksum)?;
+    pub fn verify_object(&self, object: &ObjectHandle) -> io::Result<bool> {
+        for expected_chunk in &object.chunks {
+            let data = self.read_chunk(&expected_chunk.hash)?;
             let actual_checksum = chunk_hash(&data);
-            if *expected_checksum != actual_checksum {
+            if expected_chunk.hash != actual_checksum {
                 return Ok(false);
             }
         }
@@ -488,14 +397,14 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         for (key, object) in self.header.objects.iter() {
             for chunk in &object.chunks {
                 chunks_to_objects
-                    .entry(chunk)
+                    .entry(chunk.hash)
                     .or_insert(HashSet::new())
                     .insert(key);
             }
         }
 
         for expected_checksum in self.header.chunks.keys() {
-            let data = self.read_chunk(expected_checksum)?;
+            let data = self.read_chunk(&expected_checksum)?;
             let actual_checksum = chunk_hash(&data);
 
             if *expected_checksum != actual_checksum {
@@ -544,6 +453,35 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
         Ok(metadata.id)
+    }
+}
+
+impl<K: Key, S: DataStore> ChunkWriter for ObjectRepository<K, S> {
+    fn write_chunk(&mut self, data: &[u8]) -> io::Result<ChunkHash> {
+        // Get a checksum of the unencoded data.
+        let checksum = chunk_hash(data);
+
+        // Check if the chunk already exists.
+        if self.header.chunks.contains_key(&checksum) {
+            return Ok(checksum);
+        }
+
+        // Encode the data and write it to the data store.
+        let encoded_data = self.encode_data(data)?;
+        let block_id = Uuid::new_v4();
+        self.store.write_block(&block_id, &encoded_data)?;
+
+        // Add the chunk to the header.
+        self.header.chunks.insert(checksum, block_id);
+
+        Ok(checksum)
+    }
+}
+
+impl<K: Key, S: DataStore> ChunkReader for ObjectRepository<K, S> {
+    fn read_chunk(&self, checksum: &ChunkHash) -> io::Result<Vec<u8>> {
+        let chunk_id = &self.header.chunks[checksum];
+        self.decode_data(self.store.read_block(chunk_id)?.as_slice())
     }
 }
 

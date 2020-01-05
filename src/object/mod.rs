@@ -30,3 +30,4 @@ mod header;
 mod metadata;
 mod object;
 mod repository;
+mod chunking;

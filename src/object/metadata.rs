@@ -43,9 +43,6 @@ pub struct RepositoryMetadata {
     /// The maximum number of computations the key derivation function will perform.
     pub operations_limit: usize,
 
-    /// The hash algorithm used for computing object checksums.
-    pub hash_algorithm: HashAlgorithm,
-
     /// The master encryption key encrypted with the user's password.
     pub master_key: Vec<u8>,
 
