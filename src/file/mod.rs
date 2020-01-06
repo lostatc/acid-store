@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-pub use self::entry::{Entry, EntryMetadata, EntryType};
+pub use self::entry::{Entry, EntryType};
 pub use self::repository::FileRepository;
 
 mod entry;

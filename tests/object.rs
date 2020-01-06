@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+// TODO: This is temporarily keeping this module from being compiled.
+#![cfg(any())]
+
 use std::fs::metadata;
 use std::io;
 
