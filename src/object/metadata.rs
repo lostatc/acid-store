@@ -17,7 +17,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{Compression, Encryption, HashAlgorithm};
+use super::{Compression, Encryption};
 use super::encryption::KeySalt;
 
 /// Metadata for a repository.

@@ -16,17 +16,18 @@
 
 use std::collections::HashSet;
 use std::fs::{create_dir, create_dir_all, File, OpenOptions, read_link, symlink_metadata};
-use std::io::{self, copy, ErrorKind, Read};
-use std::path::{Path, PathBuf};
+use std::io::{self, copy, ErrorKind, Write};
+use std::path::Path;
 
 use filetime::{FileTime, set_file_mtime};
 use relative_path::RelativePath;
+use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::{DataStore, LockStrategy, ObjectHandle, ObjectRepository, RepositoryConfig};
+use crate::{DataStore, LockStrategy, Object, ObjectRepository, RepositoryConfig};
 
-use super::entry::{Entry, EntryKey, EntryMetadata, EntryType, KeyType};
+use super::entry::{Entry, EntryKey, EntryType, KeyType};
 use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode, soft_link};
 
 /// A persistent file store.
@@ -37,7 +38,7 @@ use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mo
 ///
 /// This type provides a high-level API through the methods `archive`, `archive_tree`, `extract`,
 /// and `extract_tree` for archiving and extracting files in the file system. It also allows for
-/// manually adding entries through the methods `add_file`, `add_directory`, and `add_link`.
+/// manually adding, removing, and querying entries.
 ///
 /// While files in the file system are identified by their `Path`, entries in the archive are
 /// identified by a `RelativePath`. A `RelativePath` is a platform-independent path representation
@@ -74,16 +75,26 @@ impl<S: DataStore> FileRepository<S> {
         })
     }
 
-    /// Return the entry at `path` or `None` if there is none.
-    pub fn entry(&self, path: &RelativePath) -> Option<Entry> {
-        let object = self
-            .repository
-            .get(&EntryKey(path.to_owned(), KeyType::Metadata))?;
+    /// Add an `entry` to the repository at the given `path`.
+    ///
+    /// If an entry already exists at `path`, it is replaced.
+    pub fn insert(&mut self, path: &RelativePath, entry: &Entry) -> io::Result<()> {
+        let data_key = EntryKey(path.to_owned(), KeyType::Data);
+        let metadata_key = EntryKey(path.to_owned(), KeyType::Metadata);
 
-        Some(
-            self.repository
-                .deserialize(&object)
-                .expect("Could not deserialize entry."),
+        // Remove any existing data object and add a new one if this is a file entry.
+        if let EntryType::File = entry.entry_type {
+            self.repository.insert(data_key);
+        } else {
+            self.repository.remove(&data_key);
+        }
+
+        // Write the metadata for the entry.
+        let mut object = self.repository.insert(metadata_key);
+        object.write_all(
+            to_vec(&entry)
+                .expect("Could not serialize entry.")
+                .as_slice(),
         )
     }
 
@@ -102,6 +113,23 @@ impl<S: DataStore> FileRepository<S> {
             .remove(&EntryKey(path.to_owned(), KeyType::Metadata));
 
         Some(old_entry)
+    }
+
+    /// Return the entry at `path` or `None` if there is none.
+    pub fn entry(&mut self, path: &RelativePath) -> Option<Entry> {
+        let object = self
+            .repository
+            .get(&EntryKey(path.to_owned(), KeyType::Metadata))?;
+
+        Some(from_read(object).expect("Could not deserialize entry."))
+    }
+
+    /// Return an `Object` for modifying the contents of the file entry at `path`.
+    ///
+    /// This returns `None` if there is no entry with the given `path` or the entry does not
+    /// represent a regular file.
+    pub fn open_file(&mut self, path: &RelativePath) -> Option<Object<EntryKey, S>> {
+        self.repository.get(&EntryKey(path.to_owned(), KeyType::Data))
     }
 
     /// Returns an iterator of paths which are children of `parent`.
@@ -141,27 +169,35 @@ impl<S: DataStore> FileRepository<S> {
         let file_metadata = symlink_metadata(source)?;
         let file_type = file_metadata.file_type();
 
-        // Get the file metadata.
-        let metadata = EntryMetadata {
+        let entry_type = if file_type.is_file() {
+            let mut object = self
+                .repository
+                .insert(EntryKey(dest.to_owned(), KeyType::Data));
+            let mut file = File::open(source)?;
+            copy(&mut file, &mut object)?;
+            EntryType::File
+        } else if file_type.is_dir() {
+            EntryType::Directory
+        } else if file_type.is_symlink() {
+            let target = read_link(source)?;
+            EntryType::Link { target }
+        } else {
+            return Err(io::Error::new(
+                ErrorKind::InvalidInput,
+                "This file is not a regular file, symlink or directory.",
+            ));
+        };
+
+        let entry = Entry {
             modified_time: file_metadata.modified()?,
             permissions: file_mode(&file_metadata),
             attributes: extended_attrs(&source)?,
+            entry_type,
         };
 
-        // Add the entry.
-        if file_type.is_file() {
-            self.add_file(dest, metadata, &mut File::open(source)?)
-        } else if file_type.is_dir() {
-            self.add_directory(dest, metadata)
-        } else if file_type.is_symlink() {
-            let target = read_link(source)?;
-            self.add_link(dest, metadata, target)
-        } else {
-            Err(io::Error::new(
-                ErrorKind::InvalidInput,
-                "This file is not a regular file, symlink or directory.",
-            ))
-        }
+        self.insert(&dest, &entry)?;
+
+        Ok(entry)
     }
 
     /// Copy a directory tree from the file system into the repository.
@@ -208,9 +244,13 @@ impl<S: DataStore> FileRepository<S> {
 
         // Create the file, directory, or symlink.
         match entry.entry_type {
-            EntryType::File { data } => {
+            EntryType::File => {
+                let mut object = self
+                    .repository
+                    .get(&EntryKey(source.to_owned(), KeyType::Data))
+                    .expect("This entry has no data in the repository.");
                 let mut file = OpenOptions::new().write(true).create_new(true).open(dest)?;
-                copy(&mut self.read(&data), &mut file)?;
+                copy(&mut object, &mut file)?;
             }
             EntryType::Directory => {
                 create_dir(dest)?;
@@ -221,14 +261,11 @@ impl<S: DataStore> FileRepository<S> {
         }
 
         // Set the file metadata.
-        set_file_mtime(
-            dest,
-            FileTime::from_system_time(entry.metadata.modified_time),
-        )?;
-        if let Some(mode) = entry.metadata.permissions {
+        set_file_mtime(dest, FileTime::from_system_time(entry.modified_time))?;
+        if let Some(mode) = entry.permissions {
             set_file_mode(dest, mode)?;
         }
-        set_extended_attrs(dest, entry.metadata.attributes)?;
+        set_extended_attrs(dest, entry.attributes)?;
 
         Ok(())
     }
@@ -259,75 +296,6 @@ impl<S: DataStore> FileRepository<S> {
         Ok(())
     }
 
-    /// Write the given entry to the repository at the given `path`.
-    fn add_entry(&mut self, path: &RelativePath, entry: &Entry) {
-        self.repository
-            .serialize(EntryKey(path.to_owned(), KeyType::Metadata), &entry)
-            .expect("Could not serialize entry.");
-    }
-
-    /// Add a regular file with the given `path`, `metadata`, and `data` to the repository.
-    pub fn add_file(
-        &mut self,
-        path: &RelativePath,
-        metadata: EntryMetadata,
-        data: impl Read,
-    ) -> io::Result<Entry> {
-        let data_key = EntryKey(path.to_owned(), KeyType::Data);
-        let object = self.repository.write(data_key, data)?;
-        let entry_type = EntryType::File {
-            data: object.clone(),
-        };
-        let entry = Entry {
-            metadata,
-            entry_type,
-        };
-
-        self.add_entry(&path, &entry);
-
-        Ok(entry)
-    }
-
-    /// Add a directory with the given `path` and `metadata` to the repository.
-    pub fn add_directory(
-        &mut self,
-        path: &RelativePath,
-        metadata: EntryMetadata,
-    ) -> io::Result<Entry> {
-        let entry_type = EntryType::Directory;
-        let entry = Entry {
-            metadata,
-            entry_type,
-        };
-
-        self.add_entry(&path, &entry);
-
-        Ok(entry)
-    }
-
-    /// Add a symbolic link with the given `path`, `metadata`, and `target` to the repository.
-    pub fn add_link(
-        &mut self,
-        path: &RelativePath,
-        metadata: EntryMetadata,
-        target: PathBuf,
-    ) -> io::Result<Entry> {
-        let entry_type = EntryType::Link { target };
-        let entry = Entry {
-            metadata,
-            entry_type,
-        };
-
-        self.add_entry(&path, &entry);
-
-        Ok(entry)
-    }
-
-    /// Return a reader for reading the data associated with `object` from the repository.
-    pub fn read<'a>(&'a self, object: &'a ObjectHandle) -> impl Read + 'a {
-        self.repository.read(object)
-    }
-
     /// Commit changes which have been made to the repository.
     ///
     /// See `ObjectRepository::commit` for details.
@@ -335,19 +303,12 @@ impl<S: DataStore> FileRepository<S> {
         self.repository.commit()
     }
 
-    /// Verify the integrity of the data associated with `object`.
-    ///
-    /// See `ObjectRepository::verify_object` for details.
-    pub fn verify_object(&self, object: &ObjectHandle) -> io::Result<bool> {
-        self.repository.verify_object(object)
-    }
-
     /// Verify the integrity of all the data in the repository.
     ///
-    /// See `ObjectRepository::verify_repository` for details.
-    pub fn verify_repository(&self) -> io::Result<HashSet<&RelativePath>> {
+    /// See `ObjectRepository::verify` for details.
+    pub fn verify(&self) -> io::Result<HashSet<&RelativePath>> {
         self.repository
-            .verify_repository()
+            .verify()
             .map(|set| set.iter().map(|key| key.0.as_ref()).collect())
     }
 

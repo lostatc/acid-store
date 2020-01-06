@@ -20,11 +20,14 @@ use std::mem::replace;
 
 use blake2::digest::{Input, VariableOutput};
 use blake2::VarBlake2b;
-use cdchunking::ChunkerImpl;
+use cdchunking::ZPAQ;
 use serde::{Deserialize, Serialize};
 
-use super::chunking::{ChunkReader, ChunkWriter, IncrementalChunker};
-use super::hashing::Checksum;
+use crate::DataStore;
+
+use super::chunking::IncrementalChunker;
+use super::header::Key;
+use super::repository::ObjectRepository;
 
 /// The size of the checksums used for uniquely identifying chunks.
 pub const CHUNK_HASH_SIZE: usize = 32;
@@ -102,15 +105,19 @@ impl Default for ObjectHandle {
 ///
 /// An `Object` represents the data associated with a key in an `ObjectRepository`. It implements
 /// `Read`, `Write`, and `Seek` for reading and writing the data in the repository.
-pub struct Object<'a, R: ChunkReader + ChunkWriter, C: ChunkerImpl> {
+///
+/// Data written to an `Object` is automatically flushed when the value is dropped, but any errors
+/// that occur in the `Drop` implementation are ignored. If these errors need to be handled, it is
+/// advisable to call `flush` explicitly after all data has been written.
+pub struct Object<'a, K: Key, S: DataStore> {
     /// The repository where chunks are stored.
-    repository: &'a R,
+    repository: &'a mut ObjectRepository<K, S>,
 
-    /// The metadata for the object being modified.
-    handle: &'a mut ObjectHandle,
+    /// The key which represents this object.
+    key: K,
 
     /// A value responsible for buffering and chunking data which has been written.
-    chunker: IncrementalChunker<C>,
+    chunker: IncrementalChunker<ZPAQ>,
 
     /// The list of chunks which have been written since `flush` was last called.
     new_chunks: Vec<Chunk>,
@@ -122,17 +129,32 @@ pub struct Object<'a, R: ChunkReader + ChunkWriter, C: ChunkerImpl> {
     position: u64,
 }
 
-impl<'a, R: ChunkReader + ChunkWriter, C: ChunkerImpl> Object<'a, R, C> {
-    pub(super) fn new(repository: &'a R, handle: &'a mut ObjectHandle, chunker: C) -> Self {
+impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
+    pub(super) fn new(repository: &'a mut ObjectRepository<K, S>, key: K, chunker_bits: usize) -> Self {
         Self {
             repository,
-            handle,
-            chunker: IncrementalChunker::new(chunker),
+            key,
+            chunker: IncrementalChunker::new(ZPAQ::new(chunker_bits)),
             new_chunks: Vec::new(),
             // The initial value is unimportant.
             start_location: Default::default(),
             position: 0,
         }
+    }
+
+    /// Get the object handle for the object associated with `key`.
+    fn get_handle(&self) -> &ObjectHandle {
+        self.repository.get_handle(&self.key)
+    }
+
+    /// Get the object handle for the object associated with `key`.
+    fn get_handle_mut(&mut self) -> &mut ObjectHandle {
+        self.repository.get_handle_mut(&self.key)
+    }
+
+    /// Return the size of the object in bytes.
+    pub fn size(&self) -> u64 {
+        self.repository.get_handle(&self.key).size
     }
 
     /// Truncate the object to the given `length`.
@@ -143,7 +165,7 @@ impl<'a, R: ChunkReader + ChunkWriter, C: ChunkerImpl> Object<'a, R, C> {
         // We need to flush changes before truncating the object.
         self.flush()?;
 
-        if length >= self.handle.size {
+        if length >= self.get_handle().size {
             return Ok(());
         }
 
@@ -159,12 +181,27 @@ impl<'a, R: ChunkReader + ChunkWriter, C: ChunkerImpl> Object<'a, R, C> {
         };
 
         // Remove all chunks including and after the final chunk.
-        self.handle.chunks.drain(end_location.index..);
+        self.get_handle_mut().chunks.drain(end_location.index..);
 
         // Append the new final chunk which has been sliced.
-        self.handle.chunks.push(new_last_chunk);
+        self.get_handle_mut().chunks.push(new_last_chunk);
 
         Ok(())
+    }
+
+    /// Verify the integrity of the data in this object.
+    ///
+    /// This returns `true` if the object is valid and `false` if it is corrupt.
+    pub fn verify(&self) -> io::Result<bool> {
+        for expected_chunk in &self.get_handle().chunks {
+            let data = self.repository.read_chunk(&expected_chunk.hash)?;
+            let actual_checksum = chunk_hash(&data);
+            if expected_chunk.hash != actual_checksum {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 
     /// Return the location of the chunk at the current seek position.
@@ -172,7 +209,7 @@ impl<'a, R: ChunkReader + ChunkWriter, C: ChunkerImpl> Object<'a, R, C> {
         let mut chunk_start = 0u64;
         let mut chunk_end = 0u64;
 
-        for (index, chunk) in self.handle.chunks.iter().enumerate() {
+        for (index, chunk) in self.get_handle().chunks.iter().enumerate() {
             chunk_end += chunk.size as u64;
             if self.position >= chunk_start && self.position <= chunk_end {
                 return ChunkLocation {
@@ -192,43 +229,45 @@ impl<'a, R: ChunkReader + ChunkWriter, C: ChunkerImpl> Object<'a, R, C> {
     /// Return the slice of bytes between the current seek position and the end of the chunk.
     ///
     /// The returned slice will be no longer than `size`.
-    fn read_chunk(&self, size: usize) -> io::Result<&[u8]> {
+    fn read_chunk(&self, size: usize) -> io::Result<Vec<u8>> {
         let chunk_location = self.current_chunk();
         let start = chunk_location.relative_position();
         let end = min(start + size, chunk_location.chunk.size as usize);
         let chunk_data = self.repository.read_chunk(&chunk_location.chunk.hash)?;
-        return Ok(&chunk_data[start..end]);
+        Ok(chunk_data[start..end].to_vec())
     }
 
     /// Write chunks stored in the chunker to the repository.
     fn write_chunks(&mut self) -> io::Result<()> {
         for chunk in self.chunker.chunks() {
             let hash = self.repository.write_chunk(&chunk)?;
-            self.new_chunks.push(Chunk { hash, size: chunk.len() });
+            self.new_chunks.push(Chunk {
+                hash,
+                size: chunk.len(),
+            });
         }
         Ok(())
     }
 }
 
-impl<'a, R: ChunkReader + ChunkWriter, C: ChunkerImpl> Seek for Object<'a, R, C> {
+impl<'a, K: Key, S: DataStore> Seek for Object<'a, K, S> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         // We need to flush changes before writing to a different part of the file.
         self.flush()?;
+        let object_size = self.get_handle().size;
 
         let new_position = match pos {
-            SeekFrom::Start(offset) => {
-                min(self.handle.size, offset)
-            },
+            SeekFrom::Start(offset) => min(object_size, offset),
             SeekFrom::End(offset) => {
-                if offset > self.handle.size as i64 {
+                if offset > object_size as i64 {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidInput,
                         "Attempted to seek to a negative offset.",
                     ));
                 } else {
-                    min(self.handle.size, (self.handle.size as i64 - offset) as u64)
+                    min(object_size, (object_size as i64 - offset) as u64)
                 }
-            },
+            }
             SeekFrom::Current(offset) => {
                 if self.position as i64 + offset < 0 {
                     return Err(io::Error::new(
@@ -236,9 +275,9 @@ impl<'a, R: ChunkReader + ChunkWriter, C: ChunkerImpl> Seek for Object<'a, R, C>
                         "Attempted to seek to a negative offset.",
                     ));
                 } else {
-                    min(self.handle.size, (self.position as i64 + offset) as u64)
+                    min(object_size, (self.position as i64 + offset) as u64)
                 }
-            },
+            }
         };
 
         self.position = new_position;
@@ -250,15 +289,18 @@ impl<'a, R: ChunkReader + ChunkWriter, C: ChunkerImpl> Seek for Object<'a, R, C>
 // in-place; they can only be read or written in their entirety. This means we need to do a lot of
 // buffering to wait for a chunk boundary before writing a chunk to the repository. It also means we
 // need to flush changes before writing to a different part of the file.
-impl<'a, R: ChunkReader + ChunkWriter, C: ChunkerImpl> Write for Object<'a, R, C> {
+impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         // Check if this is the first time `write` is being called after calling `flush`.
         if self.new_chunks.is_empty() {
             // We need to make sure the data before the seek position is saved when we replace the
             // chunk. Read this data from the repository and write it to the chunker.
             self.start_location = self.current_chunk();
-            let first_chunk = self.repository.read_chunk(&self.start_location.chunk.hash)?;
-            self.chunker.write_all(&first_chunk[..self.start_location.relative_position()])?;
+            let first_chunk = self
+                .repository
+                .read_chunk(&self.start_location.chunk.hash)?;
+            self.chunker
+                .write_all(&first_chunk[..self.start_location.relative_position()])?;
         }
 
         // Chunk the data and write any complete chunks to the repository.
@@ -276,7 +318,8 @@ impl<'a, R: ChunkReader + ChunkWriter, C: ChunkerImpl> Write for Object<'a, R, C
         // Read this data from the repository and write it to the chunker.
         let end_location = self.current_chunk();
         let last_chunk = self.repository.read_chunk(&end_location.chunk.hash)?;
-        self.chunker.write_all(&last_chunk[end_location.relative_position()..])?;
+        self.chunker
+            .write_all(&last_chunk[end_location.relative_position()..])?;
 
         // Write all the remaining data in the chunker to the repository.
         self.chunker.flush()?;
@@ -284,20 +327,36 @@ impl<'a, R: ChunkReader + ChunkWriter, C: ChunkerImpl> Write for Object<'a, R, C
 
         // Replace the chunk references in the object handle to reflect the changes.
         let chunk_range = self.start_location.index..end_location.index;
-        self.handle.chunks.splice(chunk_range, replace(&mut self.new_chunks, Vec::new()));
+        let remaining_chunks = replace(&mut self.new_chunks, Vec::new());
+        self
+            .get_handle_mut()
+            .chunks
+            .splice(chunk_range, remaining_chunks);
 
         // Update the size of the object in the object handle to reflect changes.
-        self.handle.size = self.handle.chunks.iter().fold(0, |sum, chunk| sum + chunk.size as u64);
+        self.get_handle_mut().size = self
+            .get_handle_mut()
+            .chunks
+            .iter()
+            .fold(0, |sum, chunk| sum + chunk.size as u64);
 
         Ok(())
     }
 }
 
-impl<'a, R: ChunkReader + ChunkWriter, C: ChunkerImpl> Read for Object<'a, R, C> {
+impl<'a, K: Key, S: DataStore> Read for Object<'a, K, S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let next_chunk = self.read_chunk(buf.len())?;
-        buf.copy_from_slice(next_chunk);
+        buf.copy_from_slice(next_chunk.as_slice());
         self.position += next_chunk.len() as u64;
         Ok(next_chunk.len())
+    }
+}
+
+impl<'a, K: Key, S: DataStore> Drop for Object<'a, K, S> {
+    fn drop(&mut self) {
+        // Explicitly discard the `Err` because we can't handle it here.
+        // This behavior is documented.
+        self.flush().ok();
     }
 }

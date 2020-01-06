@@ -38,8 +38,7 @@ pub struct Header<K: Eq + Hash> {
     pub objects: HashMap<K, ObjectHandle>,
 }
 
-impl<K: Key> Default for Header<K>
-{
+impl<K: Key> Default for Header<K> {
     fn default() -> Self {
         Header {
             chunks: HashMap::new(),

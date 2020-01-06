@@ -19,23 +19,6 @@ use std::mem::replace;
 
 use cdchunking::ChunkerImpl;
 
-use super::object::ChunkHash;
-
-/// A value which writes chunks of data identified by a checksum.
-pub trait ChunkWriter {
-    /// Write the given `data` as a new chunk and returns its checksum.
-    ///
-    /// If a chunk with the given `data` already exists, its checksum may be returned without
-    /// writing any new data.
-    fn write_chunk(&mut self, data: &[u8]) -> io::Result<ChunkHash>;
-}
-
-/// A value which reads chunks of data identified by a checksum.
-pub trait ChunkReader {
-    /// Return the bytes of the chunk with the given checksum or `None` if there is none.
-    fn read_chunk(&self, checksum: &ChunkHash) -> io::Result<Vec<u8>>;
-}
-
 /// A chunker which partitions data written to it into chunks.
 pub struct IncrementalChunker<T: ChunkerImpl> {
     chunker: T,

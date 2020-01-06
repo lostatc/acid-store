@@ -41,10 +41,10 @@ pub use relative_path;
 pub use uuid;
 
 pub use env::init;
-pub use file::{Entry, EntryMetadata, EntryType, FileRepository};
+pub use file::{Entry, EntryType, FileRepository};
 pub use object::{
-    Checksum, Compression, Encryption, HashAlgorithm, Key, LockStrategy, Object,
-    ObjectRepository, RepositoryConfig, ResourceLimit
+    Compression, Encryption, Key, LockStrategy, Object, ObjectRepository, RepositoryConfig,
+    ResourceLimit,
 };
 pub use store::{DataStore, DirectoryStore, MemoryStore};
 

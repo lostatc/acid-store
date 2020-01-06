@@ -44,7 +44,6 @@ pub struct DirectoryStore {
     staging_directory: PathBuf,
 }
 
-
 impl DirectoryStore {
     /// Create a new directory store at the given `path`.
     ///
@@ -90,7 +89,7 @@ impl DirectoryStore {
         Ok(DirectoryStore {
             path: path.clone(),
             blocks_directory: path.join(BLOCKS_DIRECTORY),
-            staging_directory: path.join(STAGING_DIRECTORY)
+            staging_directory: path.join(STAGING_DIRECTORY),
         })
     }
 

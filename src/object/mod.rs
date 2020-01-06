@@ -17,17 +17,15 @@
 pub use self::compression::Compression;
 pub use self::config::RepositoryConfig;
 pub use self::encryption::{Encryption, ResourceLimit};
-pub use self::hashing::{Checksum, HashAlgorithm};
 pub use self::header::Key;
 pub use self::object::Object;
 pub use self::repository::{LockStrategy, ObjectRepository};
 
+mod chunking;
 mod compression;
 mod config;
 mod encryption;
-mod hashing;
 mod header;
 mod metadata;
 mod object;
 mod repository;
-mod chunking;

@@ -22,18 +22,13 @@ use std::time::SystemTime;
 use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
 
-use crate::ObjectHandle;
-
 use super::serialization::SerializableRelativePathBuf;
 
 /// A type of file which can be stored in a `FileArchive`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum EntryType {
     /// A regular file.
-    File {
-        /// A handle for accessing the contents of the file.
-        data: ObjectHandle,
-    },
+    File,
 
     /// A directory.
     Directory,
@@ -50,7 +45,7 @@ pub enum EntryType {
 
 /// Metadata about a file stored in a `FileArchive`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
-pub struct EntryMetadata {
+pub struct Entry {
     /// The time the file was last modified.
     pub modified_time: SystemTime,
 
@@ -59,28 +54,9 @@ pub struct EntryMetadata {
 
     /// The file's extended attributes.
     pub attributes: HashMap<OsString, Vec<u8>>,
-}
-
-/// A file stored in a `FileArchive`.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
-pub struct Entry {
-    /// The metadata of the file this entry represents.
-    pub(super) metadata: EntryMetadata,
 
     /// The type of file this entry represents.
-    pub(super) entry_type: EntryType,
-}
-
-impl Entry {
-    /// The metadata of the file this entry represents.
-    pub fn metadata(&self) -> &EntryMetadata {
-        &self.metadata
-    }
-
-    /// The type of file this entry represents.
-    pub fn entry_type(&self) -> &EntryType {
-        &self.entry_type
-    }
+    pub entry_type: EntryType,
 }
 
 /// A type which determines whether a key represents the data or metadata for an entry.

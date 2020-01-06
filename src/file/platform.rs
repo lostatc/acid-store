@@ -13,10 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#![allow(unused_variables)]
 
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::fs::{Metadata, Permissions, set_permissions};
+#[cfg(unix)]
+use std::fs::{Permissions, set_permissions};
+use std::fs::Metadata;
 use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::{PermissionsExt, symlink};
