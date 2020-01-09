@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
+use std::cmp::Reverse;
 use std::collections::HashSet;
-use std::fs::{create_dir, create_dir_all, File, OpenOptions, read_link, symlink_metadata};
-use std::io::{self, copy, ErrorKind, Write};
+use std::fs::{create_dir, create_dir_all, File, OpenOptions, symlink_metadata};
+use std::io::{self, copy, Write};
 use std::path::Path;
 
 use filetime::{FileTime, set_file_mtime};
@@ -28,17 +29,16 @@ use walkdir::WalkDir;
 use crate::{DataStore, LockStrategy, Object, ObjectRepository, RepositoryConfig};
 
 use super::entry::{Entry, EntryKey, EntryType, KeyType};
-use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode, soft_link};
+use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode};
 
 /// A persistent file store.
 ///
-/// This is a wrapper around `ObjectRepository` which allows it to function as a file archive like
-/// ZIP or TAR rather than an object store. A `FileArchive` consists of `Entry` values which can
-/// represent a regular file, directory, or symbolic link.
+/// This is a wrapper around `ObjectRepository` which allows it to function like a file system. A
+/// `FileArchive` consists of `Entry` values which can represent either a regular file or a
+/// directory.
 ///
-/// This type provides a high-level API through the methods `archive`, `archive_tree`, `extract`,
-/// and `extract_tree` for archiving and extracting files in the file system. It also allows for
-/// manually adding, removing, and querying entries.
+/// Through the methods `archive`, `archive_all`, `extract`, and `extract_all`, it is possible to
+/// copy files between the OS file system and the repository.
 ///
 /// While files in the file system are identified by their `Path`, entries in the archive are
 /// identified by a `RelativePath`. A `RelativePath` is a platform-independent path representation
@@ -54,34 +54,39 @@ pub struct FileRepository<S: DataStore> {
 impl<S: DataStore> FileRepository<S> {
     /// Create a new repository backed by the given data `store`.
     ///
-    /// See `ObjectRepository::create` for details.
-    pub fn create(
+    /// See `ObjectRepository::create_repo` for details.
+    pub fn create_repo(
         store: S,
         config: RepositoryConfig,
         password: Option<&[u8]>,
     ) -> crate::Result<Self> {
         Ok(FileRepository {
-            repository: ObjectRepository::create(store, config, password)?,
+            repository: ObjectRepository::create_repo(store, config, password)?,
         })
     }
 
-    /// Open the repository in the given data `store`.
+    /// Open the existing repository in the given data `store`.
     ///
-    /// See `ObjectRepository::open` for details.
-    pub fn open(store: S, password: Option<&[u8]>, strategy: LockStrategy) -> crate::Result<Self> {
+    /// See `ObjectRepository::open_repo` for details.
+    pub fn open_repo(store: S, password: Option<&[u8]>, strategy: LockStrategy) -> crate::Result<Self> {
         Ok(FileRepository {
-            repository: ObjectRepository::open(store, password, strategy)?,
+            repository: ObjectRepository::open_repo(store, password, strategy)?,
         })
     }
 
-    /// Add an `entry` to the repository at the given `path`.
+    /// Return whether there is an entry at `path`.
+    pub fn exists(&self, path: &RelativePath) -> bool {
+        self.repository.contains(&EntryKey(path.to_owned(), KeyType::Metadata))
+    }
+
+    /// Create a new file or directory entry in the repository at the given `path`.
     ///
     /// If an entry already exists at `path`, it is replaced.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `path` does not exist or is not a directory.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn insert(&mut self, path: &RelativePath, entry: &Entry) -> crate::Result<()> {
+    pub fn create(&mut self, path: &RelativePath, entry: &Entry) -> crate::Result<()> {
         let data_key = EntryKey(path.to_owned(), KeyType::Data);
         let metadata_key = EntryKey(path.to_owned(), KeyType::Metadata);
 
@@ -111,21 +116,83 @@ impl<S: DataStore> FileRepository<S> {
         )?)
     }
 
-    /// Remove and return the entry with the given `path` from the repository.
+    /// Create a new file or directory entry in the repository at the given `path`.
     ///
-    /// This returns `None` if there is no entry with the given `path`.
+    /// This also creates any missing parent directories. If an entry already exists at `path`, it
+    /// is replaced.
+    ///
+    /// # Errors
+    /// - `Error::InvalidPath`: The parent of `path` does not exist or is not a directory.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn create_all(&mut self, path: &RelativePath, entry: &Entry) -> crate::Result<()> {
+        let mut ancestor = path.parent();
+        while let Some(directory) = ancestor {
+            if self.exists(directory) { break; }
+            self.create(directory, &Entry::directory())?;
+            ancestor = directory.parent();
+        }
+
+        self.create(path, entry)
+    }
+
+    /// Remove and return the entry with the given `path` from the repository.
     ///
     /// The space used by the given entry isn't freed and made available for new entries until
     /// `commit` is called.
-    pub fn remove(&mut self, path: &RelativePath) -> Option<Entry> {
-        let old_entry = self.entry(path)?;
+    ///
+    /// # Errors
+    /// - `Error::NotFound`: There is no entry with the given `path`.
+    /// - `Error::NotEmpty`: The entry is a directory which is not empty.
+    pub fn remove(&mut self, path: &RelativePath) -> crate::Result<Entry> {
+        let old_entry = match self.entry(path) {
+            Some(entry) => entry,
+            None => return Err(crate::Error::NotFound),
+        };
+
+        if let Ok(children) = self.list(path) {
+            if !children.is_empty() {
+                return Err(crate::Error::NotEmpty);
+            }
+        }
 
         self.repository
             .remove(&EntryKey(path.to_owned(), KeyType::Data));
         self.repository
             .remove(&EntryKey(path.to_owned(), KeyType::Metadata));
 
-        Some(old_entry)
+        Ok(old_entry)
+    }
+
+    /// Remove and return the entry with the given `path` and its descendants from the repository.
+    ///
+    /// The space used by the given entry isn't freed and made available for new entries until
+    /// `commit` is called.
+    ///
+    /// # Errors
+    /// - `Error::NotFound`: There is no entry with the given `path`.
+    pub fn remove_all(&mut self, path: &RelativePath) -> crate::Result<Entry> {
+        match self.walk(path) {
+            Ok(descendants) => {
+                // We must convert to owned paths so we're not borrowing `self`.
+                let mut owned_descendants = descendants
+                    .into_iter()
+                    .map(|path| path.to_relative_path_buf())
+                    .collect::<Vec<_>>();
+
+                // Sort paths in reverse order by depth.
+                owned_descendants.sort_by_key(|path| Reverse(path.iter().count()));
+
+                // Extract the descendants.
+                for descendant in owned_descendants {
+                    self.remove(descendant.as_relative_path())?;
+                }
+
+                // Extract the root directory.
+                self.remove(path)
+            },
+            Err(crate::Error::NotDirectory) => self.remove(path),
+            Err(error) => return Err(error),
+        }
     }
 
     /// Return the entry at `path` or `None` if there is none.
@@ -139,34 +206,69 @@ impl<S: DataStore> FileRepository<S> {
 
     /// Return an `Object` for modifying the contents of the file entry at `path`.
     ///
-    /// This returns `None` if there is no entry with the given `path` or the entry does not
-    /// represent a regular file.
-    pub fn open_file(&mut self, path: &RelativePath) -> Option<Object<EntryKey, S>> {
-        self.repository.get(&EntryKey(path.to_owned(), KeyType::Data))
+    /// # Errors
+    /// - `Error::NotFound`: There is no entry with the given `path`.
+    /// - `Error::NotFile`: The entry is not a regular file.
+    pub fn open(&mut self, path: &RelativePath) -> crate::Result<Object<EntryKey, S>> {
+        let entry = self.entry(path).ok_or(crate::Error::NotFound)?;
+        if entry.entry_type != EntryType::File {
+            return Err(crate::Error::NotFile);
+        }
+        let object = self.repository.get(&EntryKey(path.to_owned(), KeyType::Data))
+            .expect("There is no object associated with this file entry.");
+        Ok(object)
     }
 
-    /// Return an iterator of paths which are children of `parent`.
-    pub fn list<'a>(
-        &'a self,
-        parent: &'a RelativePath,
-    ) -> impl Iterator<Item = &RelativePath> + 'a {
-        self.repository
-            .keys()
-            .filter(|key| key.1 == KeyType::Metadata)
-            .filter(move |key| key.0.parent() == Some(parent))
-            .map(|key| key.0.as_ref())
+    /// Return an unsorted list of paths which are children of `parent`.
+    ///
+    /// # Errors
+    /// - `Error::NotFound`: There is no entry at `parent`.
+    /// - `Error::NotDirectory`: The entry at `parent` is not a directory.
+    pub fn list(
+        &mut self,
+        parent: &RelativePath,
+    ) -> crate::Result<Vec<&RelativePath>> {
+        match self.entry(parent) {
+            Some(entry) => if entry.entry_type != EntryType::Directory {
+                return Err(crate::Error::NotDirectory);
+            },
+            None => return Err(crate::Error::NotFound),
+        }
+
+        Ok(
+            self.repository
+                .keys()
+                .filter(|key| key.1 == KeyType::Metadata)
+                .filter(move |key| key.0.parent() == Some(parent))
+                .map(|key| key.0.as_ref())
+                .collect()
+        )
     }
 
-    /// Return an iterator of paths which are descendants of `parent`.
-    pub fn walk<'a>(
-        &'a self,
-        parent: &'a RelativePath,
-    ) -> impl Iterator<Item = &RelativePath> + 'a {
-        self.repository
-            .keys()
-            .filter(|key| key.1 == KeyType::Metadata)
-            .filter(move |key| key.0.starts_with(parent))
-            .map(|key| key.0.as_ref())
+    /// Return an unsorted list of paths which are descendants of `parent`.
+    ///
+    /// # Errors
+    /// - `Error::NotFound`: There is no entry at `parent`.
+    /// - `Error::NotDirectory`: The entry at `parent` is not a directory.
+    pub fn walk(
+        &mut self,
+        parent: &RelativePath,
+    ) -> crate::Result<Vec<&RelativePath>> {
+        match self.entry(parent) {
+            Some(entry) => if entry.entry_type != EntryType::Directory {
+                return Err(crate::Error::NotDirectory);
+            },
+            None => return Err(crate::Error::NotFound),
+        }
+
+        Ok(
+            self.repository
+                .keys()
+                .filter(|key| key.1 == KeyType::Metadata)
+                .filter(move |key| key.0.starts_with(parent))
+                .map(|key| key.0.as_ref())
+                .collect()
+        )
     }
 
     /// Copy a file from the file system into the repository.
@@ -193,9 +295,6 @@ impl<S: DataStore> FileRepository<S> {
             EntryType::File
         } else if file_type.is_dir() {
             EntryType::Directory
-        } else if file_type.is_symlink() {
-            let target = read_link(source)?;
-            EntryType::Link { target }
         } else {
             return Err(crate::Error::Unsupported);
         };
@@ -207,7 +306,7 @@ impl<S: DataStore> FileRepository<S> {
             entry_type,
         };
 
-        self.insert(&dest, &entry)?;
+        self.create(&dest, &entry)?;
 
         Ok(entry)
     }
@@ -217,14 +316,15 @@ impl<S: DataStore> FileRepository<S> {
     /// This creates a tree of repository entries at `dest` from the directory tree at `source`.
     /// This does not remove the `source` directory or its descendants from the file system.
     ///
-    /// If one of the files in the tree is not a regular file, symlink, or directory, it is skipped.
+    /// If `source` is not a directory, this is the same as calling `archive`. If one of the files
+    /// in the tree is not a regular file or directory, it is skipped.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
     /// - `Error::Io`: An I/O error occurred.
     ///     - `ErrorKind::NotFound`: The `source` file does not exist.
     ///     - `ErrorKind::PermissionDenied`: The user lacks permission to read the `source` file.
-    pub fn archive_tree(&mut self, source: &Path, dest: &RelativePath) -> crate::Result<()> {
+    pub fn archive_all(&mut self, source: &Path, dest: &RelativePath) -> crate::Result<()> {
         for result in WalkDir::new(source) {
             let dir_entry = result.map_err(|error| io::Error::from(error))?;
             let relative_path = dir_entry.path().strip_prefix(source).unwrap();
@@ -245,16 +345,14 @@ impl<S: DataStore> FileRepository<S> {
     /// `source` entry from the repository.
     ///
     /// # Errors
+    /// - `Error::NotFound`: The `source` entry does not exist.
     /// - `Error::Io`: An I/O error occurred.
-    ///     - `ErrorKind::NotFound`: The `source` entry does not exist.
     ///     - `ErrorKind::PermissionDenied`: The user lacks permission to create the `dest` file.
     ///     - `ErrorKind::AlreadyExists`: A file already exists at `dest`.
     pub fn extract(&mut self, source: &RelativePath, dest: &Path) -> crate::Result<()> {
         let entry = match self.entry(source) {
             Some(value) => value,
-            None => {
-                return Err(io::Error::new(ErrorKind::NotFound, "There is no such entry.").into())
-            }
+            None => return Err(crate::Error::NotFound),
         };
 
         // Create any necessary parent directories.
@@ -275,9 +373,6 @@ impl<S: DataStore> FileRepository<S> {
             EntryType::Directory => {
                 create_dir(dest)?;
             }
-            EntryType::Link { target } => {
-                soft_link(dest, &target)?;
-            }
         }
 
         // Set the file metadata.
@@ -295,27 +390,39 @@ impl<S: DataStore> FileRepository<S> {
     /// This creates a directory tree at `dest` from the tree of repository entries at `source`.
     /// This does not remove the `source` entry or its descendants from the repository.
     ///
+    /// If `source` is not a directory entry, this is the same as calling `extract`.
+    ///
     /// # Errors
+    /// - `Error::NotFound`: The `source` entry does not exist.
     /// - `Error::Io`: An I/O error occurred.
-    ///     - `ErrorKind::NotFound`: The `source` entry does not exist.
     ///     - `ErrorKind::PermissionDenied`: The user lacks permission to create the `dest` file.
     ///     - `ErrorKind::AlreadyExists`: A file already exists at `dest`.
-    pub fn extract_tree(&mut self, source: &RelativePath, dest: &Path) -> crate::Result<()> {
-        // We must convert to owned paths because we'll need a mutable reference to `self` later.
-        let mut descendants = self
-            .walk(source)
-            .map(|path| path.to_relative_path_buf())
-            .collect::<Vec<_>>();
+    pub fn extract_all(&mut self, source: &RelativePath, dest: &Path) -> crate::Result<()> {
+        match self.walk(source) {
+            Ok(descendants) => {
+                // We must convert to owned paths so we're not borrowing `self`.
+                let mut owned_descendants = descendants
+                    .into_iter()
+                    .map(|path| path.to_relative_path_buf())
+                    .collect::<Vec<_>>();
 
-        // Sort the descendants by depth.
-        descendants.sort_by_key(|path| path.components().count());
+                // Sort paths by depth.
+                owned_descendants.sort_by_key(|path| path.iter().count());
 
-        for entry_path in descendants {
-            let file_path = entry_path.to_path(dest);
-            self.extract(entry_path.as_relative_path(), file_path.as_path())?;
+                // Extract the root directory.
+                self.extract(source, dest)?;
+
+                // Extract the descendants.
+                for entry_path in owned_descendants {
+                    let file_path = entry_path.to_path(dest);
+                    self.extract(entry_path.as_relative_path(), file_path.as_path())?;
+                }
+
+                Ok(())
+            },
+            Err(crate::Error::NotDirectory) => self.extract(source, dest),
+            Err(error) => Err(error),
         }
-
-        Ok(())
     }
 
     /// Commit changes which have been made to the repository.
