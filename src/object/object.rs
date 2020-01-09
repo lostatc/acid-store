@@ -15,7 +15,7 @@
  */
 
 use std::cmp::min;
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::mem::replace;
 
 use blake2::digest::{Input, VariableOutput};
@@ -106,6 +106,11 @@ impl Default for ObjectHandle {
 /// An `Object` represents the data associated with a key in an `ObjectRepository`. It implements
 /// `Read`, `Write`, and `Seek` for reading data from the repository and writing data to the
 /// repository.
+///
+/// If encryption is enabled for the repository, data integrity is automatically verified as it is
+/// read. If corrupt data is found, the methods on this struct will return an `Err` with
+/// `ErrorKind::InvalidData`. The `verify` method can be used to check the integrity of all the data
+/// in the object whether encryption is enabled or not.
 ///
 /// Data written to an `Object` is automatically flushed when the value is dropped, but any errors
 /// that occur in the `Drop` implementation are ignored. If these errors need to be handled, it is
@@ -204,10 +209,21 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// This returns `true` if the object is valid and `false` if it is corrupt.
     pub fn verify(&self) -> io::Result<bool> {
         for expected_chunk in &self.get_handle().chunks {
-            let data = self.repository.read_chunk(&expected_chunk.hash)?;
-            let actual_checksum = chunk_hash(&data);
-            if expected_chunk.hash != actual_checksum {
-                return Ok(false);
+            match self.repository.read_chunk(&expected_chunk.hash) {
+                Ok(data) => {
+                    let actual_checksum = chunk_hash(&data);
+                    if expected_chunk.hash != actual_checksum {
+                        return Ok(false);
+                    }
+                },
+                Err(error) => {
+                    if error.kind() == ErrorKind::InvalidData {
+                        // Encryption is enabled and ciphertext verification failed.
+                        return Ok(false)
+                    } else {
+                        return Err(error)
+                    }
+                }
             }
         }
 

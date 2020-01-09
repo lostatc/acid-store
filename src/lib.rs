@@ -22,7 +22,7 @@
 //! - Content-defined block-level deduplication
 //! - Transparent encryption
 //! - Transparent compression
-//! - Automatic checksumming and integrity checking
+//! - Integrity checking of data and metadata
 //! - Atomicity, consistency, isolation, and durability (ACID)
 //!
 //! This library currently provides two abstractions for data storage:
