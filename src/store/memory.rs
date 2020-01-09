@@ -46,8 +46,8 @@ impl DataStore for MemoryStore {
         Ok(())
     }
 
-    fn read_block(&self, id: &Uuid) -> io::Result<Vec<u8>> {
-        Ok(self.blocks[id].to_owned())
+    fn read_block(&self, id: &Uuid) -> io::Result<Option<Vec<u8>>> {
+        Ok(self.blocks.get(id).map(|data| data.to_owned()))
     }
 
     fn remove_block(&mut self, id: &Uuid) -> io::Result<()> {

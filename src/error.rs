@@ -21,6 +21,14 @@ use thiserror::Error as DeriveError;
 /// The error type for operations with a repository.
 #[derive(Debug, DeriveError)]
 pub enum Error {
+    /// The repository already exists.
+    #[error("The repository already exists.")]
+    RepositoryAlreadyExists,
+
+    /// The repository was not found.
+    #[error("The repository was not found.")]
+    RepositoryNotFound,
+
     /// The provided password was invalid.
     #[error("The provided password was invalid.")]
     Password,

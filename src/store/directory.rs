@@ -126,19 +126,17 @@ impl DataStore for DirectoryStore {
         Ok(())
     }
 
-    fn read_block(&self, id: &Uuid) -> io::Result<Vec<u8>> {
+    fn read_block(&self, id: &Uuid) -> io::Result<Option<Vec<u8>>> {
         let block_path = self.block_path(id);
 
-        let buffer = if block_path.exists() {
+        if block_path.exists() {
             let mut file = File::open(block_path)?;
             let mut buffer = Vec::with_capacity(file.metadata()?.len() as usize);
             file.read_to_end(&mut buffer)?;
-            buffer
+            Ok(Some(buffer))
         } else {
-            panic!("There is no block with the given ID.");
-        };
-
-        Ok(buffer)
+            Ok(None)
+        }
     }
 
     fn remove_block(&mut self, id: &Uuid) -> io::Result<()> {

@@ -38,9 +38,8 @@ pub trait DataStore {
 
     /// Return the bytes of the block with the given `id`.
     ///
-    /// # Panics
-    /// - There is no block with the given `id`.
-    fn read_block(&self, id: &Uuid) -> io::Result<Vec<u8>>;
+    /// If there is no block with the given `id`, return `None`.
+    fn read_block(&self, id: &Uuid) -> io::Result<Option<Vec<u8>>>;
 
     /// Remove the block with the given `id` from the store.
     ///

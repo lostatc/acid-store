@@ -59,10 +59,9 @@ impl<S: DataStore> FileRepository<S> {
         store: S,
         config: RepositoryConfig,
         password: Option<&[u8]>,
-        strategy: LockStrategy,
     ) -> crate::Result<Self> {
         Ok(FileRepository {
-            repository: ObjectRepository::create(store, config, password, strategy)?,
+            repository: ObjectRepository::create(store, config, password)?,
         })
     }
 
@@ -351,6 +350,6 @@ impl<S: DataStore> FileRepository<S> {
     ///
     /// See `ObjectRepository::peek_uuid` for details.
     pub fn peek_uuid(store: S) -> crate::Result<Uuid> {
-        ObjectRepository::<EntryKey, S>::peek_uuid(store)
+        ObjectRepository::<EntryKey, S>::peek_uuid(&store)
     }
 }
