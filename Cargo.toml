@@ -9,18 +9,14 @@ edition = "2018"
 filetime = "0.2.8"
 relative-path = "1.0.0"
 walkdir = "2.2.9"
-tempfile = "3.1.0"
 fs2 = "0.4.3"
+dirs = "2.0.2"
 
 # I/O
-iter-read = "0.2.1"
 cdchunking = "1.0.0"
 
 # Hashing
-digest = "0.8.1"
 blake2 = "0.8.1"
-sha2 = "0.8.0"
-sha3 = "0.8.2"
 
 # Compression
 flate2 = "1.0.13"
@@ -40,8 +36,8 @@ rmp-serde = "0.14.0"
 # Misc
 uuid = { version = "0.8.1", features = ["serde", "v4"] }
 lazy_static = "1.4.0"
-dirs = "2.0.2"
 
+# Unix-specific
 [target.'cfg(unix)'.dependencies]
 fuse = "0.3.1"
 xattr = "0.2.2"
