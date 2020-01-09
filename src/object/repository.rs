@@ -120,10 +120,10 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// `password` must be provided; otherwise, this argument can be `None`.
     ///
     /// # Errors
-    /// - `Error::RepositoryAlreadyExists`: A repository already exists in the given `store`.
+    /// - `Error::AlreadyExists`: A repository already exists in the given `store`.
     /// - `Error::Password` A password was required but not provided or provided but not required.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn create(
+    pub fn create_repo(
         mut store: S,
         config: RepositoryConfig,
         password: Option<&[u8]>,
@@ -141,11 +141,11 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         // Acquire an exclusive lock on the repository.
         let id = Uuid::new_v4();
         let lock_file = Self::acquire_lock(id, LockStrategy::Abort)
-            .map_err(|_| crate::Error::RepositoryAlreadyExists)?;
+            .map_err(|_| crate::Error::AlreadyExists)?;
 
         // Check if the repository already exists.
         if let Some(_) = store.read_block(&METADATA_BLOCK_ID)? {
-            return Err(crate::Error::RepositoryAlreadyExists);
+            return Err(crate::Error::AlreadyExists);
         }
 
         // Generate and encrypt the master encryption key.
@@ -200,13 +200,13 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// `None`.
     ///
     /// # Errors
-    /// - `Error::RepositoryNotFound`: There is no repository in the given `store`.
+    /// - `Error::NotFound`: There is no repository in the given `store`.
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::Locked`: The repository is locked and `LockStrategy::Abort` was used.
     /// - `Error::Password`: The password provided is invalid.
     /// - `Error::KeyType`: The type `K` does not match the data in the repository.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn open(store: S, password: Option<&[u8]>, strategy: LockStrategy) -> crate::Result<Self> {
+    pub fn open_repo(store: S, password: Option<&[u8]>, strategy: LockStrategy) -> crate::Result<Self> {
         // Acquire a lock on the repository.
         let repository_id = Self::peek_uuid(&store)?;
         let lock_file = Self::acquire_lock(repository_id, strategy)?;
@@ -215,7 +215,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         // acquiring the lock.
         let serialized_metadata = match store.read_block(&METADATA_BLOCK_ID)? {
             Some(data) => data,
-            None => return Err(crate::Error::RepositoryNotFound),
+            None => return Err(crate::Error::NotFound),
         };
         let metadata: RepositoryMetadata = from_read(serialized_metadata.as_slice())
             .map_err(|_| crate::Error::Corrupt)?;
@@ -287,6 +287,11 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         }
 
         Ok(lock_file)
+    }
+
+    /// Return whether the given `key` exists in this repository.
+    pub fn contains(&self, key: &K) -> bool {
+        self.header.objects.contains_key(key)
     }
 
     /// Insert the given `key` into the repository and return a new object.
@@ -491,14 +496,14 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// Return the UUID of the repository at `store` without opening it.
     ///
     /// # Errors
-    /// - `Error::RepositoryNotFound`: There is no repository in the given `store`.
+    /// - `Error::NotFound`: There is no repository in the given `store`.
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::Io`: An I/O error occurred.
     pub fn peek_uuid(store: &S) -> crate::Result<Uuid> {
         // Read and deserialize the metadata.
         let serialized_metadata = match store.read_block(&METADATA_BLOCK_ID)? {
             Some(data) => data,
-            None => return Err(crate::Error::RepositoryNotFound),
+            None => return Err(crate::Error::NotFound),
         };
         let metadata: RepositoryMetadata = from_read(serialized_metadata.as_slice())
             .map_err(|_| crate::Error::Corrupt)?;

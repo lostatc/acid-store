@@ -21,13 +21,13 @@ use thiserror::Error as DeriveError;
 /// The error type for operations with a repository.
 #[derive(Debug, DeriveError)]
 pub enum Error {
-    /// The repository already exists.
-    #[error("The repository already exists.")]
-    RepositoryAlreadyExists,
+    /// A resource already exists.
+    #[error("A resource already exists.")]
+    AlreadyExists,
 
-    /// The repository was not found.
-    #[error("The repository was not found.")]
-    RepositoryNotFound,
+    /// A resource was not found.
+    #[error("A resource was not found.")]
+    NotFound,
 
     /// The provided password was invalid.
     #[error("The provided password was invalid.")]
@@ -52,6 +52,18 @@ pub enum Error {
     /// The provided entry path is invalid.
     #[error("The provided entry path is invalid.")]
     InvalidPath,
+
+    /// The directory is not empty.
+    #[error("The directory is not empty.")]
+    NotEmpty,
+
+    /// The entry is not a directory.
+    #[error("The entry is not a directory.")]
+    NotDirectory,
+
+    /// The entry is not a file.
+    #[error("The entry is not a file.")]
+    NotFile,
 
     /// An I/O error occurred.
     #[error("{0}")]

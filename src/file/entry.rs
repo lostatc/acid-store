@@ -16,7 +16,6 @@
 
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::path::PathBuf;
 use std::time::SystemTime;
 
 use relative_path::RelativePathBuf;
@@ -32,15 +31,6 @@ pub enum EntryType {
 
     /// A directory.
     Directory,
-
-    /// A symbolic link.
-    ///
-    /// The link target is stored as a platform-dependent path, so a symlink archived on one system
-    /// may be broken when extracted on another.
-    Link {
-        /// The file the symbolic link points to.
-        target: PathBuf,
-    },
 }
 
 /// Metadata about a file stored in a `FileArchive`.
@@ -77,16 +67,6 @@ impl Entry {
             permissions: None,
             attributes: HashMap::new(),
             entry_type: EntryType::Directory,
-        }
-    }
-
-    /// Create a new symbolic link entry with default values.
-    pub fn link(target: PathBuf) -> Self {
-        Self {
-            modified_time: SystemTime::now(),
-            permissions: None,
-            attributes: HashMap::new(),
-            entry_type: EntryType::Link { target },
         }
     }
 }
