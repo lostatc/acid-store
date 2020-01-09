@@ -120,29 +120,23 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// `password` must be provided; otherwise, this argument can be `None`.
     ///
     /// # Errors
-    /// - `ErrorKind::InvalidInput`: A key was required but not provided or provided but not
-    /// required.
-    /// - `ErrorKind::WouldBlock`: The repository is locked and `LockStrategy::Abort` was used.
+    /// - `Error::Locked`: The repository is locked and `LockStrategy::Abort` was used.
+    /// - `Error::Password` A password was required but not provided or provided but not required.
+    /// - `Error::Io`: An I/O error occurred.
     pub fn create(
         mut store: S,
         config: RepositoryConfig,
         password: Option<&[u8]>,
         strategy: LockStrategy,
-    ) -> io::Result<Self> {
+    ) -> crate::Result<Self> {
         // Return an error if a key was required but not provided.
         if password.is_none() && config.encryption != Encryption::None {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "A key was required but not provided",
-            ));
+            return Err(crate::Error::Password);
         }
 
         // Return an error is a key was provided but not required.
         if password.is_some() && config.encryption == Encryption::None {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "A key was provided but not required",
-            ));
+            return Err(crate::Error::Password);
         }
 
         // Acquire an exclusive lock on the repository.
@@ -201,15 +195,16 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// `None`.
     ///
     /// # Errors
-    /// - `ErrorKind::InvalidData`: The wrong encryption key was provided.
-    /// - `ErrorKind::InvalidData`: The repository is corrupt.
-    /// - `ErrorKind::InvalidData`: The type `K` does not match the data in the repository.
-    /// - `ErrorKind::WouldBlock`: The repository is locked and `LockStrategy::Abort` was used.
-    pub fn open(store: S, password: Option<&[u8]>, strategy: LockStrategy) -> io::Result<Self> {
+    /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
+    /// - `Error::Locked`: The repository is locked and `LockStrategy::Abort` was used.
+    /// - `Error::Password`: The password provided is invalid.
+    /// - `Error::KeyType`: The type `K` does not match the data in the repository.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn open(store: S, password: Option<&[u8]>, strategy: LockStrategy) -> crate::Result<Self> {
         // Read and deserialize the metadata.
         let serialized_metadata = store.read_block(&METADATA_BLOCK_ID)?;
         let metadata: RepositoryMetadata = from_read(serialized_metadata.as_slice())
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+            .map_err(|_| crate::Error::Corrupt)?;
 
         let lock_file = Self::acquire_lock(metadata.id, strategy)?;
 
@@ -224,17 +219,19 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         let master_key = EncryptionKey::new(
             metadata
                 .encryption
-                .decrypt(&metadata.master_key, &user_key)?,
+                .decrypt(&metadata.master_key, &user_key)
+                .map_err(|_| crate::Error::Password)?
         );
 
         // Read, decrypt, decompress, and deserialize the header.
         let encrypted_header = store.read_block(&metadata.header)?;
         let compressed_header = metadata
             .encryption
-            .decrypt(&encrypted_header, &master_key)?;
+            .decrypt(&encrypted_header, &master_key)
+            .map_err(|_| crate::Error::Corrupt)?;
         let serialized_header = metadata.compression.decompress(&compressed_header)?;
         let header: Header<K> = from_read(serialized_header.as_slice())
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+            .map_err(|_| crate::Error::KeyType)?;
 
         Ok(ObjectRepository {
             store,
@@ -246,7 +243,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     }
 
     /// Acquire a lock on this repository and return the lock file.
-    fn acquire_lock(id: Uuid, strategy: LockStrategy) -> io::Result<File> {
+    fn acquire_lock(id: Uuid, strategy: LockStrategy) -> crate::Result<File> {
         create_dir_all(LOCKS_DIR.as_path())?;
         let mut buffer = Uuid::encode_buffer();
         let file_name = format!("{}.lock", id.to_hyphenated().encode_lower(&mut buffer));
@@ -260,13 +257,11 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         let mut open_repositories = OPEN_REPOSITORIES.write().unwrap();
 
         if open_repositories.contains(&id) {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "This repository is already open.",
-            ));
+            return Err(crate::Error::Locked);
         } else {
             match strategy {
-                LockStrategy::Abort => lock_file.try_lock_exclusive()?,
+                LockStrategy::Abort => lock_file.try_lock_exclusive()
+                    .map_err(|_| crate::Error::Locked)?,
                 LockStrategy::Wait => lock_file.lock_exclusive()?,
             };
 
@@ -374,7 +369,10 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// No changes are saved persistently until this method is called. Committing a repository is an
     /// atomic and consistent operation; changes cannot be partially committed and interrupting a
     /// commit will never leave the repository in an inconsistent state.
-    pub fn commit(&mut self) -> io::Result<()> {
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn commit(&mut self) -> crate::Result<()> {
         // Serialize and encode the header.
         let serialized_header = to_vec(&self.header).expect("Could not serialize header.");
         let encoded_header = self.encode_data(&serialized_header)?;
@@ -404,7 +402,10 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     ///
     /// This returns the set of keys of objects which are corrupt. This is more efficient than
     /// calling `Object::verify` on each object in the repository.
-    pub fn verify(&self) -> io::Result<HashSet<&K>> {
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn verify(&self) -> crate::Result<HashSet<&K>> {
         let mut corrupt_objects = HashSet::new();
 
         // Get a map of all the chunks in the repository to the set of objects they belong to.
@@ -429,7 +430,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
                 Err(error) => {
                     if error.kind() != ErrorKind::InvalidData {
                         // Encryption is enabled and ciphertext verification failed.
-                        return Err(error);
+                        return Err(crate::Error::Io(error));
                     }
                 }
             };
@@ -469,13 +470,13 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// Return the UUID of the repository at `store` without opening it.
     ///
     /// # Errors
-    /// - `ErrorKind::InvalidData`: The repository is corrupt.
-    /// - `ErrorKind::InvalidData`: The type `K` does not match the data in the repository.
-    pub fn peek_uuid(store: S) -> io::Result<Uuid> {
+    /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn peek_uuid(store: S) -> crate::Result<Uuid> {
         // Read and deserialize the metadata.
         let serialized_metadata = store.read_block(&METADATA_BLOCK_ID)?;
         let metadata: RepositoryMetadata = from_read(serialized_metadata.as_slice())
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+            .map_err(|_| crate::Error::Corrupt)?;
 
         Ok(metadata.id)
     }

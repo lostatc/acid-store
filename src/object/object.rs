@@ -108,7 +108,7 @@ impl Default for ObjectHandle {
 /// repository.
 ///
 /// If encryption is enabled for the repository, data integrity is automatically verified as it is
-/// read. If corrupt data is found, the methods on this struct will return an `Err` with
+/// read. If corrupt data is found, the methods on this struct will return an `Err` of the kind
 /// `ErrorKind::InvalidData`. The `verify` method can be used to check the integrity of all the data
 /// in the object whether encryption is enabled or not.
 ///

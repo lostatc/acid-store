@@ -96,7 +96,7 @@ impl Encryption {
                 open(&ciphertext[NONCEBYTES..], None, &nonce, &chacha_key).map_err(|_| {
                     io::Error::new(
                         io::ErrorKind::InvalidData,
-                        "Ciphertext verification failed.",
+                        "Ciphertext authentication failed.",
                     )
                 })
             }
@@ -106,7 +106,7 @@ impl Encryption {
 
 impl Encryption {
     /// The key size for this encryption method.
-    pub fn key_size(&self) -> usize {
+    pub(super) fn key_size(&self) -> usize {
         match self {
             Encryption::None => 0,
             Encryption::XChaCha20Poly1305 => KEYBYTES,

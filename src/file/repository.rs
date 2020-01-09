@@ -60,7 +60,7 @@ impl<S: DataStore> FileRepository<S> {
         config: RepositoryConfig,
         password: Option<&[u8]>,
         strategy: LockStrategy,
-    ) -> io::Result<Self> {
+    ) -> crate::Result<Self> {
         Ok(FileRepository {
             repository: ObjectRepository::create(store, config, password, strategy)?,
         })
@@ -69,7 +69,7 @@ impl<S: DataStore> FileRepository<S> {
     /// Open the repository in the given data `store`.
     ///
     /// See `ObjectRepository::open` for details.
-    pub fn open(store: S, password: Option<&[u8]>, strategy: LockStrategy) -> io::Result<Self> {
+    pub fn open(store: S, password: Option<&[u8]>, strategy: LockStrategy) -> crate::Result<Self> {
         Ok(FileRepository {
             repository: ObjectRepository::open(store, password, strategy)?,
         })
@@ -78,9 +78,23 @@ impl<S: DataStore> FileRepository<S> {
     /// Add an `entry` to the repository at the given `path`.
     ///
     /// If an entry already exists at `path`, it is replaced.
-    pub fn insert(&mut self, path: &RelativePath, entry: &Entry) -> io::Result<()> {
+    ///
+    /// # Errors
+    /// - `Error::InvalidPath`: The parent of `path` does not exist or is not a directory.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn insert(&mut self, path: &RelativePath, entry: &Entry) -> crate::Result<()> {
         let data_key = EntryKey(path.to_owned(), KeyType::Data);
         let metadata_key = EntryKey(path.to_owned(), KeyType::Metadata);
+
+        // Check if the parent directory exists.
+        if let Some(parent) = path.parent() {
+            match self.entry(parent) {
+                Some(entry) => if entry.entry_type != EntryType::Directory {
+                    return Err(crate::Error::InvalidPath);
+                },
+                None => return Err(crate::Error::InvalidPath),
+            }
+        }
 
         // Remove any existing data object and add a new one if this is a file entry.
         if let EntryType::File = entry.entry_type {
@@ -91,11 +105,11 @@ impl<S: DataStore> FileRepository<S> {
 
         // Write the metadata for the entry.
         let mut object = self.repository.insert(metadata_key);
-        object.write_all(
+        Ok(object.write_all(
             to_vec(&entry)
                 .expect("Could not serialize entry.")
-                .as_slice(),
-        )
+                .as_slice()
+        )?)
     }
 
     /// Remove and return the entry with the given `path` from the repository.
@@ -162,10 +176,12 @@ impl<S: DataStore> FileRepository<S> {
     /// This does not remove the `source` file from the file system.
     ///
     /// # Errors
-    /// - `ErrorKind::NotFound`: The `source` file does not exist.
-    /// - `ErrorKind::PermissionDenied`: The user lack permission to read the `source` file.
-    /// - `ErrorKind::InvalidInput`: The file is not a regular file, symlink, or directory.
-    pub fn archive(&mut self, source: &Path, dest: &RelativePath) -> io::Result<Entry> {
+    /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
+    /// - `Error::Unsupported`: The file is not a regular file, symlink, or directory.
+    /// - `Error::Io`: An I/O error occurred.
+    ///     - `ErrorKind::NotFound`: The `source` file does not exist.
+    ///     - `ErrorKind::PermissionDenied`: The user lack permission to read the `source` file.
+    pub fn archive(&mut self, source: &Path, dest: &RelativePath) -> crate::Result<Entry> {
         let file_metadata = symlink_metadata(source)?;
         let file_type = file_metadata.file_type();
 
@@ -182,10 +198,7 @@ impl<S: DataStore> FileRepository<S> {
             let target = read_link(source)?;
             EntryType::Link { target }
         } else {
-            return Err(io::Error::new(
-                ErrorKind::InvalidInput,
-                "This file is not a regular file, symlink or directory.",
-            ));
+            return Err(crate::Error::Unsupported);
         };
 
         let entry = Entry {
@@ -205,16 +218,23 @@ impl<S: DataStore> FileRepository<S> {
     /// This creates a tree of repository entries at `dest` from the directory tree at `source`.
     /// This does not remove the `source` directory or its descendants from the file system.
     ///
+    /// If one of the files in the tree is not a regular file, symlink, or directory, it is skipped.
+    ///
     /// # Errors
-    /// - `ErrorKind::NotFound`: The `source` file does not exist.
-    /// - `ErrorKind::PermissionDenied`: The user lack permission to read the `source` file.
-    /// - `ErrorKind::Other`: A cycle of symbolic links was detected.
-    pub fn archive_tree(&mut self, source: &Path, dest: &RelativePath) -> io::Result<()> {
+    /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
+    /// - `Error::Io`: An I/O error occurred.
+    ///     - `ErrorKind::NotFound`: The `source` file does not exist.
+    ///     - `ErrorKind::PermissionDenied`: The user lacks permission to read the `source` file.
+    pub fn archive_tree(&mut self, source: &Path, dest: &RelativePath) -> crate::Result<()> {
         for result in WalkDir::new(source) {
-            let dir_entry = result?;
+            let dir_entry = result.map_err(|error| io::Error::from(error))?;
             let relative_path = dir_entry.path().strip_prefix(source).unwrap();
             let entry_path = dest.join(RelativePath::from_path(relative_path).unwrap());
-            self.archive(dir_entry.path(), entry_path.as_relative_path())?;
+            match self.archive(dir_entry.path(), entry_path.as_relative_path()) {
+                Ok(_) => continue,
+                Err(crate::Error::Unsupported) => continue,
+                Err(error) => return Err(error),
+            }
         }
 
         Ok(())
@@ -226,10 +246,11 @@ impl<S: DataStore> FileRepository<S> {
     /// `source` entry from the repository.
     ///
     /// # Errors
-    /// - `ErrorKind::NotFound`: The `source` entry does not exist.
-    /// - `ErrorKind::PermissionDenied`: The user lack permission to create the `dest` file.
-    /// - `ErrorKind::AlreadyExists`: A file already exists at `dest`.
-    pub fn extract(&mut self, source: &RelativePath, dest: &Path) -> io::Result<()> {
+    /// - `Error::Io`: An I/O error occurred.
+    ///     - `ErrorKind::NotFound`: The `source` entry does not exist.
+    ///     - `ErrorKind::PermissionDenied`: The user lacks permission to create the `dest` file.
+    ///     - `ErrorKind::AlreadyExists`: A file already exists at `dest`.
+    pub fn extract(&mut self, source: &RelativePath, dest: &Path) -> crate::Result<()> {
         let entry = match self.entry(source) {
             Some(value) => value,
             None => {
@@ -276,9 +297,11 @@ impl<S: DataStore> FileRepository<S> {
     /// This does not remove the `source` entry or its descendants from the repository.
     ///
     /// # Errors
-    /// - `ErrorKind::PermissionDenied`: The user lack permission to create the `dest` file.
-    /// - `ErrorKind::AlreadyExists`: A file already exists at `dest`.
-    pub fn extract_tree(&mut self, source: &RelativePath, dest: &Path) -> io::Result<()> {
+    /// - `Error::Io`: An I/O error occurred.
+    ///     - `ErrorKind::NotFound`: The `source` entry does not exist.
+    ///     - `ErrorKind::PermissionDenied`: The user lacks permission to create the `dest` file.
+    ///     - `ErrorKind::AlreadyExists`: A file already exists at `dest`.
+    pub fn extract_tree(&mut self, source: &RelativePath, dest: &Path) -> crate::Result<()> {
         // We must convert to owned paths because we'll need a mutable reference to `self` later.
         let mut descendants = self
             .walk(source)
@@ -299,14 +322,14 @@ impl<S: DataStore> FileRepository<S> {
     /// Commit changes which have been made to the repository.
     ///
     /// See `ObjectRepository::commit` for details.
-    pub fn commit(&mut self) -> io::Result<()> {
+    pub fn commit(&mut self) -> crate::Result<()> {
         self.repository.commit()
     }
 
     /// Verify the integrity of all the data in the repository.
     ///
     /// See `ObjectRepository::verify` for details.
-    pub fn verify(&self) -> io::Result<HashSet<&RelativePath>> {
+    pub fn verify(&self) -> crate::Result<HashSet<&RelativePath>> {
         self.repository
             .verify()
             .map(|set| set.iter().map(|key| key.0.as_ref()).collect())
@@ -327,7 +350,7 @@ impl<S: DataStore> FileRepository<S> {
     /// Return the UUID of the repository at `store` without opening it.
     ///
     /// See `ObjectRepository::peek_uuid` for details.
-    pub fn peek_uuid(store: S) -> io::Result<Uuid> {
+    pub fn peek_uuid(store: S) -> crate::Result<Uuid> {
         ObjectRepository::<EntryKey, S>::peek_uuid(store)
     }
 }

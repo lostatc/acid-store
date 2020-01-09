@@ -41,6 +41,7 @@ pub use relative_path;
 pub use uuid;
 
 pub use env::init;
+pub use error::{Error, Result};
 pub use file::{Entry, EntryType, FileRepository};
 pub use object::{
     Compression, Encryption, Key, LockStrategy, Object, ObjectRepository, RepositoryConfig,
@@ -48,6 +49,7 @@ pub use object::{
 };
 pub use store::{DataStore, DirectoryStore, MemoryStore};
 
+mod error;
 mod env;
 mod file;
 mod object;
