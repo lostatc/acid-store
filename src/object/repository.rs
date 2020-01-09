@@ -120,28 +120,33 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// `password` must be provided; otherwise, this argument can be `None`.
     ///
     /// # Errors
-    /// - `Error::Locked`: The repository is locked and `LockStrategy::Abort` was used.
+    /// - `Error::RepositoryAlreadyExists`: A repository already exists in the given `store`.
     /// - `Error::Password` A password was required but not provided or provided but not required.
     /// - `Error::Io`: An I/O error occurred.
     pub fn create(
         mut store: S,
         config: RepositoryConfig,
         password: Option<&[u8]>,
-        strategy: LockStrategy,
     ) -> crate::Result<Self> {
-        // Return an error if a key was required but not provided.
+        // Return an error if a password was required but not provided.
         if password.is_none() && config.encryption != Encryption::None {
             return Err(crate::Error::Password);
         }
 
-        // Return an error is a key was provided but not required.
+        // Return an error if a password was provided but not required.
         if password.is_some() && config.encryption == Encryption::None {
             return Err(crate::Error::Password);
         }
 
         // Acquire an exclusive lock on the repository.
         let id = Uuid::new_v4();
-        let lock_file = Self::acquire_lock(id, strategy)?;
+        let lock_file = Self::acquire_lock(id, LockStrategy::Abort)
+            .map_err(|_| crate::Error::RepositoryAlreadyExists)?;
+
+        // Check if the repository already exists.
+        if let Some(_) = store.read_block(&METADATA_BLOCK_ID)? {
+            return Err(crate::Error::RepositoryAlreadyExists);
+        }
 
         // Generate and encrypt the master encryption key.
         let salt = KeySalt::generate();
@@ -195,18 +200,25 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// `None`.
     ///
     /// # Errors
+    /// - `Error::RepositoryNotFound`: There is no repository in the given `store`.
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::Locked`: The repository is locked and `LockStrategy::Abort` was used.
     /// - `Error::Password`: The password provided is invalid.
     /// - `Error::KeyType`: The type `K` does not match the data in the repository.
     /// - `Error::Io`: An I/O error occurred.
     pub fn open(store: S, password: Option<&[u8]>, strategy: LockStrategy) -> crate::Result<Self> {
-        // Read and deserialize the metadata.
-        let serialized_metadata = store.read_block(&METADATA_BLOCK_ID)?;
+        // Acquire a lock on the repository.
+        let repository_id = Self::peek_uuid(&store)?;
+        let lock_file = Self::acquire_lock(repository_id, strategy)?;
+
+        // We read the metadata again after reading the UUID to prevent a race condition when
+        // acquiring the lock.
+        let serialized_metadata = match store.read_block(&METADATA_BLOCK_ID)? {
+            Some(data) => data,
+            None => return Err(crate::Error::RepositoryNotFound),
+        };
         let metadata: RepositoryMetadata = from_read(serialized_metadata.as_slice())
             .map_err(|_| crate::Error::Corrupt)?;
-
-        let lock_file = Self::acquire_lock(metadata.id, strategy)?;
 
         // Decrypt the master key for the repository.
         let user_key = EncryptionKey::derive(
@@ -224,12 +236,18 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         );
 
         // Read, decrypt, decompress, and deserialize the header.
-        let encrypted_header = store.read_block(&metadata.header)?;
+        let encrypted_header = match store.read_block(&metadata.header)? {
+            Some(data) => data,
+            None => return Err(crate::Error::Corrupt),
+        };
         let compressed_header = metadata
             .encryption
             .decrypt(&encrypted_header, &master_key)
             .map_err(|_| crate::Error::Corrupt)?;
-        let serialized_header = metadata.compression.decompress(&compressed_header)?;
+        let serialized_header = metadata
+            .compression
+            .decompress(&compressed_header)
+            .map_err(|_| crate::Error::Corrupt)?;
         let header: Header<K> = from_read(serialized_header.as_slice())
             .map_err(|_| crate::Error::KeyType)?;
 
@@ -351,7 +369,10 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// Return the bytes of the chunk with the given checksum or `None` if there is none.
     pub(super) fn read_chunk(&self, checksum: &ChunkHash) -> io::Result<Vec<u8>> {
         let chunk_id = &self.header.chunks[checksum];
-        self.decode_data(self.store.read_block(chunk_id)?.as_slice())
+        let chunk = self.store
+            .read_block(chunk_id)?
+            .ok_or(io::Error::new(io::ErrorKind::InvalidData, "There is no block with that ID."))?;
+        self.decode_data(chunk.as_slice())
     }
 
     /// Get the object handle for the object associated with `key`.
@@ -470,11 +491,15 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// Return the UUID of the repository at `store` without opening it.
     ///
     /// # Errors
+    /// - `Error::RepositoryNotFound`: There is no repository in the given `store`.
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn peek_uuid(store: S) -> crate::Result<Uuid> {
+    pub fn peek_uuid(store: &S) -> crate::Result<Uuid> {
         // Read and deserialize the metadata.
-        let serialized_metadata = store.read_block(&METADATA_BLOCK_ID)?;
+        let serialized_metadata = match store.read_block(&METADATA_BLOCK_ID)? {
+            Some(data) => data,
+            None => return Err(crate::Error::RepositoryNotFound),
+        };
         let metadata: RepositoryMetadata = from_read(serialized_metadata.as_slice())
             .map_err(|_| crate::Error::Corrupt)?;
 
