@@ -59,6 +59,38 @@ pub struct Entry {
     pub entry_type: EntryType,
 }
 
+impl Entry {
+    /// Create a new file entry with default values.
+    pub fn file() -> Self {
+        Self {
+            modified_time: SystemTime::now(),
+            permissions: None,
+            attributes: HashMap::new(),
+            entry_type: EntryType::File,
+        }
+    }
+
+    /// Create a new directory entry with default values.
+    pub fn directory() -> Self {
+        Self {
+            modified_time: SystemTime::now(),
+            permissions: None,
+            attributes: HashMap::new(),
+            entry_type: EntryType::Directory,
+        }
+    }
+
+    /// Create a new symbolic link entry with default values.
+    pub fn link(target: PathBuf) -> Self {
+        Self {
+            modified_time: SystemTime::now(),
+            permissions: None,
+            attributes: HashMap::new(),
+            entry_type: EntryType::Link { target },
+        }
+    }
+}
+
 /// A type which determines whether a key represents the data or metadata for an entry.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub enum KeyType {
