@@ -18,6 +18,9 @@ cdchunking = "1.0.0"
 # Hashing
 blake2 = "0.8.1"
 
+# Error handling
+thiserror = "1.0.9"
+
 # Compression
 flate2 = "1.0.13"
 xz2 = "0.1.6"
