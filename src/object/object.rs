@@ -104,7 +104,8 @@ impl Default for ObjectHandle {
 /// A handle for accessing data in a repository.
 ///
 /// An `Object` represents the data associated with a key in an `ObjectRepository`. It implements
-/// `Read`, `Write`, and `Seek` for reading and writing the data in the repository.
+/// `Read`, `Write`, and `Seek` for reading data from the repository and writing data to the
+/// repository.
 ///
 /// Data written to an `Object` is automatically flushed when the value is dropped, but any errors
 /// that occur in the `Drop` implementation are ignored. If these errors need to be handled, it is
@@ -116,7 +117,7 @@ pub struct Object<'a, K: Key, S: DataStore> {
     /// The key which represents this object.
     key: K,
 
-    /// A value responsible for buffering and chunking data which has been written.
+    /// An object responsible for buffering and chunking data which has been written.
     chunker: IncrementalChunker<ZPAQ>,
 
     /// The list of chunks which have been written since `flush` was last called.
@@ -127,6 +128,12 @@ pub struct Object<'a, K: Key, S: DataStore> {
 
     /// The current seek position of the object.
     position: u64,
+
+    /// The chunk which was most recently read from.
+    buffered_chunk: Chunk,
+
+    /// The contents of the chunk which was most recently read from.
+    read_buffer: Vec<u8>,
 }
 
 impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
@@ -136,9 +143,12 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
             key,
             chunker: IncrementalChunker::new(ZPAQ::new(chunker_bits)),
             new_chunks: Vec::new(),
-            // The initial value is unimportant.
+            // The initial value of this field is unimportant.
             start_location: Default::default(),
             position: 0,
+            // The initial value of this field is unimportant.
+            buffered_chunk: Chunk::default(),
+            read_buffer: Vec::new(),
         }
     }
 
@@ -229,12 +239,18 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// Return the slice of bytes between the current seek position and the end of the chunk.
     ///
     /// The returned slice will be no longer than `size`.
-    fn read_chunk(&self, size: usize) -> io::Result<Vec<u8>> {
-        let chunk_location = self.current_chunk();
-        let start = chunk_location.relative_position();
-        let end = min(start + size, chunk_location.chunk.size as usize);
-        let chunk_data = self.repository.read_chunk(&chunk_location.chunk.hash)?;
-        Ok(chunk_data[start..end].to_vec())
+    fn read_chunk(&mut self, size: usize) -> io::Result<&[u8]> {
+        let current_location = self.current_chunk();
+
+        // If we're reading from a new chunk, read the contents of that chunk into the read buffer.
+        if current_location.chunk != self.buffered_chunk {
+            self.buffered_chunk = current_location.chunk;
+            self.read_buffer = self.repository.read_chunk(&current_location.chunk.hash)?;
+        }
+
+        let start = current_location.relative_position();
+        let end = min(start + size, current_location.chunk.size as usize);
+        Ok(&self.read_buffer[start..end])
     }
 
     /// Write chunks stored in the chunker to the repository.
@@ -344,12 +360,15 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
     }
 }
 
+// To avoid reading the same chunk from the repository multiple times, the chunk which was most
+// recently read from is cached in a buffer.
 impl<'a, K: Key, S: DataStore> Read for Object<'a, K, S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let next_chunk = self.read_chunk(buf.len())?;
-        buf.copy_from_slice(next_chunk.as_slice());
-        self.position += next_chunk.len() as u64;
-        Ok(next_chunk.len())
+        let bytes_read = next_chunk.len();
+        buf.copy_from_slice(next_chunk);
+        self.position += bytes_read as u64;
+        Ok(bytes_read)
     }
 }
 
