@@ -18,7 +18,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, File};
 use std::fs::OpenOptions;
 use std::hash::Hash;
-use std::io;
+use std::io::{self, ErrorKind};
 use std::path::PathBuf;
 use std::sync::RwLock;
 
@@ -276,7 +276,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         Ok(lock_file)
     }
 
-    /// Insert the given `key` into the repository and return its object.
+    /// Insert the given `key` into the repository and return a new object.
     ///
     /// If the given `key` already exists in the repository, its object is replaced. The returned
     /// object represents the data associated with the `key`.
@@ -402,7 +402,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
     /// Verify the integrity of all the data in the repository.
     ///
-    /// This returns the set of keys of objects which are corrupt.
+    /// This returns the set of keys of objects which are corrupt. This is more efficient than
+    /// calling `Object::verify` on each object in the repository.
     pub fn verify(&self) -> io::Result<HashSet<&K>> {
         let mut corrupt_objects = HashSet::new();
 
@@ -418,12 +419,22 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         }
 
         for expected_checksum in self.header.chunks.keys() {
-            let data = self.read_chunk(&expected_checksum)?;
-            let actual_checksum = chunk_hash(&data);
+            match self.read_chunk(&expected_checksum) {
+                Ok(data) => {
+                    let actual_checksum = chunk_hash(&data);
+                    if *expected_checksum == actual_checksum {
+                        continue
+                    }
+                },
+                Err(error) => {
+                    if error.kind() != ErrorKind::InvalidData {
+                        // Encryption is enabled and ciphertext verification failed.
+                        return Err(error);
+                    }
+                }
+            };
 
-            if *expected_checksum != actual_checksum {
-                corrupt_objects.extend(chunks_to_objects.remove(expected_checksum).unwrap());
-            }
+            corrupt_objects.extend(chunks_to_objects.remove(expected_checksum).unwrap());
         }
 
         Ok(corrupt_objects)

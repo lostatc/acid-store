@@ -132,7 +132,7 @@ impl<S: DataStore> FileRepository<S> {
         self.repository.get(&EntryKey(path.to_owned(), KeyType::Data))
     }
 
-    /// Returns an iterator of paths which are children of `parent`.
+    /// Return an iterator of paths which are children of `parent`.
     pub fn list<'a>(
         &'a self,
         parent: &'a RelativePath,
@@ -144,7 +144,7 @@ impl<S: DataStore> FileRepository<S> {
             .map(|key| key.0.as_ref())
     }
 
-    /// Returns an iterator of paths which are descendants of `parent`.
+    /// Return an iterator of paths which are descendants of `parent`.
     pub fn walk<'a>(
         &'a self,
         parent: &'a RelativePath,
