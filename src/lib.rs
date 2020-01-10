@@ -45,7 +45,7 @@ pub use error::{Error, Result};
 pub use file::{Entry, EntryType, FileRepository};
 pub use object::{
     Compression, Encryption, Key, LockStrategy, Object, ObjectRepository, RepositoryConfig,
-    ResourceLimit,
+    RepositoryInfo, ResourceLimit,
 };
 pub use store::{DataStore, DirectoryStore, MemoryStore};
 
