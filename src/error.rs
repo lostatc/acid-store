@@ -49,20 +49,20 @@ pub enum Error {
     #[error("The provided key type does not match the data in the repository.")]
     KeyType,
 
-    /// The provided entry path is invalid.
-    #[error("The provided entry path is invalid.")]
+    /// The provided file path is invalid.
+    #[error("The provided file path is invalid.")]
     InvalidPath,
 
     /// The directory is not empty.
     #[error("The directory is not empty.")]
     NotEmpty,
 
-    /// The entry is not a directory.
-    #[error("The entry is not a directory.")]
+    /// The file is not a directory.
+    #[error("The file is not a directory.")]
     NotDirectory,
 
-    /// The entry is not a file.
-    #[error("The entry is not a file.")]
+    /// The file is not a regular file.
+    #[error("The file is not a regular file.")]
     NotFile,
 
     /// An I/O error occurred.

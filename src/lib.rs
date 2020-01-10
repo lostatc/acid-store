@@ -27,8 +27,8 @@
 //!
 //! This library currently provides two abstractions for data storage:
 //! - `ObjectRepository` is an object store which maps keys to binary blobs.
-//! - `FileRepository` is a file system-like abstraction which supports modification times, POSIX
-//! permissions, and extended attributes.
+//! - `FileRepository` is a file archive like ZIP or TAR which supports symbolic links, modification
+//! times, POSIX permissions, and extended attributes.
 //!
 //! A repository stores its data in a `DataStore`, which is a small trait that can be implemented to
 //! create new storage backends. The following data stores are provided out of the box:
@@ -42,7 +42,7 @@ pub use uuid;
 
 pub use env::init;
 pub use error::{Error, Result};
-pub use file::{Entry, EntryType, FileRepository};
+pub use file::{FileMetadata, FileRepository, FileType};
 pub use object::{
     Compression, Encryption, Key, LockStrategy, Object, ObjectRepository, RepositoryConfig,
     RepositoryInfo, ResourceLimit,
