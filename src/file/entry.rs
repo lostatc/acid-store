@@ -16,6 +16,7 @@
 
 use std::collections::HashMap;
 use std::ffi::OsString;
+use std::path::PathBuf;
 use std::time::SystemTime;
 
 use relative_path::RelativePathBuf;
@@ -31,13 +32,22 @@ pub enum EntryType {
 
     /// A directory.
     Directory,
+
+    /// A symbolic link.
+    Link {
+        /// The path this symbolic link points to.
+        ///
+        /// This is stored as a platform-dependent path, meaning that a symlink archived on one
+        /// platform may not be able to be extracted on another.
+        target: PathBuf,
+    },
 }
 
 /// Metadata about a file stored in a `FileArchive`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Entry {
     /// The time the file was last modified.
-    pub modified_time: SystemTime,
+    pub modified: SystemTime,
 
     /// The POSIX permissions of the file, or `None` if POSIX permissions are not applicable.
     pub permissions: Option<u32>,
@@ -53,7 +63,7 @@ impl Entry {
     /// Create a new file entry with default values.
     pub fn file() -> Self {
         Self {
-            modified_time: SystemTime::now(),
+            modified: SystemTime::now(),
             permissions: None,
             attributes: HashMap::new(),
             entry_type: EntryType::File,
@@ -63,13 +73,25 @@ impl Entry {
     /// Create a new directory entry with default values.
     pub fn directory() -> Self {
         Self {
-            modified_time: SystemTime::now(),
+            modified: SystemTime::now(),
             permissions: None,
             attributes: HashMap::new(),
             entry_type: EntryType::Directory,
         }
     }
+
+    /// Create a new symbolic link entry with default values.
+    pub fn link(target: PathBuf) -> Self {
+        Self {
+            modified: SystemTime::now(),
+            permissions: None,
+            attributes: HashMap::new(),
+            entry_type: EntryType::Link { target },
+        }
+    }
 }
+
+// TODO: Replace with a single enum.
 
 /// A type which determines whether a key represents the data or metadata for an entry.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]

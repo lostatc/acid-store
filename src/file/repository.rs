@@ -16,7 +16,7 @@
 
 use std::cmp::Reverse;
 use std::collections::HashSet;
-use std::fs::{create_dir, create_dir_all, File, OpenOptions, symlink_metadata};
+use std::fs::{create_dir, create_dir_all, File, OpenOptions, read_link, symlink_metadata};
 use std::io::{self, copy, Write};
 use std::path::Path;
 
@@ -28,20 +28,28 @@ use walkdir::WalkDir;
 use crate::{DataStore, LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo};
 
 use super::entry::{Entry, EntryKey, EntryType, KeyType};
-use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode};
+use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode, soft_link};
 
 /// A persistent file store.
 ///
-/// This is a wrapper around `ObjectRepository` which allows it to function like a file system. A
-/// `FileArchive` consists of `Entry` values which can represent either a regular file or a
-/// directory.
+/// This is a wrapper around `ObjectRepository` which allows it to function as a file archive like
+/// ZIP or TAR. A `FileArchive` consists of `Entry` values which can represent either a regular
+/// file, directory, or symbolic link.
 ///
-/// Through the methods `archive`, `archive_all`, `extract`, and `extract_all`, it is possible to
-/// copy files between the OS file system and the repository.
+/// This repository provides a high-level API for copying files between the file system and
+/// repository through the methods `archive`, `archive_tree`, `extract`, and `extract_tree`. It is
+/// also possible to manually add, remove, query, and modify entries.
 ///
 /// While files in the file system are identified by their `Path`, entries in the archive are
 /// identified by a `RelativePath`. A `RelativePath` is a platform-independent path representation
-/// that allows entries archived on one system to be extracted on another.
+/// that allows entries archived on one system to be extracted on another. Each `RelativePath` is
+/// relative to the root of the archive.
+///
+/// `FileRepository` is more like a file archive than a file system. An entry's permissions
+/// (`Entry::permissions`) do not affect whether the entry can be read from or written to within the
+/// repository. An entry's modification time (`Entry::modified`) is not updated when an entry is
+/// modified in the repository. This metadata is only stored in the repository so that it can be
+/// restored when the entry is extracted to the file system.
 ///
 /// Like `ObjectRepository`, changes made to the repository are not persisted to disk until `commit`
 /// is called. For details about deduplication, compression, encryption, and locking, see
@@ -78,7 +86,7 @@ impl<S: DataStore> FileRepository<S> {
         self.repository.contains(&EntryKey(path.to_owned(), KeyType::Metadata))
     }
 
-    /// Create a new file or directory entry in the repository at the given `path`.
+    /// Add a new `entry` to the repository at the given `path`.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `path` does not exist or is not a directory.
@@ -118,7 +126,7 @@ impl<S: DataStore> FileRepository<S> {
         )?)
     }
 
-    /// Create a new file or directory entry in the repository at the given `path`.
+    /// Add a new `entry` to the repository at the given `path`.
     ///
     /// This also creates any missing parent directories.
     ///
@@ -205,7 +213,9 @@ impl<S: DataStore> FileRepository<S> {
         Some(from_read(object).expect("Could not deserialize entry."))
     }
 
-    /// Return an `Object` for modifying the contents of the file entry at `path`.
+    /// Return an `Object` for reading and writing the contents of the file entry at `path`.
+    ///
+    /// Writing to the returned object does not update the `Entry::modified` value for the entry.
     ///
     /// # Errors
     /// - `Error::NotFound`: There is no entry with the given `path`.
@@ -218,6 +228,63 @@ impl<S: DataStore> FileRepository<S> {
         let object = self.repository.get(&EntryKey(path.to_owned(), KeyType::Data))
             .expect("There is no object associated with this file entry.");
         Ok(object)
+    }
+
+    /// Copy the entry at `source` to `dest`.
+    ///
+    /// If `source` is a directory entry, its descendants are not copied.
+    ///
+    /// # Errors
+    /// - `Error::NotFound`: There is no entry at `source`.
+    /// - `Error::AlreadyExists`: There is already an entry at `dest`.
+    /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
+    pub fn copy(&mut self, source: &RelativePath, dest: &RelativePath) -> crate::Result<()> {
+        let source_entry = self.entry(source).ok_or(crate::Error::NotFound)?;
+        self.create(dest, &source_entry)?;
+
+        if source_entry.entry_type == EntryType::File {
+            self.repository.copy(
+                &EntryKey(source.to_owned(), KeyType::Data),
+                EntryKey(dest.to_owned(), KeyType::Data),
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Copy the tree of entries at `source` to `dest`.
+    ///
+    /// If `source` is a directory entry, this also copies its descendants.
+    ///
+    /// # Errors
+    /// - `Error::NotFound`: There is no entry at `source`.
+    /// - `Error::AlreadyExists`: There is already an entry at `dest`.
+    /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
+    pub fn copy_tree(&mut self, source: &RelativePath, dest: &RelativePath) -> crate::Result<()> {
+        self.copy(source, dest)?;
+
+        match self.walk(source) {
+            Ok(descendants) => {
+                // We must convert to owned paths so we're not borrowing `self`.
+                let mut owned_descendants = descendants
+                    .into_iter()
+                    .map(|path| path.to_relative_path_buf())
+                    .collect::<Vec<_>>();
+
+                // Sort paths in order by depth.
+                owned_descendants.sort_by_key(|path| path.iter().count());
+
+                for source_path in owned_descendants {
+                    let relative_path = source_path.strip_prefix(source).unwrap();
+                    let dest_path = dest.join(relative_path);
+                    self.copy(&source_path, &dest_path)?;
+                }
+
+                Ok(())
+            },
+            Err(crate::Error::NotDirectory) => Ok(()),
+            Err(error) => Err(error),
+        }
     }
 
     /// Return an unsorted list of paths which are children of `parent`.
@@ -296,12 +363,14 @@ impl<S: DataStore> FileRepository<S> {
             EntryType::File
         } else if file_type.is_dir() {
             EntryType::Directory
+        } else if file_type.is_symlink() {
+            EntryType::Link { target: read_link(source)? }
         } else {
             return Err(crate::Error::Unsupported);
         };
 
         let entry = Entry {
-            modified_time: file_metadata.modified()?,
+            modified: file_metadata.modified()?,
             permissions: file_mode(&file_metadata),
             attributes: extended_attrs(&source)?,
             entry_type,
@@ -383,11 +452,14 @@ impl<S: DataStore> FileRepository<S> {
             }
             EntryType::Directory => {
                 create_dir(dest)?;
-            }
+            },
+            EntryType::Link { target } => {
+                soft_link(dest, target.as_path())?;
+            },
         }
 
         // Set the file metadata.
-        set_file_mtime(dest, FileTime::from_system_time(entry.modified_time))?;
+        set_file_mtime(dest, FileTime::from_system_time(entry.modified))?;
         if let Some(mode) = entry.permissions {
             set_file_mode(dest, mode)?;
         }
