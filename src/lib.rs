@@ -27,8 +27,8 @@
 //!
 //! This library currently provides two abstractions for data storage:
 //! - `ObjectRepository` is an object store which maps keys to binary blobs.
-//! - `FileRepository` is a file archive like ZIP or TAR which supports modification times, POSIX
-//! file permissions, extended attributes, and symbolic links.
+//! - `FileRepository` is a file system-like abstraction which supports modification times, POSIX
+//! permissions, and extended attributes.
 //!
 //! A repository stores its data in a `DataStore`, which is a small trait that can be implemented to
 //! create new storage backends. The following data stores are provided out of the box:

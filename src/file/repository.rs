@@ -80,12 +80,15 @@ impl<S: DataStore> FileRepository<S> {
 
     /// Create a new file or directory entry in the repository at the given `path`.
     ///
-    /// If an entry already exists at `path`, it is replaced.
-    ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `path` does not exist or is not a directory.
+    /// - `Error::AlreadyExists`: There is already an entry at `path`.
     /// - `Error::Io`: An I/O error occurred.
     pub fn create(&mut self, path: &RelativePath, entry: &Entry) -> crate::Result<()> {
+        if self.exists(path) {
+            return Err(crate::Error::AlreadyExists);
+        }
+
         let data_key = EntryKey(path.to_owned(), KeyType::Data);
         let metadata_key = EntryKey(path.to_owned(), KeyType::Metadata);
 
@@ -117,13 +120,12 @@ impl<S: DataStore> FileRepository<S> {
 
     /// Create a new file or directory entry in the repository at the given `path`.
     ///
-    /// This also creates any missing parent directories. If an entry already exists at `path`, it
-    /// is replaced.
+    /// This also creates any missing parent directories.
     ///
     /// # Errors
-    /// - `Error::InvalidPath`: The parent of `path` does not exist or is not a directory.
+    /// - `Error::AlreadyExists`: There is already an entry at `path`.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn create_all(&mut self, path: &RelativePath, entry: &Entry) -> crate::Result<()> {
+    pub fn create_parents(&mut self, path: &RelativePath, entry: &Entry) -> crate::Result<()> {
         let mut ancestor = path.parent();
         while let Some(directory) = ancestor {
             if self.exists(directory) { break; }
@@ -169,7 +171,7 @@ impl<S: DataStore> FileRepository<S> {
     ///
     /// # Errors
     /// - `Error::NotFound`: There is no entry with the given `path`.
-    pub fn remove_all(&mut self, path: &RelativePath) -> crate::Result<Entry> {
+    pub fn remove_tree(&mut self, path: &RelativePath) -> crate::Result<Entry> {
         match self.walk(path) {
             Ok(descendants) => {
                 // We must convert to owned paths so we're not borrowing `self`.
@@ -277,20 +279,20 @@ impl<S: DataStore> FileRepository<S> {
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
-    /// - `Error::Unsupported`: The file is not a regular file, symlink, or directory.
+    /// - `Error::AlreadyExists`: There is already an entry at `dest`.
+    /// - `Error::Unsupported`: The file at `source` is not a regular file or directory.
     /// - `Error::Io`: An I/O error occurred.
     ///     - `ErrorKind::NotFound`: The `source` file does not exist.
     ///     - `ErrorKind::PermissionDenied`: The user lack permission to read the `source` file.
     pub fn archive(&mut self, source: &Path, dest: &RelativePath) -> crate::Result<Entry> {
+        if self.exists(dest) {
+            return Err(crate::Error::AlreadyExists);
+        }
+
         let file_metadata = symlink_metadata(source)?;
         let file_type = file_metadata.file_type();
 
         let entry_type = if file_type.is_file() {
-            let mut object = self
-                .repository
-                .insert(EntryKey(dest.to_owned(), KeyType::Data));
-            let mut file = File::open(source)?;
-            copy(&mut file, &mut object)?;
             EntryType::File
         } else if file_type.is_dir() {
             EntryType::Directory
@@ -307,6 +309,13 @@ impl<S: DataStore> FileRepository<S> {
 
         self.create(&dest, &entry)?;
 
+        if entry.entry_type == EntryType::File {
+            let mut object = self.open(dest)?;
+            let mut file = File::open(source)?;
+            copy(&mut file, &mut object)?;
+            object.flush()?;
+        }
+
         Ok(entry)
     }
 
@@ -320,10 +329,13 @@ impl<S: DataStore> FileRepository<S> {
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
+    /// - `Error::AlreadyExists`: There is already an entry at `dest`.
     /// - `Error::Io`: An I/O error occurred.
     ///     - `ErrorKind::NotFound`: The `source` file does not exist.
     ///     - `ErrorKind::PermissionDenied`: The user lacks permission to read the `source` file.
-    pub fn archive_all(&mut self, source: &Path, dest: &RelativePath) -> crate::Result<()> {
+    pub fn archive_tree(&mut self, source: &Path, dest: &RelativePath) -> crate::Result<()> {
+        // `WalkDir` includes `source` in the paths it iterates over.
+        // It does not error if `source` is not a directory.
         for result in WalkDir::new(source) {
             let dir_entry = result.map_err(|error| io::Error::from(error))?;
             let relative_path = dir_entry.path().strip_prefix(source).unwrap();
@@ -396,7 +408,7 @@ impl<S: DataStore> FileRepository<S> {
     /// - `Error::Io`: An I/O error occurred.
     ///     - `ErrorKind::PermissionDenied`: The user lacks permission to create the `dest` file.
     ///     - `ErrorKind::AlreadyExists`: A file already exists at `dest`.
-    pub fn extract_all(&mut self, source: &RelativePath, dest: &Path) -> crate::Result<()> {
+    pub fn extract_tree(&mut self, source: &RelativePath, dest: &Path) -> crate::Result<()> {
         match self.walk(source) {
             Ok(descendants) => {
                 // We must convert to owned paths so we're not borrowing `self`.
