@@ -24,9 +24,9 @@ use serde::{Deserialize, Serialize};
 
 use super::serialization::SerializableRelativePathBuf;
 
-/// A type of file which can be stored in a `FileArchive`.
+/// A type of file in a `FileRepository`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
-pub enum EntryType {
+pub enum FileType {
     /// A regular file.
     File,
 
@@ -43,9 +43,9 @@ pub enum EntryType {
     },
 }
 
-/// Metadata about a file stored in a `FileArchive`.
+/// Metadata about a file stored in a `FileRepository`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
-pub struct Entry {
+pub struct FileMetadata {
     /// The time the file was last modified.
     pub modified: SystemTime,
 
@@ -55,54 +55,66 @@ pub struct Entry {
     /// The file's extended attributes.
     pub attributes: HashMap<OsString, Vec<u8>>,
 
-    /// The type of file this entry represents.
-    pub entry_type: EntryType,
+    /// The type of the file.
+    pub file_type: FileType,
 }
 
-impl Entry {
-    /// Create a new file entry with default values.
+impl FileMetadata {
+    /// Create metadata for a new file.
     pub fn file() -> Self {
         Self {
             modified: SystemTime::now(),
             permissions: None,
             attributes: HashMap::new(),
-            entry_type: EntryType::File,
+            file_type: FileType::File,
         }
     }
 
-    /// Create a new directory entry with default values.
+    /// Create metadata for a new directory.
     pub fn directory() -> Self {
         Self {
             modified: SystemTime::now(),
             permissions: None,
             attributes: HashMap::new(),
-            entry_type: EntryType::Directory,
+            file_type: FileType::Directory,
         }
     }
 
-    /// Create a new symbolic link entry with default values.
+    /// Create metadata for a new symbolic link.
     pub fn link(target: PathBuf) -> Self {
         Self {
             modified: SystemTime::now(),
             permissions: None,
             attributes: HashMap::new(),
-            entry_type: EntryType::Link { target },
+            file_type: FileType::Link { target },
+        }
+    }
+
+    /// Return whether the file is a regular file.
+    pub fn is_file(&self) -> bool {
+        self.file_type == FileType::File
+    }
+
+    /// Return whether the file is a directory.
+    pub fn is_directory(&self) -> bool {
+        self.file_type == FileType::Directory
+    }
+
+    /// Return whether the file is a symbolic link.
+    pub fn is_link(&self) -> bool {
+        match self.file_type {
+            FileType::Link { .. } => true,
+            _ => false,
         }
     }
 }
 
-// TODO: Replace with a single enum.
-
-/// A type which determines whether a key represents the data or metadata for an entry.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
-pub enum KeyType {
-    Data,
-    Metadata,
-}
-
-/// A key to use in the `ObjectArchive` which backs the `FileArchive`.
+/// The key to use in the `ObjectRepository` which backs a `FileRepository`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
-pub struct EntryKey(
-    #[serde(with = "SerializableRelativePathBuf")] pub RelativePathBuf,
-    pub KeyType,
-);
+pub enum Entry {
+    /// The data for a file.
+    Data(#[serde(with = "SerializableRelativePathBuf")] RelativePathBuf),
+
+    /// The metadata for a file.
+    Metadata(#[serde(with = "SerializableRelativePathBuf")] RelativePathBuf),
+}
