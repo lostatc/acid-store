@@ -325,6 +325,28 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         self.header.objects.keys()
     }
 
+    /// Copy the object at `source` to `dest`.
+    ///
+    /// This is a cheap operation which does not require copying the bytes in the object.
+    ///
+    /// # Errors
+    /// - `Error::NotFound`: There is no object at `source`.
+    /// - `Error::AlreadyExists`: There is already an object at `dest`.
+    pub fn copy(&mut self, source: &K, dest: K) -> crate::Result<()> {
+        if self.contains(&dest) {
+            return Err(crate::Error::AlreadyExists);
+        }
+
+        let source_object = self.header.objects
+            .get(source)
+            .ok_or(crate::Error::NotFound)?
+            .clone();
+
+        self.header.objects.insert(dest, source_object);
+
+        Ok(())
+    }
+
     /// Compress and encrypt the given `data` and return it.
     fn encode_data(&self, data: &[u8]) -> io::Result<Vec<u8>> {
         let compressed_data = self.metadata.compression.compress(data)?;

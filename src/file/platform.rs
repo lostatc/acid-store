@@ -22,7 +22,9 @@ use std::fs::{Permissions, set_permissions};
 use std::fs::Metadata;
 use std::io;
 #[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{PermissionsExt, symlink};
+#[cfg(windows)]
+use std::os::windows::fs::symlink_file;
 use std::path::Path;
 
 /// Get the file mode from the given file `metadata`.
@@ -85,4 +87,16 @@ pub fn set_extended_attrs(file: &Path, attributes: HashMap<OsString, Vec<u8>>) -
 #[cfg(windows)]
 pub fn set_extended_attrs(file: &Path, attributes: HashMap<OsString, Vec<u8>>) -> io::Result<()> {
     Ok(())
+}
+
+/// Create a symbolic `link` to a given `target` file.
+#[cfg(unix)]
+pub fn soft_link(link: &Path, target: &Path) -> io::Result<()> {
+    symlink(target, link)
+}
+
+/// Create a symbolic file `link` (not a directory link) to a given `target` file.
+#[cfg(windows)]
+pub fn soft_link(link: &Path, target: &Path) -> io::Result<()> {
+    symlink_file(target, link)
 }
