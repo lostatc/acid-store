@@ -18,6 +18,7 @@ pub use self::compression::Compression;
 pub use self::config::RepositoryConfig;
 pub use self::encryption::{Encryption, ResourceLimit};
 pub use self::header::Key;
+pub use self::metadata::RepositoryInfo;
 pub use self::object::Object;
 pub use self::repository::{LockStrategy, ObjectRepository};
 

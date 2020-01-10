@@ -21,6 +21,7 @@ use std::hash::Hash;
 use std::io::{self, ErrorKind};
 use std::path::PathBuf;
 use std::sync::RwLock;
+use std::time::SystemTime;
 
 use dirs::{data_dir, runtime_dir};
 use fs2::FileExt;
@@ -34,7 +35,7 @@ use crate::store::DataStore;
 use super::config::RepositoryConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt};
 use super::header::{Header, Key};
-use super::metadata::RepositoryMetadata;
+use super::metadata::{RepositoryInfo, RepositoryMetadata};
 use super::object::{chunk_hash, ChunkHash, Object, ObjectHandle};
 
 lazy_static! {
@@ -71,7 +72,7 @@ pub enum LockStrategy {
 /// deduplication via the ZPAQ chunking algorithm. The data and metadata in the repository can
 /// optionally be compressed and encrypted.
 ///
-/// A repository cannot be open more than once at a time. Once it is opened, it is locked from
+/// A repository cannot be open more than once simultaneously. Once it is opened, it is locked from
 /// further open attempts until it is dropped. These locks are only valid for the current user on
 /// the local machine and do not protect against multiple users or multiple machines trying to open
 /// a repository simultaneously.
@@ -91,11 +92,7 @@ pub enum LockStrategy {
 /// repository does not attempt to hide the size of chunks produced by the chunking algorithm, but
 /// information about which chunks belong to which objects is encrypted.
 ///
-/// The following information is not encrypted:
-/// - The repository's UUID
-/// - The configuration values provided via `RepositoryConfig`
-/// - The salt used to derive the encryption key
-/// - The UUID of the block which stores encrypted metadata
+/// The information in `RepositoryInfo` is not encrypted.
 pub struct ObjectRepository<K: Key, S: DataStore> {
     /// The data store which backs this repository.
     store: S,
@@ -174,11 +171,12 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             chunker_bits: config.chunker_bits,
             compression: config.compression,
             encryption: config.encryption,
-            memory_limit: config.memory_limit.to_mem_limit().0,
-            operations_limit: config.operations_limit.to_ops_limit().0,
+            memory_limit: config.memory_limit,
+            operations_limit: config.operations_limit,
             master_key: encrypted_master_key,
             salt,
             header: header_id,
+            creation_time: SystemTime::now(),
         };
 
         // Write the repository metadata.
@@ -208,7 +206,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// - `Error::Io`: An I/O error occurred.
     pub fn open_repo(store: S, password: Option<&[u8]>, strategy: LockStrategy) -> crate::Result<Self> {
         // Acquire a lock on the repository.
-        let repository_id = Self::peek_uuid(&store)?;
+        let repository_id = Self::peek_info(&store)?.id();
         let lock_file = Self::acquire_lock(repository_id, strategy)?;
 
         // We read the metadata again after reading the UUID to prevent a race condition when
@@ -225,8 +223,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             password.unwrap_or(&[]),
             &metadata.salt,
             metadata.encryption.key_size(),
-            MemLimit(metadata.memory_limit),
-            OpsLimit(metadata.operations_limit),
+            metadata.memory_limit.to_mem_limit(),
+            metadata.operations_limit.to_ops_limit(),
         );
         let master_key = EncryptionKey::new(
             metadata
@@ -478,8 +476,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             new_password,
             &salt,
             self.metadata.encryption.key_size(),
-            MemLimit(self.metadata.memory_limit),
-            OpsLimit(self.metadata.operations_limit),
+            self.metadata.memory_limit.to_mem_limit(),
+            self.metadata.operations_limit.to_ops_limit(),
         );
         self.metadata.salt = salt;
         self.metadata.master_key = self
@@ -488,18 +486,18 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             .encrypt(self.master_key.as_ref(), &user_key);
     }
 
-    /// Return the UUID of the repository.
-    pub fn uuid(&self) -> Uuid {
-        self.metadata.id
+    /// Return information about the repository.
+    pub fn info(&self) -> RepositoryInfo {
+        self.metadata.to_info()
     }
 
-    /// Return the UUID of the repository at `store` without opening it.
+    /// Return information about the repository in `store` without opening it.
     ///
     /// # Errors
     /// - `Error::NotFound`: There is no repository in the given `store`.
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn peek_uuid(store: &S) -> crate::Result<Uuid> {
+    pub fn peek_info(store: &S) -> crate::Result<RepositoryInfo> {
         // Read and deserialize the metadata.
         let serialized_metadata = match store.read_block(&METADATA_BLOCK_ID)? {
             Some(data) => data,
@@ -508,7 +506,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         let metadata: RepositoryMetadata = from_read(serialized_metadata.as_slice())
             .map_err(|_| crate::Error::Corrupt)?;
 
-        Ok(metadata.id)
+        Ok(metadata.to_info())
     }
 }
 

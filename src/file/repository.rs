@@ -23,10 +23,9 @@ use std::path::Path;
 use filetime::{FileTime, set_file_mtime};
 use relative_path::RelativePath;
 use rmp_serde::{from_read, to_vec};
-use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::{DataStore, LockStrategy, Object, ObjectRepository, RepositoryConfig};
+use crate::{DataStore, LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo};
 
 use super::entry::{Entry, EntryKey, EntryType, KeyType};
 use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode};
@@ -448,15 +447,15 @@ impl<S: DataStore> FileRepository<S> {
         self.repository.change_password(new_password);
     }
 
-    /// Return the UUID of the repository.
-    pub fn uuid(&self) -> Uuid {
-        self.repository.uuid()
+    /// Return information about the repository.
+    pub fn info(&self) -> RepositoryInfo {
+        self.repository.info()
     }
 
-    /// Return the UUID of the repository at `store` without opening it.
+    /// Return information about the repository in `store` without opening it.
     ///
-    /// See `ObjectRepository::peek_uuid` for details.
-    pub fn peek_uuid(store: S) -> crate::Result<Uuid> {
-        ObjectRepository::<EntryKey, S>::peek_uuid(&store)
+    /// See `ObjectRepository::peek_info` for details.
+    pub fn peek_info(store: S) -> crate::Result<RepositoryInfo> {
+        ObjectRepository::<EntryKey, S>::peek_info(&store)
     }
 }

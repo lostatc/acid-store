@@ -22,6 +22,7 @@ use super::encryption::{Encryption, ResourceLimit};
 /// This type is used to configure a repository when it is created. Once a repository is created,
 /// the config values provided cannot be changed. This type implements `Default` to provide a
 /// reasonable default configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepositoryConfig {
     /// A value which determines the chunk size for content-defined deduplication.
     ///

@@ -14,11 +14,14 @@
  * limitations under the License.
  */
 
+use std::time::SystemTime;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{Compression, Encryption};
-use super::encryption::KeySalt;
+use super::config::RepositoryConfig;
+use super::encryption::{KeySalt, ResourceLimit};
 
 /// Metadata for a repository.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,10 +41,10 @@ pub struct RepositoryMetadata {
     pub encryption: Encryption,
 
     /// The maximum amount of memory the key derivation function will use in bytes.
-    pub memory_limit: usize,
+    pub memory_limit: ResourceLimit,
 
     /// The maximum number of computations the key derivation function will perform.
-    pub operations_limit: usize,
+    pub operations_limit: ResourceLimit,
 
     /// The master encryption key encrypted with the user's password.
     pub master_key: Vec<u8>,
@@ -51,4 +54,49 @@ pub struct RepositoryMetadata {
 
     /// The ID of the chunk which stores the repository's header.
     pub header: Uuid,
+
+    /// The time this repository was created.
+    pub creation_time: SystemTime,
+}
+
+impl RepositoryMetadata {
+    /// Create a `RepositoryInfo` using the metadata in this struct.
+    pub fn to_info(&self) -> RepositoryInfo {
+        RepositoryInfo {
+            id: self.id,
+            config: RepositoryConfig {
+                chunker_bits: self.chunker_bits,
+                compression: self.compression,
+                encryption: self.encryption,
+                memory_limit: self.memory_limit,
+                operations_limit: self.operations_limit,
+            },
+            creation_time: self.creation_time,
+        }
+    }
+}
+
+/// Information about a repository.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepositoryInfo {
+    id: Uuid,
+    config: RepositoryConfig,
+    creation_time: SystemTime,
+}
+
+impl RepositoryInfo {
+    /// The unique ID for this repository.
+    pub fn id(&self) -> Uuid {
+        self.id
+    }
+
+    /// The configuration used to create this repository.
+    pub fn config(&self) -> &RepositoryConfig {
+        &self.config
+    }
+
+    /// The time this repository was created.
+    pub fn creation_time(&self) -> SystemTime {
+        self.creation_time
+    }
 }
