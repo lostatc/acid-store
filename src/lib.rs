@@ -49,8 +49,9 @@ pub use object::{
 };
 pub use store::{DataStore, DirectoryStore, MemoryStore};
 
-mod error;
 mod env;
+mod error;
 mod file;
 mod object;
 mod store;
+mod value;

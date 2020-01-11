@@ -22,10 +22,10 @@ use std::io;
 
 use rand::{RngCore, SeedableRng};
 use rand::rngs::SmallRng;
-use tempfile::tempdir;
 
 use disk_archive::{Compression, Encryption, HashAlgorithm, Key, ObjectArchive, RepositoryConfig};
 use disk_archive::Checksum;
+use tempfile::tempdir;
 
 /// Return a buffer containing `size` random bytes for testing purposes.
 fn random_bytes(size: usize) -> Vec<u8> {

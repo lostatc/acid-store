@@ -74,7 +74,11 @@ impl<S: DataStore> FileRepository<S> {
     /// Open the existing repository in the given data `store`.
     ///
     /// See `ObjectRepository::open_repo` for details.
-    pub fn open_repo(store: S, password: Option<&[u8]>, strategy: LockStrategy) -> crate::Result<Self> {
+    pub fn open_repo(
+        store: S,
+        password: Option<&[u8]>,
+        strategy: LockStrategy,
+    ) -> crate::Result<Self> {
         Ok(FileRepository {
             repository: ObjectRepository::open_repo(store, password, strategy)?,
         })
@@ -102,9 +106,11 @@ impl<S: DataStore> FileRepository<S> {
         // Check if the parent directory exists.
         if let Some(parent) = path.parent() {
             match self.metadata(parent) {
-                Some(metadata) => if !metadata.is_directory() {
-                    return Err(crate::Error::InvalidPath);
-                },
+                Some(metadata) => {
+                    if !metadata.is_directory() {
+                        return Err(crate::Error::InvalidPath);
+                    }
+                }
                 None => return Err(crate::Error::InvalidPath),
             }
         }
@@ -132,10 +138,16 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::AlreadyExists`: There is already a file at `path`.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn create_parents(&mut self, path: &RelativePath, metadata: &FileMetadata) -> crate::Result<()> {
+    pub fn create_parents(
+        &mut self,
+        path: &RelativePath,
+        metadata: &FileMetadata,
+    ) -> crate::Result<()> {
         let mut ancestor = path.parent();
         while let Some(directory) = ancestor {
-            if self.exists(directory) { break; }
+            if self.exists(directory) {
+                break;
+            }
             self.create(directory, &FileMetadata::directory())?;
             ancestor = directory.parent();
         }
@@ -157,9 +169,11 @@ impl<S: DataStore> FileRepository<S> {
         }
 
         match self.list(path) {
-            Ok(children) => if !children.is_empty() {
-                return Err(crate::Error::NotEmpty);
-            },
+            Ok(children) => {
+                if !children.is_empty() {
+                    return Err(crate::Error::NotEmpty);
+                }
+            }
             Err(crate::Error::NotDirectory) => (),
             Err(error) => return Err(error),
         }
@@ -196,7 +210,7 @@ impl<S: DataStore> FileRepository<S> {
 
                 // Extract the root directory.
                 self.remove(path)
-            },
+            }
             Err(crate::Error::NotDirectory) => self.remove(path),
             Err(error) => return Err(error),
         }
@@ -204,9 +218,7 @@ impl<S: DataStore> FileRepository<S> {
 
     /// Return the metadata for the file at `path` or `None` if there is none.
     pub fn metadata(&mut self, path: &RelativePath) -> Option<FileMetadata> {
-        let object = self
-            .repository
-            .get(&Entry::Metadata(path.to_owned()))?;
+        let object = self.repository.get(&Entry::Metadata(path.to_owned()))?;
 
         Some(from_read(object).expect("Could not deserialize file metadata."))
     }
@@ -245,7 +257,9 @@ impl<S: DataStore> FileRepository<S> {
         if !metadata.is_file() {
             return Err(crate::Error::NotFile);
         }
-        let object = self.repository.get(&Entry::Data(path.to_owned()))
+        let object = self
+            .repository
+            .get(&Entry::Data(path.to_owned()))
             .expect("There is no object associated with this file.");
         Ok(object)
     }
@@ -309,7 +323,7 @@ impl<S: DataStore> FileRepository<S> {
                 }
 
                 Ok(())
-            },
+            }
             Err(crate::Error::NotDirectory) => Ok(()),
             Err(error) => Err(error),
         }
@@ -320,26 +334,28 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::NotFound`: There is no file at `parent`.
     /// - `Error::NotDirectory`: The file at `parent` is not a directory.
-    pub fn list(
-        &mut self,
-        parent: &RelativePath,
-    ) -> crate::Result<Vec<&RelativePath>> {
+    pub fn list(&mut self, parent: &RelativePath) -> crate::Result<Vec<&RelativePath>> {
         match self.metadata(parent) {
-            Some(metadata) => if !metadata.is_directory() {
-                return Err(crate::Error::NotDirectory);
-            },
+            Some(metadata) => {
+                if !metadata.is_directory() {
+                    return Err(crate::Error::NotDirectory);
+                }
+            }
             None => return Err(crate::Error::NotFound),
         }
 
-        let children = self.repository
+        let children = self
+            .repository
             .keys()
             .filter_map(|entry| match entry {
                 Entry::Data(_) => None,
-                Entry::Metadata(path) => if path.parent() == Some(parent) {
-                    Some(path.as_relative_path())
-                } else {
-                    None
-                },
+                Entry::Metadata(path) => {
+                    if path.parent() == Some(parent) {
+                        Some(path.as_relative_path())
+                    } else {
+                        None
+                    }
+                }
             })
             .collect();
 
@@ -351,26 +367,28 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::NotFound`: There is no file at `parent`.
     /// - `Error::NotDirectory`: The file at `parent` is not a directory.
-    pub fn walk(
-        &mut self,
-        parent: &RelativePath,
-    ) -> crate::Result<Vec<&RelativePath>> {
+    pub fn walk(&mut self, parent: &RelativePath) -> crate::Result<Vec<&RelativePath>> {
         match self.metadata(parent) {
-            Some(metadata) => if !metadata.is_directory() {
-                return Err(crate::Error::NotDirectory);
-            },
+            Some(metadata) => {
+                if !metadata.is_directory() {
+                    return Err(crate::Error::NotDirectory);
+                }
+            }
             None => return Err(crate::Error::NotFound),
         }
 
-        let descendants = self.repository
+        let descendants = self
+            .repository
             .keys()
             .filter_map(|entry| match entry {
                 Entry::Data(_) => None,
-                Entry::Metadata(path) => if path.starts_with(parent) {
-                    Some(path.as_relative_path())
-                } else {
-                    None
-                },
+                Entry::Metadata(path) => {
+                    if path.starts_with(parent) {
+                        Some(path.as_relative_path())
+                    } else {
+                        None
+                    }
+                }
             })
             .collect();
 
@@ -401,7 +419,9 @@ impl<S: DataStore> FileRepository<S> {
         } else if file_type.is_dir() {
             FileType::Directory
         } else if file_type.is_symlink() {
-            FileType::Link { target: read_link(source)? }
+            FileType::Link {
+                target: read_link(source)?,
+            }
         } else {
             return Err(crate::Error::Unsupported);
         };
@@ -486,10 +506,10 @@ impl<S: DataStore> FileRepository<S> {
             }
             FileType::Directory => {
                 create_dir(dest)?;
-            },
+            }
             FileType::Link { target } => {
                 soft_link(dest, target.as_path())?;
-            },
+            }
         }
 
         // Set the file metadata.
@@ -534,7 +554,7 @@ impl<S: DataStore> FileRepository<S> {
                 }
 
                 Ok(())
-            },
+            }
             Err(crate::Error::NotDirectory) => self.extract(source, dest),
             Err(error) => Err(error),
         }
@@ -554,7 +574,8 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn verify(&self) -> crate::Result<HashSet<&RelativePath>> {
-        let paths = self.repository
+        let paths = self
+            .repository
             .verify()?
             .iter()
             .map(|entry| match entry {

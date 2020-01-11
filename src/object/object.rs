@@ -142,7 +142,11 @@ pub struct Object<'a, K: Key, S: DataStore> {
 }
 
 impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
-    pub(super) fn new(repository: &'a mut ObjectRepository<K, S>, key: K, chunker_bits: usize) -> Self {
+    pub(super) fn new(
+        repository: &'a mut ObjectRepository<K, S>,
+        key: K,
+        chunker_bits: usize,
+    ) -> Self {
         Self {
             repository,
             key,
@@ -215,13 +219,13 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
                     if expected_chunk.hash != actual_checksum {
                         return Ok(false);
                     }
-                },
+                }
                 Err(error) => {
                     if error.kind() == ErrorKind::InvalidData {
                         // Encryption is enabled and ciphertext verification failed.
-                        return Ok(false)
+                        return Ok(false);
                     } else {
-                        return Err(error)
+                        return Err(error);
                     }
                 }
             }
@@ -360,8 +364,7 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
         // Replace the chunk references in the object handle to reflect the changes.
         let chunk_range = self.start_location.index..end_location.index;
         let remaining_chunks = replace(&mut self.new_chunks, Vec::new());
-        self
-            .get_handle_mut()
+        self.get_handle_mut()
             .chunks
             .splice(chunk_range, remaining_chunks);
 
