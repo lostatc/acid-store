@@ -27,7 +27,6 @@ use dirs::{data_dir, runtime_dir};
 use fs2::FileExt;
 use lazy_static::lazy_static;
 use rmp_serde::{from_read, to_vec};
-use sodiumoxide::crypto::pwhash::argon2id13::{MemLimit, OpsLimit};
 use uuid::Uuid;
 
 use crate::store::DataStore;

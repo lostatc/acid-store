@@ -66,7 +66,7 @@ impl<S: DataStore> FileRepository<S> {
         config: RepositoryConfig,
         password: Option<&[u8]>,
     ) -> crate::Result<Self> {
-        Ok(FileRepository {
+        Ok(Self {
             repository: ObjectRepository::create_repo(store, config, password)?,
         })
     }
@@ -79,7 +79,7 @@ impl<S: DataStore> FileRepository<S> {
         password: Option<&[u8]>,
         strategy: LockStrategy,
     ) -> crate::Result<Self> {
-        Ok(FileRepository {
+        Ok(Self {
             repository: ObjectRepository::open_repo(store, password, strategy)?,
         })
     }
@@ -169,8 +169,8 @@ impl<S: DataStore> FileRepository<S> {
         }
 
         match self.list(path) {
-            Ok(children) => {
-                if !children.is_empty() {
+            Ok(mut children) => {
+                if children.next().is_some() {
                     return Err(crate::Error::NotEmpty);
                 }
             }
@@ -192,28 +192,29 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::NotFound`: There is no file with the given `path`.
     pub fn remove_tree(&mut self, path: &RelativePath) -> crate::Result<()> {
-        match self.walk(path) {
+        let descendants = match self.walk(path) {
             Ok(descendants) => {
                 // We must convert to owned paths so we're not borrowing `self`.
                 let mut owned_descendants = descendants
-                    .into_iter()
-                    .map(|path| path.to_relative_path_buf())
+                    .map(|path| path.to_owned())
                     .collect::<Vec<_>>();
 
                 // Sort paths in reverse order by depth.
                 owned_descendants.sort_by_key(|path| Reverse(path.iter().count()));
 
-                // Extract the descendants.
-                for descendant in owned_descendants {
-                    self.remove(descendant.as_relative_path())?;
-                }
-
-                // Extract the root directory.
-                self.remove(path)
+                owned_descendants
             }
-            Err(crate::Error::NotDirectory) => self.remove(path),
+            Err(crate::Error::NotDirectory) => Vec::new(),
             Err(error) => return Err(error),
+        };
+
+        // Extract the descendants.
+        for descendant in descendants {
+            self.remove(descendant.as_ref())?;
         }
+
+        // Extract the root directory.
+        self.remove(path)
     }
 
     /// Return the metadata for the file at `path` or `None` if there is none.
@@ -303,38 +304,44 @@ impl<S: DataStore> FileRepository<S> {
     /// - `Error::AlreadyExists`: There is already a file at `dest`.
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
     pub fn copy_tree(&mut self, source: &RelativePath, dest: &RelativePath) -> crate::Result<()> {
+        // Copy the root directory.
         self.copy(source, dest)?;
 
-        match self.walk(source) {
+        let descendants = match self.walk(source) {
             Ok(descendants) => {
                 // We must convert to owned paths so we're not borrowing `self`.
                 let mut owned_descendants = descendants
-                    .into_iter()
-                    .map(|path| path.to_relative_path_buf())
+                    .map(|path| path.to_owned())
                     .collect::<Vec<_>>();
 
                 // Sort paths in order by depth.
                 owned_descendants.sort_by_key(|path| path.iter().count());
 
-                for source_path in owned_descendants {
-                    let relative_path = source_path.strip_prefix(source).unwrap();
-                    let dest_path = dest.join(relative_path);
-                    self.copy(&source_path, &dest_path)?;
-                }
-
-                Ok(())
+                owned_descendants
             }
-            Err(crate::Error::NotDirectory) => Ok(()),
-            Err(error) => Err(error),
+            Err(crate::Error::NotDirectory) => return Ok(()),
+            Err(error) => return Err(error),
+        };
+
+        // Copy the descendants.
+        for source_path in descendants {
+            let relative_path = source_path.strip_prefix(source).unwrap();
+            let dest_path = dest.join(relative_path);
+            self.copy(&source_path, &dest_path)?;
         }
+
+        Ok(())
     }
 
-    /// Return an unsorted list of paths which are children of `parent`.
+    /// Return an unsorted iterator of paths which are children of `parent`.
     ///
     /// # Errors
     /// - `Error::NotFound`: There is no file at `parent`.
     /// - `Error::NotDirectory`: The file at `parent` is not a directory.
-    pub fn list(&mut self, parent: &RelativePath) -> crate::Result<Vec<&RelativePath>> {
+    pub fn list<'a>(
+        &'a mut self,
+        parent: &'a RelativePath,
+    ) -> crate::Result<impl Iterator<Item=&'a RelativePath> + 'a> {
         match self.metadata(parent) {
             Some(metadata) => {
                 if !metadata.is_directory() {
@@ -344,30 +351,29 @@ impl<S: DataStore> FileRepository<S> {
             None => return Err(crate::Error::NotFound),
         }
 
-        let children = self
-            .repository
-            .keys()
-            .filter_map(|entry| match entry {
-                Entry::Data(_) => None,
-                Entry::Metadata(path) => {
-                    if path.parent() == Some(parent) {
-                        Some(path.as_relative_path())
-                    } else {
-                        None
-                    }
+        let children = self.repository.keys().filter_map(move |entry| match entry {
+            Entry::Data(_) => None,
+            Entry::Metadata(path) => {
+                if path.parent() == Some(parent) {
+                    Some(path.as_ref())
+                } else {
+                    None
                 }
-            })
-            .collect();
+            }
+        });
 
         Ok(children)
     }
 
-    /// Return an unsorted list of paths which are descendants of `parent`.
+    /// Return an unsorted iterator of paths which are descendants of `parent`.
     ///
     /// # Errors
     /// - `Error::NotFound`: There is no file at `parent`.
     /// - `Error::NotDirectory`: The file at `parent` is not a directory.
-    pub fn walk(&mut self, parent: &RelativePath) -> crate::Result<Vec<&RelativePath>> {
+    pub fn walk<'a>(
+        &'a mut self,
+        parent: &'a RelativePath,
+    ) -> crate::Result<impl Iterator<Item=&'a RelativePath> + 'a> {
         match self.metadata(parent) {
             Some(metadata) => {
                 if !metadata.is_directory() {
@@ -377,20 +383,16 @@ impl<S: DataStore> FileRepository<S> {
             None => return Err(crate::Error::NotFound),
         }
 
-        let descendants = self
-            .repository
-            .keys()
-            .filter_map(|entry| match entry {
-                Entry::Data(_) => None,
-                Entry::Metadata(path) => {
-                    if path.starts_with(parent) {
-                        Some(path.as_relative_path())
-                    } else {
-                        None
-                    }
+        let descendants = self.repository.keys().filter_map(move |entry| match entry {
+            Entry::Data(_) => None,
+            Entry::Metadata(path) => {
+                if path.starts_with(parent) {
+                    Some(path.as_relative_path())
+                } else {
+                    None
                 }
-            })
-            .collect();
+            }
+        });
 
         Ok(descendants)
     }
@@ -533,31 +535,33 @@ impl<S: DataStore> FileRepository<S> {
     ///     - `ErrorKind::PermissionDenied`: The user lacks permission to create the `dest` file.
     ///     - `ErrorKind::AlreadyExists`: A file already exists at `dest`.
     pub fn extract_tree(&mut self, source: &RelativePath, dest: &Path) -> crate::Result<()> {
-        match self.walk(source) {
+        let descendants = match self.walk(source) {
             Ok(descendants) => {
                 // We must convert to owned paths so we're not borrowing `self`.
                 let mut owned_descendants = descendants
                     .into_iter()
-                    .map(|path| path.to_relative_path_buf())
+                    .map(|path| path.to_owned())
                     .collect::<Vec<_>>();
 
                 // Sort paths by depth.
                 owned_descendants.sort_by_key(|path| path.iter().count());
 
-                // Extract the root directory.
-                self.extract(source, dest)?;
-
-                // Extract the descendants.
-                for relative_path in owned_descendants {
-                    let file_path = relative_path.to_path(dest);
-                    self.extract(relative_path.as_relative_path(), file_path.as_path())?;
-                }
-
-                Ok(())
+                owned_descendants
             }
-            Err(crate::Error::NotDirectory) => self.extract(source, dest),
-            Err(error) => Err(error),
+            Err(crate::Error::NotDirectory) => Vec::new(),
+            Err(error) => return Err(error),
+        };
+
+        // Extract the root directory.
+        self.extract(source, dest)?;
+
+        // Extract the descendants.
+        for relative_path in descendants {
+            let file_path = relative_path.to_path(dest);
+            self.extract(relative_path.as_ref(), file_path.as_path())?;
         }
+
+        Ok(())
     }
 
     /// Commit changes which have been made to the repository.
