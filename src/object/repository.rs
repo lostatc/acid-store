@@ -137,8 +137,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         // Acquire an exclusive lock on the repository.
         let id = Uuid::new_v4();
-        let lock_file = Self::acquire_lock(id, LockStrategy::Abort)
-            .map_err(|_| crate::Error::AlreadyExists)?;
+        let lock_file =
+            Self::acquire_lock(id, LockStrategy::Abort).map_err(|_| crate::Error::AlreadyExists)?;
 
         // Check if the repository already exists.
         if let Some(_) = store.read_block(&METADATA_BLOCK_ID)? {
@@ -204,7 +204,11 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// - `Error::Password`: The password provided is invalid.
     /// - `Error::KeyType`: The type `K` does not match the data in the repository.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn open_repo(store: S, password: Option<&[u8]>, strategy: LockStrategy) -> crate::Result<Self> {
+    pub fn open_repo(
+        store: S,
+        password: Option<&[u8]>,
+        strategy: LockStrategy,
+    ) -> crate::Result<Self> {
         // Acquire a lock on the repository.
         let repository_id = Self::peek_info(&store)?.id();
         let lock_file = Self::acquire_lock(repository_id, strategy)?;
@@ -215,8 +219,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             Some(data) => data,
             None => return Err(crate::Error::NotFound),
         };
-        let metadata: RepositoryMetadata = from_read(serialized_metadata.as_slice())
-            .map_err(|_| crate::Error::Corrupt)?;
+        let metadata: RepositoryMetadata =
+            from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
         // Decrypt the master key for the repository.
         let user_key = EncryptionKey::derive(
@@ -230,7 +234,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             metadata
                 .encryption
                 .decrypt(&metadata.master_key, &user_key)
-                .map_err(|_| crate::Error::Password)?
+                .map_err(|_| crate::Error::Password)?,
         );
 
         // Read, decrypt, decompress, and deserialize the header.
@@ -246,8 +250,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             .compression
             .decompress(&compressed_header)
             .map_err(|_| crate::Error::Corrupt)?;
-        let header: Header<K> = from_read(serialized_header.as_slice())
-            .map_err(|_| crate::Error::KeyType)?;
+        let header: Header<K> =
+            from_read(serialized_header.as_slice()).map_err(|_| crate::Error::KeyType)?;
 
         Ok(ObjectRepository {
             store,
@@ -276,7 +280,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             return Err(crate::Error::Locked);
         } else {
             match strategy {
-                LockStrategy::Abort => lock_file.try_lock_exclusive()
+                LockStrategy::Abort => lock_file
+                    .try_lock_exclusive()
                     .map_err(|_| crate::Error::Locked)?,
                 LockStrategy::Wait => lock_file.lock_exclusive()?,
             };
@@ -297,7 +302,9 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// If the given `key` already exists in the repository, its object is replaced. The returned
     /// object represents the data associated with the `key`.
     pub fn insert(&mut self, key: K) -> Object<K, S> {
-        self.header.objects.insert(key.clone(), ObjectHandle::default());
+        self.header
+            .objects
+            .insert(key.clone(), ObjectHandle::default());
         self.header.clean_chunks();
         Object::new(self, key, self.metadata.chunker_bits as usize)
     }
@@ -317,7 +324,11 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// Return the object associated with `key` or `None` if it doesn't exist.
     pub fn get(&mut self, key: &K) -> Option<Object<K, S>> {
         self.header.objects.get(key)?;
-        Some(Object::new(self, key.clone(), self.metadata.chunker_bits as usize))
+        Some(Object::new(
+            self,
+            key.clone(),
+            self.metadata.chunker_bits as usize,
+        ))
     }
 
     /// Return an iterator over all the keys in this repository.
@@ -337,7 +348,9 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             return Err(crate::Error::AlreadyExists);
         }
 
-        let source_object = self.header.objects
+        let source_object = self
+            .header
+            .objects
             .get(source)
             .ok_or(crate::Error::NotFound)?
             .clone();
@@ -394,9 +407,10 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// Return the bytes of the chunk with the given checksum or `None` if there is none.
     pub(super) fn read_chunk(&self, checksum: &ChunkHash) -> io::Result<Vec<u8>> {
         let chunk_id = &self.header.chunks[checksum];
-        let chunk = self.store
-            .read_block(chunk_id)?
-            .ok_or(io::Error::new(io::ErrorKind::InvalidData, "There is no block with that ID."))?;
+        let chunk = self.store.read_block(chunk_id)?.ok_or(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "There is no block with that ID.",
+        ))?;
         self.decode_data(chunk.as_slice())
     }
 
@@ -470,9 +484,9 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
                 Ok(data) => {
                     let actual_checksum = chunk_hash(&data);
                     if *expected_checksum == actual_checksum {
-                        continue
+                        continue;
                     }
-                },
+                }
                 Err(error) => {
                     if error.kind() != ErrorKind::InvalidData {
                         // Encryption is enabled and ciphertext verification failed.
@@ -525,8 +539,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             Some(data) => data,
             None => return Err(crate::Error::NotFound),
         };
-        let metadata: RepositoryMetadata = from_read(serialized_metadata.as_slice())
-            .map_err(|_| crate::Error::Corrupt)?;
+        let metadata: RepositoryMetadata =
+            from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
         Ok(metadata.to_info())
     }

@@ -26,7 +26,7 @@ use super::object::{ChunkHash, ObjectHandle};
 /// A type which can be used as a key in an `ObjectRepository`.
 pub trait Key: Eq + Hash + Clone + Serialize + DeserializeOwned {}
 
-impl<T: Eq + Hash + Clone + Serialize + DeserializeOwned> Key for T {}
+impl<T> Key for T where T: Eq + Hash + Clone + Serialize + DeserializeOwned {}
 
 /// The header for an `ObjectRepository`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
