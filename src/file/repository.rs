@@ -195,9 +195,8 @@ impl<S: DataStore> FileRepository<S> {
         let descendants = match self.walk(path) {
             Ok(descendants) => {
                 // We must convert to owned paths so we're not borrowing `self`.
-                let mut owned_descendants = descendants
-                    .map(|path| path.to_owned())
-                    .collect::<Vec<_>>();
+                let mut owned_descendants =
+                    descendants.map(|path| path.to_owned()).collect::<Vec<_>>();
 
                 // Sort paths in reverse order by depth.
                 owned_descendants.sort_by_key(|path| Reverse(path.iter().count()));
@@ -273,6 +272,8 @@ impl<S: DataStore> FileRepository<S> {
     /// file system to the repository, see `archive`. To copy files from the repository to the file
     /// system, see `extract`.
     ///
+    /// This is a cheap operation which does not require copying the bytes in the files.
+    ///
     /// # Errors
     /// - `Error::NotFound`: There is no file at `source`.
     /// - `Error::AlreadyExists`: There is already a file at `dest`.
@@ -299,6 +300,8 @@ impl<S: DataStore> FileRepository<S> {
     /// file system to the repository, see `archive`. To copy files from the repository to the file
     /// system, see `extract`.
     ///
+    /// This is a cheap operation which does not require copying the bytes in the files.
+    ///
     /// # Errors
     /// - `Error::NotFound`: There is no file at `source`.
     /// - `Error::AlreadyExists`: There is already a file at `dest`.
@@ -310,9 +313,8 @@ impl<S: DataStore> FileRepository<S> {
         let descendants = match self.walk(source) {
             Ok(descendants) => {
                 // We must convert to owned paths so we're not borrowing `self`.
-                let mut owned_descendants = descendants
-                    .map(|path| path.to_owned())
-                    .collect::<Vec<_>>();
+                let mut owned_descendants =
+                    descendants.map(|path| path.to_owned()).collect::<Vec<_>>();
 
                 // Sort paths in order by depth.
                 owned_descendants.sort_by_key(|path| path.iter().count());
