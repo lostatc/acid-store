@@ -25,10 +25,11 @@
 //! - Integrity checking of data and metadata
 //! - Atomicity, consistency, isolation, and durability (ACID)
 //!
-//! This library currently provides two abstractions for data storage:
+//! This library currently provides the following abstractions for data storage:
 //! - `ObjectRepository` is an object store which maps keys to binary blobs.
 //! - `FileRepository` is a file archive like ZIP or TAR which supports symbolic links, modification
 //! times, POSIX permissions, and extended attributes.
+//! - `ValueRepository` is a persistent, heterogeneous, map-like collection.
 //!
 //! A repository stores its data in a `DataStore`, which is a small trait that can be implemented to
 //! create new storage backends. The following data stores are provided out of the box:
@@ -48,6 +49,7 @@ pub use object::{
     RepositoryInfo, ResourceLimit,
 };
 pub use store::{DataStore, DirectoryStore, MemoryStore};
+pub use value::{ValueKey, ValueRepository};
 
 mod env;
 mod error;
