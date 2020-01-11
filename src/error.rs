@@ -65,6 +65,14 @@ pub enum Error {
     #[error("The file is not a regular file.")]
     NotFile,
 
+    /// A value could not be serialized.
+    #[error("A value could not be serialized.")]
+    Serialize,
+
+    /// A value could not be deserialized.
+    #[error("A value could not be deserialized.")]
+    Deserialize,
+
     /// An I/O error occurred.
     #[error("{0}")]
     Io(#[from] io::Error),
