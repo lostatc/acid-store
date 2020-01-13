@@ -94,14 +94,14 @@ impl DirectoryStore {
     }
 
     /// Return the path where a block with the given `id` will be stored.
-    fn block_path(&self, id: &Uuid) -> PathBuf {
+    fn block_path(&self, id: Uuid) -> PathBuf {
         let mut buffer = Uuid::encode_buffer();
         let hex = id.to_simple().encode_lower(&mut buffer);
         self.blocks_directory.join(&hex[..2]).join(hex)
     }
 
     /// Return the path where a block with the given `id` will be staged.
-    fn staging_path(&self, id: &Uuid) -> PathBuf {
+    fn staging_path(&self, id: Uuid) -> PathBuf {
         let mut buffer = Uuid::encode_buffer();
         let hex = id.to_simple().encode_lower(&mut buffer);
         self.staging_directory.join(hex)
@@ -109,7 +109,7 @@ impl DirectoryStore {
 }
 
 impl DataStore for DirectoryStore {
-    fn write_block(&mut self, id: &Uuid, data: &[u8]) -> io::Result<()> {
+    fn write_block(&mut self, id: Uuid, data: &[u8]) -> io::Result<()> {
         let staging_path = self.staging_path(id);
         let block_path = self.block_path(id);
         create_dir_all(staging_path.parent().unwrap())?;
@@ -126,7 +126,7 @@ impl DataStore for DirectoryStore {
         Ok(())
     }
 
-    fn read_block(&self, id: &Uuid) -> io::Result<Option<Vec<u8>>> {
+    fn read_block(&self, id: Uuid) -> io::Result<Option<Vec<u8>>> {
         let block_path = self.block_path(id);
 
         if block_path.exists() {
@@ -139,7 +139,7 @@ impl DataStore for DirectoryStore {
         }
     }
 
-    fn remove_block(&mut self, id: &Uuid) -> io::Result<()> {
+    fn remove_block(&mut self, id: Uuid) -> io::Result<()> {
         remove_file(self.block_path(id))
     }
 

@@ -148,7 +148,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             Self::acquire_lock(id, LockStrategy::Abort).map_err(|_| crate::Error::AlreadyExists)?;
 
         // Check if the repository already exists.
-        if store.read_block(&VERSION_BLOCK_ID)?.is_some() {
+        if store.read_block(*VERSION_BLOCK_ID)?.is_some() {
             return Err(crate::Error::AlreadyExists);
         }
 
@@ -170,7 +170,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         let compressed_header = config.compression.compress(&serialized_header)?;
         let encrypted_header = config.encryption.encrypt(&compressed_header, &master_key);
         let header_id = Uuid::new_v4();
-        store.write_block(&header_id, &encrypted_header)?;
+        store.write_block(header_id, &encrypted_header)?;
 
         // Create the repository metadata with a reference to the newly-written header.
         let metadata = RepositoryMetadata {
@@ -188,11 +188,11 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         // Write the repository metadata.
         let serialized_metadata = to_vec(&metadata).expect("Could not serialize metadata.");
-        store.write_block(&METADATA_BLOCK_ID, &serialized_metadata)?;
+        store.write_block(*METADATA_BLOCK_ID, &serialized_metadata)?;
 
         // Write the repository version. We do this last because this signifies that the repository
         // is done being created.
-        store.write_block(&VERSION_BLOCK_ID, VERSION_ID.as_bytes())?;
+        store.write_block(*VERSION_BLOCK_ID, VERSION_ID.as_bytes())?;
 
         Ok(ObjectRepository {
             store,
@@ -228,7 +228,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         // Read the repository version to see if this is a compatible repository.
         let serialized_version = store
-            .read_block(&VERSION_BLOCK_ID)?
+            .read_block(*VERSION_BLOCK_ID)?
             .ok_or(crate::Error::NotFound)?;
         let version =
             Uuid::from_slice(serialized_version.as_slice()).map_err(|_| crate::Error::Corrupt)?;
@@ -239,7 +239,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         // We read the metadata again after reading the UUID to prevent a race condition when
         // acquiring the lock.
         let serialized_metadata = store
-            .read_block(&METADATA_BLOCK_ID)?
+            .read_block(*METADATA_BLOCK_ID)?
             .ok_or(crate::Error::Corrupt)?;
         let metadata: RepositoryMetadata =
             from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
@@ -261,7 +261,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         // Read, decrypt, decompress, and deserialize the header.
         let encrypted_header = store
-            .read_block(&metadata.header)?
+            .read_block(metadata.header)?
             .ok_or(crate::Error::Corrupt)?;
         let compressed_header = metadata
             .encryption
@@ -417,7 +417,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         // Encode the data and write it to the data store.
         let encoded_data = self.encode_data(data)?;
         let block_id = Uuid::new_v4();
-        self.store.write_block(&block_id, &encoded_data)?;
+        self.store.write_block(block_id, &encoded_data)?;
 
         // Add the chunk to the header.
         self.header.chunks.insert(checksum, block_id);
@@ -427,7 +427,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
     /// Return the bytes of the chunk with the given checksum or `None` if there is none.
     pub(super) fn read_chunk(&self, checksum: &ChunkHash) -> io::Result<Vec<u8>> {
-        let chunk_id = &self.header.chunks[checksum];
+        let chunk_id = self.header.chunks[checksum];
         let chunk = self.store.read_block(chunk_id)?.ok_or(io::Error::new(
             io::ErrorKind::InvalidData,
             "There is no block with that ID.",
@@ -471,19 +471,19 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         // Write the new header to the data store.
         let header_id = Uuid::new_v4();
-        self.store.write_block(&header_id, &encoded_header)?;
+        self.store.write_block(header_id, &encoded_header)?;
         self.metadata.header = header_id;
 
         // Write the repository metadata, atomically completing the commit.
         let serialized_metadata = to_vec(&self.metadata).expect("Could not serialize metadata.");
         self.store
-            .write_block(&METADATA_BLOCK_ID, &serialized_metadata)?;
+            .write_block(*METADATA_BLOCK_ID, &serialized_metadata)?;
 
         // After changes are committed, remove any unused chunks from the data store.
         let referenced_chunks = self.header.chunks.values().collect::<HashSet<_>>();
         for stored_chunk in self.list_data_blocks()? {
             if !referenced_chunks.contains(&stored_chunk) {
-                self.store.remove_block(&stored_chunk)?;
+                self.store.remove_block(stored_chunk)?;
             }
         }
 
@@ -567,7 +567,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// - `Error::Io`: An I/O error occurred.
     pub fn peek_info(store: &S) -> crate::Result<RepositoryInfo> {
         // Read and deserialize the metadata.
-        let serialized_metadata = match store.read_block(&METADATA_BLOCK_ID)? {
+        let serialized_metadata = match store.read_block(*METADATA_BLOCK_ID)? {
             Some(data) => data,
             None => return Err(crate::Error::NotFound),
         };
