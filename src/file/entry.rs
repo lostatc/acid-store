@@ -117,4 +117,7 @@ pub enum Entry {
 
     /// The metadata for a file.
     Metadata(#[serde(with = "SerializableRelativePathBuf")] RelativePathBuf),
+
+    /// The repository version.
+    Version,
 }

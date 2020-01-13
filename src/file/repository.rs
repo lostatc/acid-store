@@ -17,18 +17,26 @@
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::fs::{create_dir, create_dir_all, File, OpenOptions, read_link, symlink_metadata};
-use std::io::{self, copy, Write};
+use std::io::{self, copy, Read, Write};
 use std::path::Path;
 
 use filetime::{FileTime, set_file_mtime};
+use lazy_static::lazy_static;
 use relative_path::RelativePath;
 use rmp_serde::{from_read, to_vec};
+use uuid::Uuid;
 use walkdir::WalkDir;
 
 use crate::{DataStore, LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo};
 
 use super::entry::{Entry, FileMetadata, FileType};
 use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode, soft_link};
+
+lazy_static! {
+    /// The current repository format version ID.
+    static ref VERSION_ID: Uuid =
+        Uuid::parse_str("307079ac-3563-11ea-bf84-309c230b49ee").unwrap();
+}
 
 /// A persistent file store.
 ///
@@ -66,9 +74,15 @@ impl<S: DataStore> FileRepository<S> {
         config: RepositoryConfig,
         password: Option<&[u8]>,
     ) -> crate::Result<Self> {
-        Ok(Self {
-            repository: ObjectRepository::create_repo(store, config, password)?,
-        })
+        let mut repository = ObjectRepository::create_repo(store, config, password)?;
+
+        // Write the repository version.
+        let mut object = repository.insert(Entry::Version);
+        object.write_all(VERSION_ID.as_bytes())?;
+        object.flush()?;
+        drop(object);
+
+        Ok(Self { repository })
     }
 
     /// Open the existing repository in the given data `store`.
@@ -79,9 +93,23 @@ impl<S: DataStore> FileRepository<S> {
         password: Option<&[u8]>,
         strategy: LockStrategy,
     ) -> crate::Result<Self> {
-        Ok(Self {
-            repository: ObjectRepository::open_repo(store, password, strategy)?,
-        })
+        let mut repository = ObjectRepository::open_repo(store, password, strategy)?;
+
+        // Read the repository version to see if this is a compatible repository.
+        let mut object = repository
+            .get(&Entry::Version)
+            .ok_or(crate::Error::NotFound)?;
+        let mut version_buffer = Vec::new();
+        object.read_to_end(&mut version_buffer)?;
+        drop(object);
+
+        let version =
+            Uuid::from_slice(version_buffer.as_slice()).map_err(|_| crate::Error::Corrupt)?;
+        if version != *VERSION_ID {
+            return Err(crate::Error::UnsupportedVersion);
+        }
+
+        Ok(Self { repository })
     }
 
     /// Return whether there is a file at `path`.
@@ -354,7 +382,6 @@ impl<S: DataStore> FileRepository<S> {
         }
 
         let children = self.repository.keys().filter_map(move |entry| match entry {
-            Entry::Data(_) => None,
             Entry::Metadata(path) => {
                 if path.parent() == Some(parent) {
                     Some(path.as_ref())
@@ -362,6 +389,7 @@ impl<S: DataStore> FileRepository<S> {
                     None
                 }
             }
+            _ => None,
         });
 
         Ok(children)
@@ -386,7 +414,6 @@ impl<S: DataStore> FileRepository<S> {
         }
 
         let descendants = self.repository.keys().filter_map(move |entry| match entry {
-            Entry::Data(_) => None,
             Entry::Metadata(path) => {
                 if path.starts_with(parent) {
                     Some(path.as_relative_path())
@@ -394,6 +421,7 @@ impl<S: DataStore> FileRepository<S> {
                     None
                 }
             }
+            _ => None,
         });
 
         Ok(descendants)
@@ -406,7 +434,7 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
     /// - `Error::AlreadyExists`: There is already a file at `dest`.
-    /// - `Error::Unsupported`: The file at `source` is not a regular file or directory.
+    /// - `Error::FileType`: The file at `source` is not a regular file or directory.
     /// - `Error::Io`: An I/O error occurred.
     ///     - `ErrorKind::NotFound`: The `source` file does not exist.
     ///     - `ErrorKind::PermissionDenied`: The user lack permission to read the `source` file.
@@ -427,7 +455,7 @@ impl<S: DataStore> FileRepository<S> {
                 target: read_link(source)?,
             }
         } else {
-            return Err(crate::Error::Unsupported);
+            return Err(crate::Error::FileType);
         };
 
         let metadata = FileMetadata {
@@ -470,7 +498,7 @@ impl<S: DataStore> FileRepository<S> {
             let file_path = dest.join(RelativePath::from_path(relative_path).unwrap());
             match self.archive(dir_entry.path(), file_path.as_relative_path()) {
                 Ok(_) => continue,
-                Err(crate::Error::Unsupported) => continue,
+                Err(crate::Error::FileType) => continue,
                 Err(error) => return Err(error),
             }
         }
@@ -584,9 +612,10 @@ impl<S: DataStore> FileRepository<S> {
             .repository
             .verify()?
             .iter()
-            .map(|entry| match entry {
-                Entry::Data(path) => path.as_ref(),
-                Entry::Metadata(path) => path.as_ref(),
+            .filter_map(|entry| match entry {
+                Entry::Data(path) => Some(path.as_ref()),
+                Entry::Metadata(path) => Some(path.as_ref()),
+                _ => None,
             })
             .collect();
 

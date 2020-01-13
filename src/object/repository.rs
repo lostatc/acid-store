@@ -42,6 +42,14 @@ lazy_static! {
     static ref METADATA_BLOCK_ID: Uuid =
         Uuid::parse_str("8691d360-29c6-11ea-8bc1-2fc8cfe66f33").unwrap();
 
+    /// The block ID of the block which stores the repository format version.
+    static ref VERSION_BLOCK_ID: Uuid =
+        Uuid::parse_str("cbf28b1c-3550-11ea-8cb0-87d7a14efe10").unwrap();
+
+    /// The current repository format version ID.
+    static ref VERSION_ID: Uuid =
+        Uuid::parse_str("25bec50c-3551-11ea-8700-3bde18597598").unwrap();
+
     /// The path of the directory where repository lock files are stored.
     static ref LOCKS_DIR: PathBuf = runtime_dir()
         .unwrap_or(data_dir().expect("Unsupported platform"))
@@ -140,7 +148,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             Self::acquire_lock(id, LockStrategy::Abort).map_err(|_| crate::Error::AlreadyExists)?;
 
         // Check if the repository already exists.
-        if let Some(_) = store.read_block(&METADATA_BLOCK_ID)? {
+        if store.read_block(&VERSION_BLOCK_ID)?.is_some() {
             return Err(crate::Error::AlreadyExists);
         }
 
@@ -182,6 +190,10 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         let serialized_metadata = to_vec(&metadata).expect("Could not serialize metadata.");
         store.write_block(&METADATA_BLOCK_ID, &serialized_metadata)?;
 
+        // Write the repository version. We do this last because this signifies that the repository
+        // is done being created.
+        store.write_block(&VERSION_BLOCK_ID, VERSION_ID.as_bytes())?;
+
         Ok(ObjectRepository {
             store,
             metadata,
@@ -202,6 +214,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// - `Error::Locked`: The repository is locked and `LockStrategy::Abort` was used.
     /// - `Error::Password`: The password provided is invalid.
     /// - `Error::KeyType`: The type `K` does not match the data in the repository.
+    /// - `Error::UnsupportedVersion`: This repository format is not supported by this version of
+    /// the library.
     /// - `Error::Io`: An I/O error occurred.
     pub fn open_repo(
         store: S,
@@ -212,12 +226,21 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         let repository_id = Self::peek_info(&store)?.id();
         let lock_file = Self::acquire_lock(repository_id, strategy)?;
 
+        // Read the repository version to see if this is a compatible repository.
+        let serialized_version = store
+            .read_block(&VERSION_BLOCK_ID)?
+            .ok_or(crate::Error::NotFound)?;
+        let version =
+            Uuid::from_slice(serialized_version.as_slice()).map_err(|_| crate::Error::Corrupt)?;
+        if version != *VERSION_ID {
+            return Err(crate::Error::UnsupportedVersion);
+        }
+
         // We read the metadata again after reading the UUID to prevent a race condition when
         // acquiring the lock.
-        let serialized_metadata = match store.read_block(&METADATA_BLOCK_ID)? {
-            Some(data) => data,
-            None => return Err(crate::Error::NotFound),
-        };
+        let serialized_metadata = store
+            .read_block(&METADATA_BLOCK_ID)?
+            .ok_or(crate::Error::Corrupt)?;
         let metadata: RepositoryMetadata =
             from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
@@ -237,10 +260,9 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         );
 
         // Read, decrypt, decompress, and deserialize the header.
-        let encrypted_header = match store.read_block(&metadata.header)? {
-            Some(data) => data,
-            None => return Err(crate::Error::Corrupt),
-        };
+        let encrypted_header = store
+            .read_block(&metadata.header)?
+            .ok_or(crate::Error::Corrupt)?;
         let compressed_header = metadata
             .encryption
             .decrypt(&encrypted_header, &master_key)
@@ -423,6 +445,17 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         self.header.objects.get_mut(key).unwrap()
     }
 
+    /// Return a list of blocks in `store` excluding those used to store metadata.
+    fn list_data_blocks(&self) -> io::Result<Vec<Uuid>> {
+        Ok(self
+            .store
+            .list_blocks()?
+            .iter()
+            .copied()
+            .filter(|id| *id != *METADATA_BLOCK_ID && *id != *VERSION_BLOCK_ID)
+            .collect())
+    }
+
     /// Commit changes which have been made to the repository.
     ///
     /// No changes are saved persistently until this method is called. Committing a repository is an
@@ -448,7 +481,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         // After changes are committed, remove any unused chunks from the data store.
         let referenced_chunks = self.header.chunks.values().collect::<HashSet<_>>();
-        for stored_chunk in self.store.list_blocks()? {
+        for stored_chunk in self.list_data_blocks()? {
             if !referenced_chunks.contains(&stored_chunk) {
                 self.store.remove_block(&stored_chunk)?;
             }
@@ -546,6 +579,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 }
 
 impl<K: Key, S: DataStore> Drop for ObjectRepository<K, S> {
+    // TODO: Consider replacing with a weak reference.
     fn drop(&mut self) {
         // Remove this repository from the set of open stores.
         OPEN_REPOSITORIES.write().unwrap().remove(&self.metadata.id);

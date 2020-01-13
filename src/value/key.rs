@@ -15,7 +15,6 @@
  */
 
 use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -23,6 +22,7 @@ use serde::Serialize;
 use crate::Key;
 
 /// A `Key` with an associated value type.
+#[derive(Debug, PartialEq, Eq)]
 pub struct ValueKey<K: Key, V: Serialize + DeserializeOwned> {
     key: K,
     value: PhantomData<V>,
@@ -37,22 +37,13 @@ impl<K: Key, V: Serialize + DeserializeOwned> ValueKey<K, V> {
         }
     }
 
+    /// Return a reference to the wrapped key.
+    pub fn get_ref(&self) -> &K {
+        &self.key
+    }
+
     /// Consume this value and return the wrapped key.
     pub fn into_inner(self) -> K {
         self.key
-    }
-}
-
-impl<K: Key, V: Serialize + DeserializeOwned> Deref for ValueKey<K, V> {
-    type Target = K;
-
-    fn deref(&self) -> &Self::Target {
-        &self.key
-    }
-}
-
-impl<K: Key, V: Serialize + DeserializeOwned> DerefMut for ValueKey<K, V> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.key
     }
 }
