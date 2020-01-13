@@ -41,17 +41,17 @@ impl MemoryStore {
 }
 
 impl DataStore for MemoryStore {
-    fn write_block(&mut self, id: &Uuid, data: &[u8]) -> io::Result<()> {
+    fn write_block(&mut self, id: Uuid, data: &[u8]) -> io::Result<()> {
         self.blocks.insert(id.to_owned(), data.to_owned());
         Ok(())
     }
 
-    fn read_block(&self, id: &Uuid) -> io::Result<Option<Vec<u8>>> {
-        Ok(self.blocks.get(id).map(|data| data.to_owned()))
+    fn read_block(&self, id: Uuid) -> io::Result<Option<Vec<u8>>> {
+        Ok(self.blocks.get(&id).map(|data| data.to_owned()))
     }
 
-    fn remove_block(&mut self, id: &Uuid) -> io::Result<()> {
-        self.blocks.remove(id);
+    fn remove_block(&mut self, id: Uuid) -> io::Result<()> {
+        self.blocks.remove(&id);
         Ok(())
     }
 

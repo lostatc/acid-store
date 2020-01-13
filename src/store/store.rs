@@ -34,12 +34,12 @@ pub trait DataStore {
     /// If a block with the given `id` already exists, it is overwritten.
     ///
     /// This is an atomic operation.
-    fn write_block(&mut self, id: &Uuid, data: &[u8]) -> io::Result<()>;
+    fn write_block(&mut self, id: Uuid, data: &[u8]) -> io::Result<()>;
 
     /// Return the bytes of the block with the given `id`.
     ///
     /// If there is no block with the given `id`, return `None`.
-    fn read_block(&self, id: &Uuid) -> io::Result<Option<Vec<u8>>>;
+    fn read_block(&self, id: Uuid) -> io::Result<Option<Vec<u8>>>;
 
     /// Remove the block with the given `id` from the store.
     ///
@@ -50,7 +50,7 @@ pub trait DataStore {
     /// If there is no block with the given `id`, this method does nothing and returns `Ok`.
     ///
     /// This is an atomic operation.
-    fn remove_block(&mut self, id: &Uuid) -> io::Result<()>;
+    fn remove_block(&mut self, id: Uuid) -> io::Result<()>;
 
     /// Return a list of IDs of blocks in the store.
     ///
