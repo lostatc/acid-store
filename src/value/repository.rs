@@ -17,13 +17,31 @@
 use std::collections::HashSet;
 use std::io::{Read, Write};
 
+use lazy_static::lazy_static;
 use rmp_serde::{from_read, to_vec};
+use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use uuid::Uuid;
 
 use crate::{DataStore, Key, LockStrategy, ObjectRepository, RepositoryConfig, RepositoryInfo};
 
 use super::key::ValueKey;
+
+lazy_static! {
+    /// The current repository format version ID.
+    static ref VERSION_ID: Uuid =
+        Uuid::parse_str("5b93b6a4-362f-11ea-b8a5-309c230b49ee ").unwrap();
+}
+
+/// A type of data stored in the `ObjectRepository` which backs a `ValueRepository`.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+enum KeyType<K> {
+    /// A serialized value.
+    Data(K),
+
+    /// The current repository version.
+    Version,
+}
 
 /// A persistent, heterogeneous, map-like collection.
 ///
@@ -40,7 +58,7 @@ use super::key::ValueKey;
 /// is called. For details about deduplication, compression, encryption, and locking, see
 /// `ObjectRepository`.
 pub struct ValueRepository<K: Key, S: DataStore> {
-    repository: ObjectRepository<K, S>,
+    repository: ObjectRepository<KeyType<K>, S>,
 }
 
 impl<K: Key, S: DataStore> ValueRepository<K, S> {
@@ -52,9 +70,15 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
         config: RepositoryConfig,
         password: Option<&[u8]>,
     ) -> crate::Result<Self> {
-        Ok(Self {
-            repository: ObjectRepository::create_repo(store, config, password)?,
-        })
+        let mut repository = ObjectRepository::create_repo(store, config, password)?;
+
+        // Write the repository version.
+        let mut object = repository.insert(KeyType::Version);
+        object.write_all(VERSION_ID.as_bytes())?;
+        object.flush()?;
+        drop(object);
+
+        Ok(Self { repository })
     }
 
     /// Open the existing repository in the given data `store`.
@@ -65,14 +89,29 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
         password: Option<&[u8]>,
         strategy: LockStrategy,
     ) -> crate::Result<Self> {
-        Ok(Self {
-            repository: ObjectRepository::open_repo(store, password, strategy)?,
-        })
+        let mut repository = ObjectRepository::open_repo(store, password, strategy)?;
+
+        // Read the repository version to see if this is a compatible repository.
+        let mut object = repository
+            .get(&KeyType::Version)
+            .ok_or(crate::Error::NotFound)?;
+        let mut version_buffer = Vec::new();
+        object.read_to_end(&mut version_buffer)?;
+        drop(object);
+
+        let version =
+            Uuid::from_slice(version_buffer.as_slice()).map_err(|_| crate::Error::Corrupt)?;
+        if version != *VERSION_ID {
+            return Err(crate::Error::UnsupportedVersion);
+        }
+
+        Ok(Self { repository })
     }
 
     /// Return whether the given `key` exists in this repository.
     pub fn contains(&self, key: &K) -> bool {
-        self.repository.contains(key)
+        // TODO: Avoid unnecessary clone.
+        self.repository.contains(&KeyType::Data(key.clone()))
     }
 
     /// Insert a new key-value pair.
@@ -86,7 +125,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
         where
             V: Serialize + DeserializeOwned,
     {
-        let mut object = self.repository.insert(key.into_inner());
+        let mut object = self.repository.insert(KeyType::Data(key.into_inner()));
         let serialized_value = to_vec(value).map_err(|_| crate::Error::Serialize)?;
         object.write_all(serialized_value.as_slice())?;
         object.flush()?;
@@ -101,7 +140,8 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// The space used by the given value isn't freed and made available for new values until
     /// `commit` is called.
     pub fn remove(&mut self, key: &K) -> bool {
-        self.repository.remove(key)
+        // TODO: Avoid unnecessary clone.
+        self.repository.remove(&KeyType::Data(key.clone()))
     }
 
     /// Return the value associated with `key`.
@@ -114,7 +154,10 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
         where
             V: Serialize + DeserializeOwned,
     {
-        let mut object = self.repository.get(key).ok_or(crate::Error::NotFound)?;
+        let mut object = self
+            .repository
+            .get(&KeyType::Data(key.get_ref().clone()))
+            .ok_or(crate::Error::NotFound)?;
         let mut serialized_value = Vec::new();
         object.read_to_end(&mut serialized_value)?;
         let value =
@@ -125,7 +168,12 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
 
     /// Return a list of all the keys in this repository.
     pub fn keys(&self) -> impl Iterator<Item=&K> {
-        self.repository.keys()
+        self.repository
+            .keys()
+            .filter_map(|value_key| match value_key {
+                KeyType::Data(key) => Some(key),
+                _ => None,
+            })
     }
 
     /// Copy the value at `source` to `dest`.
@@ -136,7 +184,9 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// - `Error::NotFound`: There is no value at `source`.
     /// - `Error::AlreadyExists`: There is already a value at `dest`.
     pub fn copy(&mut self, source: &K, dest: K) -> crate::Result<()> {
-        self.repository.copy(source, dest)
+        // TODO: Avoid unnecessary clone.
+        self.repository
+            .copy(&KeyType::Data(source.clone()), KeyType::Data(dest))
     }
 
     /// Commit changes which have been made to the repository.
@@ -153,7 +203,15 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn verify(&self) -> crate::Result<HashSet<&K>> {
-        self.repository.verify()
+        Ok(self
+            .repository
+            .verify()?
+            .iter()
+            .filter_map(|value_key| match value_key {
+                KeyType::Data(key) => Some(key),
+                _ => None,
+            })
+            .collect())
     }
 
     /// Change the password for this repository.
