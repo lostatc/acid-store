@@ -45,8 +45,8 @@ pub use env::init;
 pub use error::{Error, Result};
 pub use file::{FileMetadata, FileRepository, FileType};
 pub use object::{
-    Compression, Encryption, Key, LockStrategy, Object, ObjectRepository, RepositoryConfig,
-    RepositoryInfo, ResourceLimit,
+    Compression, ContentId, Encryption, Key, LockStrategy, Object, ObjectRepository,
+    RepositoryConfig, RepositoryInfo, ResourceLimit,
 };
 pub use store::{DataStore, DirectoryStore, MemoryStore};
 pub use value::{ValueKey, ValueRepository};
@@ -57,3 +57,4 @@ mod file;
 mod object;
 mod store;
 mod value;
+mod version;

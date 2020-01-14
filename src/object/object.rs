@@ -101,6 +101,20 @@ impl Default for ObjectHandle {
     }
 }
 
+/// A value that uniquely identifies the contents of an object.
+///
+/// A `ContentId` is like a checksum of the data in an object except it is cheap to compute.
+/// A `ContentId` can be compared with other `ContentId` values to determine if the contents of two
+/// objects are equal. However, these comparisons are only valid within the same repository;
+/// comparisons between `ContentId`s from different repositories are meaningless. To compare data
+/// between repositories, an actual checksum of the data must be used.
+///
+/// `ContentId` is opaque, but it can be serialized and deserialized. The value of a `ContentId` is
+/// valid for the lifetime of a repository, meaning that they can be compared across invocations of
+/// the library.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
+pub struct ContentId([u8; 32]);
+
 /// A handle for accessing data in a repository.
 ///
 /// An `Object` represents the data associated with a key in an `ObjectRepository`. It implements
@@ -112,9 +126,9 @@ impl Default for ObjectHandle {
 /// `ErrorKind::InvalidData`. The `verify` method can be used to check the integrity of all the data
 /// in the object whether encryption is enabled or not.
 ///
-/// Data written to an `Object` is automatically flushed when the value is dropped, but any errors
-/// that occur in the `Drop` implementation are ignored. If these errors need to be handled, it is
-/// advisable to call `flush` explicitly after all data has been written.
+/// Any data which is written to an `Object` will be lost if `flush` is not called. Data written to
+/// an `Object` cannot be read until `flush` is called. The `flush` method is not called when the
+/// object is dropped, as it may return an `Err` that needs to be handled.
 pub struct Object<'a, K: Key, S: DataStore> {
     /// The repository where chunks are stored.
     repository: &'a mut ObjectRepository<K, S>,
@@ -181,9 +195,6 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// If the given `length` is greater than or equal to the current size of the object, this does
     /// nothing. This moves the seek position to the new end of the object.
     pub fn truncate(&mut self, length: u64) -> io::Result<()> {
-        // We need to flush changes before truncating the object.
-        self.flush()?;
-
         if length >= self.get_handle().size {
             return Ok(());
         }
@@ -232,6 +243,18 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
         }
 
         Ok(true)
+    }
+
+    /// Return a `ContentId` representing the contents of this object.
+    ///
+    /// The returned value represents the contents of the object at the time this method was called.
+    pub fn content_id(&self) -> ContentId {
+        // The content ID is just a hash of all the chunk hashes, which is cheap to compute.
+        let mut concatenation = Vec::new();
+        for chunk in &self.get_handle().chunks {
+            concatenation.extend_from_slice(&chunk.hash);
+        }
+        ContentId(chunk_hash(concatenation.as_slice()))
     }
 
     /// Return the location of the chunk at the current seek position.
@@ -288,8 +311,9 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
 
 impl<'a, K: Key, S: DataStore> Seek for Object<'a, K, S> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        // We need to flush changes before writing to a different part of the file.
-        self.flush()?;
+        // The list of written chunks becomes invalid once the user changes the seek position.
+        self.new_chunks.clear();
+
         let object_size = self.get_handle().size;
 
         let new_position = match pos {
@@ -388,13 +412,5 @@ impl<'a, K: Key, S: DataStore> Read for Object<'a, K, S> {
         buf.copy_from_slice(next_chunk);
         self.position += bytes_read as u64;
         Ok(bytes_read)
-    }
-}
-
-impl<'a, K: Key, S: DataStore> Drop for Object<'a, K, S> {
-    fn drop(&mut self) {
-        // Explicitly discard the `Err` because we can't handle it here.
-        // This behavior is documented.
-        self.flush().ok();
     }
 }
