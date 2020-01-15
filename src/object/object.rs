@@ -190,33 +190,16 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
         self.repository.get_handle(&self.key).size
     }
 
-    /// Truncate the object to the given `length`.
+    /// Return a `ContentId` representing the contents of this object.
     ///
-    /// If the given `length` is greater than or equal to the current size of the object, this does
-    /// nothing. This moves the seek position to the new end of the object.
-    pub fn truncate(&mut self, length: u64) -> io::Result<()> {
-        if length >= self.get_handle().size {
-            return Ok(());
+    /// The returned value represents the contents of the object at the time this method was called.
+    pub fn content_id(&self) -> ContentId {
+        // The content ID is just a hash of all the chunk hashes, which is cheap to compute.
+        let mut concatenation = Vec::new();
+        for chunk in &self.get_handle().chunks {
+            concatenation.extend_from_slice(&chunk.hash);
         }
-
-        // Truncating the object may mean slicing a chunk in half. Because we can't edit chunks
-        // in-place, we need to read the final chunk, slice it, and write it back.
-        self.position = length;
-        let end_location = self.current_chunk();
-        let last_chunk = self.repository.read_chunk(&end_location.chunk.hash)?;
-        let new_last_chunk = &last_chunk[..end_location.relative_position()];
-        let new_last_chunk = Chunk {
-            hash: self.repository.write_chunk(&new_last_chunk)?,
-            size: new_last_chunk.len(),
-        };
-
-        // Remove all chunks including and after the final chunk.
-        self.get_handle_mut().chunks.drain(end_location.index..);
-
-        // Append the new final chunk which has been sliced.
-        self.get_handle_mut().chunks.push(new_last_chunk);
-
-        Ok(())
+        ContentId(chunk_hash(concatenation.as_slice()))
     }
 
     /// Verify the integrity of the data in this object.
@@ -245,16 +228,33 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
         Ok(true)
     }
 
-    /// Return a `ContentId` representing the contents of this object.
+    /// Truncate the object to the given `length`.
     ///
-    /// The returned value represents the contents of the object at the time this method was called.
-    pub fn content_id(&self) -> ContentId {
-        // The content ID is just a hash of all the chunk hashes, which is cheap to compute.
-        let mut concatenation = Vec::new();
-        for chunk in &self.get_handle().chunks {
-            concatenation.extend_from_slice(&chunk.hash);
+    /// If the given `length` is greater than or equal to the current size of the object, this does
+    /// nothing. This moves the seek position to the new end of the object.
+    pub fn truncate(&mut self, length: u64) -> io::Result<()> {
+        if length >= self.get_handle().size {
+            return Ok(());
         }
-        ContentId(chunk_hash(concatenation.as_slice()))
+
+        // Truncating the object may mean slicing a chunk in half. Because we can't edit chunks
+        // in-place, we need to read the final chunk, slice it, and write it back.
+        self.position = length;
+        let end_location = self.current_chunk();
+        let last_chunk = self.repository.read_chunk(&end_location.chunk.hash)?;
+        let new_last_chunk = &last_chunk[..end_location.relative_position()];
+        let new_last_chunk = Chunk {
+            hash: self.repository.write_chunk(&new_last_chunk)?,
+            size: new_last_chunk.len(),
+        };
+
+        // Remove all chunks including and after the final chunk.
+        self.get_handle_mut().chunks.drain(end_location.index..);
+
+        // Append the new final chunk which has been sliced.
+        self.get_handle_mut().chunks.push(new_last_chunk);
+
+        Ok(())
     }
 
     /// Return the location of the chunk at the current seek position.

@@ -30,6 +30,7 @@
 //! - `FileRepository` is a file archive like ZIP or TAR which supports symbolic links, modification
 //! times, POSIX permissions, and extended attributes.
 //! - `ValueRepository` is a persistent, heterogeneous, map-like collection.
+//! - `VersionRepository` is an object store with support for versioning.
 //!
 //! A repository stores its data in a `DataStore`, which is a small trait that can be implemented to
 //! create new storage backends. The following data stores are provided out of the box:
@@ -50,6 +51,7 @@ pub use object::{
 };
 pub use store::{DataStore, DirectoryStore, MemoryStore};
 pub use value::{ValueKey, ValueRepository};
+pub use version::{ReadOnlyObject, Version, VersionRepository};
 
 mod env;
 mod error;
