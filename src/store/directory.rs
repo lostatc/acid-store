@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::fs::{create_dir, create_dir_all, File, remove_dir_all, remove_file, rename};
+use std::fs::{create_dir, create_dir_all, remove_dir_all, remove_file, rename, File};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
@@ -155,7 +155,7 @@ impl DataStore for DirectoryStore {
                         .to_str()
                         .expect("Block file name is invalid."),
                 )
-                    .expect("Block file name is invalid.")),
+                .expect("Block file name is invalid.")),
                 Err(error) => Err(io::Error::from(error)),
             })
             .collect::<io::Result<Vec<_>>>()

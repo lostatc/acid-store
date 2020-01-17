@@ -20,6 +20,7 @@ blake2 = "0.8.1"
 
 # Error handling
 thiserror = "1.0.9"
+anyhow = "1.0.26"
 
 # Compression
 flate2 = "1.0.13"

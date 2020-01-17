@@ -15,8 +15,8 @@
  */
 
 use std::collections::{HashMap, HashSet};
-use std::fs::{create_dir_all, File};
 use std::fs::OpenOptions;
+use std::fs::{create_dir_all, File};
 use std::hash::Hash;
 use std::io::{self, ErrorKind};
 use std::path::PathBuf;
@@ -25,9 +25,10 @@ use std::time::SystemTime;
 
 use dirs::{data_dir, runtime_dir};
 use fs2::FileExt;
-use lazy_static::lazy_static;
 use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
+
+use lazy_static::lazy_static;
 
 use crate::store::DataStore;
 
@@ -428,10 +429,12 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// Return the bytes of the chunk with the given checksum or `None` if there is none.
     pub(super) fn read_chunk(&self, checksum: &ChunkHash) -> io::Result<Vec<u8>> {
         let chunk_id = self.header.chunks[checksum];
-        let chunk = self.store.read_block(chunk_id)?.ok_or(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "There is no block with that ID.",
-        ))?;
+        let chunk = self.store.read_block(chunk_id)?.ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "There is no block with that ID.",
+            )
+        })?;
         self.decode_data(chunk.as_slice())
     }
 

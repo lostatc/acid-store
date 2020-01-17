@@ -17,8 +17,8 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
-use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::object::{ChunkHash, ObjectHandle};
