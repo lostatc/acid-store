@@ -44,6 +44,18 @@ impl<T: ChunkerImpl> IncrementalChunker<T> {
     pub fn chunks(&mut self) -> Vec<Vec<u8>> {
         replace(&mut self.chunks, Vec::new())
     }
+
+    /// Clear all the data in the chunker.
+    pub fn clear(&mut self) {
+        self.buffer.clear();
+        self.chunks.clear();
+        self.chunker.reset();
+    }
+
+    /// Return whether this chunker contains no data.
+    pub fn is_empty(&self) -> bool {
+        self.buffer.is_empty() && self.chunks.is_empty()
+    }
 }
 
 impl<T: ChunkerImpl> Write for IncrementalChunker<T> {

@@ -17,11 +17,12 @@
 use std::collections::HashSet;
 use std::io::{Read, Write};
 
-use lazy_static::lazy_static;
 use rmp_serde::{from_read, to_vec};
-use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use lazy_static::lazy_static;
 
 use crate::{DataStore, Key, LockStrategy, ObjectRepository, RepositoryConfig, RepositoryInfo};
 
@@ -122,8 +123,8 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// - `Error::Serialize`: The `value` could not be serialized.
     /// - `Error::Io`: An I/O error occurred.
     pub fn insert<V>(&mut self, key: ValueKey<K, V>, value: &V) -> crate::Result<()>
-        where
-            V: Serialize + DeserializeOwned,
+    where
+        V: Serialize + DeserializeOwned,
     {
         let mut object = self.repository.insert(KeyType::Data(key.into_inner()));
         let serialized_value = to_vec(value).map_err(|_| crate::Error::Serialize)?;
@@ -151,8 +152,8 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// - `Error::Deserialize`: The value could not be deserialized.
     /// - `Error::Io`: An I/O error occurred.
     pub fn get<V>(&mut self, key: &ValueKey<K, V>) -> crate::Result<V>
-        where
-            V: Serialize + DeserializeOwned,
+    where
+        V: Serialize + DeserializeOwned,
     {
         let mut object = self
             .repository
@@ -167,7 +168,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     }
 
     /// Return a list of all the keys in this repository.
-    pub fn keys(&self) -> impl Iterator<Item=&K> {
+    pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.repository
             .keys()
             .filter_map(|value_key| match value_key {

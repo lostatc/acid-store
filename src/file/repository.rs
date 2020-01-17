@@ -16,16 +16,17 @@
 
 use std::cmp::Reverse;
 use std::collections::HashSet;
-use std::fs::{create_dir, create_dir_all, File, OpenOptions, read_link, symlink_metadata};
+use std::fs::{create_dir, create_dir_all, read_link, symlink_metadata, File, OpenOptions};
 use std::io::{self, copy, Read, Write};
 use std::path::Path;
 
-use filetime::{FileTime, set_file_mtime};
-use lazy_static::lazy_static;
+use filetime::{set_file_mtime, FileTime};
 use relative_path::RelativePath;
 use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
 use walkdir::WalkDir;
+
+use lazy_static::lazy_static;
 
 use crate::{DataStore, LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo};
 
@@ -371,7 +372,7 @@ impl<S: DataStore> FileRepository<S> {
     pub fn list<'a>(
         &'a mut self,
         parent: &'a RelativePath,
-    ) -> crate::Result<impl Iterator<Item=&'a RelativePath> + 'a> {
+    ) -> crate::Result<impl Iterator<Item = &'a RelativePath> + 'a> {
         match self.metadata(parent) {
             Some(metadata) => {
                 if !metadata.is_directory() {
@@ -403,7 +404,7 @@ impl<S: DataStore> FileRepository<S> {
     pub fn walk<'a>(
         &'a mut self,
         parent: &'a RelativePath,
-    ) -> crate::Result<impl Iterator<Item=&'a RelativePath> + 'a> {
+    ) -> crate::Result<impl Iterator<Item = &'a RelativePath> + 'a> {
         match self.metadata(parent) {
             Some(metadata) => {
                 if !metadata.is_directory() {

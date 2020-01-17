@@ -17,9 +17,10 @@
 use std::io::{Read, Write};
 use std::time::SystemTime;
 
-use lazy_static::lazy_static;
 use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
+
+use lazy_static::lazy_static;
 
 use crate::{
     DataStore, Key, LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo,
@@ -140,7 +141,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     }
 
     /// Return an iterator over all the keys in this repository.
-    pub fn keys(&self) -> impl Iterator<Item=&K> {
+    pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.repository
             .keys()
             .filter_map(|version_key| match version_key {

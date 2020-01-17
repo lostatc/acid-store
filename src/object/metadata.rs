@@ -19,9 +19,9 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::{Compression, Encryption};
 use super::config::RepositoryConfig;
 use super::encryption::{KeySalt, ResourceLimit};
+use super::{Compression, Encryption};
 
 /// Metadata for a repository.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

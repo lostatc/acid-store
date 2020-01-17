@@ -17,12 +17,12 @@
 
 use std::collections::HashMap;
 use std::ffi::OsString;
-#[cfg(unix)]
-use std::fs::{Permissions, set_permissions};
 use std::fs::Metadata;
+#[cfg(unix)]
+use std::fs::{set_permissions, Permissions};
 use std::io;
 #[cfg(unix)]
-use std::os::unix::fs::{PermissionsExt, symlink};
+use std::os::unix::fs::{symlink, PermissionsExt};
 #[cfg(windows)]
 use std::os::windows::fs::symlink_file;
 use std::path::Path;
