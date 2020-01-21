@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 
-use data_store::{
-    Compression, Encryption, MemoryStore, ObjectRepository, RepositoryConfig, ResourceLimit,
+use data_store::repo::{
+    Compression, Encryption, ObjectRepository, RepositoryConfig, ResourceLimit,
 };
+use data_store::store::MemoryStore;
 
 /// The minimum size of test data buffers.
 const MIN_BUFFER_SIZE: usize = 1024;

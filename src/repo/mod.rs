@@ -14,12 +14,17 @@
  * limitations under the License.
  */
 
-//! Low-level backends for data storage.
+//! High-level abstractions for data storage.
 
-pub use self::common::DataStore;
-pub use self::directory::DirectoryStore;
-pub use self::memory::MemoryStore;
+pub use file::{FileMetadata, FileRepository, FileType};
+pub use object::{
+    Compression, ContentId, Encryption, Key, LockStrategy, Object, ObjectRepository,
+    RepositoryConfig, RepositoryInfo, ResourceLimit,
+};
+pub use value::{ValueKey, ValueRepository};
+pub use version::{ReadOnlyObject, Version, VersionRepository};
 
-mod common;
-mod directory;
-mod memory;
+mod file;
+mod object;
+mod value;
+mod version;

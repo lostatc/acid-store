@@ -16,7 +16,8 @@
 
 use std::io::{self, Read, Seek, SeekFrom};
 
-use crate::{ContentId, DataStore, Key, Object};
+use crate::repo::{ContentId, Key, Object};
+use crate::store::DataStore;
 
 /// A handle for accessing data in a repository.
 ///

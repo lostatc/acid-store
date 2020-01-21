@@ -23,7 +23,7 @@ use blake2::VarBlake2b;
 use cdchunking::ZPAQ;
 use serde::{Deserialize, Serialize};
 
-use crate::DataStore;
+use crate::store::DataStore;
 
 use super::chunking::IncrementalChunker;
 use super::header::Key;
