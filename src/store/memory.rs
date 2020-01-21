@@ -19,7 +19,7 @@ use std::io;
 
 use uuid::Uuid;
 
-use super::store::DataStore;
+use super::common::DataStore;
 
 /// A `DataStore` which stores data in memory.
 ///

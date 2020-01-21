@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use super::store::DataStore;
+use super::common::DataStore;
 
 /// A UUID which acts as the version ID of the directory store format.
 const CURRENT_VERSION: &str = "2891c3da-297e-11ea-a7c9-1b8f8be4fc9b";

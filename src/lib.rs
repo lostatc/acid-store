@@ -44,19 +44,8 @@ pub use uuid;
 
 pub use env::init;
 pub use error::{Error, Result};
-pub use file::{FileMetadata, FileRepository, FileType};
-pub use object::{
-    Compression, ContentId, Encryption, Key, LockStrategy, Object, ObjectRepository,
-    RepositoryConfig, RepositoryInfo, ResourceLimit,
-};
-pub use store::{DataStore, DirectoryStore, MemoryStore};
-pub use value::{ValueKey, ValueRepository};
-pub use version::{ReadOnlyObject, Version, VersionRepository};
 
 mod env;
 mod error;
-mod file;
-mod object;
-mod store;
-mod value;
-mod version;
+pub mod repo;
+pub mod store;

@@ -28,7 +28,8 @@ use walkdir::WalkDir;
 
 use lazy_static::lazy_static;
 
-use crate::{DataStore, LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo};
+use crate::repo::{LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo};
+use crate::store::DataStore;
 
 use super::entry::{Entry, FileMetadata, FileType};
 use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode, soft_link};

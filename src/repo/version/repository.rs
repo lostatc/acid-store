@@ -22,9 +22,8 @@ use uuid::Uuid;
 
 use lazy_static::lazy_static;
 
-use crate::{
-    DataStore, Key, LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo,
-};
+use crate::repo::{Key, LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo};
+use crate::store::DataStore;
 
 use super::object::ReadOnlyObject;
 use super::version::{Version, VersionKey};

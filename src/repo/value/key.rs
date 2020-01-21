@@ -19,7 +19,7 @@ use std::marker::PhantomData;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::Key;
+use crate::repo::Key;
 
 /// A `Key` with an associated value type.
 #[derive(Debug, PartialEq, Eq)]
