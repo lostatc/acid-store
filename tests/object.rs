@@ -78,6 +78,7 @@ fn read_written_data() -> anyhow::Result<()> {
     object.read_exact(&mut actual_data)?;
 
     assert_eq!(actual_data, expected_data);
+    assert_eq!(object.size(), expected_data.len() as u64);
 
     Ok(())
 }
@@ -131,6 +132,64 @@ fn partially_overwrite_written_data() -> anyhow::Result<()> {
     object.read_exact(&mut actual_data)?;
 
     assert_eq!(actual_data, expected_data);
+
+    Ok(())
+}
+
+#[test]
+fn truncate_object() -> anyhow::Result<()> {
+    let mut repository = new_repository()?;
+    let mut object = repository.insert("Test".into());
+
+    // Write data to the object.
+    let initial_data = random_buffer();
+    object.write_all(initial_data.as_slice())?;
+    object.flush()?;
+
+    // Truncate the object.
+    let new_size = MIN_BUFFER_SIZE as u64 / 2;
+    object.truncate(new_size)?;
+
+    assert_eq!(object.size(), new_size);
+    assert_eq!(object.seek(SeekFrom::Current(0))?, new_size);
+
+    // Read data from the object.
+    let expected_data = &initial_data[..new_size as usize];
+    let mut actual_data = Vec::new();
+    object.seek(SeekFrom::Start(0))?;
+    object.read_to_end(&mut actual_data)?;
+
+    assert_eq!(actual_data, expected_data);
+
+    Ok(())
+}
+
+#[test]
+fn compare_content_ids() -> anyhow::Result<()> {
+    let mut repository = new_repository()?;
+    let initial_data = random_buffer();
+
+    // Write data to the first object.
+    let mut object = repository.insert("Test1".into());
+    object.write_all(initial_data.as_slice())?;
+    object.flush()?;
+    let content_id1 = object.content_id();
+
+    // Write the same data to the second object.
+    let mut object = repository.insert("Test2".into());
+    object.write_all(initial_data.as_slice())?;
+    object.flush()?;
+    let content_id2 = object.content_id();
+
+    assert_eq!(content_id1, content_id2);
+
+    // Write new data to the second object.
+    let mut object = repository.get(&"Test2".into()).unwrap();
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    let content_id2 = object.content_id();
+
+    assert_ne!(content_id1, content_id2);
 
     Ok(())
 }

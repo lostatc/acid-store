@@ -121,6 +121,9 @@ pub struct ContentId([u8; 32]);
 /// `Read`, `Write`, and `Seek` for reading data from the repository and writing data to the
 /// repository.
 ///
+/// Because `Object` internally buffers data when reading, there's no need to use a buffered reader
+/// like `BufReader`.
+///
 /// When writing to the object, `flush` must be called explicitly. When the object is dropped or
 /// `seek` or `truncate` is called, any unflushed data is discarded. The object's `size` and
 /// `content_id` are not updated until `flush` is called, and `verify` will not verify the integrity
@@ -218,12 +221,12 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
                     }
                 }
                 Err(error) => {
-                    if error.kind() == ErrorKind::InvalidData {
+                    return if error.kind() == ErrorKind::InvalidData {
                         // Encryption is enabled and ciphertext verification failed.
-                        return Ok(false);
+                        Ok(false)
                     } else {
-                        return Err(error);
-                    }
+                        Err(error)
+                    };
                 }
             }
         }
@@ -266,6 +269,10 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
 
         // Append the new final chunk which has been sliced.
         self.get_handle_mut().chunks.push(new_last_chunk);
+
+        // Update the object size.
+        let current_size = self.get_handle().size;
+        self.get_handle_mut().size = min(length, current_size);
 
         // Restore the seek position.
         self.position = min(original_position, length);
