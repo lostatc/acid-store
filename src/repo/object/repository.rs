@@ -422,7 +422,9 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             .list_blocks()?
             .iter()
             .copied()
-            .filter(|id| *id != *METADATA_BLOCK_ID && *id != *VERSION_BLOCK_ID)
+            .filter(|id| {
+                *id != *METADATA_BLOCK_ID && *id != *VERSION_BLOCK_ID && *id != self.metadata.header
+            })
             .collect())
     }
 
