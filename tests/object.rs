@@ -16,13 +16,13 @@
 
 use std::io::{Read, Seek, SeekFrom, Write};
 
-use common::{new_repository, random_buffer, random_bytes, ARCHIVE_CONFIG, MIN_BUFFER_SIZE};
+use common::{create_repo, random_buffer, random_bytes, ARCHIVE_CONFIG, MIN_BUFFER_SIZE};
 
 mod common;
 
 #[test]
 fn read_written_data() -> anyhow::Result<()> {
-    let mut repository = new_repository()?;
+    let mut repository = create_repo()?;
     let mut object = repository.insert("Test".into());
 
     let expected_data = random_buffer();
@@ -40,7 +40,7 @@ fn read_written_data() -> anyhow::Result<()> {
 
 #[test]
 fn overwrite_written_data() -> anyhow::Result<()> {
-    let mut repository = new_repository()?;
+    let mut repository = create_repo()?;
     let mut object = repository.insert("Test".into());
 
     // Write initial data to the object.
@@ -65,7 +65,7 @@ fn overwrite_written_data() -> anyhow::Result<()> {
 
 #[test]
 fn partially_overwrite_written_data() -> anyhow::Result<()> {
-    let mut repository = new_repository()?;
+    let mut repository = create_repo()?;
     let mut object = repository.insert("Test".into());
 
     // Write initial data to the object.
@@ -93,7 +93,7 @@ fn partially_overwrite_written_data() -> anyhow::Result<()> {
 
 #[test]
 fn partially_overwrite_and_grow_data() -> anyhow::Result<()> {
-    let mut repository = new_repository()?;
+    let mut repository = create_repo()?;
     let mut object = repository.insert("Test".into());
     let new_start_position = MIN_BUFFER_SIZE / 2;
 
@@ -122,7 +122,7 @@ fn partially_overwrite_and_grow_data() -> anyhow::Result<()> {
 
 #[test]
 fn truncate_object() -> anyhow::Result<()> {
-    let mut repository = new_repository()?;
+    let mut repository = create_repo()?;
     let mut object = repository.insert("Test".into());
 
     // Write data to the object.
@@ -150,7 +150,7 @@ fn truncate_object() -> anyhow::Result<()> {
 
 #[test]
 fn compare_content_ids() -> anyhow::Result<()> {
-    let mut repository = new_repository()?;
+    let mut repository = create_repo()?;
     let initial_data = random_buffer();
 
     // Write data to the first object.

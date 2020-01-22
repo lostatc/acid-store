@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
+use std::fmt::Debug;
+
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 
 use data_store::repo::{
-    Compression, Encryption, ObjectRepository, RepositoryConfig, ResourceLimit,
+    Compression, Encryption, LockStrategy, ObjectRepository, RepositoryConfig, ResourceLimit,
 };
-use data_store::store::MemoryStore;
+use data_store::store::{DataStore, MemoryStore};
 
 /// The minimum size of test data buffers.
 pub const MIN_BUFFER_SIZE: usize = 1024;
@@ -40,6 +42,21 @@ pub const ARCHIVE_CONFIG: RepositoryConfig = RepositoryConfig {
     memory_limit: ResourceLimit::Interactive,
 };
 
+/// Assert that the given `expression` matches the given `pattern`.
+#[macro_export]
+macro_rules! assert_match {
+    ($expression:expr, $pattern:pat) => {
+        match $expression {
+            $pattern => (),
+            value => panic!(
+                "Expected: {:?}, Received: {:?}",
+                stringify!($pattern),
+                value
+            ),
+        }
+    };
+}
+
 /// Return a buffer containing `size` random bytes for testing purposes.
 pub fn random_bytes(size: usize) -> Vec<u8> {
     let mut rng = SmallRng::from_entropy();
@@ -54,11 +71,7 @@ pub fn random_buffer() -> Vec<u8> {
     random_bytes(rng.gen_range(MIN_BUFFER_SIZE, MAX_BUFFER_SIZE))
 }
 
-/// Return a new `ObjectRepository` that stores data in memory.
-pub fn new_repository() -> anyhow::Result<ObjectRepository<String, MemoryStore>> {
-    Ok(ObjectRepository::create_repo(
-        MemoryStore::open(),
-        ARCHIVE_CONFIG,
-        Some(PASSWORD),
-    )?)
+/// Create a new `ObjectRepository` that stores data in memory.
+pub fn create_repo() -> data_store::Result<ObjectRepository<String, MemoryStore>> {
+    ObjectRepository::create_repo(MemoryStore::open(), ARCHIVE_CONFIG, Some(PASSWORD))
 }
