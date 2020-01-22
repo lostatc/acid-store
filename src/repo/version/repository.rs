@@ -260,4 +260,9 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     pub fn peek_info(store: S) -> crate::Result<RepositoryInfo> {
         ObjectRepository::<VersionKey<K>, S>::peek_info(&store)
     }
+
+    /// Consume this repository and return the wrapped `DataStore`.
+    pub fn into_store(self) -> S {
+        self.repository.into_store()
+    }
 }

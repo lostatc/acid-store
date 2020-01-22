@@ -27,6 +27,7 @@ mod compression;
 mod config;
 mod encryption;
 mod header;
+mod lock;
 mod metadata;
 mod object;
 mod repository;
