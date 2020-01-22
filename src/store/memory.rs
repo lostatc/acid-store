@@ -27,6 +27,7 @@ use super::common::DataStore;
 /// and is only accessible to the current process. This data store is useful for testing.
 ///
 /// None of the methods in this data store will ever return `Err`.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MemoryStore {
     blocks: HashMap<Uuid, Vec<u8>>,
 }

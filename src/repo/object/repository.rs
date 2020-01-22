@@ -101,6 +101,7 @@ pub enum LockStrategy {
 /// information about which chunks belong to which objects is encrypted.
 ///
 /// The information in `RepositoryInfo` is not encrypted.
+#[derive(Debug)]
 pub struct ObjectRepository<K: Key, S: DataStore> {
     /// The data store which backs this repository.
     store: S,
