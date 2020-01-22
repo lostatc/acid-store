@@ -15,16 +15,11 @@
  */
 
 use std::collections::{HashMap, HashSet};
-use std::fs::OpenOptions;
-use std::fs::{create_dir_all, File};
 use std::hash::Hash;
 use std::io::{self, ErrorKind};
-use std::path::PathBuf;
 use std::sync::RwLock;
 use std::time::SystemTime;
 
-use dirs::{data_dir, runtime_dir};
-use fs2::FileExt;
 use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
 
@@ -35,6 +30,7 @@ use crate::store::DataStore;
 use super::config::RepositoryConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt};
 use super::header::{Header, Key};
+use super::lock::{Lock, LockTable};
 use super::metadata::{RepositoryInfo, RepositoryMetadata};
 use super::object::{chunk_hash, ChunkHash, Object, ObjectHandle};
 
@@ -51,14 +47,8 @@ lazy_static! {
     static ref VERSION_ID: Uuid =
         Uuid::parse_str("25bec50c-3551-11ea-8700-3bde18597598").unwrap();
 
-    /// The path of the directory where repository lock files are stored.
-    static ref LOCKS_DIR: PathBuf = runtime_dir()
-        .unwrap_or(data_dir().expect("Unsupported platform"))
-        .join("data-store")
-        .join("locks");
-
-    /// The set of UUIDs of repositories which are currently open.
-    static ref OPEN_REPOSITORIES: RwLock<HashSet<Uuid>> = RwLock::new(HashSet::new());
+    /// A table of locks on repositories.
+    static ref REPO_LOCKS: RwLock<LockTable> = RwLock::new(LockTable::new());
 }
 
 /// A strategy for handling a repository which is already locked.
@@ -115,8 +105,8 @@ pub struct ObjectRepository<K: Key, S: DataStore> {
     /// The master encryption key for the repository.
     master_key: EncryptionKey,
 
-    /// The lock file for this repository.
-    lock_file: File,
+    /// The lock on this repository.
+    lock: Lock,
 }
 
 impl<K: Key, S: DataStore> ObjectRepository<K, S> {
@@ -146,8 +136,11 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         // Acquire an exclusive lock on the repository.
         let id = Uuid::new_v4();
-        let lock_file =
-            Self::acquire_lock(id, LockStrategy::Abort).map_err(|_| crate::Error::AlreadyExists)?;
+        let lock = REPO_LOCKS
+            .write()
+            .unwrap()
+            .acquire_lock(id, LockStrategy::Abort)
+            .map_err(|_| crate::Error::AlreadyExists)?;
 
         // Check if the repository already exists.
         if store.read_block(*VERSION_BLOCK_ID)?.is_some() {
@@ -201,7 +194,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             metadata,
             header,
             master_key,
-            lock_file,
+            lock,
         })
     }
 
@@ -226,7 +219,10 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     ) -> crate::Result<Self> {
         // Acquire a lock on the repository.
         let repository_id = Self::peek_info(&store)?.id();
-        let lock_file = Self::acquire_lock(repository_id, strategy)?;
+        let lock = REPO_LOCKS
+            .write()
+            .unwrap()
+            .acquire_lock(repository_id, strategy)?;
 
         // Read the repository version to see if this is a compatible repository.
         let serialized_version = store
@@ -281,38 +277,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             metadata,
             header,
             master_key,
-            lock_file,
+            lock,
         })
-    }
-
-    /// Acquire a lock on this repository and return the lock file.
-    fn acquire_lock(id: Uuid, strategy: LockStrategy) -> crate::Result<File> {
-        create_dir_all(LOCKS_DIR.as_path())?;
-        let mut buffer = Uuid::encode_buffer();
-        let file_name = format!("{}.lock", id.to_hyphenated().encode_lower(&mut buffer));
-        let lock_file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(LOCKS_DIR.join(file_name))?;
-
-        // File locks are held on behalf of the entire process, so we need another method of
-        // checking if this repository is already open within this process.
-        let mut open_repositories = OPEN_REPOSITORIES.write().unwrap();
-
-        if open_repositories.contains(&id) {
-            return Err(crate::Error::Locked);
-        } else {
-            match strategy {
-                LockStrategy::Abort => lock_file
-                    .try_lock_exclusive()
-                    .map_err(|_| crate::Error::Locked)?,
-                LockStrategy::Wait => lock_file.lock_exclusive()?,
-            };
-
-            open_repositories.insert(id);
-        }
-
-        Ok(lock_file)
     }
 
     /// Return whether the given `key` exists in this repository.
@@ -510,7 +476,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             for chunk in &object.chunks {
                 chunks_to_objects
                     .entry(chunk.hash)
-                    .or_insert(HashSet::new())
+                    .or_insert_with(HashSet::new)
                     .insert(key);
             }
         }
@@ -580,12 +546,9 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         Ok(metadata.to_info())
     }
-}
 
-impl<K: Key, S: DataStore> Drop for ObjectRepository<K, S> {
-    // TODO: Consider replacing with a weak reference.
-    fn drop(&mut self) {
-        // Remove this repository from the set of open stores.
-        OPEN_REPOSITORIES.write().unwrap().remove(&self.metadata.id);
+    /// Consume this repository and return the wrapped `DataStore`.
+    pub fn into_store(self) -> S {
+        self.store
     }
 }
