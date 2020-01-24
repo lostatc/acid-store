@@ -95,7 +95,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository
-            .get(&KeyType::Version)
+            .get(KeyType::Version)
             .ok_or(crate::Error::NotFound)?;
         let mut version_buffer = Vec::new();
         object.read_to_end(&mut version_buffer)?;
@@ -158,7 +158,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     {
         let mut object = self
             .repository
-            .get(&KeyType::Data(key.get_ref().clone()))
+            .get(KeyType::Data(key.get_ref().clone()))
             .ok_or(crate::Error::NotFound)?;
         let mut serialized_value = Vec::new();
         object.read_to_end(&mut serialized_value)?;

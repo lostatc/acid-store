@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::io::{self, ErrorKind};
@@ -282,7 +283,11 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     }
 
     /// Return whether the given `key` exists in this repository.
-    pub fn contains(&self, key: &K) -> bool {
+    pub fn contains<Q>(&self, key: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         self.header.objects.contains_key(key)
     }
 
@@ -304,20 +309,20 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     ///
     /// The space used by the given object isn't freed and made available for new objects until
     /// `commit` is called.
-    pub fn remove(&mut self, key: &K) -> bool {
+    pub fn remove<Q>(&mut self, key: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         let handle = self.header.objects.remove(key);
         self.header.clean_chunks();
         handle.is_some()
     }
 
     /// Return the object associated with `key` or `None` if it doesn't exist.
-    pub fn get(&mut self, key: &K) -> Option<Object<K, S>> {
-        self.header.objects.get(key)?;
-        Some(Object::new(
-            self,
-            key.clone(),
-            self.metadata.chunker_bits as usize,
-        ))
+    pub fn get(&mut self, key: K) -> Option<Object<K, S>> {
+        self.header.objects.get(&key)?;
+        Some(Object::new(self, key, self.metadata.chunker_bits as usize))
     }
 
     /// Return an iterator over all the keys in this repository.
@@ -332,8 +337,12 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// # Errors
     /// - `Error::NotFound`: There is no object at `source`.
     /// - `Error::AlreadyExists`: There is already an object at `dest`.
-    pub fn copy(&mut self, source: &K, dest: K) -> crate::Result<()> {
-        if self.contains(&dest) {
+    pub fn copy<Q>(&mut self, source: &Q, dest: K) -> crate::Result<()>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
+        if self.contains(dest.borrow()) {
             return Err(crate::Error::AlreadyExists);
         }
 
@@ -406,12 +415,20 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     }
 
     /// Get the object handle for the object associated with `key`.
-    pub(super) fn get_handle(&self, key: &K) -> &ObjectHandle {
+    pub(super) fn get_handle<Q>(&self, key: &Q) -> &ObjectHandle
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         self.header.objects.get(key).unwrap()
     }
 
     /// Get the object handle for the object associated with `key`.
-    pub(super) fn get_handle_mut(&mut self, key: &K) -> &mut ObjectHandle {
+    pub(super) fn get_handle_mut<Q>(&mut self, key: &Q) -> &mut ObjectHandle
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         self.header.objects.get_mut(key).unwrap()
     }
 

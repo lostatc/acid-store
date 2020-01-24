@@ -78,7 +78,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository
-            .get(&VersionKey::RepositoryVersion)
+            .get(VersionKey::RepositoryVersion)
             .ok_or(crate::Error::NotFound)?;
         let mut version_buffer = Vec::new();
         object.read_to_end(&mut version_buffer)?;
@@ -136,7 +136,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
 
     /// Return an object for modifying the current version of `key` or `None` if it doesn't exist.
     pub fn get(&mut self, key: &K) -> Option<Object<VersionKey<K>, S>> {
-        self.repository.get(&VersionKey::Object(key.clone()))
+        self.repository.get(VersionKey::Object(key.clone()))
     }
 
     /// Return an iterator over all the keys in this repository.
@@ -161,7 +161,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
 
         let object = self
             .repository
-            .get(&VersionKey::Object(key.clone()))
+            .get(VersionKey::Object(key.clone()))
             .expect("There is no object associated with this key.");
         let size = object.size();
         let content_id = object.content_id();
@@ -204,7 +204,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// If there is no version with the given `id`, this returns `None`.
     pub fn get_version(&mut self, key: &K, id: usize) -> Option<ReadOnlyObject<VersionKey<K>, S>> {
         self.repository
-            .get(&VersionKey::Version(key.clone(), id))
+            .get(VersionKey::Version(key.clone(), id))
             .map(|object| object.into())
     }
 
@@ -216,7 +216,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     pub fn list_versions(&mut self, key: &K) -> crate::Result<Vec<Version>> {
         let mut object = self
             .repository
-            .get(&VersionKey::Index(key.clone()))
+            .get(VersionKey::Index(key.clone()))
             .ok_or(crate::Error::NotFound)?;
 
         // Read into a buffer first to catch any I/O errors.

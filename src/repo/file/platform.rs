@@ -41,7 +41,7 @@ pub fn file_mode(metadata: &Metadata) -> Option<u32> {
 
 /// Set the given file `mode` on the given `file`.
 #[cfg(unix)]
-pub fn set_file_mode(file: &Path, mode: u32) -> io::Result<()> {
+pub fn set_file_mode(file: impl AsRef<Path>, mode: u32) -> io::Result<()> {
     set_permissions(file, Permissions::from_mode(mode))?;
 
     Ok(())
@@ -49,13 +49,13 @@ pub fn set_file_mode(file: &Path, mode: u32) -> io::Result<()> {
 
 /// Do nothing because POSIX permissions are not supported by this platform.
 #[cfg(windows)]
-pub fn set_file_mode(file: &Path, mode: u32) -> io::Result<()> {
+pub fn set_file_mode(file: impl AsRef<Path>, mode: u32) -> io::Result<()> {
     Ok(())
 }
 
 /// Return a map of the extended attributes of the given `file`.
 #[cfg(unix)]
-pub fn extended_attrs(file: &Path) -> io::Result<HashMap<OsString, Vec<u8>>> {
+pub fn extended_attrs(file: impl AsRef<Path>) -> io::Result<HashMap<OsString, Vec<u8>>> {
     let mut attributes = HashMap::new();
 
     for attr_name in xattr::list(file)? {
@@ -69,13 +69,16 @@ pub fn extended_attrs(file: &Path) -> io::Result<HashMap<OsString, Vec<u8>>> {
 
 /// Return an empty map because extended attributes are not supported by this platform.
 #[cfg(windows)]
-pub fn extended_attrs(file: &Path) -> io::Result<HashMap<OsString, Vec<u8>>> {
+pub fn extended_attrs(file: impl AsRef<Path>) -> io::Result<HashMap<OsString, Vec<u8>>> {
     Ok(HashMap::new())
 }
 
 /// Sets the given `attributes` on the given `file`.
 #[cfg(unix)]
-pub fn set_extended_attrs(file: &Path, attributes: HashMap<OsString, Vec<u8>>) -> io::Result<()> {
+pub fn set_extended_attrs(
+    file: impl AsRef<Path>,
+    attributes: HashMap<OsString, Vec<u8>>,
+) -> io::Result<()> {
     for (attr_name, attr_value) in attributes.iter() {
         xattr::set(file, attr_name, attr_value)?;
     }
@@ -85,18 +88,21 @@ pub fn set_extended_attrs(file: &Path, attributes: HashMap<OsString, Vec<u8>>) -
 
 /// Do nothing because extended attributes are not supported by this platform.
 #[cfg(windows)]
-pub fn set_extended_attrs(file: &Path, attributes: HashMap<OsString, Vec<u8>>) -> io::Result<()> {
+pub fn set_extended_attrs(
+    file: impl AsRef<Path>,
+    attributes: HashMap<OsString, Vec<u8>>,
+) -> io::Result<()> {
     Ok(())
 }
 
 /// Create a symbolic `link` to a given `target` file.
 #[cfg(unix)]
-pub fn soft_link(link: &Path, target: &Path) -> io::Result<()> {
+pub fn soft_link(link: impl AsRef<Path>, target: impl AsRef<Path>) -> io::Result<()> {
     symlink(target, link)
 }
 
 /// Create a symbolic file `link` (not a directory link) to a given `target` file.
 #[cfg(windows)]
-pub fn soft_link(link: &Path, target: &Path) -> io::Result<()> {
+pub fn soft_link(link: impl AsRef<Path>, target: impl AsRef<Path>) -> io::Result<()> {
     symlink_file(target, link)
 }

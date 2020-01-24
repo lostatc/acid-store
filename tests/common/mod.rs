@@ -14,15 +14,13 @@
  * limitations under the License.
  */
 
-use std::fmt::Debug;
-
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 
 use data_store::repo::{
-    Compression, Encryption, LockStrategy, ObjectRepository, RepositoryConfig, ResourceLimit,
+    Compression, Encryption, ObjectRepository, RepositoryConfig, ResourceLimit,
 };
-use data_store::store::{DataStore, MemoryStore};
+use data_store::store::MemoryStore;
 
 /// The minimum size of test data buffers.
 pub const MIN_BUFFER_SIZE: usize = 1024;
