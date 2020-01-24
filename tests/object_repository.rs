@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-use uuid::Uuid;
+use std::io::Write;
 
-use common::{create_repo, ARCHIVE_CONFIG, PASSWORD};
+use common::{create_repo, random_buffer, ARCHIVE_CONFIG, PASSWORD};
 use data_store::repo::{LockStrategy, ObjectRepository};
 use data_store::store::MemoryStore;
 
@@ -73,5 +73,144 @@ fn opening_with_wrong_key_type_errs() -> anyhow::Result<()> {
     );
 
     assert_match!(repository.unwrap_err(), data_store::Error::KeyType);
+    Ok(())
+}
+
+#[test]
+fn inserted_key_replaces_existing_key() -> anyhow::Result<()> {
+    // Insert an object and write data to it.
+    let mut repository = create_repo()?;
+    let mut object = repository.insert("Test".into());
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+
+    assert_ne!(object.size(), 0);
+
+    // Replace the object with an empty one.
+    let object = repository.insert("Test".into());
+
+    assert_eq!(object.size(), 0);
+
+    Ok(())
+}
+
+#[test]
+fn remove_object() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.insert("Test".into());
+
+    assert!(repository.remove(&"Test".into()));
+    assert!(!repository.remove(&"Test".into()));
+
+    Ok(())
+}
+
+#[test]
+fn copied_object_has_same_contents() -> anyhow::Result<()> {
+    // Write data to an object.
+    let mut repository = create_repo()?;
+    let mut object = repository.insert("Source".into());
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    let source_id = object.content_id();
+
+    // Copy the object.
+    repository.copy(&"Source".into(), "Dest".into())?;
+    let object = repository.get(&"Dest".into()).unwrap();
+    let dest_id = object.content_id();
+
+    assert_eq!(source_id, dest_id);
+
+    Ok(())
+}
+
+#[test]
+fn copied_object_must_exist() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    assert_match!(
+        repository
+            .copy(&"Nonexistent".into(), "Dest".into())
+            .unwrap_err(),
+        data_store::Error::NotFound
+    );
+    Ok(())
+}
+
+#[test]
+fn copying_does_not_overwrite() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.insert("Source".into());
+    repository.insert("Dest".into());
+
+    assert_match!(
+        repository
+            .copy(&"Source".into(), "Dest".into())
+            .unwrap_err(),
+        data_store::Error::AlreadyExists
+    );
+
+    Ok(())
+}
+
+#[test]
+fn committed_changes_are_persisted() -> anyhow::Result<()> {
+    // Write data to the repository.
+    let mut repository = create_repo()?;
+    let mut object = repository.insert("Test".into());
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    let expected_id = object.content_id();
+
+    drop(object);
+    repository.commit()?;
+
+    // Re-open the repository.
+    let mut repository = ObjectRepository::<String, _>::open_repo(
+        repository.into_store(),
+        Some(PASSWORD),
+        LockStrategy::Abort,
+    )?;
+    let object = repository.get(&"Test".into()).unwrap();
+    let actual_id = object.content_id();
+
+    assert_eq!(actual_id, expected_id);
+
+    Ok(())
+}
+
+#[test]
+fn uncommitted_changes_are_not_persisted() -> anyhow::Result<()> {
+    // Write data to the repository.
+    let mut repository = create_repo()?;
+    let mut object = repository.insert("Test".into());
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+
+    drop(object);
+
+    // Re-open the repository.
+    let mut repository = ObjectRepository::<String, _>::open_repo(
+        repository.into_store(),
+        Some(PASSWORD),
+        LockStrategy::Abort,
+    )?;
+
+    assert!(repository.get(&"Test".into()).is_none());
+
+    Ok(())
+}
+
+#[test]
+fn change_password() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.change_password(b"new password");
+    repository.commit()?;
+
+    ObjectRepository::<String, _>::open_repo(
+        repository.into_store(),
+        Some(b"new password"),
+        LockStrategy::Abort,
+    )?;
+
     Ok(())
 }
