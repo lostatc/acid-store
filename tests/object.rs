@@ -16,7 +16,7 @@
 
 use std::io::{Read, Seek, SeekFrom, Write};
 
-use common::{create_repo, random_buffer, random_bytes, ARCHIVE_CONFIG, MIN_BUFFER_SIZE};
+use common::{create_repo, random_buffer, random_bytes, MIN_BUFFER_SIZE};
 
 mod common;
 
@@ -168,7 +168,7 @@ fn compare_content_ids() -> anyhow::Result<()> {
     assert_eq!(content_id1, content_id2);
 
     // Write new data to the second object.
-    let mut object = repository.get(&"Test2".into()).unwrap();
+    let mut object = repository.get("Test2".into()).unwrap();
     object.write_all(random_buffer().as_slice())?;
     object.flush()?;
     let content_id2 = object.content_id();

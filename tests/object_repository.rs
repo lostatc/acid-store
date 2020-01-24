@@ -99,8 +99,8 @@ fn remove_object() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.insert("Test".into());
 
-    assert!(repository.remove(&"Test".into()));
-    assert!(!repository.remove(&"Test".into()));
+    assert!(repository.remove("Test"));
+    assert!(!repository.remove("Test"));
 
     Ok(())
 }
@@ -115,8 +115,8 @@ fn copied_object_has_same_contents() -> anyhow::Result<()> {
     let source_id = object.content_id();
 
     // Copy the object.
-    repository.copy(&"Source".into(), "Dest".into())?;
-    let object = repository.get(&"Dest".into()).unwrap();
+    repository.copy("Source", "Dest".into())?;
+    let object = repository.get("Dest".into()).unwrap();
     let dest_id = object.content_id();
 
     assert_eq!(source_id, dest_id);
@@ -128,9 +128,7 @@ fn copied_object_has_same_contents() -> anyhow::Result<()> {
 fn copied_object_must_exist() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     assert_match!(
-        repository
-            .copy(&"Nonexistent".into(), "Dest".into())
-            .unwrap_err(),
+        repository.copy("Nonexistent", "Dest".into()).unwrap_err(),
         data_store::Error::NotFound
     );
     Ok(())
@@ -143,9 +141,7 @@ fn copying_does_not_overwrite() -> anyhow::Result<()> {
     repository.insert("Dest".into());
 
     assert_match!(
-        repository
-            .copy(&"Source".into(), "Dest".into())
-            .unwrap_err(),
+        repository.copy("Source", "Dest".into()).unwrap_err(),
         data_store::Error::AlreadyExists
     );
 
@@ -170,7 +166,7 @@ fn committed_changes_are_persisted() -> anyhow::Result<()> {
         Some(PASSWORD),
         LockStrategy::Abort,
     )?;
-    let object = repository.get(&"Test".into()).unwrap();
+    let object = repository.get("Test".into()).unwrap();
     let actual_id = object.content_id();
 
     assert_eq!(actual_id, expected_id);
@@ -195,7 +191,7 @@ fn uncommitted_changes_are_not_persisted() -> anyhow::Result<()> {
         LockStrategy::Abort,
     )?;
 
-    assert!(repository.get(&"Test".into()).is_none());
+    assert!(repository.get("Test".into()).is_none());
 
     Ok(())
 }
