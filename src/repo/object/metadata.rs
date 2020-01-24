@@ -71,7 +71,7 @@ impl RepositoryMetadata {
                 memory_limit: self.memory_limit,
                 operations_limit: self.operations_limit,
             },
-            creation_time: self.creation_time,
+            created: self.creation_time,
         }
     }
 }
@@ -81,7 +81,7 @@ impl RepositoryMetadata {
 pub struct RepositoryInfo {
     id: Uuid,
     config: RepositoryConfig,
-    creation_time: SystemTime,
+    created: SystemTime,
 }
 
 impl RepositoryInfo {
@@ -96,7 +96,7 @@ impl RepositoryInfo {
     }
 
     /// The time this repository was created.
-    pub fn creation_time(&self) -> SystemTime {
-        self.creation_time
+    pub fn created(&self) -> SystemTime {
+        self.created
     }
 }
