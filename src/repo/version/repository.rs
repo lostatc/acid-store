@@ -24,7 +24,9 @@ use uuid::Uuid;
 
 use lazy_static::lazy_static;
 
-use crate::repo::{Key, LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo};
+use crate::repo::{
+    Key, LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo, RepositoryStats,
+};
 use crate::store::DataStore;
 
 use super::object::ReadOnlyObject;
@@ -290,6 +292,11 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// See `ObjectRepository::peek_info` for details.
     pub fn peek_info(store: S) -> crate::Result<RepositoryInfo> {
         ObjectRepository::<VersionKey<K>, S>::peek_info(&store)
+    }
+
+    /// Calculate statistics about the repository.
+    pub fn stats(&self) -> RepositoryStats {
+        self.repository.stats()
     }
 
     /// Consume this repository and return the wrapped `DataStore`.

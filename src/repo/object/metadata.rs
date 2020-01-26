@@ -100,3 +100,27 @@ impl RepositoryInfo {
         self.created
     }
 }
+
+/// Statistics about a repository.
+pub struct RepositoryStats {
+    pub(super) apparent_size: u64,
+    pub(super) actual_size: u64,
+}
+
+impl RepositoryStats {
+    /// The combined size of all the objects in the repository.
+    ///
+    /// This may be larger than the `actual_size` if some data is being shared between objects
+    /// (deduplicated).
+    pub fn apparent_size(&self) -> u64 {
+        self.apparent_size
+    }
+
+    /// The total amount of space used by all the objects in the repository.
+    ///
+    /// This is an approximation of how much storage space is being used on the underlying data
+    /// store.
+    pub fn actual_size(&self) -> u64 {
+        self.actual_size
+    }
+}
