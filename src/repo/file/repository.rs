@@ -99,7 +99,7 @@ impl<S: DataStore> FileRepository<S> {
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository
-            .get(Entry::Version)
+            .get(&Entry::Version)
             .ok_or(crate::Error::NotFound)?;
         let mut version_buffer = Vec::new();
         object.read_to_end(&mut version_buffer)?;
@@ -257,7 +257,7 @@ impl<S: DataStore> FileRepository<S> {
     pub fn metadata(&mut self, path: impl AsRef<RelativePath>) -> Option<FileMetadata> {
         let object = self
             .repository
-            .get(Entry::Metadata(path.as_ref().to_owned()))?;
+            .get(&Entry::Metadata(path.as_ref().to_owned()))?;
 
         Some(from_read(object).expect("Could not deserialize file metadata."))
     }
@@ -273,7 +273,7 @@ impl<S: DataStore> FileRepository<S> {
     ) -> crate::Result<()> {
         let mut object = self
             .repository
-            .get(Entry::Metadata(path.as_ref().to_owned()))
+            .get(&Entry::Metadata(path.as_ref().to_owned()))
             .ok_or(crate::Error::NotFound)?;
 
         let serialized_metadata = to_vec(metadata).expect("Could not serialize file metadata.");
@@ -298,7 +298,7 @@ impl<S: DataStore> FileRepository<S> {
         }
         let object = self
             .repository
-            .get(Entry::Data(path.as_ref().to_owned()))
+            .get(&Entry::Data(path.as_ref().to_owned()))
             .expect("There is no object associated with this file.");
         Ok(object)
     }
@@ -382,6 +382,20 @@ impl<S: DataStore> FileRepository<S> {
         Ok(())
     }
 
+    /// Check whether the given `path` exists and is a directory.
+    fn check_directory(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<()> {
+        match self.metadata(path) {
+            Some(metadata) => {
+                if !metadata.is_directory() {
+                    Err(crate::Error::NotDirectory)
+                } else {
+                    Ok(())
+                }
+            }
+            None => Err(crate::Error::NotFound),
+        }
+    }
+
     /// Return an unsorted iterator of paths which are children of `parent`.
     ///
     /// # Errors
@@ -391,14 +405,7 @@ impl<S: DataStore> FileRepository<S> {
         &'a mut self,
         parent: impl AsRef<RelativePath> + 'a,
     ) -> crate::Result<impl Iterator<Item = &'a RelativePath> + 'a> {
-        match self.metadata(&parent) {
-            Some(metadata) => {
-                if !metadata.is_directory() {
-                    return Err(crate::Error::NotDirectory);
-                }
-            }
-            None => return Err(crate::Error::NotFound),
-        }
+        self.check_directory(&parent)?;
 
         let children = self.repository.keys().filter_map(move |entry| match entry {
             Entry::Metadata(path) => {
@@ -423,14 +430,7 @@ impl<S: DataStore> FileRepository<S> {
         &'a mut self,
         parent: impl AsRef<RelativePath> + 'a,
     ) -> crate::Result<impl Iterator<Item = &'a RelativePath> + 'a> {
-        match self.metadata(&parent) {
-            Some(metadata) => {
-                if !metadata.is_directory() {
-                    return Err(crate::Error::NotDirectory);
-                }
-            }
-            None => return Err(crate::Error::NotFound),
-        }
+        self.check_directory(&parent)?;
 
         let descendants = self.repository.keys().filter_map(move |entry| match entry {
             Entry::Metadata(path) => {
@@ -520,7 +520,7 @@ impl<S: DataStore> FileRepository<S> {
         // `WalkDir` includes `source` in the paths it iterates over.
         // It does not error if `source` is not a directory.
         for result in WalkDir::new(&source) {
-            let dir_entry = result.map_err(|error| io::Error::from(error))?;
+            let dir_entry = result.map_err(io::Error::from)?;
             let relative_path = dir_entry.path().strip_prefix(&source).unwrap();
             let file_path = dest
                 .as_ref()
@@ -564,7 +564,7 @@ impl<S: DataStore> FileRepository<S> {
             FileType::File => {
                 let mut object = self
                     .repository
-                    .get(Entry::Data(source.as_ref().to_owned()))
+                    .get(&Entry::Data(source.as_ref().to_owned()))
                     .expect("This file has no data in the repository.");
                 let mut file = OpenOptions::new()
                     .write(true)

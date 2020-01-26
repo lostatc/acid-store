@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+use std::borrow::Borrow;
+use std::hash::Hash;
 use std::io::{Read, Write};
 use std::time::SystemTime;
 
@@ -78,7 +80,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository
-            .get(VersionKey::RepositoryVersion)
+            .get(&VersionKey::RepositoryVersion)
             .ok_or(crate::Error::NotFound)?;
         let mut version_buffer = Vec::new();
         object.read_to_end(&mut version_buffer)?;
@@ -94,8 +96,13 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     }
 
     /// Return whether the given `key` exists in this repository.
-    pub fn contains(&self, key: &K) -> bool {
-        self.repository.contains(&VersionKey::Object(key.clone()))
+    pub fn contains<Q>(&self, key: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+    {
+        self.repository
+            .contains(&VersionKey::Object(key.to_owned()))
     }
 
     /// Insert the given `key` into the repository and return a new object.
@@ -124,19 +131,27 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// # Errors
     /// - `NotFound`: The given `key` is not in the repository.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn remove(&mut self, key: &K) -> crate::Result<()> {
+    pub fn remove<Q>(&mut self, key: &Q) -> crate::Result<()>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+    {
         for version in self.list_versions(key)? {
             self.remove_version(key, version.id)?;
         }
-        self.repository.remove(&VersionKey::Index(key.clone()));
-        self.repository.remove(&VersionKey::Object(key.clone()));
+        self.repository.remove(&VersionKey::Index(key.to_owned()));
+        self.repository.remove(&VersionKey::Object(key.to_owned()));
 
         Ok(())
     }
 
     /// Return an object for modifying the current version of `key` or `None` if it doesn't exist.
-    pub fn get(&mut self, key: &K) -> Option<Object<VersionKey<K>, S>> {
-        self.repository.get(VersionKey::Object(key.clone()))
+    pub fn get<Q>(&mut self, key: &Q) -> Option<Object<VersionKey<K>, S>>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+    {
+        self.repository.get(&VersionKey::Object(key.to_owned()))
     }
 
     /// Return an iterator over all the keys in this repository.
@@ -161,7 +176,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
 
         let object = self
             .repository
-            .get(VersionKey::Object(key.clone()))
+            .get(&VersionKey::Object(key.clone()))
             .expect("There is no object associated with this key.");
         let size = object.size();
         let content_id = object.content_id();
@@ -179,7 +194,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
 
         self.repository.copy(
             &VersionKey::Object(key.clone()),
-            VersionKey::Version(key.clone(), next_id),
+            VersionKey::Version(key, next_id),
         )?;
 
         Ok(new_version)
@@ -190,9 +205,13 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     ///  # Errors
     /// - `Error::NotFound`: There is no version with the given `id`.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn remove_version(&mut self, key: &K, id: usize) -> crate::Result<()> {
+    pub fn remove_version<Q>(&mut self, key: &Q, id: usize) -> crate::Result<()>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+    {
         self.repository
-            .remove(&VersionKey::Version(key.clone(), id));
+            .remove(&VersionKey::Version(key.to_owned(), id));
         let mut versions = self.list_versions(key)?;
         versions.retain(|version| version.id() != id);
         self.write_versions(key, versions.as_slice())?;
@@ -202,9 +221,13 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// Get an object for reading the version of `key` with the given `id`.
     ///
     /// If there is no version with the given `id`, this returns `None`.
-    pub fn get_version(&mut self, key: &K, id: usize) -> Option<ReadOnlyObject<VersionKey<K>, S>> {
+    pub fn get_version<Q>(&mut self, key: &Q, id: usize) -> Option<ReadOnlyObject<VersionKey<K>, S>>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+    {
         self.repository
-            .get(VersionKey::Version(key.clone(), id))
+            .get(&VersionKey::Version(key.to_owned(), id))
             .map(|object| object.into())
     }
 
@@ -213,10 +236,14 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// # Errors
     /// - `Error::NotFound`: The given key is not in the repository.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn list_versions(&mut self, key: &K) -> crate::Result<Vec<Version>> {
+    pub fn list_versions<Q>(&mut self, key: &Q) -> crate::Result<Vec<Version>>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+    {
         let mut object = self
             .repository
-            .get(VersionKey::Index(key.clone()))
+            .get(&VersionKey::Index(key.to_owned()))
             .ok_or(crate::Error::NotFound)?;
 
         // Read into a buffer first to catch any I/O errors.
@@ -227,8 +254,12 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     }
 
     /// Write the given `versions` list for the given `key`.
-    fn write_versions(&mut self, key: &K, versions: &[Version]) -> crate::Result<()> {
-        let mut object = self.repository.insert(VersionKey::Index(key.clone()));
+    fn write_versions<Q>(&mut self, key: &Q, versions: &[Version]) -> crate::Result<()>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+    {
+        let mut object = self.repository.insert(VersionKey::Index(key.to_owned()));
         let serialized_versions = to_vec(versions).expect("Could not serialize list of versions.");
         object.write_all(serialized_versions.as_slice())?;
 

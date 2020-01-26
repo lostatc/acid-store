@@ -16,19 +16,16 @@
 
 use std::marker::PhantomData;
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-
-use crate::repo::Key;
+use serde::{Deserialize, Serialize};
 
 /// A `Key` with an associated value type.
 #[derive(Debug, PartialEq, Eq)]
-pub struct ValueKey<K: Key, V: Serialize + DeserializeOwned> {
+pub struct ValueKey<K, V> {
     key: K,
     value: PhantomData<V>,
 }
 
-impl<K: Key, V: Serialize + DeserializeOwned> ValueKey<K, V> {
+impl<K, V> ValueKey<K, V> {
     /// Create a new `ValueKey` which wraps the given `key`.
     pub fn new(key: K) -> Self {
         Self {
@@ -46,4 +43,14 @@ impl<K: Key, V: Serialize + DeserializeOwned> ValueKey<K, V> {
     pub fn into_inner(self) -> K {
         self.key
     }
+}
+
+/// A type of data stored in the `ObjectRepository` which backs a `ValueRepository`.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+pub enum KeyType<K> {
+    /// A serialized value.
+    Data(K),
+
+    /// The current repository version.
+    Version,
 }
