@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
+use std::borrow::Borrow;
 use std::collections::HashSet;
+use std::hash::Hash;
 use std::io::{Read, Write};
 
 use rmp_serde::{from_read, to_vec};
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use uuid::Uuid;
 
 use lazy_static::lazy_static;
@@ -27,22 +29,12 @@ use lazy_static::lazy_static;
 use crate::repo::{Key, LockStrategy, ObjectRepository, RepositoryConfig, RepositoryInfo};
 use crate::store::DataStore;
 
-use super::key::ValueKey;
+use super::key::{KeyType, ValueKey};
 
 lazy_static! {
     /// The current repository format version ID.
     static ref VERSION_ID: Uuid =
         Uuid::parse_str("5b93b6a4-362f-11ea-b8a5-309c230b49ee ").unwrap();
-}
-
-/// A type of data stored in the `ObjectRepository` which backs a `ValueRepository`.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
-enum KeyType<K> {
-    /// A serialized value.
-    Data(K),
-
-    /// The current repository version.
-    Version,
 }
 
 /// A persistent, heterogeneous, map-like collection.
@@ -95,7 +87,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository
-            .get(KeyType::Version)
+            .get(&KeyType::Version)
             .ok_or(crate::Error::NotFound)?;
         let mut version_buffer = Vec::new();
         object.read_to_end(&mut version_buffer)?;
@@ -111,9 +103,12 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     }
 
     /// Return whether the given `key` exists in this repository.
-    pub fn contains(&self, key: &K) -> bool {
-        // TODO: Avoid unnecessary clone.
-        self.repository.contains(&KeyType::Data(key.clone()))
+    pub fn contains<Q>(&self, key: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+    {
+        self.repository.contains(&KeyType::Data(key.to_owned()))
     }
 
     /// Insert a new key-value pair.
@@ -123,10 +118,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// # Errors
     /// - `Error::Serialize`: The `value` could not be serialized.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn insert<V>(&mut self, key: ValueKey<K, V>, value: &V) -> crate::Result<()>
-    where
-        V: Serialize + DeserializeOwned,
-    {
+    pub fn insert<V: Serialize>(&mut self, key: ValueKey<K, V>, value: &V) -> crate::Result<()> {
         let mut object = self.repository.insert(KeyType::Data(key.into_inner()));
         let serialized_value = to_vec(value).map_err(|_| crate::Error::Serialize)?;
         object.write_all(serialized_value.as_slice())?;
@@ -141,9 +133,12 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     ///
     /// The space used by the given value isn't freed and made available for new values until
     /// `commit` is called.
-    pub fn remove(&mut self, key: &K) -> bool {
-        // TODO: Avoid unnecessary clone.
-        self.repository.remove(&KeyType::Data(key.clone()))
+    pub fn remove<Q>(&mut self, key: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+    {
+        self.repository.remove(&KeyType::Data(key.to_owned()))
     }
 
     /// Return the value associated with `key`.
@@ -152,13 +147,10 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// - `Error::NotFound`: There is no value associated with `key`.
     /// - `Error::Deserialize`: The value could not be deserialized.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn get<V>(&mut self, key: &ValueKey<K, V>) -> crate::Result<V>
-    where
-        V: Serialize + DeserializeOwned,
-    {
+    pub fn get<V: DeserializeOwned>(&mut self, key: &ValueKey<K, V>) -> crate::Result<V> {
         let mut object = self
             .repository
-            .get(KeyType::Data(key.get_ref().clone()))
+            .get(&KeyType::Data(key.get_ref().clone()))
             .ok_or(crate::Error::NotFound)?;
         let mut serialized_value = Vec::new();
         object.read_to_end(&mut serialized_value)?;
@@ -185,10 +177,13 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// # Errors
     /// - `Error::NotFound`: There is no value at `source`.
     /// - `Error::AlreadyExists`: There is already a value at `dest`.
-    pub fn copy(&mut self, source: &K, dest: K) -> crate::Result<()> {
-        // TODO: Avoid unnecessary clone.
+    pub fn copy<Q>(&mut self, source: &Q, dest: K) -> crate::Result<()>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+    {
         self.repository
-            .copy(&KeyType::Data(source.clone()), KeyType::Data(dest))
+            .copy(&KeyType::Data(source.to_owned()), KeyType::Data(dest))
     }
 
     /// Commit changes which have been made to the repository.

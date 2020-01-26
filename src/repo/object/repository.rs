@@ -320,9 +320,17 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     }
 
     /// Return the object associated with `key` or `None` if it doesn't exist.
-    pub fn get(&mut self, key: K) -> Option<Object<K, S>> {
+    pub fn get<Q>(&mut self, key: &Q) -> Option<Object<K, S>>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ToOwned<Owned = K> + ?Sized,
+    {
         self.header.objects.get(&key)?;
-        Some(Object::new(self, key, self.metadata.chunker_bits as usize))
+        Some(Object::new(
+            self,
+            key.to_owned(),
+            self.metadata.chunker_bits as usize,
+        ))
     }
 
     /// Return an iterator over all the keys in this repository.
