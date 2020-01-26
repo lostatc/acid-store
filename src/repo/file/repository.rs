@@ -28,7 +28,9 @@ use walkdir::WalkDir;
 
 use lazy_static::lazy_static;
 
-use crate::repo::{LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo};
+use crate::repo::{
+    LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo, RepositoryStats,
+};
 use crate::store::DataStore;
 
 use super::entry::{Entry, FileMetadata, FileType};
@@ -677,6 +679,11 @@ impl<S: DataStore> FileRepository<S> {
     /// See `ObjectRepository::peek_info` for details.
     pub fn peek_info(store: S) -> crate::Result<RepositoryInfo> {
         ObjectRepository::<Entry, S>::peek_info(&store)
+    }
+
+    /// Calculate statistics about the repository.
+    pub fn stats(&self) -> RepositoryStats {
+        self.repository.stats()
     }
 
     /// Consume this repository and return the wrapped `DataStore`.

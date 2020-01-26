@@ -19,7 +19,7 @@
 pub use file::{FileMetadata, FileRepository, FileType};
 pub use object::{
     Compression, ContentId, Encryption, Key, LockStrategy, Object, ObjectRepository,
-    RepositoryConfig, RepositoryInfo, ResourceLimit,
+    RepositoryConfig, RepositoryInfo, RepositoryStats, ResourceLimit,
 };
 pub use value::{ValueKey, ValueRepository};
 pub use version::{ReadOnlyObject, Version, VersionRepository};

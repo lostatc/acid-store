@@ -32,7 +32,7 @@ use super::config::RepositoryConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt};
 use super::header::{Header, Key};
 use super::lock::{Lock, LockTable};
-use super::metadata::{RepositoryInfo, RepositoryMetadata};
+use super::metadata::{RepositoryInfo, RepositoryMetadata, RepositoryStats};
 use super::object::{chunk_hash, ChunkHash, Object, ObjectHandle};
 
 lazy_static! {
@@ -572,6 +572,23 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
         Ok(metadata.to_info())
+    }
+
+    /// Calculate statistics about the repository.
+    pub fn stats(&self) -> RepositoryStats {
+        let chunks = self
+            .header
+            .objects
+            .values()
+            .flat_map(|object| &object.chunks)
+            .collect::<HashSet<_>>();
+        let apparent_size = self.header.objects.values().map(|object| object.size).sum();
+        let actual_size = chunks.iter().map(|chunk| chunk.size as u64).sum();
+
+        RepositoryStats {
+            apparent_size,
+            actual_size,
+        }
     }
 
     /// Consume this repository and return the wrapped `DataStore`.
