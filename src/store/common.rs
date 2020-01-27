@@ -21,8 +21,8 @@ use uuid::Uuid;
 /// A persistent store for blocks of data.
 ///
 /// A `DataStore` persistently stores blocks of data uniquely identified by UUIDs. Data stores are
-/// used as the storage backend for `ObjectRepository` and `FileRepository`. Data stores do not
-/// need to provide locking mechanisms to protect against concurrent access.
+/// used as the storage backend for repositories in the `repo` module. Data stores do not need to
+/// provide their own locking mechanisms to protect against concurrent access.
 pub trait DataStore {
     /// The error type for this data store.
     type Error: error::Error + Send + Sync + 'static;
