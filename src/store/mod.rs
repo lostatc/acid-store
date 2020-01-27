@@ -19,6 +19,7 @@
 pub use self::common::DataStore;
 pub use self::directory::DirectoryStore;
 pub use self::memory::MemoryStore;
+pub use self::sqlite::SqliteStore;
 
 mod common;
 mod directory;

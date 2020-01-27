@@ -35,6 +35,7 @@
 //! A repository stores its data in a `DataStore`, which is a small trait that can be implemented to
 //! create new storage backends. The following data stores are provided out of the box:
 //! - `DirectoryStore` stores data in a directory in the local file system.
+//! - `SqliteStore` stores data in a SQLite database.
 //! - `MemoryStore` stores data in memory.
 
 #![allow(dead_code)]
