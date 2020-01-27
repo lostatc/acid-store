@@ -13,8 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::io;
-
 use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -87,18 +85,14 @@ impl Encryption {
     }
 
     /// Decrypt the given `ciphertext` with the given `key`.
-    pub(super) fn decrypt(&self, ciphertext: &[u8], key: &EncryptionKey) -> io::Result<Vec<u8>> {
+    pub(super) fn decrypt(&self, ciphertext: &[u8], key: &EncryptionKey) -> crate::Result<Vec<u8>> {
         match self {
             Encryption::None => Ok(ciphertext.to_vec()),
             Encryption::XChaCha20Poly1305 => {
                 let nonce = Nonce::from_slice(&ciphertext[..NONCEBYTES]).unwrap();
                 let chacha_key = ChaChaKey::from_slice(key.0.as_ref()).unwrap();
-                open(&ciphertext[NONCEBYTES..], None, &nonce, &chacha_key).map_err(|_| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "Ciphertext authentication failed.",
-                    )
-                })
+                open(&ciphertext[NONCEBYTES..], None, &nonce, &chacha_key)
+                    .map_err(|_| crate::Error::InvalidData)
             }
         }
     }

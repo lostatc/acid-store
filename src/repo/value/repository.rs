@@ -119,6 +119,8 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     ///
     /// # Errors
     /// - `Error::Serialize`: The `value` could not be serialized.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn insert<V: Serialize>(&mut self, key: ValueKey<K, V>, value: &V) -> crate::Result<()> {
         let mut object = self.repository.insert(KeyType::Data(key.into_inner()));
@@ -148,14 +150,19 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// # Errors
     /// - `Error::NotFound`: There is no value associated with `key`.
     /// - `Error::Deserialize`: The value could not be deserialized.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn get<V: DeserializeOwned>(&mut self, key: &ValueKey<K, V>) -> crate::Result<V> {
         let mut object = self
             .repository
             .get(&KeyType::Data(key.get_ref().clone()))
             .ok_or(crate::Error::NotFound)?;
-        let mut serialized_value = Vec::new();
+
+        // Catch any errors before passing to `from_read`.
+        let mut serialized_value = Vec::with_capacity(object.size() as usize);
         object.read_to_end(&mut serialized_value)?;
+
         let value =
             from_read(serialized_value.as_slice()).map_err(|_| crate::Error::Deserialize)?;
 
@@ -200,6 +207,8 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// This returns the set of keys of values which are corrupt.
     ///
     /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn verify(&self) -> crate::Result<HashSet<&K>> {
         Ok(self

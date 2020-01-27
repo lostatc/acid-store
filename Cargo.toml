@@ -15,6 +15,9 @@ dirs = "2.0.2"
 # I/O
 cdchunking = "1.0.0"
 
+# SQL
+rusqlite = { version = "0.21.0", features = ["bundled"] }
+
 # Hashing
 blake2 = "0.8.1"
 

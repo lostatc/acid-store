@@ -15,7 +15,7 @@
  */
 
 use std::collections::HashMap;
-use std::io;
+use std::convert::Infallible;
 
 use uuid::Uuid;
 
@@ -42,21 +42,23 @@ impl MemoryStore {
 }
 
 impl DataStore for MemoryStore {
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> io::Result<()> {
+    type Error = Infallible;
+
+    fn write_block(&mut self, id: Uuid, data: &[u8]) -> Result<(), Self::Error> {
         self.blocks.insert(id.to_owned(), data.to_owned());
         Ok(())
     }
 
-    fn read_block(&self, id: Uuid) -> io::Result<Option<Vec<u8>>> {
+    fn read_block(&self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error> {
         Ok(self.blocks.get(&id).map(|data| data.to_owned()))
     }
 
-    fn remove_block(&mut self, id: Uuid) -> io::Result<()> {
+    fn remove_block(&mut self, id: Uuid) -> Result<(), Self::Error> {
         self.blocks.remove(&id);
         Ok(())
     }
 
-    fn list_blocks(&self) -> io::Result<Vec<Uuid>> {
+    fn list_blocks(&self) -> Result<Vec<Uuid>, Self::Error> {
         Ok(self.blocks.keys().copied().collect())
     }
 }

@@ -127,6 +127,8 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `path` does not exist or is not a directory.
     /// - `Error::AlreadyExists`: There is already a file at `path`.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn create(
         &mut self,
@@ -143,12 +145,13 @@ impl<S: DataStore> FileRepository<S> {
         // Check if the parent directory exists.
         if let Some(parent) = path.as_ref().parent() {
             match self.metadata(parent) {
-                Some(metadata) => {
+                Ok(metadata) => {
                     if !metadata.is_directory() {
                         return Err(crate::Error::InvalidPath);
                     }
                 }
-                None => return Err(crate::Error::InvalidPath),
+                Err(crate::Error::NotFound) => return Err(crate::Error::InvalidPath),
+                Err(error) => return Err(error),
             }
         }
 
@@ -174,6 +177,8 @@ impl<S: DataStore> FileRepository<S> {
     ///
     /// # Errors
     /// - `Error::AlreadyExists`: There is already a file at `path`.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn create_parents(
         &mut self,
@@ -255,19 +260,36 @@ impl<S: DataStore> FileRepository<S> {
         self.remove(path)
     }
 
-    /// Return the metadata for the file at `path` or `None` if there is none.
-    pub fn metadata(&mut self, path: impl AsRef<RelativePath>) -> Option<FileMetadata> {
-        let object = self
+    /// Return the metadata for the file at `path`.
+    ///
+    /// # Errors
+    /// - `Error::NotFound`: There is no file at `path`.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn metadata(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<FileMetadata> {
+        let mut object = self
             .repository
-            .get(&Entry::Metadata(path.as_ref().to_owned()))?;
+            .get(&Entry::Metadata(path.as_ref().to_owned()))
+            .ok_or(crate::Error::NotFound)?;
 
-        Some(from_read(object).expect("Could not deserialize file metadata."))
+        // Catch any errors before passing to `from_read`.
+        let mut serialized_metadata = Vec::with_capacity(object.size() as usize);
+        object.read_to_end(&mut serialized_metadata)?;
+
+        Ok(
+            from_read(serialized_metadata.as_slice())
+                .expect("Could not deserialize file metadata."),
+        )
     }
 
     /// Set the `metadata` for the file at `path`.
     ///
     /// # Errors
     /// - `Error::NotFound`: There is no file at `path`.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
     pub fn set_metadata(
         &mut self,
         path: impl AsRef<RelativePath>,
@@ -293,8 +315,11 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::NotFound`: There is no file with the given `path`.
     /// - `Error::NotFile`: The file is not a regular file.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
     pub fn open(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<Object<Entry, S>> {
-        let metadata = self.metadata(&path).ok_or(crate::Error::NotFound)?;
+        let metadata = self.metadata(&path)?;
         if !metadata.is_file() {
             return Err(crate::Error::NotFile);
         }
@@ -319,12 +344,15 @@ impl<S: DataStore> FileRepository<S> {
     /// - `Error::NotFound`: There is no file at `source`.
     /// - `Error::AlreadyExists`: There is already a file at `dest`.
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
     pub fn copy(
         &mut self,
         source: impl AsRef<RelativePath>,
         dest: impl AsRef<RelativePath>,
     ) -> crate::Result<()> {
-        let source_metadata = self.metadata(&source).ok_or(crate::Error::NotFound)?;
+        let source_metadata = self.metadata(&source)?;
         self.create(&dest, &source_metadata)?;
 
         if source_metadata.is_file() {
@@ -351,6 +379,9 @@ impl<S: DataStore> FileRepository<S> {
     /// - `Error::NotFound`: There is no file at `source`.
     /// - `Error::AlreadyExists`: There is already a file at `dest`.
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
     pub fn copy_tree(
         &mut self,
         source: impl AsRef<RelativePath>,
@@ -386,15 +417,10 @@ impl<S: DataStore> FileRepository<S> {
 
     /// Check whether the given `path` exists and is a directory.
     fn check_directory(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<()> {
-        match self.metadata(path) {
-            Some(metadata) => {
-                if !metadata.is_directory() {
-                    Err(crate::Error::NotDirectory)
-                } else {
-                    Ok(())
-                }
-            }
-            None => Err(crate::Error::NotFound),
+        if !self.metadata(path)?.is_directory() {
+            Err(crate::Error::NotDirectory)
+        } else {
+            Ok(())
         }
     }
 
@@ -403,6 +429,9 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::NotFound`: There is no file at `parent`.
     /// - `Error::NotDirectory`: The file at `parent` is not a directory.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
     pub fn list<'a>(
         &'a mut self,
         parent: impl AsRef<RelativePath> + 'a,
@@ -428,6 +457,9 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::NotFound`: There is no file at `parent`.
     /// - `Error::NotDirectory`: The file at `parent` is not a directory.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
     pub fn walk<'a>(
         &'a mut self,
         parent: impl AsRef<RelativePath> + 'a,
@@ -456,9 +488,9 @@ impl<S: DataStore> FileRepository<S> {
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
     /// - `Error::AlreadyExists`: There is already a file at `dest`.
     /// - `Error::FileType`: The file at `source` is not a regular file or directory.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    ///     - `ErrorKind::NotFound`: The `source` file does not exist.
-    ///     - `ErrorKind::PermissionDenied`: The user lack permission to read the `source` file.
     pub fn archive(
         &mut self,
         source: impl AsRef<Path>,
@@ -511,9 +543,9 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
     /// - `Error::AlreadyExists`: There is already a file at `dest`.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    ///     - `ErrorKind::NotFound`: The `source` file does not exist.
-    ///     - `ErrorKind::PermissionDenied`: The user lacks permission to read the `source` file.
     pub fn archive_tree(
         &mut self,
         source: impl AsRef<Path>,
@@ -543,18 +575,15 @@ impl<S: DataStore> FileRepository<S> {
     ///
     /// # Errors
     /// - `Error::NotFound`: The `source` file does not exist.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    ///     - `ErrorKind::PermissionDenied`: The user lacks permission to create the `dest` file.
-    ///     - `ErrorKind::AlreadyExists`: A file already exists at `dest`.
     pub fn extract(
         &mut self,
         source: impl AsRef<RelativePath>,
         dest: impl AsRef<Path>,
     ) -> crate::Result<()> {
-        let metadata = match self.metadata(&source) {
-            Some(value) => value,
-            None => return Err(crate::Error::NotFound),
-        };
+        let metadata = self.metadata(&source)?;
 
         // Create any necessary parent directories.
         if let Some(parent) = dest.as_ref().parent() {
@@ -599,9 +628,9 @@ impl<S: DataStore> FileRepository<S> {
     ///
     /// # Errors
     /// - `Error::NotFound`: The `source` file does not exist.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    ///     - `ErrorKind::PermissionDenied`: The user lacks permission to create the `dest` file.
-    ///     - `ErrorKind::AlreadyExists`: A file already exists at `dest`.
     pub fn extract_tree(
         &mut self,
         source: impl AsRef<RelativePath>,
@@ -646,6 +675,8 @@ impl<S: DataStore> FileRepository<S> {
     /// This returns the set of paths of files with corrupt data or metadata.
     ///
     /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn verify(&self) -> crate::Result<HashSet<&RelativePath>> {
         let paths = self

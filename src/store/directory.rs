@@ -30,7 +30,6 @@ const CURRENT_VERSION: &str = "2891c3da-297e-11ea-a7c9-1b8f8be4fc9b";
 const BLOCKS_DIRECTORY: &str = "blocks";
 const STAGING_DIRECTORY: &str = "stage";
 const VERSION_FILE: &str = "version";
-const LOCK_FILE: &str = "store.lock";
 
 /// A `DataStore` which stores data in a directory in the local file system.
 pub struct DirectoryStore {
@@ -48,16 +47,19 @@ impl DirectoryStore {
     /// Create a new directory store at the given `path`.
     ///
     /// # Errors
-    /// - `ErrorKind::AlreadyExists`: There is already a file at the given path.
-    /// - `ErrorKind::PermissionDenied`: The user lacks permissions to create the directory.
-    pub fn create(path: PathBuf) -> io::Result<Self> {
+    /// - `Error::AlreadyExists`: There is already a file at the given `path`.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn create(path: PathBuf) -> crate::Result<Self> {
+        if path.exists() {
+            return Err(crate::Error::AlreadyExists);
+        }
+
         // Create the files and directories in the data store.
         if let Some(parent_directory) = path.parent() {
             create_dir_all(parent_directory)?;
         }
         create_dir(&path)?;
         create_dir(&path.join(BLOCKS_DIRECTORY))?;
-        File::create(&path.join(LOCK_FILE))?;
 
         // Write the version ID file.
         let mut version_file = File::create(&path.join(VERSION_FILE))?;
@@ -69,10 +71,15 @@ impl DirectoryStore {
     /// Open an existing directory store at `path`.
     ///
     /// # Errors
-    /// - `ErrorKind::NotFound`: There is not a directory at `path`.
-    /// - `ErrorKind::InvalidData`: The directory at `path` is not a valid directory store.
-    /// - `ErrorKind::PermissionDenied`: The user lacks permissions to read the directory.
-    pub fn open(path: PathBuf) -> io::Result<Self> {
+    /// - `Error::NotFound`: There is not a directory at `path`.
+    /// - `Error::UnsupportedVersion`: This data store format is not supported by this version of
+    /// the library.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn open(path: PathBuf) -> crate::Result<Self> {
+        if !path.is_dir() {
+            return Err(crate::Error::NotFound);
+        }
+
         // Read the version ID file.
         let mut version_file = File::open(path.join(VERSION_FILE))?;
         let mut version_id = String::new();
@@ -80,10 +87,7 @@ impl DirectoryStore {
 
         // Verify the version ID.
         if version_id != CURRENT_VERSION {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "The directory is not a valid directory store.",
-            ));
+            return Err(crate::Error::UnsupportedVersion);
         }
 
         Ok(DirectoryStore {
@@ -109,7 +113,9 @@ impl DirectoryStore {
 }
 
 impl DataStore for DirectoryStore {
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> io::Result<()> {
+    type Error = io::Error;
+
+    fn write_block(&mut self, id: Uuid, data: &[u8]) -> Result<(), Self::Error> {
         let staging_path = self.staging_path(id);
         let block_path = self.block_path(id);
         create_dir_all(staging_path.parent().unwrap())?;
@@ -126,7 +132,7 @@ impl DataStore for DirectoryStore {
         Ok(())
     }
 
-    fn read_block(&self, id: Uuid) -> io::Result<Option<Vec<u8>>> {
+    fn read_block(&self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error> {
         let block_path = self.block_path(id);
 
         if block_path.exists() {
@@ -139,11 +145,11 @@ impl DataStore for DirectoryStore {
         }
     }
 
-    fn remove_block(&mut self, id: Uuid) -> io::Result<()> {
+    fn remove_block(&mut self, id: Uuid) -> Result<(), Self::Error> {
         remove_file(self.block_path(id))
     }
 
-    fn list_blocks(&self) -> io::Result<Vec<Uuid>> {
+    fn list_blocks(&self) -> Result<Vec<Uuid>, Self::Error> {
         // Collect the results into a vector so that we can release the lock on the data store.
         WalkDir::new(&self.blocks_directory)
             .min_depth(2)

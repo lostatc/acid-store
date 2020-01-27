@@ -113,6 +113,8 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     ///
     /// # Errors
     /// - `Error:AlreadyExists`: The given `key` is already in the repository.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn insert(&mut self, key: K) -> crate::Result<Object<VersionKey<K>, S>> {
         if self.contains(&key) {
@@ -132,6 +134,8 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     ///
     /// # Errors
     /// - `NotFound`: The given `key` is not in the repository.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn remove<Q>(&mut self, key: &Q) -> crate::Result<()>
     where
@@ -172,6 +176,8 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     ///
     /// # Errors
     /// - `Error::NotFound`: The given `key` is not in the repository.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn create_version(&mut self, key: K) -> crate::Result<Version> {
         let mut versions = self.list_versions(&key)?;
@@ -206,6 +212,8 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     ///
     ///  # Errors
     /// - `Error::NotFound`: There is no version with the given `id`.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn remove_version<Q>(&mut self, key: &Q, id: usize) -> crate::Result<()>
     where
@@ -237,6 +245,8 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     ///
     /// # Errors
     /// - `Error::NotFound`: The given key is not in the repository.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn list_versions<Q>(&mut self, key: &Q) -> crate::Result<Vec<Version>>
     where
@@ -248,8 +258,8 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
             .get(&VersionKey::Index(key.to_owned()))
             .ok_or(crate::Error::NotFound)?;
 
-        // Read into a buffer first to catch any I/O errors.
-        let mut buffer = Vec::new();
+        // Catch any errors before passing to `from_read`.
+        let mut buffer = Vec::with_capacity(object.size() as usize);
         object.read_to_end(&mut buffer)?;
 
         Ok(from_read(buffer.as_slice()).expect("Could not deserialize list of versions."))

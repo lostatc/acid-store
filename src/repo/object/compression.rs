@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
 
 use flate2::read::{GzDecoder, GzEncoder};
 use flate2::Compression as CompressionLevel;
@@ -55,7 +55,7 @@ pub enum Compression {
 
 impl Compression {
     /// Compresses the given `data` and returns it.
-    pub(super) fn compress(&self, data: &[u8]) -> io::Result<Vec<u8>> {
+    pub(super) fn compress(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
         match self {
             Compression::None => Ok(data.to_vec()),
             Compression::Deflate { level } => {
@@ -80,7 +80,7 @@ impl Compression {
     }
 
     /// Wraps the given `reader` to decompress its bytes using this compression method.
-    pub(super) fn decompress<'a>(&self, data: &[u8]) -> io::Result<Vec<u8>> {
+    pub(super) fn decompress<'a>(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
         match self {
             Compression::None => Ok(data.to_vec()),
             Compression::Deflate { .. } => {
