@@ -58,8 +58,8 @@ pub fn set_file_mode(file: impl AsRef<Path>, mode: u32) -> io::Result<()> {
 pub fn extended_attrs(file: impl AsRef<Path>) -> io::Result<HashMap<OsString, Vec<u8>>> {
     let mut attributes = HashMap::new();
 
-    for attr_name in xattr::list(file)? {
-        if let Some(attr_value) = xattr::get(file, &attr_name)? {
+    for attr_name in xattr::list(file.as_ref())? {
+        if let Some(attr_value) = xattr::get(file.as_ref(), &attr_name)? {
             attributes.insert(attr_name, attr_value);
         }
     }
@@ -80,7 +80,7 @@ pub fn set_extended_attrs(
     attributes: HashMap<OsString, Vec<u8>>,
 ) -> io::Result<()> {
     for (attr_name, attr_value) in attributes.iter() {
-        xattr::set(file, attr_name, attr_value)?;
+        xattr::set(file.as_ref(), attr_name, attr_value)?;
     }
 
     Ok(())
