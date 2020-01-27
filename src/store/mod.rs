@@ -23,3 +23,4 @@ pub use self::memory::MemoryStore;
 mod common;
 mod directory;
 mod memory;
+mod sqlite;

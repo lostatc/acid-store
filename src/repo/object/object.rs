@@ -15,7 +15,7 @@
  */
 
 use std::cmp::min;
-use std::io::{self, ErrorKind, Read, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::mem::replace;
 
 use blake2::digest::{Input, VariableOutput};
@@ -130,9 +130,12 @@ pub struct ContentId([u8; 32]);
 /// of unflushed data.
 ///
 /// If encryption is enabled for the repository, data integrity is automatically verified as it is
-/// read. If corrupt data is found, the methods on this struct will return an `Err` of the kind
-/// `ErrorKind::InvalidData`. The `verify` method can be used to check the integrity of all the data
-/// in the object whether encryption is enabled or not.
+/// read and methods will return an `Err` if corrupt data is found. The `verify` method can be used
+/// to check the integrity of all the data in the object whether encryption is enabled or not.
+///
+/// The methods of `Read`, `Write`, and `Seek` return `io::Result`, but the returned `io::Error` can
+/// be converted `Into` a `data_store::Error` to be consistent with the rest of the library. The
+/// implementations document which `data_store::Error` values can be returned.
 pub struct Object<'a, K: Key, S: DataStore> {
     /// The repository where chunks are stored.
     repository: &'a mut ObjectRepository<K, S>,
@@ -211,7 +214,12 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// Verify the integrity of the data in this object.
     ///
     /// This returns `true` if the object is valid and `false` if it is corrupt.
-    pub fn verify(&self) -> io::Result<bool> {
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn verify(&self) -> crate::Result<bool> {
         for expected_chunk in &self.get_handle().chunks {
             match self.repository.read_chunk(&expected_chunk.hash) {
                 Ok(data) => {
@@ -220,14 +228,8 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
                         return Ok(false);
                     }
                 }
-                Err(error) => {
-                    return if error.kind() == ErrorKind::InvalidData {
-                        // Encryption is enabled and ciphertext verification failed.
-                        Ok(false)
-                    } else {
-                        Err(error)
-                    };
-                }
+                Err(crate::Error::InvalidData) => return Ok(false),
+                Err(error) => return Err(error),
             }
         }
 
@@ -239,7 +241,12 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// If the given `length` is greater than or equal to the current size of the object, this does
     /// nothing. If the seek position is past the point which the object is truncated to, it is
     /// moved to the new end of the object.
-    pub fn truncate(&mut self, length: u64) -> io::Result<()> {
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn truncate(&mut self, length: u64) -> crate::Result<()> {
         // Clear all written data which has not been flushed.
         self.new_chunks.clear();
         self.chunker.clear();
@@ -306,7 +313,7 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// Return the slice of bytes between the current seek position and the end of the chunk.
     ///
     /// The returned slice will be no longer than `size`.
-    fn read_chunk(&mut self, size: usize) -> io::Result<&[u8]> {
+    fn read_chunk(&mut self, size: usize) -> crate::Result<&[u8]> {
         // If the object is empty, there's no data to read.
         let current_location = match self.current_chunk() {
             Some(location) => location,
@@ -325,7 +332,7 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     }
 
     /// Write chunks stored in the chunker to the repository.
-    fn write_chunks(&mut self) -> io::Result<()> {
+    fn write_chunks(&mut self) -> crate::Result<()> {
         for chunk in self.chunker.chunks() {
             let hash = self.repository.write_chunk(&chunk)?;
             self.new_chunks.push(Chunk {
@@ -379,6 +386,12 @@ impl<'a, K: Key, S: DataStore> Seek for Object<'a, K, S> {
 // buffering to wait for a chunk boundary before writing a chunk to the repository. It also means
 // the user needs to explicitly call `flush` when they're done writing data.
 impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
+    /// The `io::Error` returned by this method can be converted into a `data_store::Error`.
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         // Check if this is the first time `write` is being called after calling `flush`.
         if self.chunker.is_empty() {
@@ -404,6 +417,12 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
         Ok(buf.len())
     }
 
+    /// The `io::Error` returned by this method can be converted into a `data_store::Error`.
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
     fn flush(&mut self) -> io::Result<()> {
         let current_chunk = self.current_chunk();
 
@@ -455,6 +474,12 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
 // To avoid reading the same chunk from the repository multiple times, the chunk which was most
 // recently read from is cached in a buffer.
 impl<'a, K: Key, S: DataStore> Read for Object<'a, K, S> {
+    /// The `io::Error` returned by this method can be converted into a `data_store::Error`.
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let next_chunk = self.read_chunk(buf.len())?;
         let bytes_read = next_chunk.len();

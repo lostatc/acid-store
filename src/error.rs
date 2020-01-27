@@ -19,6 +19,10 @@ use std::result;
 use thiserror::Error as DeriveError;
 
 /// The error type for operations with a repository.
+///
+/// This type can be converted `From` and `Into` an `io::Error` for compatibility with types from
+/// `std::io` like `Read`, `Write`, and `Seek`. Even if the payload of the `io::Error` cannot be
+/// downcast to a value of this type, it will be converted to `Error::Io`.
 #[derive(Debug, DeriveError)]
 pub enum Error {
     /// A resource already exists.
@@ -41,8 +45,8 @@ pub enum Error {
     #[error("The repository is corrupt.")]
     Corrupt,
 
-    /// This repository format is not supported by this version of the library.
-    #[error("This repository format is not supported by this version of the library.")]
+    /// This format is not supported by this version of the library.
+    #[error("This format is not supported by this version of the library.")]
     UnsupportedVersion,
 
     /// The provided key type does not match the data in the repository.
@@ -77,13 +81,42 @@ pub enum Error {
     #[error("A value could not be deserialized.")]
     Deserialize,
 
+    /// Ciphertext verification failed or data is otherwise invalid.
+    #[error("Ciphertext verification failed or data is otherwise invalid.")]
+    InvalidData,
+
     /// An I/O error occurred.
     #[error("{0}")]
-    Io(#[from] io::Error),
+    Io(io::Error),
+
+    /// An error occurred with the data store.
+    ///
+    /// This wraps the `DataStore::Error` provided by the data store.
+    #[error("{0}")]
+    Store(#[from] anyhow::Error),
 
     #[doc(hidden)]
     #[error("")]
     __NonExhaustive,
+}
+
+impl From<Error> for io::Error {
+    fn from(error: Error) -> Self {
+        io::Error::new(io::ErrorKind::Other, error)
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(error: io::Error) -> Self {
+        let kind = error.kind();
+        match error.into_inner() {
+            Some(payload) => match payload.downcast::<Error>() {
+                Ok(crate_error) => *crate_error,
+                Err(other_error) => Error::Io(io::Error::new(kind, other_error)),
+            },
+            None => Error::Io(io::Error::from(kind)),
+        }
+    }
 }
 
 /// The result type for operations with a repository.

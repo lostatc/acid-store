@@ -43,7 +43,7 @@ impl<'a, K: Key, S: DataStore> ReadOnlyObject<'a, K, S> {
     /// Verify the integrity of the data in this object.
     ///
     /// This returns `true` if the object is valid and `false` if it is corrupt.
-    pub fn verify(&self) -> io::Result<bool> {
+    pub fn verify(&self) -> crate::Result<bool> {
         self.object.verify()
     }
 }

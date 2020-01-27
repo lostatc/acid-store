@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::io;
+use std::error;
 
 use uuid::Uuid;
 
@@ -24,6 +24,9 @@ use uuid::Uuid;
 /// used as the storage backend for `ObjectRepository` and `FileRepository`. Data stores do not
 /// need to provide locking mechanisms to protect against concurrent access.
 pub trait DataStore {
+    /// The error type for this data store.
+    type Error: error::Error + Send + Sync + 'static;
+
     /// Write the given `data` as a new block with the given `id`.
     ///
     /// If this method returns `Ok`, the block is stored persistently until it is removed with
@@ -34,12 +37,12 @@ pub trait DataStore {
     /// If a block with the given `id` already exists, it is overwritten.
     ///
     /// This is an atomic operation.
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> io::Result<()>;
+    fn write_block(&mut self, id: Uuid, data: &[u8]) -> Result<(), Self::Error>;
 
     /// Return the bytes of the block with the given `id`.
     ///
     /// If there is no block with the given `id`, return `None`.
-    fn read_block(&self, id: Uuid) -> io::Result<Option<Vec<u8>>>;
+    fn read_block(&self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error>;
 
     /// Remove the block with the given `id` from the store.
     ///
@@ -50,10 +53,10 @@ pub trait DataStore {
     /// If there is no block with the given `id`, this method does nothing and returns `Ok`.
     ///
     /// This is an atomic operation.
-    fn remove_block(&mut self, id: Uuid) -> io::Result<()>;
+    fn remove_block(&mut self, id: Uuid) -> Result<(), Self::Error>;
 
     /// Return a list of IDs of blocks in the store.
     ///
     /// This only lists the IDs of blocks which are stored persistently.
-    fn list_blocks(&self) -> io::Result<Vec<Uuid>>;
+    fn list_blocks(&self) -> Result<Vec<Uuid>, Self::Error>;
 }
