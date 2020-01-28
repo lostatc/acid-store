@@ -146,7 +146,13 @@ impl DataStore for DirectoryStore {
     }
 
     fn remove_block(&mut self, id: Uuid) -> Result<(), Self::Error> {
-        remove_file(self.block_path(id))
+        let block_path = self.block_path(id);
+
+        if block_path.exists() {
+            remove_file(self.block_path(id))
+        } else {
+            Ok(())
+        }
     }
 
     fn list_blocks(&self) -> Result<Vec<Uuid>, Self::Error> {

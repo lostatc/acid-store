@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#![allow(dead_code)]
+
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 

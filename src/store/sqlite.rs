@@ -53,12 +53,12 @@ impl SqliteStore {
                 r#"
                     CREATE TABLE Blocks (
                         uuid BLOB PRIMARY KEY,
-                        data BLOB NOT NULL,
+                        data BLOB NOT NULL
                     );
                     
                     CREATE TABLE Metadata (
                         key TEXT PRIMARY KEY,
-                        value BLOB NOT NULL,
+                        value BLOB NOT NULL
                     );
                 "#,
             )
@@ -118,7 +118,7 @@ impl DataStore for SqliteStore {
     fn write_block(&mut self, id: Uuid, data: &[u8]) -> Result<(), Self::Error> {
         self.connection.execute(
             r#"
-                INSERT INTO Blocks (uuid, data)
+                REPLACE INTO Blocks (uuid, data)
                 VALUES (?1, ?2);
             "#,
             params![&id.as_bytes()[..], data],
