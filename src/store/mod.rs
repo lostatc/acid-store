@@ -24,4 +24,5 @@ pub use self::sqlite::SqliteStore;
 mod common;
 mod directory;
 mod memory;
+mod redis;
 mod sqlite;

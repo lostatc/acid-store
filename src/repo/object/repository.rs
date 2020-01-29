@@ -15,7 +15,7 @@
  */
 
 use std::borrow::Borrow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::hash::Hash;
 use std::sync::RwLock;
 use std::time::SystemTime;
@@ -219,16 +219,16 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// - `Error::Locked`: The repository is locked and `LockStrategy::Abort` was used.
     /// - `Error::Password`: The password provided is invalid.
     /// - `Error::KeyType`: The type `K` does not match the data in the repository.
-    /// - `Error::UnsupportedVersion`: This repository format is not supported by this version of
+    /// - `Error::UnsupportedFormat`: This repository format is not supported by this version of
     /// the library.
     /// - `Error::Store`: An error occurred with the data store.
     pub fn open_repo(
-        store: S,
+        mut store: S,
         password: Option<&[u8]>,
         strategy: LockStrategy,
     ) -> crate::Result<Self> {
         // Acquire a lock on the repository.
-        let repository_id = Self::peek_info(&store)?.id();
+        let repository_id = Self::peek_info(&mut store)?.id();
         let lock = REPO_LOCKS
             .write()
             .unwrap()
@@ -242,7 +242,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         let version =
             Uuid::from_slice(serialized_version.as_slice()).map_err(|_| crate::Error::Corrupt)?;
         if version != *VERSION_ID {
-            return Err(crate::Error::UnsupportedVersion);
+            return Err(crate::Error::UnsupportedFormat);
         }
 
         // We read the metadata again after reading the UUID to prevent a race condition when
@@ -425,7 +425,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     }
 
     /// Return the bytes of the chunk with the given checksum or `None` if there is none.
-    pub(super) fn read_chunk(&self, checksum: &ChunkHash) -> crate::Result<Vec<u8>> {
+    pub(super) fn read_chunk(&mut self, checksum: &ChunkHash) -> crate::Result<Vec<u8>> {
         let chunk_id = self.header.chunks[checksum];
         let chunk = self
             .store
@@ -454,7 +454,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     }
 
     /// Return a list of blocks in `store` excluding those used to store metadata.
-    fn list_data_blocks(&self) -> crate::Result<Vec<Uuid>> {
+    fn list_data_blocks(&mut self) -> crate::Result<Vec<Uuid>> {
         Ok(self
             .store
             .list_blocks()
@@ -496,7 +496,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             .map_err(anyhow::Error::from)?;
 
         // After changes are committed, remove any unused chunks from the data store.
-        let referenced_chunks = self.header.chunks.values().collect::<HashSet<_>>();
+        let referenced_chunks = self.header.chunks.values().copied().collect::<HashSet<_>>();
         for stored_chunk in self.list_data_blocks()? {
             if !referenced_chunks.contains(&stored_chunk) {
                 self.store
@@ -517,33 +517,42 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn verify(&self) -> crate::Result<HashSet<&K>> {
-        let mut corrupt_objects = HashSet::new();
+    pub fn verify(&mut self) -> crate::Result<HashSet<&K>> {
+        let mut corrupt_chunks = HashSet::new();
+        let expected_checksums = self.header.chunks.keys().copied().collect::<Vec<_>>();
 
-        // Get a map of all the chunks in the repository to the set of objects they belong to.
-        let mut chunks_to_objects = HashMap::new();
-        for (key, object) in self.header.objects.iter() {
-            for chunk in &object.chunks {
-                chunks_to_objects
-                    .entry(chunk.hash)
-                    .or_insert_with(HashSet::new)
-                    .insert(key);
-            }
-        }
-
-        for expected_checksum in self.header.chunks.keys() {
+        // Get the set of hashes of chunks which are corrupt.
+        for expected_checksum in expected_checksums {
             match self.read_chunk(&expected_checksum) {
                 Ok(data) => {
                     let actual_checksum = chunk_hash(&data);
-                    if *expected_checksum == actual_checksum {
-                        continue;
+                    if expected_checksum != actual_checksum {
+                        corrupt_chunks.insert(expected_checksum);
                     }
                 }
-                Err(crate::Error::InvalidData) => (),
+                Err(crate::Error::InvalidData) => {
+                    // Ciphertext verification failed. No need to check the hash.
+                    corrupt_chunks.insert(expected_checksum);
+                }
                 Err(error) => return Err(error),
             };
+        }
 
-            corrupt_objects.extend(chunks_to_objects.remove(expected_checksum).unwrap());
+        // If there are no corrupt chunks, there are no corrupt objects.
+        if corrupt_chunks.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        let mut corrupt_objects = HashSet::new();
+
+        for (key, object) in self.header.objects.iter() {
+            for chunk in &object.chunks {
+                // If any one of the object's chunks is corrupt, the object is corrupt.
+                if corrupt_chunks.contains(&chunk.hash) {
+                    corrupt_objects.insert(key);
+                    break;
+                }
+            }
         }
 
         Ok(corrupt_objects)
@@ -581,7 +590,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// - `Error::NotFound`: There is no repository in the given `store`.
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::Store`: An error occurred with the data store.
-    pub fn peek_info(store: &S) -> crate::Result<RepositoryInfo> {
+    pub fn peek_info(store: &mut S) -> crate::Result<RepositoryInfo> {
         // Read and deserialize the metadata.
         let serialized_metadata = match store
             .read_block(*METADATA_BLOCK_ID)

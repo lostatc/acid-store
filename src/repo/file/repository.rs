@@ -110,7 +110,7 @@ impl<S: DataStore> FileRepository<S> {
         let version =
             Uuid::from_slice(version_buffer.as_slice()).map_err(|_| crate::Error::Corrupt)?;
         if version != *VERSION_ID {
-            return Err(crate::Error::UnsupportedVersion);
+            return Err(crate::Error::UnsupportedFormat);
         }
 
         Ok(Self { repository })
@@ -678,7 +678,7 @@ impl<S: DataStore> FileRepository<S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn verify(&self) -> crate::Result<HashSet<&RelativePath>> {
+    pub fn verify(&mut self) -> crate::Result<HashSet<&RelativePath>> {
         let paths = self
             .repository
             .verify()?
@@ -708,8 +708,8 @@ impl<S: DataStore> FileRepository<S> {
     /// Return information about the repository in `store` without opening it.
     ///
     /// See `ObjectRepository::peek_info` for details.
-    pub fn peek_info(store: S) -> crate::Result<RepositoryInfo> {
-        ObjectRepository::<Entry, S>::peek_info(&store)
+    pub fn peek_info(store: &mut S) -> crate::Result<RepositoryInfo> {
+        ObjectRepository::<Entry, S>::peek_info(store)
     }
 
     /// Calculate statistics about the repository.

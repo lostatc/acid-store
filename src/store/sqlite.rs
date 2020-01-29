@@ -81,8 +81,8 @@ impl SqliteStore {
     ///
     /// # Errors
     /// - `Error::NotFound`: There is no file at `path`.
-    /// - `Error::UnsupportedVersion`: This data store format is not supported by this version of
-    /// the library.
+    /// - `Error::UnsupportedFormat`: There is not a `SqliteStore` in the database or it is an
+    /// unsupported format.
     /// - `Error::Store`: A SQLite error occurred.
     pub fn open(path: impl AsRef<Path>) -> crate::Result<Self> {
         if !path.as_ref().is_file() {
@@ -100,12 +100,12 @@ impl SqliteStore {
                 params![],
                 |row| row.get(0),
             )
-            .map_err(|_| crate::Error::UnsupportedVersion)?;
+            .map_err(|_| crate::Error::UnsupportedFormat)?;
         let version = Uuid::from_slice(version_bytes.as_slice())
-            .map_err(|_| crate::Error::UnsupportedVersion)?;
+            .map_err(|_| crate::Error::UnsupportedFormat)?;
 
         if version != *CURRENT_VERSION {
-            return Err(crate::Error::UnsupportedVersion);
+            return Err(crate::Error::UnsupportedFormat);
         }
 
         Ok(SqliteStore { connection })
@@ -127,7 +127,7 @@ impl DataStore for SqliteStore {
         Ok(())
     }
 
-    fn read_block(&self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error> {
+    fn read_block(&mut self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error> {
         self.connection
             .query_row(
                 r#"
@@ -152,7 +152,7 @@ impl DataStore for SqliteStore {
         Ok(())
     }
 
-    fn list_blocks(&self) -> Result<Vec<Uuid>, Self::Error> {
+    fn list_blocks(&mut self) -> Result<Vec<Uuid>, Self::Error> {
         let mut statement = self.connection.prepare(r#"SELECT uuid FROM Blocks;"#)?;
 
         let result = statement

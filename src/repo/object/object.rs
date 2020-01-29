@@ -219,12 +219,20 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn verify(&self) -> crate::Result<bool> {
-        for expected_chunk in &self.get_handle().chunks {
-            match self.repository.read_chunk(&expected_chunk.hash) {
+    pub fn verify(&mut self) -> crate::Result<bool> {
+        let expected_hashes = self
+            .get_handle()
+            .chunks
+            .iter()
+            .copied()
+            .map(|chunk| chunk.hash)
+            .collect::<Vec<_>>();
+
+        for expected_hash in expected_hashes {
+            match self.repository.read_chunk(&expected_hash) {
                 Ok(data) => {
                     let actual_checksum = chunk_hash(&data);
-                    if expected_chunk.hash != actual_checksum {
+                    if expected_hash != actual_checksum {
                         return Ok(false);
                     }
                 }

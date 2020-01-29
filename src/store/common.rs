@@ -42,7 +42,7 @@ pub trait DataStore {
     /// Return the bytes of the block with the given `id`.
     ///
     /// If there is no block with the given `id`, return `None`.
-    fn read_block(&self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error>;
+    fn read_block(&mut self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error>;
 
     /// Remove the block with the given `id` from the store.
     ///
@@ -58,5 +58,5 @@ pub trait DataStore {
     /// Return a list of IDs of blocks in the store.
     ///
     /// This only lists the IDs of blocks which are stored persistently.
-    fn list_blocks(&self) -> Result<Vec<Uuid>, Self::Error>;
+    fn list_blocks(&mut self) -> Result<Vec<Uuid>, Self::Error>;
 }

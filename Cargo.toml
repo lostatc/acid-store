@@ -18,6 +18,9 @@ cdchunking = "1.0.0"
 # SQL
 rusqlite = { version = "0.21.0", features = ["bundled"] }
 
+# Redis
+redis = "0.15.1"
+
 # Hashing
 blake2 = "0.8.1"
 
