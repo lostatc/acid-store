@@ -37,9 +37,23 @@
 //! - `DirectoryStore` stores data in a directory in the local file system.
 //! - `SqliteStore` stores data in a SQLite database.
 //! - `MemoryStore` stores data in memory.
+//!
+//! # Features
+//! Some repositories and data stores are gated behind cargo features:
+//!
+//! Type | Cargo Feature
+//! --- | ---
+//! `FileRepository` | `repo-file`
+//! `ValueRepository` | `repo-value`
+//! `VersionRepository` | `repo-version`
+//! `DirectoryStore` | `store-directory`
+//! `SqliteStore` | `store-sqlite`
+//!
+//! To use one of these types, you must enable the corresponding feature in your `Cargo.toml`.
 
 #![allow(dead_code)]
 
+#[cfg(feature = "repo-file")]
 pub use relative_path;
 pub use uuid;
 

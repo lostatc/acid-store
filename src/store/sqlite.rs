@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#![cfg(feature = "store-sqlite")]
+
 use std::path::Path;
 
 use rusqlite::{params, Connection, OptionalExtension};

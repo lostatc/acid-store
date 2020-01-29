@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#![cfg(feature = "repo-file")]
+
 pub use self::entry::{FileMetadata, FileType};
 pub use self::repository::FileRepository;
 
