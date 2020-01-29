@@ -54,6 +54,8 @@ xattr = { version = "0.2.2", optional = true }
 
 [dev-dependencies]
 tempfile = "3.1.0"
+dotenv = "0.15.0"
+serial_test = "0.3.2"
 
 [features]
 default = []

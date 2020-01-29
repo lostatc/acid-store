@@ -36,10 +36,11 @@
 //! create new storage backends. The following data stores are provided out of the box:
 //! - `DirectoryStore` stores data in a directory in the local file system.
 //! - `SqliteStore` stores data in a SQLite database.
+//! - `RedisStore` stores data on a Redis server.
 //! - `MemoryStore` stores data in memory.
 //!
 //! # Features
-//! Some repositories and data stores are gated behind cargo features:
+//! Some functionality is gated behind cargo features:
 //!
 //! Type | Cargo Feature
 //! --- | ---
@@ -48,6 +49,7 @@
 //! `VersionRepository` | `repo-version`
 //! `DirectoryStore` | `store-directory`
 //! `SqliteStore` | `store-sqlite`
+//! `RedisStore` | `store-redis`
 //!
 //! To use one of these types, you must enable the corresponding feature in your `Cargo.toml`.
 

@@ -16,17 +16,24 @@
 
 use std::collections::HashSet;
 
+use serial_test::serial;
 use tempfile::tempdir;
 use uuid::Uuid;
 
 use common::random_buffer;
 #[cfg(feature = "store-directory")]
 use data_store::store::DirectoryStore;
+#[cfg(feature = "store-redis")]
+use data_store::store::RedisStore;
 #[cfg(feature = "store-sqlite")]
 use data_store::store::SqliteStore;
 use data_store::store::{DataStore, MemoryStore};
 
 mod common;
+
+// Some tests in this module use the `serial_test` crate to force them to run in sequence because
+// they access a shared resource. However, that crate doesn't seem to support test functions which
+// return a `Result`, so those tests return `()` and unwrap `Result`s instead.
 
 fn read_block(mut store: impl DataStore) -> anyhow::Result<()> {
     let id = Uuid::new_v4();
@@ -60,6 +67,17 @@ fn sqlite_read_block() -> anyhow::Result<()> {
     read_block(SqliteStore::create(temp_dir.as_ref().join("store.db"))?)
 }
 
+#[test]
+#[serial(redis)]
+#[cfg(feature = "store-redis")]
+fn redis_read_block() {
+    let redis_url = dotenv::var("REDIS_TEST_URL").unwrap();
+    RedisStore::open(redis_url.clone())
+        .and_then(|store| store.destroy())
+        .ok();
+    read_block(RedisStore::create(redis_url).unwrap());
+}
+
 fn overwrite_block(mut store: impl DataStore) -> anyhow::Result<()> {
     let id = Uuid::new_v4();
     let expected_block = random_buffer();
@@ -89,6 +107,17 @@ fn directory_overwrite_block() -> anyhow::Result<()> {
 fn sqlite_overwrite_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     overwrite_block(SqliteStore::create(temp_dir.as_ref().join("store.db"))?)
+}
+
+#[test]
+#[serial(redis)]
+#[cfg(feature = "store-redis")]
+fn redis_overwrite_block() {
+    let redis_url = dotenv::var("REDIS_TEST_URL").unwrap();
+    RedisStore::open(redis_url.clone())
+        .and_then(|store| store.destroy())
+        .ok();
+    overwrite_block(RedisStore::create(redis_url).unwrap());
 }
 
 fn remove_block(mut store: impl DataStore) -> anyhow::Result<()> {
@@ -122,6 +151,17 @@ fn sqlite_remove_block() -> anyhow::Result<()> {
     remove_block(SqliteStore::create(temp_dir.as_ref().join("store.db"))?)
 }
 
+#[test]
+#[serial(redis)]
+#[cfg(feature = "store-redis")]
+fn redis_remove_block() {
+    let redis_url = dotenv::var("REDIS_TEST_URL").unwrap();
+    RedisStore::open(redis_url.clone())
+        .and_then(|store| store.destroy())
+        .ok();
+    remove_block(RedisStore::create(redis_url).unwrap());
+}
+
 fn list_blocks(mut store: impl DataStore) -> anyhow::Result<()> {
     let id1 = Uuid::new_v4();
     let id2 = Uuid::new_v4();
@@ -142,20 +182,31 @@ fn list_blocks(mut store: impl DataStore) -> anyhow::Result<()> {
 }
 
 #[test]
-fn memory_list_block() -> anyhow::Result<()> {
+fn memory_list_blocks() -> anyhow::Result<()> {
     list_blocks(MemoryStore::open())
 }
 
 #[test]
 #[cfg(feature = "store-directory")]
-fn directory_list_block() -> anyhow::Result<()> {
+fn directory_list_blocks() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     list_blocks(DirectoryStore::create(temp_dir.as_ref().join("store"))?)
 }
 
 #[test]
 #[cfg(feature = "store-sqlite")]
-fn sqlite_list_block() -> anyhow::Result<()> {
+fn sqlite_list_blocks() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     list_blocks(SqliteStore::create(temp_dir.as_ref().join("store.db"))?)
+}
+
+#[test]
+#[serial(redis)]
+#[cfg(feature = "store-redis")]
+fn redis_list_blocks() {
+    let redis_url = dotenv::var("REDIS_TEST_URL").unwrap();
+    RedisStore::open(redis_url.clone())
+        .and_then(|store| store.destroy())
+        .ok();
+    list_blocks(RedisStore::create(redis_url).unwrap());
 }
