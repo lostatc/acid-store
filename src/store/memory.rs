@@ -49,7 +49,7 @@ impl DataStore for MemoryStore {
         Ok(())
     }
 
-    fn read_block(&self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error> {
+    fn read_block(&mut self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error> {
         Ok(self.blocks.get(&id).map(|data| data.to_owned()))
     }
 
@@ -58,7 +58,7 @@ impl DataStore for MemoryStore {
         Ok(())
     }
 
-    fn list_blocks(&self) -> Result<Vec<Uuid>, Self::Error> {
+    fn list_blocks(&mut self) -> Result<Vec<Uuid>, Self::Error> {
         Ok(self.blocks.keys().copied().collect())
     }
 }

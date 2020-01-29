@@ -47,7 +47,7 @@ pub enum Error {
 
     /// This format is not supported by this version of the library.
     #[error("This format is not supported by this version of the library.")]
-    UnsupportedVersion,
+    UnsupportedFormat,
 
     /// The provided key type does not match the data in the repository.
     #[error("The provided key type does not match the data in the repository.")]

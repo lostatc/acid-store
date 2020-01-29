@@ -72,8 +72,8 @@ impl DirectoryStore {
     ///
     /// # Errors
     /// - `Error::NotFound`: There is not a directory at `path`.
-    /// - `Error::UnsupportedVersion`: This data store format is not supported by this version of
-    /// the library.
+    /// - `Error::UnsupportedFormat`: There is not a `DirectoryStore` in the directory or it is an
+    /// unsupported format.
     /// - `Error::Io`: An I/O error occurred.
     pub fn open(path: PathBuf) -> crate::Result<Self> {
         if !path.is_dir() {
@@ -87,7 +87,7 @@ impl DirectoryStore {
 
         // Verify the version ID.
         if version_id != CURRENT_VERSION {
-            return Err(crate::Error::UnsupportedVersion);
+            return Err(crate::Error::UnsupportedFormat);
         }
 
         Ok(DirectoryStore {
@@ -132,7 +132,7 @@ impl DataStore for DirectoryStore {
         Ok(())
     }
 
-    fn read_block(&self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error> {
+    fn read_block(&mut self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error> {
         let block_path = self.block_path(id);
 
         if block_path.exists() {
@@ -155,7 +155,7 @@ impl DataStore for DirectoryStore {
         }
     }
 
-    fn list_blocks(&self) -> Result<Vec<Uuid>, Self::Error> {
+    fn list_blocks(&mut self) -> Result<Vec<Uuid>, Self::Error> {
         // Collect the results into a vector so that we can release the lock on the data store.
         WalkDir::new(&self.blocks_directory)
             .min_depth(2)

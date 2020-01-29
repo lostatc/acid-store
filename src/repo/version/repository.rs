@@ -91,7 +91,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         let version =
             Uuid::from_slice(version_buffer.as_slice()).map_err(|_| crate::Error::Corrupt)?;
         if version != *VERSION_ID {
-            return Err(crate::Error::UnsupportedVersion);
+            return Err(crate::Error::UnsupportedFormat);
         }
 
         Ok(Self { repository })
@@ -300,8 +300,8 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// Return information about the repository in `store` without opening it.
     ///
     /// See `ObjectRepository::peek_info` for details.
-    pub fn peek_info(store: S) -> crate::Result<RepositoryInfo> {
-        ObjectRepository::<VersionKey<K>, S>::peek_info(&store)
+    pub fn peek_info(store: &mut S) -> crate::Result<RepositoryInfo> {
+        ObjectRepository::<VersionKey<K>, S>::peek_info(store)
     }
 
     /// Calculate statistics about the repository.
