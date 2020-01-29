@@ -17,8 +17,10 @@
 //! Low-level backends for data storage.
 
 pub use self::common::DataStore;
+#[cfg(feature = "store-directory")]
 pub use self::directory::DirectoryStore;
 pub use self::memory::MemoryStore;
+#[cfg(feature = "store-sqlite")]
 pub use self::sqlite::SqliteStore;
 
 mod common;

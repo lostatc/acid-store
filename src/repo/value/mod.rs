@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#![cfg(feature = "repo-value")]
+
 pub use self::key::ValueKey;
 pub use self::repository::ValueRepository;
 

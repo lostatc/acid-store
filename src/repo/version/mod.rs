@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#![cfg(feature = "repo-version")]
+
 pub use self::object::ReadOnlyObject;
 pub use self::repository::VersionRepository;
 pub use self::version::Version;

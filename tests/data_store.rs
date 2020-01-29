@@ -20,7 +20,11 @@ use tempfile::tempdir;
 use uuid::Uuid;
 
 use common::random_buffer;
-use data_store::store::{DataStore, DirectoryStore, MemoryStore, SqliteStore};
+#[cfg(feature = "store-directory")]
+use data_store::store::DirectoryStore;
+#[cfg(feature = "store-sqlite")]
+use data_store::store::SqliteStore;
+use data_store::store::{DataStore, MemoryStore};
 
 mod common;
 
@@ -43,12 +47,14 @@ fn memory_read_block() -> anyhow::Result<()> {
 }
 
 #[test]
+#[cfg(feature = "store-directory")]
 fn directory_read_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     read_block(DirectoryStore::create(temp_dir.as_ref().join("store"))?)
 }
 
 #[test]
+#[cfg(feature = "store-sqlite")]
 fn sqlite_read_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     read_block(SqliteStore::create(temp_dir.as_ref().join("store.db"))?)
@@ -72,12 +78,14 @@ fn memory_overwrite_block() -> anyhow::Result<()> {
 }
 
 #[test]
+#[cfg(feature = "store-directory")]
 fn directory_overwrite_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     overwrite_block(DirectoryStore::create(temp_dir.as_ref().join("store"))?)
 }
 
 #[test]
+#[cfg(feature = "store-sqlite")]
 fn sqlite_overwrite_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     overwrite_block(SqliteStore::create(temp_dir.as_ref().join("store.db"))?)
@@ -101,12 +109,14 @@ fn memory_remove_block() -> anyhow::Result<()> {
 }
 
 #[test]
+#[cfg(feature = "store-directory")]
 fn directory_remove_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     remove_block(DirectoryStore::create(temp_dir.as_ref().join("store"))?)
 }
 
 #[test]
+#[cfg(feature = "store-sqlite")]
 fn sqlite_remove_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     remove_block(SqliteStore::create(temp_dir.as_ref().join("store.db"))?)
@@ -137,12 +147,14 @@ fn memory_list_block() -> anyhow::Result<()> {
 }
 
 #[test]
+#[cfg(feature = "store-directory")]
 fn directory_list_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     list_blocks(DirectoryStore::create(temp_dir.as_ref().join("store"))?)
 }
 
 #[test]
+#[cfg(feature = "store-sqlite")]
 fn sqlite_list_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     list_blocks(SqliteStore::create(temp_dir.as_ref().join("store.db"))?)
