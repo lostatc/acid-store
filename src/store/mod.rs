@@ -20,7 +20,7 @@
 //! Open a data store which stores data in a directory of the local file system. Create the data
 //! store if it doesn't already exist, and truncate it if it does.
 //! ```no_run
-//! use data_store::store::{DirectoryStore, Open, OpenOption};
+//! use acid_store::store::{DirectoryStore, Open, OpenOption};
 //!
 //! let store = DirectoryStore::open(
 //!     "/home/lostatc/store".into(),

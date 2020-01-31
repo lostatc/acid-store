@@ -134,8 +134,8 @@ pub struct ContentId([u8; 32]);
 /// to check the integrity of all the data in the object whether encryption is enabled or not.
 ///
 /// The methods of `Read`, `Write`, and `Seek` return `io::Result`, but the returned `io::Error` can
-/// be converted `Into` a `data_store::Error` to be consistent with the rest of the library. The
-/// implementations document which `data_store::Error` values can be returned.
+/// be converted `Into` a `acid_store::Error` to be consistent with the rest of the library. The
+/// implementations document which `acid_store::Error` values can be returned.
 pub struct Object<'a, K: Key, S: DataStore> {
     /// The repository where chunks are stored.
     repository: &'a mut ObjectRepository<K, S>,
@@ -394,7 +394,7 @@ impl<'a, K: Key, S: DataStore> Seek for Object<'a, K, S> {
 // buffering to wait for a chunk boundary before writing a chunk to the repository. It also means
 // the user needs to explicitly call `flush` when they're done writing data.
 impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
-    /// The `io::Error` returned by this method can be converted into a `data_store::Error`.
+    /// The `io::Error` returned by this method can be converted into a `acid_store::Error`.
     ///
     /// # Errors
     /// - `Error::InvalidData`: Ciphertext verification failed.
@@ -425,7 +425,7 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
         Ok(buf.len())
     }
 
-    /// The `io::Error` returned by this method can be converted into a `data_store::Error`.
+    /// The `io::Error` returned by this method can be converted into a `acid_store::Error`.
     ///
     /// # Errors
     /// - `Error::InvalidData`: Ciphertext verification failed.
@@ -482,7 +482,7 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
 // To avoid reading the same chunk from the repository multiple times, the chunk which was most
 // recently read from is cached in a buffer.
 impl<'a, K: Key, S: DataStore> Read for Object<'a, K, S> {
-    /// The `io::Error` returned by this method can be converted into a `data_store::Error`.
+    /// The `io::Error` returned by this method can be converted into a `acid_store::Error`.
     ///
     /// # Errors
     /// - `Error::InvalidData`: Ciphertext verification failed.

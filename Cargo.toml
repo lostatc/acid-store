@@ -1,5 +1,5 @@
 [package]
-name = "data-store"
+name = "acid-store"
 version = "0.1.0"
 authors = ["Wren Powell <wrentpowell@gmail.com>"]
 edition = "2018"
