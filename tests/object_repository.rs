@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Garrett Powell
+ * Copyright 2019-2020 Garrett Powell
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 use std::io::Write;
 
+use acid_store::repo::{LockStrategy, ObjectRepository};
+use acid_store::store::MemoryStore;
 use common::{create_repo, random_buffer, ARCHIVE_CONFIG, PASSWORD};
-use data_store::repo::{LockStrategy, ObjectRepository};
-use data_store::store::MemoryStore;
 
 #[macro_use]
 mod common;
@@ -32,7 +32,7 @@ fn creating_existing_repo_errs() -> anyhow::Result<()> {
         Some(PASSWORD),
     );
 
-    assert_match!(new_repo.unwrap_err(), data_store::Error::AlreadyExists);
+    assert_match!(new_repo.unwrap_err(), acid_store::Error::AlreadyExists);
     Ok(())
 }
 
@@ -44,7 +44,7 @@ fn opening_nonexistent_repo_errs() {
         LockStrategy::Abort,
     );
 
-    assert_match!(repository.unwrap_err(), data_store::Error::NotFound);
+    assert_match!(repository.unwrap_err(), acid_store::Error::NotFound);
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn opening_with_invalid_password_errs() -> anyhow::Result<()> {
         LockStrategy::Abort,
     );
 
-    assert_match!(repository.unwrap_err(), data_store::Error::Password);
+    assert_match!(repository.unwrap_err(), acid_store::Error::Password);
     Ok(())
 }
 
@@ -72,7 +72,7 @@ fn opening_with_wrong_key_type_errs() -> anyhow::Result<()> {
         LockStrategy::Abort,
     );
 
-    assert_match!(repository.unwrap_err(), data_store::Error::KeyType);
+    assert_match!(repository.unwrap_err(), acid_store::Error::KeyType);
     Ok(())
 }
 
@@ -129,7 +129,7 @@ fn copied_object_must_exist() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     assert_match!(
         repository.copy("Nonexistent", "Dest".into()).unwrap_err(),
-        data_store::Error::NotFound
+        acid_store::Error::NotFound
     );
     Ok(())
 }
@@ -142,7 +142,7 @@ fn copying_does_not_overwrite() -> anyhow::Result<()> {
 
     assert_match!(
         repository.copy("Source", "Dest".into()).unwrap_err(),
-        data_store::Error::AlreadyExists
+        acid_store::Error::AlreadyExists
     );
 
     Ok(())

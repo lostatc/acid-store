@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Garrett Powell
+ * Copyright 2019-2020 Garrett Powell
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,14 +22,14 @@ use serial_test::serial;
 use tempfile::tempdir;
 use uuid::Uuid;
 
-use common::random_buffer;
 #[cfg(feature = "store-directory")]
-use data_store::store::DirectoryStore;
+use acid_store::store::DirectoryStore;
 #[cfg(feature = "store-redis")]
-use data_store::store::RedisStore;
+use acid_store::store::RedisStore;
 #[cfg(feature = "store-sqlite")]
-use data_store::store::SqliteStore;
-use data_store::store::{DataStore, MemoryStore, Open, OpenOption};
+use acid_store::store::SqliteStore;
+use acid_store::store::{DataStore, MemoryStore, Open, OpenOption};
+use common::random_buffer;
 
 mod common;
 
