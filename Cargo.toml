@@ -47,6 +47,7 @@ rmp-serde = "0.14.0"
 uuid = { version = "0.8.1", features = ["serde", "v4"] }
 lazy_static = "1.4.0"
 weak-table = "0.2.3"
+bitflags = "1.2.1"
 
 # Unix-specific
 [target.'cfg(unix)'.dependencies]

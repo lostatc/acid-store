@@ -39,7 +39,7 @@ fn creating_existing_repo_errs() -> anyhow::Result<()> {
 #[test]
 fn opening_nonexistent_repo_errs() {
     let repository = ObjectRepository::<String, _>::open_repo(
-        MemoryStore::open(),
+        MemoryStore::new(),
         Some(PASSWORD),
         LockStrategy::Abort,
     );

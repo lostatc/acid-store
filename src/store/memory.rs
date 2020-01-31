@@ -27,14 +27,14 @@ use super::common::DataStore;
 /// and is only accessible to the current process. This data store is useful for testing.
 ///
 /// None of the methods in this data store will ever return `Err`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MemoryStore {
     blocks: HashMap<Uuid, Vec<u8>>,
 }
 
 impl MemoryStore {
-    /// Open a new memory store.
-    pub fn open() -> Self {
+    /// Create a new memory store.
+    pub fn new() -> Self {
         MemoryStore {
             blocks: HashMap::new(),
         }

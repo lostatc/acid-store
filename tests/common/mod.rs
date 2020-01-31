@@ -73,5 +73,5 @@ pub fn random_buffer() -> Vec<u8> {
 
 /// Create a new `ObjectRepository` that stores data in memory.
 pub fn create_repo() -> data_store::Result<ObjectRepository<String, MemoryStore>> {
-    ObjectRepository::create_repo(MemoryStore::open(), ARCHIVE_CONFIG, Some(PASSWORD))
+    ObjectRepository::create_repo(MemoryStore::new(), ARCHIVE_CONFIG, Some(PASSWORD))
 }

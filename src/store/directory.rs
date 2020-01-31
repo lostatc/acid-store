@@ -23,7 +23,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use super::common::DataStore;
+use super::common::{DataStore, Open, OpenOption};
 
 /// A UUID which acts as the version ID of the directory store format.
 const CURRENT_VERSION: &str = "2891c3da-297e-11ea-a7c9-1b8f8be4fc9b";
@@ -37,47 +37,28 @@ const VERSION_FILE: &str = "version";
 pub struct DirectoryStore {
     /// The path of the store's root directory.
     path: PathBuf,
-
-    /// The path of the directory where blocks are stored.
-    blocks_directory: PathBuf,
-
-    /// The path of the directory were blocks are staged while being written to.
-    staging_directory: PathBuf,
 }
 
 impl DirectoryStore {
-    /// Create a new directory store at the given `path`.
-    ///
-    /// # Errors
-    /// - `Error::AlreadyExists`: There is already a file at the given `path`.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn create(path: PathBuf) -> crate::Result<Self> {
+    /// Create a new `DirectoryStore` at the given `path`.
+    fn create_new(path: PathBuf) -> crate::Result<Self> {
         if path.exists() {
             return Err(crate::Error::AlreadyExists);
         }
 
-        // Create the files and directories in the data store.
-        if let Some(parent_directory) = path.parent() {
-            create_dir_all(parent_directory)?;
-        }
-        create_dir(&path)?;
+        // Create the directories in the data store.
+        create_dir_all(&path)?;
         create_dir(&path.join(BLOCKS_DIRECTORY))?;
 
         // Write the version ID file.
         let mut version_file = File::create(&path.join(VERSION_FILE))?;
         version_file.write_all(CURRENT_VERSION.as_bytes())?;
 
-        Self::open(path)
+        Ok(DirectoryStore { path })
     }
 
-    /// Open an existing directory store at `path`.
-    ///
-    /// # Errors
-    /// - `Error::NotFound`: There is not a directory at `path`.
-    /// - `Error::UnsupportedFormat`: There is not a `DirectoryStore` in the directory or it is an
-    /// unsupported format.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn open(path: PathBuf) -> crate::Result<Self> {
+    /// Open an existing `DirectoryStore` at the given `path`.
+    fn open_existing(path: PathBuf) -> crate::Result<Self> {
         if !path.is_dir() {
             return Err(crate::Error::NotFound);
         }
@@ -92,25 +73,45 @@ impl DirectoryStore {
             return Err(crate::Error::UnsupportedFormat);
         }
 
-        Ok(DirectoryStore {
-            path: path.clone(),
-            blocks_directory: path.join(BLOCKS_DIRECTORY),
-            staging_directory: path.join(STAGING_DIRECTORY),
-        })
+        Ok(DirectoryStore { path })
     }
 
     /// Return the path where a block with the given `id` will be stored.
     fn block_path(&self, id: Uuid) -> PathBuf {
         let mut buffer = Uuid::encode_buffer();
         let hex = id.to_simple().encode_lower(&mut buffer);
-        self.blocks_directory.join(&hex[..2]).join(hex)
+        self.path.join(BLOCKS_DIRECTORY).join(&hex[..2]).join(hex)
     }
 
     /// Return the path where a block with the given `id` will be staged.
     fn staging_path(&self, id: Uuid) -> PathBuf {
         let mut buffer = Uuid::encode_buffer();
         let hex = id.to_simple().encode_lower(&mut buffer);
-        self.staging_directory.join(hex)
+        self.path.join(STAGING_DIRECTORY).join(hex)
+    }
+}
+
+impl Open for DirectoryStore {
+    type Config = PathBuf;
+
+    fn open(config: Self::Config, options: OpenOption) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        if options.contains(OpenOption::CREATE_NEW) {
+            Self::create_new(config)
+        } else if options.contains(OpenOption::CREATE) && !config.exists() {
+            Self::create_new(config)
+        } else {
+            let store = Self::open_existing(config)?;
+
+            if options.contains(OpenOption::TRUNCATE) {
+                remove_dir_all(store.path.join(BLOCKS_DIRECTORY))?;
+                create_dir(store.path.join(BLOCKS_DIRECTORY))?;
+            }
+
+            Ok(store)
+        }
     }
 }
 
@@ -129,7 +130,7 @@ impl DataStore for DirectoryStore {
         rename(&staging_path, &block_path)?;
 
         // Remove any unused staging files.
-        remove_dir_all(&self.staging_directory)?;
+        remove_dir_all(&self.path.join(STAGING_DIRECTORY))?;
 
         Ok(())
     }
@@ -159,7 +160,7 @@ impl DataStore for DirectoryStore {
 
     fn list_blocks(&mut self) -> Result<Vec<Uuid>, Self::Error> {
         // Collect the results into a vector so that we can release the lock on the data store.
-        WalkDir::new(&self.blocks_directory)
+        WalkDir::new(&self.path.join(BLOCKS_DIRECTORY))
             .min_depth(2)
             .into_iter()
             .map(|result| match result {

@@ -16,14 +16,14 @@
 
 #![cfg(feature = "store-sqlite")]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use lazy_static::lazy_static;
 
-use crate::store::DataStore;
+use crate::store::common::{DataStore, Open, OpenOption};
 
 lazy_static! {
     /// A UUID which acts as the version ID of the store format.
@@ -39,11 +39,7 @@ pub struct SqliteStore {
 
 impl SqliteStore {
     /// Create a new `SqliteStore` at the given `path`.
-    ///
-    /// # Errors
-    /// - `Error::AlreadyExists`: There is already a file at `path`.
-    /// - `Error::Store`: A SQLite error occurred.
-    pub fn create(path: impl AsRef<Path>) -> crate::Result<Self> {
+    fn create_new(path: impl AsRef<Path>) -> crate::Result<Self> {
         if path.as_ref().exists() {
             return Err(crate::Error::AlreadyExists);
         }
@@ -80,13 +76,7 @@ impl SqliteStore {
     }
 
     /// Open an existing `SqliteStore` at the given `path`.
-    ///
-    /// # Errors
-    /// - `Error::NotFound`: There is no file at `path`.
-    /// - `Error::UnsupportedFormat`: There is not a `SqliteStore` in the database or it is an
-    /// unsupported format.
-    /// - `Error::Store`: A SQLite error occurred.
-    pub fn open(path: impl AsRef<Path>) -> crate::Result<Self> {
+    fn open_existing(path: impl AsRef<Path>) -> crate::Result<Self> {
         if !path.as_ref().is_file() {
             return Err(crate::Error::NotFound);
         }
@@ -111,6 +101,37 @@ impl SqliteStore {
         }
 
         Ok(SqliteStore { connection })
+    }
+}
+
+impl Open for SqliteStore {
+    type Config = PathBuf;
+
+    fn open(config: Self::Config, options: OpenOption) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        if options.contains(OpenOption::CREATE_NEW) {
+            Self::create_new(config)
+        } else if options.contains(OpenOption::CREATE) && !config.exists() {
+            Self::create_new(config)
+        } else {
+            let store = Self::open_existing(config)?;
+
+            if options.contains(OpenOption::TRUNCATE) {
+                store
+                    .connection
+                    .execute_batch(
+                        r#"
+                            DROP TABLE Blocks;
+                            DROP TABLE Metadata;
+                        "#,
+                    )
+                    .map_err(anyhow::Error::from)?;
+            }
+
+            Ok(store)
+        }
     }
 }
 

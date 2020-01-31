@@ -18,6 +18,8 @@ use std::error;
 
 use uuid::Uuid;
 
+use bitflags::bitflags;
+
 /// A persistent store for blocks of data.
 ///
 /// A `DataStore` persistently stores blocks of data uniquely identified by UUIDs. Data stores are
@@ -59,4 +61,40 @@ pub trait DataStore {
     ///
     /// This only lists the IDs of blocks which are stored persistently.
     fn list_blocks(&mut self) -> Result<Vec<Uuid>, Self::Error>;
+}
+
+bitflags! {
+    /// Options for opening a resource.
+    pub struct OpenOption: u32 {
+        /// Create the resource if it doesn't exist.
+        const CREATE = 1;
+
+        /// Create the resource, failing if it already exists.
+        ///
+        /// `CREATE` and `TRUNCATE` are ignored if this is used.
+        const CREATE_NEW = 2;
+
+        /// Delete all data in the resource before opening it.
+        const TRUNCATE = 4;
+    }
+}
+
+/// A resource which can be opened.
+pub trait Open {
+    /// The type of the configuration used to open a resource.
+    type Config;
+
+    /// Open this resource using the given `config` and open `options`.
+    ///
+    /// # Errors
+    /// - `Error::NotFound`: The resource does not exist and `OpenOption::CREATE` and
+    /// `OpenOption::CREATE_NEW` were not passed.
+    /// - `Error::UnsupportedFormat`: The resource is an unsupported format.
+    /// - `Error::AlreadyExists`: The resource already exists and `OpenOption::CREATE_NEW` was
+    /// passed.
+    /// - `Error::Io`: An I/O error occurred.
+    /// - `Error::Store`: An error occurred with the underlying data store.
+    fn open(config: Self::Config, options: OpenOption) -> crate::Result<Self>
+    where
+        Self: Sized;
 }

@@ -16,7 +16,7 @@
 
 //! Low-level backends for data storage.
 
-pub use self::common::DataStore;
+pub use self::common::{DataStore, Open, OpenOption};
 #[cfg(feature = "store-directory")]
 pub use self::directory::DirectoryStore;
 pub use self::memory::MemoryStore;
