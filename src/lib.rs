@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-//! `data-store` is a library for secure, deduplicated, transactional, and verifiable data storage.
+//! `acid-store` is a library for secure, deduplicated, transactional, and verifiable data storage.
 //!
 //! This crate provides high-level abstractions for data storage over a number of storage backends.
 //! Storage backends are easy to implement, and this library builds on top of them to provide the
@@ -45,11 +45,11 @@
 //! # Examples
 //! ```
 //! use std::io::{Read, Seek, Write, SeekFrom};
-//! use data_store::store::{MemoryStore, Open, OpenOption};
-//! use data_store::repo::{ObjectRepository, RepositoryConfig};
-//! use data_store::init;
+//! use acid_store::store::{MemoryStore, Open, OpenOption};
+//! use acid_store::repo::{ObjectRepository, RepositoryConfig};
+//! use acid_store::init;
 //!
-//! fn main() -> data_store::Result<()> {
+//! fn main() -> acid_store::Result<()> {
 //!     // Initialize the environment for this crate.
 //!     init();
 //!

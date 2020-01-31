@@ -31,7 +31,7 @@ lazy_static! {
     /// The path of the directory where repository lock files are stored.
     static ref LOCKS_DIR: PathBuf = runtime_dir()
         .unwrap_or_else(|| data_dir().expect("Unsupported platform"))
-        .join("data-store")
+        .join("acid-store")
         .join("locks");
 
 }
