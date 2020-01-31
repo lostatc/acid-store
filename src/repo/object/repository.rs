@@ -151,17 +151,27 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             return Err(crate::Error::AlreadyExists);
         }
 
-        // Generate and encrypt the master encryption key.
+        // Generate the master encryption key.
+        let master_key = match password {
+            Some(..) => EncryptionKey::generate(config.encryption.key_size()),
+            None => EncryptionKey::new(Vec::new()),
+        };
+
+        // Encrypt the master encryption key.
         let salt = KeySalt::generate();
-        let user_key = EncryptionKey::derive(
-            password.unwrap_or(&[]),
-            &salt,
-            config.encryption.key_size(),
-            config.memory_limit.to_mem_limit(),
-            config.operations_limit.to_ops_limit(),
-        );
-        let master_key = EncryptionKey::generate(config.encryption.key_size());
-        let encrypted_master_key = config.encryption.encrypt(master_key.as_ref(), &user_key);
+        let encrypted_master_key = match password {
+            Some(password_bytes) => {
+                let user_key = EncryptionKey::derive(
+                    password_bytes,
+                    &salt,
+                    config.encryption.key_size(),
+                    config.memory_limit.to_mem_limit(),
+                    config.operations_limit.to_ops_limit(),
+                );
+                config.encryption.encrypt(master_key.as_ref(), &user_key)
+            }
+            None => Vec::new(),
+        };
 
         // Generate and write the header.
         let header = Header::default();
@@ -255,19 +265,24 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
         // Decrypt the master key for the repository.
-        let user_key = EncryptionKey::derive(
-            password.unwrap_or(&[]),
-            &metadata.salt,
-            metadata.encryption.key_size(),
-            metadata.memory_limit.to_mem_limit(),
-            metadata.operations_limit.to_ops_limit(),
-        );
-        let master_key = EncryptionKey::new(
-            metadata
-                .encryption
-                .decrypt(&metadata.master_key, &user_key)
-                .map_err(|_| crate::Error::Password)?,
-        );
+        let master_key = match password {
+            Some(password_bytes) => {
+                let user_key = EncryptionKey::derive(
+                    password_bytes,
+                    &metadata.salt,
+                    metadata.encryption.key_size(),
+                    metadata.memory_limit.to_mem_limit(),
+                    metadata.operations_limit.to_ops_limit(),
+                );
+                EncryptionKey::new(
+                    metadata
+                        .encryption
+                        .decrypt(&metadata.master_key, &user_key)
+                        .map_err(|_| crate::Error::Password)?,
+                )
+            }
+            None => EncryptionKey::new(Vec::new()),
+        };
 
         // Read, decrypt, decompress, and deserialize the header.
         let encrypted_header = store
