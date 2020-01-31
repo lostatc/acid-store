@@ -16,76 +16,56 @@
 
 #![cfg(feature = "store-redis")]
 
-use redis::{Client, Commands, Connection, IntoConnectionInfo, RedisError};
+use redis::{Client, Commands, Connection, ConnectionInfo, IntoConnectionInfo, RedisError};
 use uuid::Uuid;
 
-use crate::store::DataStore;
+use crate::store::common::{DataStore, Open, OpenOption};
 
 /// A UUID which acts as the version ID of the store format.
 const CURRENT_VERSION: &str = "b733bd82-4206-11ea-a3dc-7354076bdaf9";
 
+/// A `DataStore` which stores data on a Redis server.
 pub struct RedisStore {
     connection: Connection,
 }
 
-impl RedisStore {
-    /// Create a new `RedisStore` on the Redis server accessible from `connection`.
-    ///
-    /// # Errors
-    /// - `Error::AlreadyExists`: There is already a `RedisStore` on the server.
-    /// - `Error::Store`: There was a Redis error.
-    pub fn create(connection: impl IntoConnectionInfo) -> crate::Result<Self> {
-        let client = Client::open(connection).map_err(anyhow::Error::from)?;
-        let mut connection = client.get_connection().map_err(anyhow::Error::from)?;
+impl Open for RedisStore {
+    type Config = ConnectionInfo;
 
-        let version_response: Option<String> =
-            connection.get("version").map_err(anyhow::Error::from)?;
-
-        if let Some(version) = version_response {
-            if version == *CURRENT_VERSION {
-                return Err(crate::Error::AlreadyExists);
-            }
-        }
-
-        connection
-            .set("version", CURRENT_VERSION)
-            .map_err(anyhow::Error::from)?;
-
-        Ok(Self { connection })
-    }
-
-    /// Open the existing `RedisStore` on the Redis server accessible from `connection`.
-    ///
-    /// # Errors
-    /// - `Error::UnsupportedFormat`: There is not a `RedisStore` on the server or it is an
-    /// unsupported format.
-    /// - `Error::Store`: There was a Redis error.
-    pub fn open(connection: impl IntoConnectionInfo) -> crate::Result<Self> {
-        let client = Client::open(connection).map_err(anyhow::Error::from)?;
+    fn open(config: Self::Config, options: OpenOption) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let client = Client::open(config).map_err(anyhow::Error::from)?;
         let mut connection = client.get_connection().map_err(anyhow::Error::from)?;
 
         let version_response: Option<String> =
             connection.get("version").map_err(anyhow::Error::from)?;
 
         match version_response {
-            Some(version) if version == *CURRENT_VERSION => Ok(Self { connection }),
-            Some(_) => Err(crate::Error::UnsupportedFormat),
-            None => Err(crate::Error::UnsupportedFormat),
+            Some(version) if version == *CURRENT_VERSION => {
+                if options.contains(OpenOption::CREATE_NEW) {
+                    return Err(crate::Error::AlreadyExists);
+                }
+            }
+            _ => {
+                if options.intersects(OpenOption::CREATE | OpenOption::CREATE_NEW) {
+                    connection
+                        .set("version", CURRENT_VERSION)
+                        .map_err(anyhow::Error::from)?;
+                } else {
+                    return Err(crate::Error::UnsupportedFormat);
+                }
+            }
         }
-    }
 
-    /// Destroy the `RedisStore` on the Redis server accessible from `connection`.
-    ///
-    /// **This flushes all data from the server.** Once this method returns `Ok`, `create` can be
-    /// called to create a new `RedisStore` on the server.
-    ///
-    /// # Errors
-    /// - `Error::Store`: There was a Redis error.
-    pub fn destroy(mut self) -> crate::Result<()> {
-        redis::cmd("FLUSHDB")
-            .query(&mut self.connection)
-            .map_err(anyhow::Error::from)?;
-        Ok(())
+        if options.contains(OpenOption::TRUNCATE) {
+            redis::cmd("FLUSHDB")
+                .query(&mut connection)
+                .map_err(anyhow::Error::from)?;
+        }
+
+        Ok(Self { connection })
     }
 }
 
