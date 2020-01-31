@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Wren Powell
+ * Copyright 2019-2020 Wren Powell
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,10 @@
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 
-use data_store::repo::{
+use acid_store::repo::{
     Compression, Encryption, ObjectRepository, RepositoryConfig, ResourceLimit,
 };
-use data_store::store::MemoryStore;
+use acid_store::store::MemoryStore;
 
 /// The minimum size of test data buffers.
 pub const MIN_BUFFER_SIZE: usize = 1024;
@@ -72,6 +72,6 @@ pub fn random_buffer() -> Vec<u8> {
 }
 
 /// Create a new `ObjectRepository` that stores data in memory.
-pub fn create_repo() -> data_store::Result<ObjectRepository<String, MemoryStore>> {
+pub fn create_repo() -> acid_store::Result<ObjectRepository<String, MemoryStore>> {
     ObjectRepository::create_repo(MemoryStore::new(), ARCHIVE_CONFIG, Some(PASSWORD))
 }
