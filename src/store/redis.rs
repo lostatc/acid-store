@@ -16,7 +16,7 @@
 
 #![cfg(feature = "store-redis")]
 
-use redis::{Client, Commands, Connection, ConnectionInfo, IntoConnectionInfo, RedisError};
+use redis::{Client, Commands, Connection, ConnectionInfo, RedisError};
 use uuid::Uuid;
 
 use crate::store::common::{DataStore, Open, OpenOption};

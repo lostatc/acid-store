@@ -86,7 +86,8 @@ fn redis_read_block() {
             OpenOption::CREATE | OpenOption::TRUNCATE,
         )
         .unwrap(),
-    );
+    )
+    .unwrap();
 }
 
 fn overwrite_block(mut store: impl DataStore) -> anyhow::Result<()> {
@@ -137,7 +138,8 @@ fn redis_overwrite_block() {
             OpenOption::CREATE | OpenOption::TRUNCATE,
         )
         .unwrap(),
-    );
+    )
+    .unwrap();
 }
 
 fn remove_block(mut store: impl DataStore) -> anyhow::Result<()> {
@@ -188,7 +190,8 @@ fn redis_remove_block() {
             OpenOption::CREATE | OpenOption::TRUNCATE,
         )
         .unwrap(),
-    );
+    )
+    .unwrap();
 }
 
 fn list_blocks(mut store: impl DataStore) -> anyhow::Result<()> {
@@ -246,5 +249,6 @@ fn redis_list_blocks() {
             OpenOption::CREATE | OpenOption::TRUNCATE,
         )
         .unwrap(),
-    );
+    )
+    .unwrap();
 }

@@ -89,7 +89,7 @@ pub trait Open {
     /// # Errors
     /// - `Error::NotFound`: The resource does not exist and `OpenOption::CREATE` and
     /// `OpenOption::CREATE_NEW` were not passed.
-    /// - `Error::UnsupportedFormat`: The resource is an unsupported format.
+    /// - `Error::UnsupportedFormat`: The resource exists but is an unsupported format.
     /// - `Error::AlreadyExists`: The resource already exists and `OpenOption::CREATE_NEW` was
     /// passed.
     /// - `Error::Io`: An I/O error occurred.

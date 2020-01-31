@@ -39,6 +39,49 @@
 //! - `RedisStore` stores data on a Redis server.
 //! - `MemoryStore` stores data in memory.
 //!
+//! The function `init` is used to initialize the environment and should be called before any other
+//! functions in this crate.
+//!
+//! # Examples
+//! ```
+//! use std::io::{Read, Seek, Write, SeekFrom};
+//! use data_store::store::{MemoryStore, Open, OpenOption};
+//! use data_store::repo::{ObjectRepository, RepositoryConfig};
+//! use data_store::init;
+//!
+//! fn main() -> data_store::Result<()> {
+//!     // Initialize the environment for this crate.
+//!     init();
+//!
+//!     // Create a repository with the default configuration that stores data in memory.
+//!     let mut repository = ObjectRepository::create_repo(
+//!         MemoryStore::new(),
+//!         RepositoryConfig::default(),
+//!         None
+//!     )?;
+//!
+//!     // Insert a key into the repository and get an object which can be used to read/write data.
+//!     let mut object = repository.insert(String::from("Key"));
+//!
+//!     // Write data to the repository via `std::io::Write`.
+//!     object.write_all(b"Data")?;
+//!     object.flush();
+//!
+//!     // Read data from the repository via `std::io::Read`.
+//!     object.seek(SeekFrom::Start(0))?;
+//!     let mut data = Vec::new();
+//!     object.read_to_end(&mut data)?;
+//!
+//!     assert_eq!(data, b"Data");
+//!
+//!     // Commit changes to the repository.
+//!     drop(object);
+//!     repository.commit()?;
+//!
+//!     Ok(())
+//! }
+//! ```
+//!
 //! # Features
 //! Some functionality is gated behind cargo features:
 //!
