@@ -19,10 +19,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
-
-use super::serialization::SerializableRelativePathBuf;
 
 /// A type of file in a `FileRepository`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -113,10 +110,10 @@ impl FileMetadata {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub enum Entry {
     /// The data for a file.
-    Data(#[serde(with = "SerializableRelativePathBuf")] RelativePathBuf),
+    Data(PathBuf),
 
     /// The metadata for a file.
-    Metadata(#[serde(with = "SerializableRelativePathBuf")] RelativePathBuf),
+    Metadata(PathBuf),
 
     /// The repository version.
     Version,
