@@ -17,9 +17,8 @@
 #![cfg(feature = "repo-file")]
 
 pub use self::entry::{FileMetadata, FileType};
-pub use self::repository::FileRepository;
+pub use self::repository::{EntryPath, FileRepository};
 
 mod entry;
 mod platform;
 mod repository;
-mod serialization;

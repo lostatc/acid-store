@@ -17,7 +17,7 @@
 //! High-level abstractions for data storage.
 
 #[cfg(feature = "repo-file")]
-pub use file::{FileMetadata, FileRepository, FileType};
+pub use file::{EntryPath, FileMetadata, FileRepository, FileType};
 pub use object::{
     Compression, ContentId, Encryption, Key, LockStrategy, Object, ObjectRepository,
     RepositoryConfig, RepositoryInfo, RepositoryStats, ResourceLimit,

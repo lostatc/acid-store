@@ -98,8 +98,6 @@
 
 #![allow(dead_code)]
 
-#[cfg(feature = "repo-file")]
-pub use relative_path;
 pub use uuid;
 
 pub use env::init;
