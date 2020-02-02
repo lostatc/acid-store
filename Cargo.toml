@@ -57,6 +57,7 @@ xattr = { version = "0.2.2", optional = true }
 tempfile = "3.1.0"
 dotenv = "0.15.0"
 serial_test = "0.3.2"
+matches = "0.1.8"
 
 [features]
 default = []
