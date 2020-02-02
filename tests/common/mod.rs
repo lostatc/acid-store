@@ -42,18 +42,17 @@ pub const ARCHIVE_CONFIG: RepositoryConfig = RepositoryConfig {
     memory_limit: ResourceLimit::Interactive,
 };
 
-/// Assert that the given `expression` matches the given `pattern`.
-#[macro_export]
-macro_rules! assert_match {
-    ($expression:expr, $pattern:pat) => {
-        match $expression {
-            $pattern => (),
-            value => panic!(
-                "Expected: {:?}, Received: {:?}",
-                stringify!($pattern),
-                value
-            ),
-        }
+/// Assert that two collections contain all the same elements.
+macro_rules! assert_contains_all {
+    ($actual:expr, $expected:expr) => {
+        assert_eq!(
+            $actual
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>(),
+            $expected
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>()
+        );
     };
 }
 

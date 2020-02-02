@@ -15,6 +15,7 @@
  */
 
 use std::cmp::min;
+use std::fmt::{self, Debug, Formatter};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::mem::replace;
 
@@ -164,6 +165,12 @@ pub struct Object<'a, K: Key, S: DataStore> {
 
     /// The contents of the chunk which was most recently read from.
     read_buffer: Vec<u8>,
+}
+
+impl<'a, K: Key, S: DataStore> Debug for Object<'a, K, S> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", stringify!(Object<'a, K, S>))
+    }
 }
 
 impl<'a, K: Key, S: DataStore> Object<'a, K, S> {

@@ -16,6 +16,8 @@
 
 use std::io::Write;
 
+use matches::assert_matches;
+
 use acid_store::repo::{LockStrategy, ObjectRepository};
 use acid_store::store::MemoryStore;
 use common::{create_repo, random_buffer, ARCHIVE_CONFIG, PASSWORD};
@@ -32,7 +34,7 @@ fn creating_existing_repo_errs() -> anyhow::Result<()> {
         Some(PASSWORD),
     );
 
-    assert_match!(new_repo.unwrap_err(), acid_store::Error::AlreadyExists);
+    assert_matches!(new_repo.unwrap_err(), acid_store::Error::AlreadyExists);
     Ok(())
 }
 
@@ -44,7 +46,7 @@ fn opening_nonexistent_repo_errs() {
         LockStrategy::Abort,
     );
 
-    assert_match!(repository.unwrap_err(), acid_store::Error::NotFound);
+    assert_matches!(repository.unwrap_err(), acid_store::Error::NotFound);
 }
 
 #[test]
@@ -56,7 +58,7 @@ fn opening_with_invalid_password_errs() -> anyhow::Result<()> {
         LockStrategy::Abort,
     );
 
-    assert_match!(repository.unwrap_err(), acid_store::Error::Password);
+    assert_matches!(repository.unwrap_err(), acid_store::Error::Password);
     Ok(())
 }
 
@@ -72,7 +74,7 @@ fn opening_with_wrong_key_type_errs() -> anyhow::Result<()> {
         LockStrategy::Abort,
     );
 
-    assert_match!(repository.unwrap_err(), acid_store::Error::KeyType);
+    assert_matches!(repository.unwrap_err(), acid_store::Error::KeyType);
     Ok(())
 }
 
@@ -127,7 +129,7 @@ fn copied_object_has_same_contents() -> anyhow::Result<()> {
 #[test]
 fn copied_object_must_exist() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
-    assert_match!(
+    assert_matches!(
         repository.copy("Nonexistent", "Dest".into()).unwrap_err(),
         acid_store::Error::NotFound
     );
@@ -140,7 +142,7 @@ fn copying_does_not_overwrite() -> anyhow::Result<()> {
     repository.insert("Source".into());
     repository.insert("Dest".into());
 
-    assert_match!(
+    assert_matches!(
         repository.copy("Source", "Dest".into()).unwrap_err(),
         acid_store::Error::AlreadyExists
     );

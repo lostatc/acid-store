@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-use std::collections::HashSet;
-
 #[cfg(feature = "store-redis")]
 use redis::IntoConnectionInfo;
 use serial_test::serial;
@@ -31,6 +29,7 @@ use acid_store::store::SqliteStore;
 use acid_store::store::{DataStore, MemoryStore, Open, OpenOption};
 use common::random_buffer;
 
+#[macro_use]
 mod common;
 
 // Some tests in this module use the `serial_test` crate to force them to run in sequence because
@@ -205,10 +204,10 @@ fn list_blocks(mut store: impl DataStore) -> anyhow::Result<()> {
     store.write_block(id2, random_buffer().as_slice())?;
     store.write_block(id3, random_buffer().as_slice())?;
 
-    let actual_ids = store.list_blocks()?.into_iter().collect::<HashSet<_>>();
-    let expected_ids = vec![id1, id2, id3].into_iter().collect::<HashSet<_>>();
+    let actual_ids = store.list_blocks()?;
+    let expected_ids = vec![id1, id2, id3];
 
-    assert_eq!(actual_ids, expected_ids);
+    assert_contains_all!(actual_ids, expected_ids);
 
     Ok(())
 }

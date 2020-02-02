@@ -469,6 +469,8 @@ impl<S: DataStore> FileRepository<S> {
 
     /// Return an unsorted iterator of paths which are children of `parent`.
     ///
+    /// The returned paths do not include `parent`.
+    ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `parent` is absolute.
     /// - `Error::NotFound`: There is no file at `parent`.
@@ -496,6 +498,8 @@ impl<S: DataStore> FileRepository<S> {
 
     /// Return an unsorted iterator of paths which are descendants of `parent`.
     ///
+    /// The returned paths do not include `parent`.
+    ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `parent` is absolute.
     /// - `Error::NotFound`: There is no file at `parent`.
@@ -514,7 +518,9 @@ impl<S: DataStore> FileRepository<S> {
         }
 
         let descendants = self.repository.keys().filter_map(move |entry| match entry {
-            Entry::Metadata(path) if path.starts_with(&parent) => Some(path.as_ref()),
+            Entry::Metadata(path) if path.starts_with(&parent) && path != &parent => {
+                Some(path.as_ref())
+            }
             _ => None,
         });
 
@@ -620,6 +626,7 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::InvalidPath`: The given `source` is absolute.
     /// - `Error::NotFound`: The `source` file does not exist.
+    /// - `Error::AlreadyExists`: The `dest` file already exists.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -629,6 +636,10 @@ impl<S: DataStore> FileRepository<S> {
         dest: impl AsRef<Path>,
     ) -> crate::Result<()> {
         let source = Self::convert_path(source)?;
+
+        if dest.as_ref().exists() {
+            return Err(crate::Error::AlreadyExists);
+        }
 
         let metadata = self.metadata(&source)?;
 
@@ -640,10 +651,7 @@ impl<S: DataStore> FileRepository<S> {
         // Create the file, directory, or symlink.
         match metadata.file_type {
             FileType::File => {
-                let mut object = self
-                    .repository
-                    .get(&Entry::Data(source.to_owned()))
-                    .expect("This file has no data in the repository.");
+                let mut object = self.open(&source)?;
                 let mut file = OpenOptions::new()
                     .write(true)
                     .create_new(true)
@@ -676,6 +684,7 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::InvalidPath`: The given `source` is absolute.
     /// - `Error::NotFound`: The `source` file does not exist.
+    /// - `Error::AlreadyExists`: The `dest` file already exists.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
