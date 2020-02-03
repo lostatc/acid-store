@@ -21,6 +21,9 @@ rusqlite = { version = "0.21.0", features = ["bundled"], optional = true }
 # Redis
 redis = { version = "0.15.1", optional = true }
 
+# Amazon S3
+rust-s3 =  { version = "0.18.11", optional = true }
+
 # Hashing
 blake2 = "0.8.1"
 
@@ -67,6 +70,8 @@ store-directory = ["walkdir"]
 store-sqlite = ["rusqlite"]
 
 store-redis = ["redis"]
+
+store-s3 = ["rust-s3"]
 
 repo-file = ["filetime", "path-slash", "walkdir", "xattr"]
 

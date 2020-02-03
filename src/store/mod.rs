@@ -34,6 +34,8 @@ pub use self::directory::DirectoryStore;
 pub use self::memory::MemoryStore;
 #[cfg(feature = "store-redis")]
 pub use self::redis::RedisStore;
+#[cfg(feature = "store-s3")]
+pub use self::s3::S3Store;
 #[cfg(feature = "store-sqlite")]
 pub use self::sqlite::SqliteStore;
 
@@ -41,4 +43,5 @@ mod common;
 mod directory;
 mod memory;
 mod redis;
+mod s3;
 mod sqlite;
