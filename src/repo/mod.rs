@@ -23,7 +23,7 @@ pub use object::{
     RepositoryConfig, RepositoryInfo, RepositoryStats, ResourceLimit,
 };
 #[cfg(feature = "repo-value")]
-pub use value::{ValueKey, ValueRepository};
+pub use value::ValueRepository;
 #[cfg(feature = "repo-version")]
 pub use version::{ReadOnlyObject, Version, VersionRepository};
 

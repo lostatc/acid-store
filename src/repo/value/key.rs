@@ -14,36 +14,7 @@
  * limitations under the License.
  */
 
-use std::marker::PhantomData;
-
 use serde::{Deserialize, Serialize};
-
-/// A `Key` with an associated value type.
-#[derive(Debug, PartialEq, Eq)]
-pub struct ValueKey<K, V> {
-    key: K,
-    value: PhantomData<V>,
-}
-
-impl<K, V> ValueKey<K, V> {
-    /// Create a new `ValueKey` which wraps the given `key`.
-    pub fn new(key: K) -> Self {
-        Self {
-            key,
-            value: PhantomData,
-        }
-    }
-
-    /// Return a reference to the wrapped key.
-    pub fn get_ref(&self) -> &K {
-        &self.key
-    }
-
-    /// Consume this value and return the wrapped key.
-    pub fn into_inner(self) -> K {
-        self.key
-    }
-}
 
 /// A type of data stored in the `ObjectRepository` which backs a `ValueRepository`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
