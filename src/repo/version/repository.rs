@@ -46,6 +46,49 @@ lazy_static! {
 /// Like `ObjectRepository`, changes made to the repository are not persisted to disk until `commit`
 /// is called. For details about deduplication, compression, encryption, and locking, see
 /// `ObjectRepository`.
+///
+/// # Examples
+/// Create a version of an object, delete the object's contents, and then restore from the version.
+/// ```
+///     use std::io::{Read, Write};
+///
+///     use acid_store::repo::{Object, VersionRepository, RepositoryConfig};
+///     use acid_store::store::MemoryStore;
+///
+///     fn main() -> acid_store::Result<()> {
+///         let mut repository = VersionRepository::create_repo(
+///             MemoryStore::new(),
+///             RepositoryConfig::default(),
+///             None
+///         )?;
+///
+///         // Insert a new object and write some data to it.
+///         let mut object = repository.insert(String::from("Key"))?;
+///         object.write_all(b"Original data")?;
+///         object.flush()?;
+///         drop(object);
+///         
+///         // Create a new, read-only version of this object.
+///         let version = repository.create_version(String::from("Key"))?;
+///
+///         // Modify the current version of the object.
+///         let mut object = repository.get("Key").unwrap();
+///         object.truncate(0)?;
+///         drop(object);
+///
+///         // Restore from the version we created earlier.
+///         repository.restore_version("Key", version.id())?;
+///
+///         // Check the contents.
+///         let mut object = repository.get("Key").unwrap();
+///         let mut contents = Vec::new();
+///         object.read_to_end(&mut contents)?;
+///
+///         assert_eq!(contents, b"Original data");
+///         Ok(())
+///     }
+///
+/// ```
 pub struct VersionRepository<K: Key, S: DataStore> {
     repository: ObjectRepository<VersionKey<K>, S>,
 }
@@ -211,6 +254,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// Remove the version of `key` with the given `id`.
     ///
     ///  # Errors
+    /// - `Error::NotFound`: The given `key` is not in the repository.
     /// - `Error::NotFound`: There is no version with the given `id`.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
@@ -244,7 +288,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// Return the list of versions of the given `key`.
     ///
     /// # Errors
-    /// - `Error::NotFound`: The given key is not in the repository.
+    /// - `Error::NotFound`: The given `key` is not in the repository.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -263,6 +307,31 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         object.read_to_end(&mut buffer)?;
 
         Ok(from_read(buffer.as_slice()).expect("Could not deserialize list of versions."))
+    }
+
+    /// Replace the current version of `key` with the version with the given `id`.
+    ///
+    /// This is a cheap operation which does not require copying the bytes in the object.
+    ///
+    /// This does not remove the old version.
+    ///
+    /// # Errors
+    /// - `Error::NotFound`: The given `key` is not in the repository.
+    /// - `Error::NotFound`: There is no version with the given `id`.
+    pub fn restore_version<Q>(&mut self, key: &Q, id: usize) -> crate::Result<()>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+    {
+        let current_key = VersionKey::Object(key.to_owned());
+        let version_key = VersionKey::Version(key.to_owned(), id);
+
+        if !self.repository.contains(&version_key) {
+            return Err(crate::Error::NotFound);
+        }
+
+        self.repository.remove(&current_key);
+        self.repository.copy(&version_key, current_key)
     }
 
     /// Write the given `versions` list for the given `key`.
