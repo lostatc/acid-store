@@ -23,6 +23,7 @@ create new storage backends. The following data stores are provided out of the b
 - `DirectoryStore` stores data in a directory in the local file system.
 - `SqliteStore` stores data in a SQLite database.
 - `RedisStore` stores data on a Redis server.
+- `S3Store` stores data in an Amazon S3 bucket.
 - `MemoryStore` stores data in memory.
 
 The function `init` is used to initialize the environment and should be called before any other
@@ -79,5 +80,6 @@ Type | Cargo Feature
 `DirectoryStore` | `store-directory`
 `SqliteStore` | `store-sqlite`
 `RedisStore` | `store-redis`
+`S3Store` | `store-s3`
 
 To use one of these types, you must enable the corresponding feature in your `Cargo.toml`.
