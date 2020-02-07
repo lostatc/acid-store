@@ -139,6 +139,39 @@ fn removing_key_removes_versions() -> anyhow::Result<()> {
 }
 
 #[test]
+fn restore_version() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+
+    let expected_data = random_buffer();
+
+    // Create an object and write data to it.
+    let mut object = repository.insert("Key".into())?;
+    object.write_all(expected_data.as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    // Create a new version.
+    let version = repository.create_version("Key".into())?;
+
+    // Modify the contents of the object.
+    let mut object = repository.get("Key").unwrap();
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    // Restore the contents from the version.
+    repository.restore_version("Key", version.id())?;
+
+    // Check the contents.
+    let mut actual_data = Vec::new();
+    let mut object = repository.get("Key").unwrap();
+    object.read_to_end(&mut actual_data)?;
+
+    assert_eq!(actual_data, expected_data);
+    Ok(())
+}
+
+#[test]
 fn modifying_object_doesnt_modify_versions() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
 
