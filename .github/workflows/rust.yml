@@ -12,4 +12,7 @@ jobs:
     - name: Build
       run: cargo build --verbose
     - name: Run tests
-      run: cargo test --verbose --all-features
+      env:
+        S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
+        S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
+      run: cargo test --verbose --features 'store-directory store-sqlite store-s3 repo-file repo-value repo-version'
