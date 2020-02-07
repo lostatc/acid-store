@@ -27,9 +27,8 @@ use tempfile::tempdir;
 
 use acid_store::repo::{FileMetadata, FileRepository, FileType};
 use acid_store::store::MemoryStore;
-use common::{ARCHIVE_CONFIG, PASSWORD};
+use common::{assert_contains_all, ARCHIVE_CONFIG, PASSWORD};
 
-#[macro_use]
 mod common;
 
 fn create_repo() -> acid_store::Result<FileRepository<MemoryStore>> {
@@ -191,7 +190,7 @@ fn list_children() -> anyhow::Result<()> {
     let actual = repository.list("root")?;
     let expected = vec![Path::new("root/child1"), Path::new("root/child2")];
 
-    assert_contains_all!(actual, expected);
+    assert_contains_all(actual, expected);
     Ok(())
 }
 
@@ -208,7 +207,7 @@ fn walk_descendants() -> anyhow::Result<()> {
         Path::new("root/child2/descendant"),
     ];
 
-    assert_contains_all!(actual, expected);
+    assert_contains_all(actual, expected);
     Ok(())
 }
 

@@ -35,10 +35,9 @@ use acid_store::store::S3Store;
 #[cfg(feature = "store-sqlite")]
 use acid_store::store::SqliteStore;
 use acid_store::store::{DataStore, MemoryStore, Open, OpenOption};
-use common::random_buffer;
+use common::{assert_contains_all, random_buffer};
 use lazy_static::lazy_static;
 
-#[macro_use]
 mod common;
 
 #[cfg(feature = "store-redis")]
@@ -266,7 +265,7 @@ fn list_blocks(mut store: impl DataStore) -> anyhow::Result<()> {
     let actual_ids = store.list_blocks()?;
     let expected_ids = vec![id1, id2, id3];
 
-    assert_contains_all!(actual_ids, expected_ids);
+    assert_contains_all(actual_ids, expected_ids);
 
     Ok(())
 }

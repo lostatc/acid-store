@@ -20,9 +20,8 @@ use matches::assert_matches;
 
 use acid_store::repo::ValueRepository;
 use acid_store::store::MemoryStore;
-use common::{ARCHIVE_CONFIG, PASSWORD};
+use common::{assert_contains_all, ARCHIVE_CONFIG, PASSWORD};
 
-#[macro_use]
 mod common;
 
 /// A serializable value to test with.
@@ -73,9 +72,9 @@ fn list_keys() -> anyhow::Result<()> {
     repository.insert("Key2".into(), &SERIALIZABLE_VALUE)?;
     repository.insert("Key3".into(), &SERIALIZABLE_VALUE)?;
 
-    let expected = ["Key1".to_string(), "Key2".to_string(), "Key3".to_string()];
-    let actual = repository.keys();
+    let expected = vec!["Key1".to_string(), "Key2".to_string(), "Key3".to_string()];
+    let actual = repository.keys().cloned().collect::<Vec<_>>();
 
-    assert_contains_all!(actual, expected);
+    assert_contains_all(actual, expected);
     Ok(())
 }

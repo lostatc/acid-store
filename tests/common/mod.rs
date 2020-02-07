@@ -16,6 +16,9 @@
 
 #![allow(dead_code)]
 
+use std::fmt::Debug;
+use std::hash::Hash;
+
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 
@@ -42,18 +45,17 @@ pub const ARCHIVE_CONFIG: RepositoryConfig = RepositoryConfig {
     memory_limit: ResourceLimit::Interactive,
 };
 
-/// Assert that two collections contain all the same elements.
-macro_rules! assert_contains_all {
-    ($actual:expr, $expected:expr) => {
-        assert_eq!(
-            $actual
-                .into_iter()
-                .collect::<std::collections::HashSet<_>>(),
-            $expected
-                .into_iter()
-                .collect::<std::collections::HashSet<_>>()
-        );
-    };
+/// Assert that two collections contain all the same elements, regardless of order.
+pub fn assert_contains_all<T: Hash + Eq + Debug>(
+    actual: impl IntoIterator<Item = T>,
+    expected: impl IntoIterator<Item = T>,
+) {
+    assert_eq!(
+        actual.into_iter().collect::<std::collections::HashSet<_>>(),
+        expected
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>()
+    )
 }
 
 /// Return a buffer containing `size` random bytes for testing purposes.
