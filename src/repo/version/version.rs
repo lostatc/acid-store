@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use crate::repo::ContentId;
 
 /// Information about a version in a `VersionRepository`.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct Version {
     pub(super) id: usize,
     pub(super) created: SystemTime,

@@ -22,7 +22,6 @@ use acid_store::repo::{LockStrategy, ObjectRepository};
 use acid_store::store::MemoryStore;
 use common::{create_repo, random_buffer, ARCHIVE_CONFIG, PASSWORD};
 
-#[macro_use]
 mod common;
 
 #[test]

@@ -274,6 +274,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         let mut object = self.repository.insert(VersionKey::Index(key.to_owned()));
         let serialized_versions = to_vec(versions).expect("Could not serialize list of versions.");
         object.write_all(serialized_versions.as_slice())?;
+        object.flush()?;
 
         Ok(())
     }
