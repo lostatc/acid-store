@@ -36,7 +36,7 @@ use super::key::KeyType;
 lazy_static! {
     /// The current repository format version ID.
     static ref VERSION_ID: Uuid =
-        Uuid::parse_str("5b93b6a4-362f-11ea-b8a5-309c230b49ee ").unwrap();
+        Uuid::parse_str("5b93b6a4-362f-11ea-b8a5-309c230b49ee").unwrap();
 }
 
 /// A persistent, heterogeneous, map-like collection.
