@@ -31,7 +31,7 @@ use crate::repo::{
 };
 use crate::store::DataStore;
 
-use super::key::{KeyType, ValueKey};
+use super::key::KeyType;
 
 lazy_static! {
     /// The current repository format version ID.
@@ -44,11 +44,6 @@ lazy_static! {
 /// This is a wrapper around `ObjectRepository` which allows it to map keys to concrete values
 /// instead of binary blobs. Values are serialized and deserialized automatically using a
 /// space-efficient binary format.
-///
-/// Like `ObjectRepository`, keys can be of any type implementing `Key`. To access values in the
-/// repository, however, a key needs to be wrapped in a `ValueKey`. A `ValueKey` contains type
-/// information about the value the key is associated with, allowing for type-safe access to values
-/// of different types.
 ///
 /// Like `ObjectRepository`, changes made to the repository are not persisted to disk until `commit`
 /// is called. For details about deduplication, compression, encryption, and locking, see
@@ -122,8 +117,8 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn insert<V: Serialize>(&mut self, key: ValueKey<K, V>, value: &V) -> crate::Result<()> {
-        let mut object = self.repository.insert(KeyType::Data(key.into_inner()));
+    pub fn insert<V: Serialize>(&mut self, key: K, value: &V) -> crate::Result<()> {
+        let mut object = self.repository.insert(KeyType::Data(key));
         let serialized_value = to_vec(value).map_err(|_| crate::Error::Serialize)?;
         object.write_all(serialized_value.as_slice())?;
         object.flush()?;
@@ -153,10 +148,15 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn get<V: DeserializeOwned>(&mut self, key: &ValueKey<K, V>) -> crate::Result<V> {
+    pub fn get<Q, V>(&mut self, key: &Q) -> crate::Result<V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        V: DeserializeOwned,
+    {
         let mut object = self
             .repository
-            .get(&KeyType::Data(key.get_ref().clone()))
+            .get(&KeyType::Data(key.to_owned()))
             .ok_or(crate::Error::NotFound)?;
 
         // Catch any errors before passing to `from_read`.
