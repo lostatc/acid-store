@@ -110,8 +110,7 @@ pub struct RepositoryStats {
 impl RepositoryStats {
     /// The combined size of all the objects in the repository.
     ///
-    /// This may be larger than the `actual_size` if some data is being shared between objects
-    /// (deduplicated).
+    /// This may be larger than the `actual_size` due to deduplication and compression.
     pub fn apparent_size(&self) -> u64 {
         self.apparent_size
     }
