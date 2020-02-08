@@ -1,4 +1,4 @@
-![Rust](https://github.com/lostatc/acid-store-rs/workflows/Rust/badge.svg)
+![Test](https://github.com/lostatc/acid-store-rs/workflows/Test/badge.svg)
 
 # acid-store
 
