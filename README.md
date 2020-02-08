@@ -1,3 +1,5 @@
+![Rust](https://github.com/lostatc/acid-store-rs/workflows/Rust/badge.svg)
+
 # acid-store
 
 `acid-store` is a library for secure, deduplicated, transactional, and verifiable data storage.
