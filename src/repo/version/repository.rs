@@ -89,6 +89,7 @@ lazy_static! {
 ///     }
 ///
 /// ```
+#[derive(Debug)]
 pub struct VersionRepository<K: Key, S: DataStore> {
     repository: ObjectRepository<VersionKey<K>, S>,
 }

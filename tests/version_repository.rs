@@ -20,7 +20,7 @@ use std::io::{Read, Write};
 
 use matches::assert_matches;
 
-use acid_store::repo::VersionRepository;
+use acid_store::repo::{LockStrategy, VersionRepository};
 use acid_store::store::MemoryStore;
 use common::{assert_contains_all, random_buffer, ARCHIVE_CONFIG, PASSWORD};
 
@@ -28,6 +28,15 @@ mod common;
 
 fn create_repo() -> acid_store::Result<VersionRepository<String, MemoryStore>> {
     VersionRepository::create_repo(MemoryStore::new(), ARCHIVE_CONFIG, Some(PASSWORD))
+}
+
+#[test]
+fn open_repository() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.commit()?;
+    let store = repository.into_store();
+    VersionRepository::<String, _>::open_repo(store, Some(PASSWORD), LockStrategy::Abort)?;
+    Ok(())
 }
 
 #[test]
