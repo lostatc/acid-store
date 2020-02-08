@@ -23,7 +23,7 @@ use std::path::Path;
 use matches::assert_matches;
 use tempfile::tempdir;
 
-use acid_store::repo::{Entry, FileRepository, NoMetadata};
+use acid_store::repo::{Entry, FileRepository, LockStrategy, NoMetadata};
 use acid_store::store::MemoryStore;
 use common::{assert_contains_all, ARCHIVE_CONFIG, PASSWORD};
 
@@ -31,6 +31,15 @@ mod common;
 
 fn create_repo() -> acid_store::Result<FileRepository<MemoryStore, NoMetadata>> {
     FileRepository::create_repo(MemoryStore::new(), ARCHIVE_CONFIG, Some(PASSWORD))
+}
+
+#[test]
+fn open_repository() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.commit()?;
+    let store = repository.into_store();
+    FileRepository::<_, NoMetadata>::open_repo(store, Some(PASSWORD), LockStrategy::Abort)?;
+    Ok(())
 }
 
 #[test]

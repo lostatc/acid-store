@@ -73,6 +73,7 @@ pub type EntryPath = Path;
 /// Like `ObjectRepository`, changes made to the repository are not persisted to disk until `commit`
 /// is called. For details about deduplication, compression, encryption, and locking, see
 /// `ObjectRepository`.
+#[derive(Debug)]
 pub struct FileRepository<S: DataStore, M: FileMetadata> {
     repository: ObjectRepository<EntryKey, S>,
     marker: PhantomData<M>,

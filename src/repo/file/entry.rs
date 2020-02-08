@@ -42,7 +42,7 @@ pub trait FileMetadata: Default + Serialize + DeserializeOwned {
 }
 
 /// A `FileMetadata` which stores no metadata.
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct NoMetadata;
 
 impl FileMetadata for NoMetadata {
