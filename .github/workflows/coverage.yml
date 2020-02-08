@@ -4,7 +4,6 @@ name: Coverage
 
 jobs:
   check:
-    name: Rust project
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -15,11 +14,19 @@ jobs:
         with:
           toolchain: stable
           override: true
+        
+      - name: Start Redis
+        uses: zhulik/redis-action@1.1.0
 
       - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
         with:
           args: --all-features
+        env:
+          S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
+          S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
+          S3_BUCKET: lostatc-acid-store
+          REDIS_URL: redis://localhost:6379
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1.0.2
