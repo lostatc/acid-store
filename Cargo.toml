@@ -3,6 +3,14 @@ name = "acid-store"
 version = "0.1.0"
 authors = ["Wren Powell <wrentpowell@gmail.com>"]
 edition = "2018"
+description = "A library for secure, deduplicated, transactional, and verifiable data storage"
+homepage = "https://github.com/lostatc/acid-store"
+repository = "https://github.com/lostatc/acid-store"
+documentation = "https://docs.rs/acid-store"
+readme = "README.md"
+keywords = ["persistent", "storage", "data", "transactional"]
+categories = ["filesystem", "encoding"]
+license = "Apache-2.0"
 
 [dependencies]
 # File system
