@@ -16,7 +16,7 @@
 
 #![cfg(feature = "repo-file")]
 
-use std::fs::File;
+use std::fs::{create_dir, File};
 use std::io::{Read, Write};
 use std::path::Path;
 
@@ -210,6 +210,26 @@ fn archive_file() -> anyhow::Result<()> {
 }
 
 #[test]
+fn archive_tree() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let source_path = temp_dir.as_ref().join("source");
+
+    create_dir(&source_path)?;
+    File::create(&source_path.join("file1"))?;
+    create_dir(&source_path.join("directory"))?;
+    File::create(&source_path.join("directory/file2"))?;
+
+    let mut repository = create_repo()?;
+    repository.archive_tree(&source_path, "dest")?;
+
+    assert!(repository.entry("dest")?.is_directory());
+    assert!(repository.entry("dest/file1")?.is_file());
+    assert!(repository.entry("dest/directory")?.is_directory());
+    assert!(repository.entry("dest/directory/file2")?.is_file());
+    Ok(())
+}
+
+#[test]
 fn extract_file() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let dest_path = temp_dir.as_ref().join("dest");
@@ -227,5 +247,24 @@ fn extract_file() -> anyhow::Result<()> {
     dest_file.read_to_end(&mut actual_contents)?;
 
     assert_eq!(actual_contents, b"file contents");
+    Ok(())
+}
+
+#[test]
+fn extract_tree() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let dest_path = temp_dir.as_ref().join("dest");
+
+    let mut repository = create_repo()?;
+    repository.create("source", &Entry::directory())?;
+    repository.create("source/file1", &Entry::file())?;
+    repository.create("source/directory", &Entry::directory())?;
+    repository.create("source/directory/file2", &Entry::file())?;
+
+    repository.extract_tree("source", &dest_path)?;
+
+    assert!(dest_path.join("file1").is_file());
+    assert!(dest_path.join("directory").is_dir());
+    assert!(dest_path.join("directory/file2").is_file());
     Ok(())
 }
