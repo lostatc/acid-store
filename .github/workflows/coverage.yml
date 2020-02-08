@@ -21,7 +21,7 @@ jobs:
       - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
         with:
-          args: --all-features
+          args: --all-features --ignore-tests
         env:
           S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
           S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
