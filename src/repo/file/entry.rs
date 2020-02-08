@@ -14,106 +14,93 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
-use std::ffi::OsString;
-use std::path::PathBuf;
-use std::time::SystemTime;
+use std::io;
+use std::path::{Path, PathBuf};
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 /// A type of file in a `FileRepository`.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub enum FileType {
     /// A regular file.
     File,
 
     /// A directory.
     Directory,
-
-    /// A symbolic link.
-    Link {
-        /// The path this symbolic link points to.
-        ///
-        /// This is stored as a platform-dependent path, meaning that a symlink archived on one
-        /// platform may not be able to be extracted on another.
-        target: PathBuf,
-    },
 }
 
-/// Metadata about a file stored in a `FileRepository`.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
-pub struct FileMetadata {
-    /// The time the file was last modified.
-    pub modified: SystemTime,
+/// The metadata for a file in the file system.
+///
+/// This type must implement `Default` to provide the default metadata for a new entry.
+pub trait FileMetadata: Default + Serialize + DeserializeOwned {
+    /// Read the metadata from the file at `path` and create a new instance.
+    fn read_metadata(path: &Path) -> io::Result<Self>;
 
-    /// The POSIX permissions of the file, or `None` if POSIX permissions are not applicable.
-    pub permissions: Option<u32>,
+    /// Write this metadata to the file at `path`.
+    fn write_metadata(&self, path: &Path) -> io::Result<()>;
+}
 
-    /// The file's extended attributes.
-    pub attributes: HashMap<OsString, Vec<u8>>,
+/// A `FileMetadata` which stores no metadata.
+#[derive(Default, Serialize, Deserialize)]
+pub struct NoMetadata;
 
-    /// The type of the file.
+impl FileMetadata for NoMetadata {
+    fn read_metadata(_path: &Path) -> io::Result<Self> {
+        Ok(NoMetadata)
+    }
+
+    fn write_metadata(&self, _path: &Path) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// An entry in a `FileRepository` which represents a file or directory.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+pub struct Entry<M> {
+    /// The type of file this entry represents.
     pub file_type: FileType,
+
+    /// The metadata for the file.
+    pub metadata: M,
 }
 
-impl FileMetadata {
-    /// Create metadata for a new file.
+impl<M: FileMetadata> Entry<M> {
+    /// Create an `Entry` for a new regular file.
     pub fn file() -> Self {
-        Self {
-            modified: SystemTime::now(),
-            permissions: None,
-            attributes: HashMap::new(),
+        Entry {
             file_type: FileType::File,
+            metadata: M::default(),
         }
     }
 
-    /// Create metadata for a new directory.
+    /// Create an `Entry` for a new directory.
     pub fn directory() -> Self {
-        Self {
-            modified: SystemTime::now(),
-            permissions: None,
-            attributes: HashMap::new(),
+        Entry {
             file_type: FileType::Directory,
+            metadata: M::default(),
         }
     }
 
-    /// Create metadata for a new symbolic link.
-    pub fn link(target: PathBuf) -> Self {
-        Self {
-            modified: SystemTime::now(),
-            permissions: None,
-            attributes: HashMap::new(),
-            file_type: FileType::Link { target },
-        }
-    }
-
-    /// Return whether the file is a regular file.
+    /// Return whether this entry is a regular file.
     pub fn is_file(&self) -> bool {
         self.file_type == FileType::File
     }
 
-    /// Return whether the file is a directory.
+    /// Return whether this entry is a directory.
     pub fn is_directory(&self) -> bool {
         self.file_type == FileType::Directory
-    }
-
-    /// Return whether the file is a symbolic link.
-    pub fn is_link(&self) -> bool {
-        match self.file_type {
-            FileType::Link { .. } => true,
-            _ => false,
-        }
     }
 }
 
 /// The key to use in the `ObjectRepository` which backs a `FileRepository`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
-pub enum Entry {
+pub enum EntryKey {
     /// The data for a file.
     Data(PathBuf),
 
-    /// The metadata for a file.
-    Metadata(PathBuf),
+    /// The entry representing a file.
+    Entry(PathBuf),
 
     /// The repository version.
     Version,

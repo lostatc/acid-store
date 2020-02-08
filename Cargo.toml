@@ -6,7 +6,6 @@ edition = "2018"
 
 [dependencies]
 # File system
-filetime = { version = "0.2.8", optional = true }
 path-slash = { version = "0.1.1", optional = true }
 walkdir = { version = "2.2.9", optional = true }
 fs2 = "0.4.3"
@@ -52,10 +51,6 @@ lazy_static = "1.4.0"
 weak-table = "0.2.3"
 bitflags = "1.2.1"
 
-# Unix-specific
-[target.'cfg(unix)'.dependencies]
-xattr = { version = "0.2.2", optional = true }
-
 [dev-dependencies]
 tempfile = "3.1.0"
 dotenv = "0.15.0"
@@ -74,7 +69,7 @@ store-redis = ["redis"]
 
 store-s3 = ["rust-s3"]
 
-repo-file = ["filetime", "path-slash", "walkdir", "xattr"]
+repo-file = ["path-slash", "walkdir"]
 
 repo-value = []
 

@@ -27,8 +27,7 @@
 //!
 //! This library currently provides the following abstractions for data storage:
 //! - `ObjectRepository` is an object store which maps keys to binary blobs.
-//! - `FileRepository` is a file archive like ZIP or TAR which supports symbolic links, modification
-//! times, POSIX permissions, and extended attributes.
+//! - `FileRepository` is a file archive like ZIP or TAR which can store files from the file system.
 //! - `ValueRepository` is a persistent, heterogeneous, map-like collection.
 //! - `VersionRepository` is an object store with support for versioning.
 //!
