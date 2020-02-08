@@ -18,7 +18,7 @@ use std::io::Write;
 
 use matches::assert_matches;
 
-use acid_store::repo::{LockStrategy, ObjectRepository};
+use acid_store::repo::{LockStrategy, ObjectRepository, RepositoryConfig};
 use acid_store::store::MemoryStore;
 use common::{create_repo, random_buffer, ARCHIVE_CONFIG, PASSWORD};
 
@@ -209,5 +209,40 @@ fn change_password() -> anyhow::Result<()> {
         LockStrategy::Abort,
     )?;
 
+    Ok(())
+}
+
+#[test]
+fn calculate_apparent_and_actual_size() -> anyhow::Result<()> {
+    // Create a repository with compression and encryption disabled.
+    let mut repository =
+        ObjectRepository::create_repo(MemoryStore::new(), RepositoryConfig::default(), None)?;
+    let data = random_buffer();
+
+    let mut object = repository.insert("Test1".to_string());
+    object.write_all(data.as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    let mut object = repository.insert("Test2".to_string());
+    object.write_all(data.as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    let stats = repository.stats();
+    assert_eq!(stats.apparent_size(), data.len() as u64 * 2);
+    assert_eq!(stats.actual_size(), data.len() as u64);
+
+    Ok(())
+}
+
+#[test]
+fn peek_info() -> anyhow::Result<()> {
+    let repository = create_repo()?;
+    let expected_info = repository.info();
+    let mut store = repository.into_store();
+    let actual_info = ObjectRepository::<String, _>::peek_info(&mut store)?;
+
+    assert_eq!(actual_info, expected_info);
     Ok(())
 }

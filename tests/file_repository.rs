@@ -161,6 +161,64 @@ fn open_file() -> anyhow::Result<()> {
 }
 
 #[test]
+fn copied_file_has_same_contents() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+
+    let expected_data = b"expected";
+    let mut actual_data = Vec::new();
+
+    // Add a file entry and write data to it.
+    repository.create("source", &Entry::file())?;
+    let mut object = repository.open("source")?;
+    object.write_all(expected_data)?;
+    object.flush()?;
+    drop(object);
+
+    // Copy the file entry.
+    repository.copy("source", "dest")?;
+
+    let mut object = repository.open("dest")?;
+    object.read_to_end(&mut actual_data)?;
+
+    assert_eq!(actual_data, expected_data);
+    Ok(())
+}
+
+#[test]
+fn copy_file_with_invalid_destination() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.create("source", &Entry::file())?;
+
+    assert_matches!(
+        repository.copy("source", "nonexistent/dest"),
+        Err(acid_store::Error::InvalidPath)
+    );
+
+    repository.create("dest", &Entry::file())?;
+
+    assert_matches!(
+        repository.copy("source", "dest"),
+        Err(acid_store::Error::AlreadyExists)
+    );
+
+    Ok(())
+}
+
+#[test]
+fn copy_tree() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.create_parents("source/file1", &Entry::file())?;
+    repository.create_parents("source/directory/file2", &Entry::file())?;
+
+    repository.copy_tree("source", "dest")?;
+
+    assert!(repository.entry("dest/file1")?.is_file());
+    assert!(repository.entry("dest/directory/file2")?.is_file());
+
+    Ok(())
+}
+
+#[test]
 fn list_children() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.create_parents("root/child1", &Entry::file())?;

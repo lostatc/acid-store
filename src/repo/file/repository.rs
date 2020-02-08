@@ -411,10 +411,10 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         self.create(&dest, &source_entry)?;
 
         if source_entry.is_file() {
-            self.repository.copy(
-                &EntryKey::Data(source.to_owned()),
-                EntryKey::Data(dest.to_owned()),
-            )?;
+            let data_key = EntryKey::Data(dest.to_owned());
+            self.repository.remove(&data_key);
+            self.repository
+                .copy(&EntryKey::Data(source.to_owned()), data_key)?;
         }
 
         Ok(())
