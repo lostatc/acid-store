@@ -8,12 +8,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    -   uses: actions/checkout@v2
-    -   name: Build
-    run: cargo build
-    -   name: Run tests
-        env:
-            S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
-            S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
-            S3_BUCKET: lostatc-acid-store
-        run: cargo test --verbose --features 'store-directory store-sqlite store-s3 repo-file repo-value repo-version'
+    - uses: actions/checkout@v2
+    - name: Build
+      run: cargo build
+    - name: Run tests
+      env:
+        S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
+        S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
+        S3_BUCKET: lostatc-acid-store
+      run: cargo test --verbose --features 'store-directory store-sqlite store-s3 repo-file repo-value repo-version'
