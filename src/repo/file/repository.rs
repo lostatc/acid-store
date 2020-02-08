@@ -16,11 +16,11 @@
 
 use std::cmp::Reverse;
 use std::collections::HashSet;
-use std::fs::{create_dir, create_dir_all, read_link, symlink_metadata, File, OpenOptions};
+use std::fs::{create_dir, create_dir_all, metadata, File, OpenOptions};
 use std::io::{self, copy, Read, Write};
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use filetime::{set_file_mtime, FileTime};
 use path_slash::PathExt;
 use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
@@ -33,8 +33,7 @@ use crate::repo::{
 };
 use crate::store::DataStore;
 
-use super::entry::{Entry, FileMetadata, FileType};
-use super::platform::{extended_attrs, file_mode, set_extended_attrs, set_file_mode, soft_link};
+use super::entry::{Entry, EntryKey, FileMetadata, FileType};
 
 lazy_static! {
     /// The current repository format version ID.
@@ -53,30 +52,33 @@ pub type EntryPath = Path;
 /// This is a wrapper around `ObjectRepository` which allows it to function as a file archive like
 /// ZIP or TAR.
 ///
-/// This repository provides a high-level API for copying files between the file system and
-/// repository through the methods `archive`, `archive_tree`, `extract`, and `extract_tree`. It is
-/// also possible to manually add, remove, query, and modify files.
+/// A `FileRepository` is composed of `Entry` values which represent either a regular file or a
+/// directory. Files in the file system can be copied into the repository using `archive` and
+/// `archive_tree`, and entries in the repository can be copied to the file system using `extract`
+/// and `extract_tree`. It is also possible to manually add, remove, query, and modify entries.
 ///
-/// Files in the repository are located using a `Path`, just like files in the file system. To make
-/// it clear whether a function is expecting a repository path or a file system path, the
-/// `EntryPath` alias is used to refer to a path to a file in the repository. The repository
-/// accepts both '\' and '/' as path separators in an `EntryPath`, and will automatically convert
-/// between them. `EntryPath` values must always be relative paths.
+/// This repository is designed so that files archived on one platform can be extracted on another
+/// platform. Because file metadata is very platform-dependent, you can choose what metadata you
+/// want to store by implementing the `FileMetadata` trait. Currently, the only implementation
+/// provided is `NoMetadata`, which is a no-op implementation that stores nothing. If you attempt to
+/// read an entry using a different `FileMetadata` implementation than it was stored with, it will
+/// fail to deserialize and return an error.
 ///
-/// `FileRepository` acts more like a file archive than a file system. A file's permissions
-/// (`FileMetadata::permissions`) do not affect whether the file can be read from or written to
-/// within the repository. A file's modification time (`FileMetadata::modified`) is not updated when
-/// a file is modified in the repository. This metadata is only stored in the repository so that it
-/// can be restored when the file is extracted to the file system.
+/// Entries in the repository are located using a `Path`, just like files in the file system. To
+/// make it clear whether a function is expecting an entry path or a file path, the `EntryPath`
+/// alias is used to refer to a path to an entry in the repository. The repository accepts both '\'
+/// and '/' as path separators in an `EntryPath`, and will automatically convert between them.
+/// `EntryPath` values must always be relative paths, relative to the root of the repository.
 ///
 /// Like `ObjectRepository`, changes made to the repository are not persisted to disk until `commit`
 /// is called. For details about deduplication, compression, encryption, and locking, see
 /// `ObjectRepository`.
-pub struct FileRepository<S: DataStore> {
-    repository: ObjectRepository<Entry, S>,
+pub struct FileRepository<S: DataStore, M: FileMetadata> {
+    repository: ObjectRepository<EntryKey, S>,
+    marker: PhantomData<M>,
 }
 
-impl<S: DataStore> FileRepository<S> {
+impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// Create a new repository backed by the given data `store`.
     ///
     /// See `ObjectRepository::create_repo` for details.
@@ -88,12 +90,15 @@ impl<S: DataStore> FileRepository<S> {
         let mut repository = ObjectRepository::create_repo(store, config, password)?;
 
         // Write the repository version.
-        let mut object = repository.insert(Entry::Version);
+        let mut object = repository.insert(EntryKey::Version);
         object.write_all(VERSION_ID.as_bytes())?;
         object.flush()?;
         drop(object);
 
-        Ok(Self { repository })
+        Ok(Self {
+            repository,
+            marker: PhantomData,
+        })
     }
 
     /// Open the existing repository in the given data `store`.
@@ -108,7 +113,7 @@ impl<S: DataStore> FileRepository<S> {
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository
-            .get(&Entry::Version)
+            .get(&EntryKey::Version)
             .ok_or(crate::Error::NotFound)?;
         let mut version_buffer = Vec::new();
         object.read_to_end(&mut version_buffer)?;
@@ -120,7 +125,10 @@ impl<S: DataStore> FileRepository<S> {
             return Err(crate::Error::UnsupportedFormat);
         }
 
-        Ok(Self { repository })
+        Ok(Self {
+            repository,
+            marker: PhantomData,
+        })
     }
 
     /// Convert the given `path` to a platform-agnostic path and check if it is relative.
@@ -132,42 +140,42 @@ impl<S: DataStore> FileRepository<S> {
         }
     }
 
-    /// Return whether there is a file at `path`.
+    /// Return whether there is an entry at `path`.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `path` is absolute.
     pub fn exists(&self, path: impl AsRef<EntryPath>) -> crate::Result<bool> {
         let path = Self::convert_path(path)?;
-        Ok(self.repository.contains(&Entry::Metadata(path.to_owned())))
+        Ok(self.repository.contains(&EntryKey::Entry(path.to_owned())))
     }
 
-    /// Add a new empty file, directory, or symlink to the repository at the given `path`.
+    /// Add a new empty file or directory entry to the repository at the given `path`.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `path` is absolute.
     /// - `Error::InvalidPath`: The parent of `path` does not exist or is not a directory.
-    /// - `Error::AlreadyExists`: There is already a file at `path`.
+    /// - `Error::AlreadyExists`: There is already an entry at `path`.
+    /// - `Error::Serialize`: The file metadata could not be serialized.
+    /// - `Error::Deserialize`: The file metadata could not be deserialized.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn create(
-        &mut self,
-        path: impl AsRef<EntryPath>,
-        metadata: &FileMetadata,
-    ) -> crate::Result<()> {
+    pub fn create(&mut self, path: impl AsRef<EntryPath>, entry: &Entry<M>) -> crate::Result<()> {
         let path = Self::convert_path(path)?;
 
         if self.exists(&path)? {
             return Err(crate::Error::AlreadyExists);
         }
 
-        let data_key = Entry::Data(path.to_owned());
-        let metadata_key = Entry::Metadata(path.to_owned());
+        let data_key = EntryKey::Data(path.to_owned());
+        let entry_key = EntryKey::Entry(path.to_owned());
 
         // Check if the parent directory exists.
         match path.parent() {
-            Some(parent) if parent != *EMPTY_PARENT => match self.metadata(parent) {
-                Ok(metadata) if !metadata.is_directory() => return Err(crate::Error::InvalidPath),
+            Some(parent) if parent != *EMPTY_PARENT => match self.entry(parent) {
+                Ok(parent_entry) if !parent_entry.is_directory() => {
+                    return Err(crate::Error::InvalidPath)
+                }
                 Err(crate::Error::NotFound) => return Err(crate::Error::InvalidPath),
                 Err(error) => return Err(error),
                 _ => (),
@@ -176,65 +184,66 @@ impl<S: DataStore> FileRepository<S> {
         }
 
         // Remove any existing data object and add a new one if this is a file.
-        if metadata.is_file() {
+        if entry.is_file() {
             self.repository.insert(data_key);
         } else {
             self.repository.remove(&data_key);
         }
 
         // Write the metadata for the file.
-        let mut object = self.repository.insert(metadata_key);
-        let serialized_metadata = to_vec(&metadata).expect("Could not serialize file metadata.");
-        object.write_all(serialized_metadata.as_slice())?;
+        let mut object = self.repository.insert(entry_key);
+        let serialized_entry = to_vec(entry).map_err(|_| crate::Error::Serialize)?;
+        object.write_all(serialized_entry.as_slice())?;
         object.flush()?;
 
         Ok(())
     }
 
-    /// Add a new empty file, directory, or symlink to the repository at the given `path`.
+    /// Add a new empty file or directory entry to the repository at the given `path`.
     ///
     /// This also creates any missing parent directories.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `path` is absolute.
-    /// - `Error::AlreadyExists`: There is already a file at `path`.
+    /// - `Error::AlreadyExists`: There is already an entry at `path`.
     /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Serialize`: The file metadata could not be serialized.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn create_parents(
         &mut self,
         path: impl AsRef<EntryPath>,
-        metadata: &FileMetadata,
+        entry: &Entry<M>,
     ) -> crate::Result<()> {
         let path = Self::convert_path(path)?;
 
         let parent = match path.parent() {
             Some(parent) if parent != *EMPTY_PARENT => parent,
-            _ => return self.create(path, metadata),
+            _ => return self.create(path, entry),
         };
 
         let mut ancestor = PathBuf::new();
         for component in parent.iter() {
             ancestor.push(component);
-            match self.create(&ancestor, &FileMetadata::directory()) {
+            match self.create(&ancestor, &Entry::directory()) {
                 Err(crate::Error::AlreadyExists) => (),
                 Err(error) => return Err(error),
                 _ => (),
             }
         }
 
-        self.create(path, metadata)
+        self.create(path, entry)
     }
 
-    /// Remove the file with the given `path` from the repository.
+    /// Remove the entry with the given `path` from the repository.
     ///
-    /// The space used by the given file isn't freed and made available for new files until `commit`
-    /// is called.
+    /// The space used by the given entry isn't freed and made available for new entries until
+    /// `commit` is called.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `path` is absolute.
-    /// - `Error::NotFound`: There is no file with the given `path`.
-    /// - `Error::NotEmpty`: The file is a directory which is not empty.
+    /// - `Error::NotFound`: There is no entry with the given `path`.
+    /// - `Error::NotEmpty`: The entry is a directory which is not empty.
     pub fn remove(&mut self, path: impl AsRef<EntryPath>) -> crate::Result<()> {
         let path = Self::convert_path(path)?;
 
@@ -252,20 +261,20 @@ impl<S: DataStore> FileRepository<S> {
             Err(error) => return Err(error),
         }
 
-        self.repository.remove(&Entry::Data(path.to_owned()));
-        self.repository.remove(&Entry::Metadata(path.to_owned()));
+        self.repository.remove(&EntryKey::Data(path.to_owned()));
+        self.repository.remove(&EntryKey::Entry(path.to_owned()));
 
         Ok(())
     }
 
-    /// Remove the file with the given `path` and its descendants from the repository.
+    /// Remove the entry with the given `path` and its descendants from the repository.
     ///
-    /// The space used by the given file isn't freed and made available for new files until `commit`
-    /// is called.
+    /// The space used by the given entry isn't freed and made available for new entries until
+    /// `commit` is called.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `path` is absolute.
-    /// - `Error::NotFound`: There is no file with the given `path`.
+    /// - `Error::NotFound`: There is no entry with the given `path`.
     pub fn remove_tree(&mut self, path: impl AsRef<EntryPath>) -> crate::Result<()> {
         let path = Self::convert_path(path)?;
 
@@ -293,92 +302,89 @@ impl<S: DataStore> FileRepository<S> {
         self.remove(path)
     }
 
-    /// Return the metadata for the file at `path`.
+    /// Return the entry at `path`.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `path` is absolute.
-    /// - `Error::NotFound`: There is no file at `path`.
+    /// - `Error::NotFound`: There is no entry at `path`.
+    /// - `Error::Deserialize`: The file metadata could not be deserialized.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn metadata(&mut self, path: impl AsRef<EntryPath>) -> crate::Result<FileMetadata> {
+    pub fn entry(&mut self, path: impl AsRef<EntryPath>) -> crate::Result<Entry<M>> {
         let path = Self::convert_path(path)?;
 
         let mut object = self
             .repository
-            .get(&Entry::Metadata(path.to_owned()))
+            .get(&EntryKey::Entry(path.to_owned()))
             .ok_or(crate::Error::NotFound)?;
 
         // Catch any errors before passing to `from_read`.
-        let mut serialized_metadata = Vec::with_capacity(object.size() as usize);
-        object.read_to_end(&mut serialized_metadata)?;
+        let mut serialized_entry = Vec::with_capacity(object.size() as usize);
+        object.read_to_end(&mut serialized_entry)?;
 
-        Ok(
-            from_read(serialized_metadata.as_slice())
-                .expect("Could not deserialize file metadata."),
-        )
+        Ok(from_read(serialized_entry.as_slice()).map_err(|_| crate::Error::Deserialize)?)
     }
 
-    /// Set the `metadata` for the file at `path`.
+    /// Set the file `metadata` for the entry at `path`.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `path` is absolute.
-    /// - `Error::NotFound`: There is no file at `path`.
+    /// - `Error::NotFound`: There is no entry at `path`.
+    /// - `Error::Serialize`: The file metadata could not be serialized.
+    /// - `Error::Deserialize`: The file metadata could not be deserialized.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn set_metadata(
-        &mut self,
-        path: impl AsRef<EntryPath>,
-        metadata: &FileMetadata,
-    ) -> crate::Result<()> {
+    pub fn set_metadata(&mut self, path: impl AsRef<EntryPath>, metadata: M) -> crate::Result<()> {
         let path = Self::convert_path(path)?;
+
+        let mut entry = self.entry(&path)?;
+        entry.metadata = metadata;
 
         let mut object = self
             .repository
-            .get(&Entry::Metadata(path.to_owned()))
+            .get(&EntryKey::Entry(path.to_owned()))
             .ok_or(crate::Error::NotFound)?;
 
-        let serialized_metadata = to_vec(metadata).expect("Could not serialize file metadata.");
-        object.write_all(serialized_metadata.as_slice())?;
+        let serialized_entry = to_vec(&entry).map_err(|_| crate::Error::Serialize)?;
+        object.write_all(serialized_entry.as_slice())?;
         object.flush()?;
 
         Ok(())
     }
 
-    /// Return an `Object` for reading and writing the contents of the regular file at `path`.
-    ///
-    /// Writing to the returned object does not update the `FileMetadata::modified` value for the
-    /// file.
+    /// Return an `Object` for reading and writing the contents of the file entry at `path`.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `path` is absolute.
-    /// - `Error::NotFound`: There is no file with the given `path`.
-    /// - `Error::NotFile`: The file is not a regular file.
+    /// - `Error::NotFound`: There is no entry with the given `path`.
+    /// - `Error::NotFile`: The entry does not represent a regular file.
+    /// - `Error::Deserialize`: The file metadata could not be deserialized.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn open(&mut self, path: impl AsRef<EntryPath>) -> crate::Result<Object<Entry, S>> {
+    pub fn open(&mut self, path: impl AsRef<EntryPath>) -> crate::Result<Object<EntryKey, S>> {
         let path = Self::convert_path(path)?;
 
-        let metadata = self.metadata(&path)?;
-        if !metadata.is_file() {
+        let entry = self.entry(&path)?;
+        if !entry.is_file() {
             return Err(crate::Error::NotFile);
         }
 
         let object = self
             .repository
-            .get(&Entry::Data(path.to_owned()))
+            .get(&EntryKey::Data(path.to_owned()))
             .expect("There is no object associated with this file.");
 
         Ok(object)
     }
 
-    /// Copy the file at `source` to `dest`.
+    /// Copy the entry at `source` to `dest`.
     ///
-    /// If `source` is a directory, its descendants are not copied.
+    /// If `source` is a directory entry, its descendants are not copied.
     ///
-    /// This copies the file from one location in the repository to another. To copy files from the
+    /// This copies the entry from one location in the repository to another. To copy files from the
     /// file system to the repository, see `archive`. To copy files from the repository to the file
     /// system, see `extract`.
     ///
@@ -387,8 +393,9 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::InvalidPath`: The given `source` or `dest` is absolute.
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
-    /// - `Error::NotFound`: There is no file at `source`.
-    /// - `Error::AlreadyExists`: There is already a file at `dest`.
+    /// - `Error::NotFound`: There is no entry at `source`.
+    /// - `Error::AlreadyExists`: There is already an entry at `dest`.
+    /// - `Error::Deserialize`: The file metadata could not be deserialized.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -400,24 +407,24 @@ impl<S: DataStore> FileRepository<S> {
         let source = Self::convert_path(source)?;
         let dest = Self::convert_path(dest)?;
 
-        let source_metadata = self.metadata(&source)?;
-        self.create(&dest, &source_metadata)?;
+        let source_entry = self.entry(&source)?;
+        self.create(&dest, &source_entry)?;
 
-        if source_metadata.is_file() {
+        if source_entry.is_file() {
             self.repository.copy(
-                &Entry::Data(source.to_owned()),
-                Entry::Data(dest.to_owned()),
+                &EntryKey::Data(source.to_owned()),
+                EntryKey::Data(dest.to_owned()),
             )?;
         }
 
         Ok(())
     }
 
-    /// Copy the tree of files at `source` to `dest`.
+    /// Copy the tree of entries at `source` to `dest`.
     ///
-    /// If `source` is a directory, this also copies its descendants.
+    /// If `source` is a directory entry, this also copies its descendants.
     ///
-    /// This copies the file from one location in the repository to another. To copy files from the
+    /// This copies entries from one location in the repository to another. To copy files from the
     /// file system to the repository, see `archive`. To copy files from the repository to the file
     /// system, see `extract`.
     ///
@@ -426,8 +433,8 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::InvalidPath`: The given `source` or `dest` is absolute.
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
-    /// - `Error::NotFound`: There is no file at `source`.
-    /// - `Error::AlreadyExists`: There is already a file at `dest`.
+    /// - `Error::NotFound`: There is no entry at `source`.
+    /// - `Error::AlreadyExists`: There is already an entry at `dest`.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -473,8 +480,9 @@ impl<S: DataStore> FileRepository<S> {
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `parent` is absolute.
-    /// - `Error::NotFound`: There is no file at `parent`.
-    /// - `Error::NotDirectory`: The file at `parent` is not a directory.
+    /// - `Error::NotFound`: There is no entry at `parent`.
+    /// - `Error::NotDirectory`: The entry at `parent` is not a directory.
+    /// - `Error::Deserialize`: The file metadata could not be deserialized.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -484,12 +492,12 @@ impl<S: DataStore> FileRepository<S> {
     ) -> crate::Result<impl Iterator<Item = &'a EntryPath> + 'a> {
         let parent = Self::convert_path(parent)?;
 
-        if !self.metadata(&parent)?.is_directory() {
+        if !self.entry(&parent)?.is_directory() {
             return Err(crate::Error::NotDirectory);
         }
 
         let children = self.repository.keys().filter_map(move |entry| match entry {
-            Entry::Metadata(path) if path.parent() == Some(&parent) => Some(path.as_ref()),
+            EntryKey::Entry(path) if path.parent() == Some(&parent) => Some(path.as_ref()),
             _ => None,
         });
 
@@ -502,8 +510,9 @@ impl<S: DataStore> FileRepository<S> {
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `parent` is absolute.
-    /// - `Error::NotFound`: There is no file at `parent`.
-    /// - `Error::NotDirectory`: The file at `parent` is not a directory.
+    /// - `Error::NotFound`: There is no entry at `parent`.
+    /// - `Error::NotDirectory`: The entry at `parent` is not a directory.
+    /// - `Error::Deserialize`: The file metadata could not be deserialized.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -513,12 +522,12 @@ impl<S: DataStore> FileRepository<S> {
     ) -> crate::Result<impl Iterator<Item = &'a EntryPath> + 'a> {
         let parent = Self::convert_path(parent)?;
 
-        if !self.metadata(&parent)?.is_directory() {
+        if !self.entry(&parent)?.is_directory() {
             return Err(crate::Error::NotDirectory);
         }
 
         let descendants = self.repository.keys().filter_map(move |entry| match entry {
-            Entry::Metadata(path) if path.starts_with(&parent) && path != &parent => {
+            EntryKey::Entry(path) if path.starts_with(&parent) && path != &parent => {
                 Some(path.as_ref())
             }
             _ => None,
@@ -534,7 +543,7 @@ impl<S: DataStore> FileRepository<S> {
     /// # Errors
     /// - `Error::InvalidPath`: The given `dest` is absolute.
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
-    /// - `Error::AlreadyExists`: There is already a file at `dest`.
+    /// - `Error::AlreadyExists`: There is already an entry at `dest`.
     /// - `Error::FileType`: The file at `source` is not a regular file or directory.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
@@ -550,31 +559,24 @@ impl<S: DataStore> FileRepository<S> {
             return Err(crate::Error::AlreadyExists);
         }
 
-        let file_metadata = symlink_metadata(&source)?;
-        let file_type = file_metadata.file_type();
+        let file_metadata = metadata(&source)?;
 
-        let file_type = if file_type.is_file() {
+        let file_type = if file_metadata.is_file() {
             FileType::File
-        } else if file_type.is_dir() {
+        } else if file_metadata.is_dir() {
             FileType::Directory
-        } else if file_type.is_symlink() {
-            FileType::Link {
-                target: read_link(&source)?,
-            }
         } else {
             return Err(crate::Error::FileType);
         };
 
-        let metadata = FileMetadata {
-            modified: file_metadata.modified()?,
-            permissions: file_mode(&file_metadata),
-            attributes: extended_attrs(&source)?,
+        let entry = Entry {
             file_type,
+            metadata: M::read_metadata(source.as_ref())?,
         };
 
-        self.create(&dest, &metadata)?;
+        self.create(&dest, &entry)?;
 
-        if metadata.is_file() {
+        if entry.is_file() {
             let mut object = self.open(&dest)?;
             let mut file = File::open(&source)?;
             copy(&mut file, &mut object)?;
@@ -588,12 +590,12 @@ impl<S: DataStore> FileRepository<S> {
     ///
     /// If `source` is a directory, this also copies its descendants. If `source` is not a
     /// directory, this is the same as calling `archive`. If one of the files in the tree is not a
-    /// regular file, directory, or symbolic link, it is skipped.
+    /// regular file or directory, it is skipped.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `dest` is absolute.
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
-    /// - `Error::AlreadyExists`: There is already a file at `dest`.
+    /// - `Error::AlreadyExists`: There is already an entry at `dest`.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -619,14 +621,15 @@ impl<S: DataStore> FileRepository<S> {
         Ok(())
     }
 
-    /// Copy a file from the repository into the file system.
+    /// Copy an entry from the repository into the file system.
     ///
     /// If `source` is a directory, its descendants are not copied.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `source` is absolute.
-    /// - `Error::NotFound`: The `source` file does not exist.
+    /// - `Error::NotFound`: The `source` entry does not exist.
     /// - `Error::AlreadyExists`: The `dest` file already exists.
+    /// - `Error::Deserialize`: The file metadata could not be deserialized.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -641,15 +644,15 @@ impl<S: DataStore> FileRepository<S> {
             return Err(crate::Error::AlreadyExists);
         }
 
-        let metadata = self.metadata(&source)?;
+        let entry = self.entry(&source)?;
 
         // Create any necessary parent directories.
         if let Some(parent) = dest.as_ref().parent() {
             create_dir_all(parent)?
         }
 
-        // Create the file, directory, or symlink.
-        match metadata.file_type {
+        // Create the file or directory.
+        match entry.file_type {
             FileType::File => {
                 let mut object = self.open(&source)?;
                 let mut file = OpenOptions::new()
@@ -661,30 +664,24 @@ impl<S: DataStore> FileRepository<S> {
             FileType::Directory => {
                 create_dir(&dest)?;
             }
-            FileType::Link { target } => {
-                soft_link(&dest, target.as_path())?;
-            }
         }
 
         // Set the file metadata.
-        set_file_mtime(&dest, FileTime::from_system_time(metadata.modified))?;
-        if let Some(mode) = metadata.permissions {
-            set_file_mode(&dest, mode)?;
-        }
-        set_extended_attrs(&dest, metadata.attributes)?;
+        entry.metadata.write_metadata(dest.as_ref())?;
 
         Ok(())
     }
 
-    /// Copy a directory tree from the repository into the file system.
+    /// Copy a tree of entries from the repository into the file system.
     ///
     /// If `source` is a directory, this also copies its descendants. If `source` is not a
     /// directory, this is the same as calling `extract`.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `source` is absolute.
-    /// - `Error::NotFound`: The `source` file does not exist.
+    /// - `Error::NotFound`: The `source` entry does not exist.
     /// - `Error::AlreadyExists`: The `dest` file already exists.
+    /// - `Error::Deserialize`: The file metadata could not be deserialized.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -742,8 +739,8 @@ impl<S: DataStore> FileRepository<S> {
             .verify()?
             .iter()
             .filter_map(|entry| match entry {
-                Entry::Data(path) => Some(path.as_ref()),
-                Entry::Metadata(path) => Some(path.as_ref()),
+                EntryKey::Data(path) => Some(path.as_ref()),
+                EntryKey::Entry(path) => Some(path.as_ref()),
                 _ => None,
             })
             .collect();
@@ -767,7 +764,7 @@ impl<S: DataStore> FileRepository<S> {
     ///
     /// See `ObjectRepository::peek_info` for details.
     pub fn peek_info(store: &mut S) -> crate::Result<RepositoryInfo> {
-        ObjectRepository::<Entry, S>::peek_info(store)
+        ObjectRepository::<EntryKey, S>::peek_info(store)
     }
 
     /// Calculate statistics about the repository.
