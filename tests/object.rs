@@ -39,6 +39,53 @@ fn read_written_data() -> anyhow::Result<()> {
 }
 
 #[test]
+fn seek_and_read_data() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    let mut object = repository.insert("Test".to_string());
+
+    let original_data = random_buffer();
+    let mut actual_data = Vec::new();
+
+    object.write_all(original_data.as_slice())?;
+    object.flush()?;
+
+    // Seek from start.
+    object.seek(SeekFrom::Start(10))?;
+    object.read_to_end(&mut actual_data)?;
+    assert_eq!(actual_data, &original_data[10..]);
+    actual_data.clear();
+
+    // Seek from end.
+    object.seek(SeekFrom::End(10))?;
+    object.read_to_end(&mut actual_data)?;
+    let start_position = original_data.len() - 10;
+    assert_eq!(actual_data, &original_data[start_position..]);
+    actual_data.clear();
+
+    // Seek from current position.
+    object.seek(SeekFrom::Start(10))?;
+    object.seek(SeekFrom::Current(10))?;
+    object.read_to_end(&mut actual_data)?;
+    assert_eq!(actual_data, &original_data[20..]);
+
+    Ok(())
+}
+
+#[test]
+fn seek_to_negative_offset() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    let mut object = repository.insert("Test".into());
+
+    // Write initial data to the object.
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    object.seek(SeekFrom::Start(0))?;
+
+    assert!(object.seek(SeekFrom::Current(-1)).is_err());
+    Ok(())
+}
+
+#[test]
 fn overwrite_written_data() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     let mut object = repository.insert("Test".into());
