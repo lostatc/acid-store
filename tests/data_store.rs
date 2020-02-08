@@ -51,7 +51,7 @@ lazy_static! {
 #[cfg(feature = "store-s3")]
 lazy_static! {
     static ref S3_BUCKET: Bucket = Bucket::new(
-        "lostatc-acid-store",
+        dotenv::var("S3_BUCKET").unwrap(),
         Region::UsEast1,
         Credentials::new(
             Some(dotenv::var("S3_ACCESS_KEY").unwrap()),
