@@ -64,10 +64,8 @@ bitflags = "1.2.1"
 
 [dev-dependencies]
 tempfile = "3.1.0"
-dotenv = "0.15.0"
 serial_test = "0.3.2"
 matches = "0.1.8"
-cargo-readme = "3.1.2"
 
 [features]
 default = []

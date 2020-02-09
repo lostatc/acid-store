@@ -17,19 +17,13 @@
 //! `acid-store` is a library for secure, deduplicated, transactional, and verifiable data storage.
 //!
 //! This crate provides high-level abstractions for data storage over a number of storage backends.
-//! Storage backends are easy to implement, and this library builds on top of them to provide the
-//! following features:
-//! - Content-defined block-level deduplication
-//! - Transparent encryption
-//! - Transparent compression
-//! - Integrity checking of data and metadata
-//! - Atomicity, consistency, isolation, and durability (ACID)
 //!
 //! This library currently provides the following abstractions for data storage:
-//! - `ObjectRepository` is an object store which maps keys to binary blobs.
-//! - `FileRepository` is a file archive like ZIP or TAR which can store files from the file system.
+//! - `ObjectRepository` is an object store which maps keys to seekable binary blobs.
+//! - `FileRepository` is a virtual file system which can import and export files to the local OS file
+//! system.
 //! - `ValueRepository` is a persistent, heterogeneous, map-like collection.
-//! - `VersionRepository` is an object store with support for versioning.
+//! - `VersionRepository` is an object store with support for content versioning.
 //!
 //! A repository stores its data in a `DataStore`, which is a small trait that can be implemented to
 //! create new storage backends. The following data stores are provided out of the box:
