@@ -12,6 +12,9 @@ keywords = ["persistent", "storage", "data", "transactional"]
 categories = ["filesystem", "encoding"]
 license = "Apache-2.0"
 
+[package.metadata.docs.rs]
+all-features = true
+
 [dependencies]
 # File system
 path-slash = { version = "0.1.1", optional = true }
