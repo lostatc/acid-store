@@ -227,22 +227,16 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn verify(&mut self) -> crate::Result<bool> {
-        let expected_hashes = self
-            .get_handle()
-            .chunks
-            .iter()
-            .copied()
-            .map(|chunk| chunk.hash)
-            .collect::<Vec<_>>();
+        let expected_chunks = self.get_handle().chunks.iter().copied().collect::<Vec<_>>();
 
-        for expected_hash in expected_hashes {
-            match self.repository.read_chunk(&expected_hash) {
+        for chunk in expected_chunks {
+            match self.repository.read_chunk(chunk) {
                 Ok(data) => {
-                    let actual_checksum = chunk_hash(&data);
-                    if expected_hash != actual_checksum {
+                    if data.len() != chunk.size || chunk_hash(&data) != chunk.hash {
                         return Ok(false);
                     }
                 }
+                // Ciphertext verification failed. No need to check the hash.
                 Err(crate::Error::InvalidData) => return Ok(false),
                 Err(error) => return Err(error),
             }
@@ -279,12 +273,9 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
             Some(location) => location,
             None => return Ok(()),
         };
-        let last_chunk = self.repository.read_chunk(&end_location.chunk.hash)?;
+        let last_chunk = self.repository.read_chunk(end_location.chunk)?;
         let new_last_chunk = &last_chunk[..end_location.relative_position()];
-        let new_last_chunk = Chunk {
-            hash: self.repository.write_chunk(&new_last_chunk)?,
-            size: new_last_chunk.len(),
-        };
+        let new_last_chunk = self.repository.write_chunk(&new_last_chunk)?;
 
         // Remove all chunks including and after the final chunk.
         self.get_handle_mut().chunks.drain(end_location.index..);
@@ -338,7 +329,7 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
         // If we're reading from a new chunk, read the contents of that chunk into the read buffer.
         if Some(current_location.chunk) != self.buffered_chunk {
             self.buffered_chunk = Some(current_location.chunk);
-            self.read_buffer = self.repository.read_chunk(&current_location.chunk.hash)?;
+            self.read_buffer = self.repository.read_chunk(current_location.chunk)?;
         }
 
         let start = current_location.relative_position();
@@ -348,12 +339,9 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
 
     /// Write chunks stored in the chunker to the repository.
     fn write_chunks(&mut self) -> crate::Result<()> {
-        for chunk in self.chunker.chunks() {
-            let hash = self.repository.write_chunk(&chunk)?;
-            self.new_chunks.push(Chunk {
-                hash,
-                size: chunk.len(),
-            });
+        for chunk_data in self.chunker.chunks() {
+            let chunk = self.repository.write_chunk(&chunk_data)?;
+            self.new_chunks.push(chunk);
         }
         Ok(())
     }
@@ -416,7 +404,7 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
             if let Some(location) = &self.start_location {
                 // We need to make sure the data before the seek position is saved when we replace
                 // the chunk. Read this data from the repository and write it to the chunker.
-                let first_chunk = self.repository.read_chunk(&location.chunk.hash)?;
+                let first_chunk = self.repository.read_chunk(location.chunk)?;
                 self.chunker
                     .write_all(&first_chunk[..location.relative_position()])?;
             }
@@ -444,7 +432,7 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
         if let Some(location) = &current_chunk {
             // We need to make sure the data after the seek position is saved when we replace the
             // current chunk. Read this data from the repository and write it to the chunker.
-            let last_chunk = self.repository.read_chunk(&location.chunk.hash)?;
+            let last_chunk = self.repository.read_chunk(location.chunk)?;
             self.chunker
                 .write_all(&last_chunk[location.relative_position()..])?;
         }

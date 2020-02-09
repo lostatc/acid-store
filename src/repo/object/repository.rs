@@ -32,7 +32,7 @@ use super::encryption::{Encryption, EncryptionKey, KeySalt};
 use super::header::{Header, Key};
 use super::lock::{Lock, LockTable};
 use super::metadata::{RepositoryInfo, RepositoryMetadata, RepositoryStats};
-use super::object::{chunk_hash, ChunkHash, Object, ObjectHandle};
+use super::object::{chunk_hash, Chunk, Object, ObjectHandle};
 
 lazy_static! {
     /// The block ID of the block which stores unencrypted metadata for the repository.
@@ -44,8 +44,11 @@ lazy_static! {
         Uuid::parse_str("cbf28b1c-3550-11ea-8cb0-87d7a14efe10").unwrap();
 
     /// The current repository format version ID.
+    ///
+    /// This must be changed any time a backwards-incompatible change is made to the repository
+    /// format.
     static ref VERSION_ID: Uuid =
-        Uuid::parse_str("25bec50c-3551-11ea-8700-3bde18597598").unwrap();
+        Uuid::parse_str("036e2a8e-4b53-11ea-a6e9-57c2a822fccf").unwrap();
 
     /// A table of locks on repositories.
     static ref REPO_LOCKS: RwLock<LockTable> = RwLock::new(LockTable::new());
@@ -417,13 +420,16 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     ///
     /// If a chunk with the given `data` already exists, its checksum may be returned without
     /// writing any new data.
-    pub(super) fn write_chunk(&mut self, data: &[u8]) -> crate::Result<ChunkHash> {
+    pub(super) fn write_chunk(&mut self, data: &[u8]) -> crate::Result<Chunk> {
         // Get a checksum of the unencoded data.
-        let checksum = chunk_hash(data);
+        let chunk = Chunk {
+            hash: chunk_hash(data),
+            size: data.len(),
+        };
 
         // Check if the chunk already exists.
-        if self.header.chunks.contains_key(&checksum) {
-            return Ok(checksum);
+        if self.header.chunks.contains_key(&chunk) {
+            return Ok(chunk);
         }
 
         // Encode the data and write it to the data store.
@@ -434,17 +440,21 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             .map_err(anyhow::Error::from)?;
 
         // Add the chunk to the header.
-        self.header.chunks.insert(checksum, block_id);
+        self.header.chunks.insert(chunk, block_id);
 
-        Ok(checksum)
+        Ok(chunk)
     }
 
-    /// Return the bytes of the chunk with the given checksum or `None` if there is none.
-    pub(super) fn read_chunk(&mut self, checksum: &ChunkHash) -> crate::Result<Vec<u8>> {
-        let chunk_id = self.header.chunks[checksum];
+    /// Return the bytes of the chunk with the given checksum.
+    pub(super) fn read_chunk(&mut self, chunk: Chunk) -> crate::Result<Vec<u8>> {
+        let chunk_id = self
+            .header
+            .chunks
+            .get(&chunk)
+            .ok_or(crate::Error::InvalidData)?;
         let chunk = self
             .store
-            .read_block(chunk_id)
+            .read_block(*chunk_id)
             .map_err(anyhow::Error::from)?
             .ok_or(crate::Error::InvalidData)?;
         self.decode_data(chunk.as_slice())
@@ -534,20 +544,19 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// - `Error::Io`: An I/O error occurred.
     pub fn verify(&mut self) -> crate::Result<HashSet<&K>> {
         let mut corrupt_chunks = HashSet::new();
-        let expected_checksums = self.header.chunks.keys().copied().collect::<Vec<_>>();
+        let expected_chunks = self.header.chunks.keys().copied().collect::<Vec<_>>();
 
         // Get the set of hashes of chunks which are corrupt.
-        for expected_checksum in expected_checksums {
-            match self.read_chunk(&expected_checksum) {
+        for chunk in expected_chunks {
+            match self.read_chunk(chunk) {
                 Ok(data) => {
-                    let actual_checksum = chunk_hash(&data);
-                    if expected_checksum != actual_checksum {
-                        corrupt_chunks.insert(expected_checksum);
+                    if data.len() != chunk.size || chunk_hash(&data) != chunk.hash {
+                        corrupt_chunks.insert(chunk.hash);
                     }
                 }
                 Err(crate::Error::InvalidData) => {
                     // Ciphertext verification failed. No need to check the hash.
-                    corrupt_chunks.insert(expected_checksum);
+                    corrupt_chunks.insert(chunk.hash);
                 }
                 Err(error) => return Err(error),
             };
@@ -622,14 +631,13 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
     /// Calculate statistics about the repository.
     pub fn stats(&self) -> RepositoryStats {
-        let chunks = self
-            .header
-            .objects
-            .values()
-            .flat_map(|object| &object.chunks)
-            .collect::<HashSet<_>>();
         let apparent_size = self.header.objects.values().map(|object| object.size).sum();
-        let actual_size = chunks.iter().map(|chunk| chunk.size as u64).sum();
+        let actual_size = self
+            .header
+            .chunks
+            .keys()
+            .map(|chunk| chunk.size as u64)
+            .sum();
 
         RepositoryStats {
             apparent_size,
