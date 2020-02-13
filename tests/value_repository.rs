@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#![cfg(feature = "repo-value")]
-
 use matches::assert_matches;
 
 use acid_store::repo::{LockStrategy, ValueRepository};

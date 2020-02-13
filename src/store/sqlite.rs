@@ -32,6 +32,7 @@ lazy_static! {
 }
 
 /// A `DataStore` which stores data in a SQLite database.
+#[derive(Debug)]
 pub struct SqliteStore {
     /// The connection to the SQLite database.
     connection: Connection,
