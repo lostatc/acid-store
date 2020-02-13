@@ -79,17 +79,14 @@
 //! # Features
 //! Some functionality is gated behind cargo features:
 //!
-//! Type | Cargo Feature
-//! --- | ---
-//! `FileRepository` | `repo-file`
-//! `ValueRepository` | `repo-value`
-//! `VersionRepository` | `repo-version`
-//! `DirectoryStore` | `store-directory`
-//! `SqliteStore` | `store-sqlite`
-//! `RedisStore` | `store-redis`
-//! `S3Store` | `store-s3`
+//! Type | Cargo Feature | Default
+//! --- | --- | ---
+//! `DirectoryStore` | `store-directory` | Yes
+//! `SqliteStore` | `store-sqlite` | No
+//! `RedisStore` | `store-redis` | No
+//! `S3Store` | `store-s3` | No
 //!
-//! To use one of these types, you must enable the corresponding feature in your `Cargo.toml`.
+//! To use a feature which is not enabled by default, you must enable it in your `Cargo.toml`.
 
 #![allow(dead_code)]
 

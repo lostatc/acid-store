@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#![cfg(feature = "repo-version")]
-
 use std::io::{Read, Write};
 
 use matches::assert_matches;

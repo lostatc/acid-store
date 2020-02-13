@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#![cfg(feature = "repo-file")]
-
 pub use self::entry::{Entry, FileMetadata, FileType, NoMetadata};
 pub use self::repository::{EntryPath, FileRepository};
 

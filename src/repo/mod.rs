@@ -16,15 +16,12 @@
 
 //! High-level abstractions for data storage.
 
-#[cfg(feature = "repo-file")]
 pub use file::{Entry, EntryPath, FileMetadata, FileRepository, FileType, NoMetadata};
 pub use object::{
     Compression, ContentId, Encryption, Key, LockStrategy, Object, ObjectRepository,
     RepositoryConfig, RepositoryInfo, RepositoryStats, ResourceLimit,
 };
-#[cfg(feature = "repo-value")]
 pub use value::ValueRepository;
-#[cfg(feature = "repo-version")]
 pub use version::{ReadOnlyObject, Version, VersionRepository};
 
 mod file;

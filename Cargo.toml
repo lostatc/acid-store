@@ -17,8 +17,8 @@ all-features = true
 
 [dependencies]
 # File system
-path-slash = { version = "0.1.1", optional = true }
-walkdir = { version = "2.2.9", optional = true }
+path-slash = "0.1.1"
+walkdir = "2.2.9"
 fs2 = "0.4.3"
 dirs = "2.0.2"
 
@@ -69,18 +69,12 @@ matches = "0.1.8"
 dotenv = "0.15.0"
 
 [features]
-default = []
+default = ["store-directory"]
 
-store-directory = ["walkdir"]
+store-directory = []
 
 store-sqlite = ["rusqlite"]
 
 store-redis = ["redis"]
 
 store-s3 = ["rust-s3"]
-
-repo-file = ["path-slash", "walkdir"]
-
-repo-value = []
-
-repo-version = []

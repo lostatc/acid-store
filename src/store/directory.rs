@@ -34,6 +34,7 @@ const STAGING_DIRECTORY: &str = "stage";
 const VERSION_FILE: &str = "version";
 
 /// A `DataStore` which stores data in a directory in the local file system.
+#[derive(Debug)]
 pub struct DirectoryStore {
     /// The path of the store's root directory.
     path: PathBuf,

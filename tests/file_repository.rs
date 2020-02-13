@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#![cfg(feature = "repo-file")]
-
 use std::fs::{create_dir, File};
 use std::io::{Read, Write};
 use std::path::Path;
