@@ -45,9 +45,9 @@ lazy_static! {
 /// instead of binary blobs. Values are serialized and deserialized automatically using a
 /// space-efficient binary format.
 ///
-/// Like `ObjectRepository`, changes made to the repository are not persisted to disk until `commit`
-/// is called. For details about deduplication, compression, encryption, and locking, see
-/// `ObjectRepository`.
+/// Like `ObjectRepository`, changes made to the repository are not persisted to the data store
+/// until `commit` is called. For details about deduplication, compression, encryption, and locking,
+/// see `ObjectRepository`.
 #[derive(Debug)]
 pub struct ValueRepository<K: Key, S: DataStore> {
     repository: ObjectRepository<KeyType<K>, S>,

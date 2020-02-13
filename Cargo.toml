@@ -62,6 +62,11 @@ lazy_static = "1.4.0"
 weak-table = "0.2.3"
 bitflags = "1.2.1"
 
+# Unix-specific dependencies
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.17.0", optional = true }
+filetime = { version = "0.2.8", optional = true }
+
 [dev-dependencies]
 tempfile = "3.1.0"
 serial_test = "0.3.2"
@@ -78,3 +83,5 @@ store-sqlite = ["rusqlite"]
 store-redis = ["redis"]
 
 store-s3 = ["rust-s3"]
+
+file-metadata = ["nix", "filetime"]

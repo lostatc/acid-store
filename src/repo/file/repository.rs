@@ -33,7 +33,8 @@ use crate::repo::{
 };
 use crate::store::DataStore;
 
-use super::entry::{Entry, EntryKey, FileMetadata, FileType};
+use super::entry::{Entry, EntryKey, FileType};
+use super::metadata::FileMetadata;
 
 lazy_static! {
     /// The current repository format version ID.
@@ -49,8 +50,8 @@ pub type EntryPath = Path;
 
 /// A persistent file store.
 ///
-/// This is a wrapper around `ObjectRepository` which allows it to function as a file archive like
-/// ZIP or TAR.
+/// This is a wrapper around `ObjectRepository` which allows it to function as a virtual file
+/// system.
 ///
 /// A `FileRepository` is composed of `Entry` values which represent either a regular file or a
 /// directory. Files in the file system can be copied into the repository using `archive` and
@@ -59,20 +60,20 @@ pub type EntryPath = Path;
 ///
 /// This repository is designed so that files archived on one platform can be extracted on another
 /// platform. Because file metadata is very platform-dependent, you can choose what metadata you
-/// want to store by implementing the `FileMetadata` trait. Currently, the only implementation
-/// provided is `NoMetadata`, which is a no-op implementation that stores nothing. If you attempt to
-/// read an entry using a different `FileMetadata` implementation than it was stored with, it will
-/// fail to deserialize and return an error.
+/// want to store by implementing the `FileMetadata` trait. If you don't need to store file
+/// metadata, you can use the `NoMetadata` implementation. If you attempt to read an entry using a
+/// different `FileMetadata` implementation than it was stored with, it will fail to deserialize and
+/// return an error.
 ///
 /// Entries in the repository are located using a `Path`, just like files in the file system. To
 /// make it clear whether a function is expecting an entry path or a file path, the `EntryPath`
-/// alias is used to refer to a path to an entry in the repository. The repository accepts both '\'
+/// alias is used to refer to a path to an entry in the repository. The repository accepts both '\\'
 /// and '/' as path separators in an `EntryPath`, and will automatically convert between them.
 /// `EntryPath` values must always be relative paths, relative to the root of the repository.
 ///
-/// Like `ObjectRepository`, changes made to the repository are not persisted to disk until `commit`
-/// is called. For details about deduplication, compression, encryption, and locking, see
-/// `ObjectRepository`.
+/// Like `ObjectRepository`, changes made to the repository are not persisted to the data store
+/// until `commit` is called. For details about deduplication, compression, encryption, and locking,
+/// see `ObjectRepository`.
 #[derive(Debug)]
 pub struct FileRepository<S: DataStore, M: FileMetadata> {
     repository: ObjectRepository<EntryKey, S>,
@@ -156,8 +157,8 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::InvalidPath`: The given `path` is absolute.
     /// - `Error::InvalidPath`: The parent of `path` does not exist or is not a directory.
     /// - `Error::AlreadyExists`: There is already an entry at `path`.
-    /// - `Error::Serialize`: The file metadata could not be serialized.
-    /// - `Error::Deserialize`: The file metadata could not be deserialized.
+    /// - `Error::Serialize`: The new file metadata could not be serialized.
+    /// - `Error::Deserialize`: The old file metadata could not be deserialized.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -208,7 +209,8 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::InvalidPath`: The given `path` is absolute.
     /// - `Error::AlreadyExists`: There is already an entry at `path`.
     /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Serialize`: The file metadata could not be serialized.
+    /// - `Error::Serialize`: The new file metadata could not be serialized.
+    /// - `Error::Deserialize`: The old file metadata could not be deserialized.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn create_parents(
@@ -332,8 +334,8 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// # Errors
     /// - `Error::InvalidPath`: The given `path` is absolute.
     /// - `Error::NotFound`: There is no entry at `path`.
-    /// - `Error::Serialize`: The file metadata could not be serialized.
-    /// - `Error::Deserialize`: The file metadata could not be deserialized.
+    /// - `Error::Serialize`: The new file metadata could not be serialized.
+    /// - `Error::Deserialize`: The old file metadata could not be deserialized.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -539,6 +541,10 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
 
     /// Copy a file from the file system into the repository.
     ///
+    /// The `source` file's metadata will be applied to the `dest` entry according to the selected
+    /// `FileMetadata` implementation.
+    ///
+    ///
     /// If `source` is a directory, its descendants are not copied.
     ///
     /// # Errors
@@ -589,6 +595,9 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
 
     /// Copy a directory tree from the file system into the repository.
     ///
+    /// The `source` file's metadata will be applied to the `dest` entry according to the selected
+    /// `FileMetadata` implementation.
+    ///
     /// If `source` is a directory, this also copies its descendants. If `source` is not a
     /// directory, this is the same as calling `archive`. If one of the files in the tree is not a
     /// regular file or directory, it is skipped.
@@ -623,6 +632,9 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     }
 
     /// Copy an entry from the repository into the file system.
+    ///
+    /// The `source` entry's metadata will be applied to the `dest` file according to the selected
+    /// `FileMetadata` implementation.
     ///
     /// If `source` is a directory, its descendants are not copied.
     ///
@@ -674,6 +686,9 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     }
 
     /// Copy a tree of entries from the repository into the file system.
+    ///
+    /// The `source` entry's metadata will be applied to the `dest` file according to the selected
+    /// `FileMetadata` implementation.
     ///
     /// If `source` is a directory, this also copies its descendants. If `source` is not a
     /// directory, this is the same as calling `extract`.

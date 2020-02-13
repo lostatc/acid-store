@@ -78,7 +78,7 @@ pub enum LockStrategy {
 /// the local machine and do not protect against multiple users or multiple machines trying to open
 /// a repository simultaneously.
 ///
-/// Changes made to a repository are not persisted to disk until `commit` is called.
+/// Changes made to a repository are not persisted to the data store until `commit` is called.
 ///
 /// # Encryption
 /// If encryption is enabled, the Argon2id key derivation function is used to derive a key from a

@@ -16,6 +16,10 @@
 
 //! High-level abstractions for data storage.
 
+#[cfg(feature = "file-metadata")]
+pub use file::CommonMetadata;
+#[cfg(all(unix, feature = "file-metadata"))]
+pub use file::UnixMetadata;
 pub use file::{Entry, EntryPath, FileMetadata, FileRepository, FileType, NoMetadata};
 pub use object::{
     Compression, ContentId, Encryption, Key, LockStrategy, Object, ObjectRepository,

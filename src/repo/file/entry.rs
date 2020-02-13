@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+
+use super::metadata::FileMetadata;
 
 /// A type of file in a `FileRepository`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
@@ -28,31 +28,6 @@ pub enum FileType {
 
     /// A directory.
     Directory,
-}
-
-/// The metadata for a file in the file system.
-///
-/// This type must implement `Default` to provide the default metadata for a new entry.
-pub trait FileMetadata: Default + Serialize + DeserializeOwned {
-    /// Read the metadata from the file at `path` and create a new instance.
-    fn read_metadata(path: &Path) -> io::Result<Self>;
-
-    /// Write this metadata to the file at `path`.
-    fn write_metadata(&self, path: &Path) -> io::Result<()>;
-}
-
-/// A `FileMetadata` which stores no metadata.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Default, Serialize, Deserialize)]
-pub struct NoMetadata;
-
-impl FileMetadata for NoMetadata {
-    fn read_metadata(_path: &Path) -> io::Result<Self> {
-        Ok(NoMetadata)
-    }
-
-    fn write_metadata(&self, _path: &Path) -> io::Result<()> {
-        Ok(())
-    }
 }
 
 /// An entry in a `FileRepository` which represents a file or directory.
