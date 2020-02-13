@@ -43,9 +43,9 @@ lazy_static! {
 /// This is a wrapper around `ObjectRepository` which adds support for storing multiple versions of
 /// each object. The current version of each object is mutable, but past versions are read-only.
 ///
-/// Like `ObjectRepository`, changes made to the repository are not persisted to disk until `commit`
-/// is called. For details about deduplication, compression, encryption, and locking, see
-/// `ObjectRepository`.
+/// Like `ObjectRepository`, changes made to the repository are not persisted to the data store
+/// until `commit` is called. For details about deduplication, compression, encryption, and locking,
+/// see `ObjectRepository`.
 ///
 /// # Examples
 /// Create a version of an object, delete the object's contents, and then restore from the version.

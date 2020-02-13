@@ -14,8 +14,14 @@
  * limitations under the License.
  */
 
-pub use self::entry::{Entry, FileMetadata, FileType, NoMetadata};
+pub use self::entry::{Entry, FileType};
+#[cfg(feature = "file-metadata")]
+pub use self::metadata::CommonMetadata;
+#[cfg(all(unix, feature = "file-metadata"))]
+pub use self::metadata::UnixMetadata;
+pub use self::metadata::{FileMetadata, NoMetadata};
 pub use self::repository::{EntryPath, FileRepository};
 
 mod entry;
+mod metadata;
 mod repository;

@@ -20,8 +20,8 @@
 //!
 //! This library currently provides the following abstractions for data storage:
 //! - `ObjectRepository` is an object store which maps keys to seekable binary blobs.
-//! - `FileRepository` is a virtual file system which can import and export files to the local OS file
-//! system.
+//! - `FileRepository` is a virtual file system which can import and export files to the local OS
+//! file system.
 //! - `ValueRepository` is a persistent, heterogeneous, map-like collection.
 //! - `VersionRepository` is an object store with support for content versioning.
 //!
@@ -79,12 +79,13 @@
 //! # Features
 //! Some functionality is gated behind cargo features:
 //!
-//! Type | Cargo Feature | Default
+//! Types | Cargo Feature | Default
 //! --- | --- | ---
 //! `DirectoryStore` | `store-directory` | Yes
 //! `SqliteStore` | `store-sqlite` | No
 //! `RedisStore` | `store-redis` | No
 //! `S3Store` | `store-s3` | No
+//! `CommonMetadata`, `UnixMetadata` | `file-metadata` | No
 //!
 //! To use a feature which is not enabled by default, you must enable it in your `Cargo.toml`.
 
