@@ -16,6 +16,18 @@
 
 //! Low-level backends for data storage.
 //!
+//! This module provides low-level data storage backends called data stores. A data store provides
+//! only the most basic storage operations, and doesn't have to worry about providing features like
+//! encryption, compression, deduplication, integrity checking, locking, or atomic transactions.
+//! Those features are implemented at a higher level. Data stores are meant to be easy to implement
+//! so that providing support for new storage backends is relatively painless.
+//!
+//! All data stores implement the `DataStore` trait. The `Open` trait is meant to provide a common
+//! interface for opening data stores, but implementing it is optional.
+//!
+//! See the crate-level documentation for a summary of the different data stores provided in this
+//! module.
+//!
 //! # Examples
 //! Open a data store which stores data in a directory of the local file system. Create the data
 //! store if it doesn't already exist, and truncate it if it does.

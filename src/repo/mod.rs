@@ -15,6 +15,14 @@
  */
 
 //! High-level abstractions for data storage.
+//!
+//! This module provides abstractions for data storage called repositories. Each repository is
+//! backed by a `DataStore`, and provides features like encryption, compression, deduplication,
+//! integrity checking, locking, and atomic transactions.
+//!
+//! See the crate-level documentation for a summary of the different types of repositories provided
+//! in this module. `ObjectRepository` is meant to be easily extensible to fit most use-cases; all
+//! the other repositories in this module are implemented using `ObjectRepository`.
 
 #[cfg(feature = "file-metadata")]
 pub use file::CommonMetadata;
