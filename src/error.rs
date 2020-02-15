@@ -24,6 +24,7 @@ use thiserror::Error as DeriveError;
 /// `std::io` like `Read`, `Write`, and `Seek`. Even if the payload of the `io::Error` cannot be
 /// downcast to a value of this type, it will be converted to `Error::Io`.
 #[derive(Debug, DeriveError)]
+#[non_exhaustive]
 pub enum Error {
     /// A resource already exists.
     #[error("A resource already exists.")]
@@ -94,10 +95,6 @@ pub enum Error {
     /// This wraps the `DataStore::Error` provided by the data store.
     #[error("{0}")]
     Store(#[from] anyhow::Error),
-
-    #[doc(hidden)]
-    #[error("")]
-    __NonExhaustive,
 }
 
 impl From<Error> for io::Error {
