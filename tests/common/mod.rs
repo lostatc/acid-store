@@ -26,6 +26,7 @@ use acid_store::repo::{
     Compression, Encryption, ObjectRepository, RepositoryConfig, ResourceLimit,
 };
 use acid_store::store::MemoryStore;
+use lazy_static::lazy_static;
 
 /// The minimum size of test data buffers.
 pub const MIN_BUFFER_SIZE: usize = 1024;
@@ -36,14 +37,16 @@ pub const MAX_BUFFER_SIZE: usize = 2048;
 /// The password to use for testing encrypted repositories.
 pub const PASSWORD: &[u8] = b"password";
 
-/// The archive config to use for testing.
-pub const ARCHIVE_CONFIG: RepositoryConfig = RepositoryConfig {
-    chunker_bits: 8,
-    encryption: Encryption::XChaCha20Poly1305,
-    compression: Compression::Lz4 { level: 2 },
-    operations_limit: ResourceLimit::Interactive,
-    memory_limit: ResourceLimit::Interactive,
-};
+lazy_static! {
+    /// The archive config to use for testing.
+    pub static ref REPO_CONFIG: RepositoryConfig = {
+        let mut config = RepositoryConfig::default();
+        config.chunker_bits = 8;
+        config.encryption = Encryption::XChaCha20Poly1305;
+        config.compression = Compression::Lz4 { level: 2 };
+        config
+    };
+}
 
 /// Assert that two collections contain all the same elements, regardless of order.
 pub fn assert_contains_all<T: Hash + Eq + Debug>(
@@ -74,5 +77,5 @@ pub fn random_buffer() -> Vec<u8> {
 
 /// Create a new `ObjectRepository` that stores data in memory.
 pub fn create_repo() -> acid_store::Result<ObjectRepository<String, MemoryStore>> {
-    ObjectRepository::create_repo(MemoryStore::new(), ARCHIVE_CONFIG, Some(PASSWORD))
+    ObjectRepository::create_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
 }

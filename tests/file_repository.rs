@@ -23,7 +23,7 @@ use tempfile::tempdir;
 
 use acid_store::repo::{Entry, FileRepository, FileType, LockStrategy, NoMetadata};
 use acid_store::store::MemoryStore;
-use common::{assert_contains_all, ARCHIVE_CONFIG, PASSWORD};
+use common::{assert_contains_all, PASSWORD, REPO_CONFIG};
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
     acid_store::repo::{CommonMetadata, UnixMetadata},
@@ -34,7 +34,7 @@ use {
 mod common;
 
 fn create_repo() -> acid_store::Result<FileRepository<MemoryStore, NoMetadata>> {
-    FileRepository::create_repo(MemoryStore::new(), ARCHIVE_CONFIG, Some(PASSWORD))
+    FileRepository::create_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
 }
 
 #[test]
@@ -348,7 +348,7 @@ fn write_unix_metadata() -> anyhow::Result<()> {
 
     let mut repository = FileRepository::<_, UnixMetadata>::create_repo(
         MemoryStore::new(),
-        ARCHIVE_CONFIG,
+        REPO_CONFIG.to_owned(),
         Some(PASSWORD),
     )?;
 
@@ -386,7 +386,7 @@ fn read_unix_metadata() -> anyhow::Result<()> {
 
     let mut repository = FileRepository::<_, UnixMetadata>::create_repo(
         MemoryStore::new(),
-        ARCHIVE_CONFIG,
+        REPO_CONFIG.to_owned(),
         Some(PASSWORD),
     )?;
 
@@ -410,7 +410,7 @@ fn write_common_metadata() -> anyhow::Result<()> {
 
     let mut repository = FileRepository::<_, CommonMetadata>::create_repo(
         MemoryStore::new(),
-        ARCHIVE_CONFIG,
+        REPO_CONFIG.to_owned(),
         Some(PASSWORD),
     )?;
 
@@ -441,7 +441,7 @@ fn read_common_metadata() -> anyhow::Result<()> {
 
     let mut repository = FileRepository::<_, CommonMetadata>::create_repo(
         MemoryStore::new(),
-        ARCHIVE_CONFIG,
+        REPO_CONFIG.to_owned(),
         Some(PASSWORD),
     )?;
 
