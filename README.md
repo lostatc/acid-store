@@ -12,7 +12,7 @@ The goal is to decouple how you access your data from where you store it. You ca
 as a virtual file system, an object store, or a persistent collection, regardless of where it's
 stored. Out of the box, this library supports the local file system, SQLite, Redis, and Amazon S3 as
 storage backends. Storage backends are easy to implement, and this library builds on top of them to
-provide features like encryption, compression, deduplication, and atomic transactions.
+provide features like encryption, compression, deduplication, locking, and atomic transactions.
 
 For details and examples, see the [documentation](https://docs.rs/acid-store).
 
