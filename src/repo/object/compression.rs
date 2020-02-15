@@ -24,6 +24,7 @@ use xz2::read::{XzDecoder, XzEncoder};
 
 /// A data compression method.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum Compression {
     /// Do not compress data.
     None,

@@ -60,6 +60,7 @@ impl ResourceLimit {
 
 /// A data encryption method.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum Encryption {
     /// Do not encrypt data.
     None,
