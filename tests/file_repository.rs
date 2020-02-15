@@ -21,9 +21,15 @@ use std::path::Path;
 use matches::assert_matches;
 use tempfile::tempdir;
 
-use acid_store::repo::{Entry, FileRepository, LockStrategy, NoMetadata};
+use acid_store::repo::{Entry, FileRepository, FileType, LockStrategy, NoMetadata};
 use acid_store::store::MemoryStore;
 use common::{assert_contains_all, ARCHIVE_CONFIG, PASSWORD};
+#[cfg(all(unix, feature = "file-metadata"))]
+use {
+    acid_store::repo::{CommonMetadata, UnixMetadata},
+    std::os::unix::fs::MetadataExt,
+    std::time::SystemTime,
+};
 
 mod common;
 
@@ -331,5 +337,119 @@ fn extract_tree() -> anyhow::Result<()> {
     assert!(dest_path.join("file1").is_file());
     assert!(dest_path.join("directory").is_dir());
     assert!(dest_path.join("directory/file2").is_file());
+    Ok(())
+}
+
+#[test]
+#[cfg(all(unix, feature = "file-metadata"))]
+fn write_unix_metadata() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let dest_path = temp_dir.as_ref().join("dest");
+
+    let mut repository = FileRepository::<_, UnixMetadata>::create_repo(
+        MemoryStore::new(),
+        ARCHIVE_CONFIG,
+        Some(PASSWORD),
+    )?;
+
+    let entry = Entry {
+        file_type: FileType::File,
+        metadata: UnixMetadata {
+            mode: 0o666,
+            modified: SystemTime::UNIX_EPOCH,
+            accessed: SystemTime::UNIX_EPOCH,
+            user: 1000,
+            group: 1000,
+        },
+    };
+
+    repository.create("source", &entry)?;
+    repository.extract("source", &dest_path)?;
+    let dest_metadata = dest_path.metadata()?;
+
+    assert_eq!(
+        dest_metadata.mode() & entry.metadata.mode,
+        entry.metadata.mode
+    );
+    assert_eq!(dest_metadata.modified()?, entry.metadata.modified);
+    assert_eq!(dest_metadata.accessed()?, entry.metadata.accessed);
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(unix, feature = "file-metadata"))]
+fn read_unix_metadata() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let source_path = temp_dir.as_ref().join("source");
+    File::create(&source_path)?;
+
+    let mut repository = FileRepository::<_, UnixMetadata>::create_repo(
+        MemoryStore::new(),
+        ARCHIVE_CONFIG,
+        Some(PASSWORD),
+    )?;
+
+    repository.archive(&source_path, "dest")?;
+    let entry = repository.entry("dest")?;
+    let source_metadata = source_path.metadata()?;
+
+    assert_eq!(entry.metadata.mode, source_metadata.mode());
+    assert_eq!(entry.metadata.modified, source_metadata.modified()?);
+    assert_eq!(entry.metadata.user, source_metadata.uid());
+    assert_eq!(entry.metadata.group, source_metadata.gid());
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(unix, feature = "file-metadata"))]
+fn write_common_metadata() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let dest_path = temp_dir.as_ref().join("dest");
+
+    let mut repository = FileRepository::<_, CommonMetadata>::create_repo(
+        MemoryStore::new(),
+        ARCHIVE_CONFIG,
+        Some(PASSWORD),
+    )?;
+
+    let entry = Entry {
+        file_type: FileType::File,
+        metadata: CommonMetadata {
+            modified: SystemTime::UNIX_EPOCH,
+            accessed: SystemTime::UNIX_EPOCH,
+        },
+    };
+
+    repository.create("source", &entry)?;
+    repository.extract("source", &dest_path)?;
+    let dest_metadata = dest_path.metadata()?;
+
+    assert_eq!(dest_metadata.modified()?, entry.metadata.modified);
+    assert_eq!(dest_metadata.accessed()?, entry.metadata.accessed);
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(unix, feature = "file-metadata"))]
+fn read_common_metadata() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let source_path = temp_dir.as_ref().join("source");
+    File::create(&source_path)?;
+
+    let mut repository = FileRepository::<_, CommonMetadata>::create_repo(
+        MemoryStore::new(),
+        ARCHIVE_CONFIG,
+        Some(PASSWORD),
+    )?;
+
+    repository.archive(&source_path, "dest")?;
+    let entry = repository.entry("dest")?;
+    let source_metadata = source_path.metadata()?;
+
+    assert_eq!(entry.metadata.modified, source_metadata.modified()?);
+
     Ok(())
 }
