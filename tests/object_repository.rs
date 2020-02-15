@@ -20,7 +20,7 @@ use matches::assert_matches;
 
 use acid_store::repo::{LockStrategy, ObjectRepository, RepositoryConfig};
 use acid_store::store::MemoryStore;
-use common::{create_repo, random_buffer, ARCHIVE_CONFIG, PASSWORD};
+use common::{create_repo, random_buffer, PASSWORD, REPO_CONFIG};
 
 mod common;
 
@@ -29,7 +29,7 @@ fn creating_existing_repo_errs() -> anyhow::Result<()> {
     let initial_repo = create_repo()?;
     let new_repo = ObjectRepository::<String, _>::create_repo(
         initial_repo.into_store(),
-        ARCHIVE_CONFIG,
+        REPO_CONFIG.to_owned(),
         Some(PASSWORD),
     );
 

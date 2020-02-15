@@ -20,12 +20,12 @@ use matches::assert_matches;
 
 use acid_store::repo::{LockStrategy, VersionRepository};
 use acid_store::store::MemoryStore;
-use common::{assert_contains_all, random_buffer, ARCHIVE_CONFIG, PASSWORD};
+use common::{assert_contains_all, random_buffer, PASSWORD, REPO_CONFIG};
 
 mod common;
 
 fn create_repo() -> acid_store::Result<VersionRepository<String, MemoryStore>> {
-    VersionRepository::create_repo(MemoryStore::new(), ARCHIVE_CONFIG, Some(PASSWORD))
+    VersionRepository::create_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
 }
 
 #[test]

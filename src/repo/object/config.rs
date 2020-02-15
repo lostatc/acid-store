@@ -23,6 +23,7 @@ use super::encryption::{Encryption, ResourceLimit};
 /// the config values provided cannot be changed. This type implements `Default` to provide a
 /// reasonable default configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct RepositoryConfig {
     /// A value which determines the chunk size for content-defined deduplication.
     ///
