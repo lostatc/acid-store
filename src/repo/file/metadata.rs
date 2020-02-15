@@ -56,6 +56,9 @@ impl FileMetadata for NoMetadata {
 }
 
 /// A `FileMetadata` for unix-like operating systems.
+///
+/// If the current user does not have the necessary permissions to set the UID/GID of the file,
+/// `write_metadata` will silently ignore the error.
 #[cfg(all(unix, feature = "file-metadata"))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct UnixMetadata {
@@ -90,12 +93,15 @@ impl FileMetadata for UnixMetadata {
 
     fn write_metadata(&self, path: &Path) -> io::Result<()> {
         set_permissions(path, PermissionsExt::from_mode(self.mode))?;
-        chown(
+        match chown(
             path,
             Some(Uid::from_raw(self.user)),
             Some(Gid::from_raw(self.group)),
-        )
-        .map_err(|error| io::Error::new(io::ErrorKind::PermissionDenied, error))?;
+        ) {
+            Err(nix::Error::Sys(nix::errno::Errno::EPERM)) => (),
+            Err(error) => return Err(io::Error::new(io::ErrorKind::Other, error)),
+            _ => (),
+        };
         set_file_times(path, self.accessed.into(), self.modified.into())?;
 
         Ok(())
