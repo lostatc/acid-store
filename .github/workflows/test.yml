@@ -15,8 +15,5 @@ jobs:
         run: cargo build
       - name: Run tests
         env:
-          S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
-          S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
-          S3_BUCKET: lostatc-acid-store
           REDIS_URL: redis://localhost:6379
-        run: cargo test --verbose --all-features
+        run: cargo test --verbose --features 'store-directory store-sqlite store-redis file-metadata'
