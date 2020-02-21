@@ -25,14 +25,14 @@ use super::encryption::{Encryption, ResourceLimit};
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct RepositoryConfig {
-    /// A value which determines the chunk size for content-defined deduplication.
+    /// A value which determines the chunk size for the repository.
     ///
-    /// Data is deduplicated by splitting it into chunks. If two or more objects have a chunk in
-    /// common, it will only be stored once. This value determines the average size of those chunks,
-    /// which will be 2^`chunker_bits` bytes. Smaller chunks will generally result in better
-    /// deduplication ratios and thus a smaller repository, but may hurt performance. Chunks that
-    /// are too small may result in worse deduplication rations due to the overhead of compression
-    /// and encryption.
+    /// Data is deduplicated, read into memory, and written to the data store in chunks. This value
+    /// determines the average size of those chunks which will be 2^`chunker_bits` bytes.
+    ///
+    /// The chunk size affects deduplication ratios, memory usage, and I/O performance. Some
+    /// experimentation may be required to determine the optimal chunk size for a given workload.
+    /// The default chunk size should be fine for most cases.
     ///
     /// The default value is `20` (1MiB average chunk size).
     pub chunker_bits: u32,

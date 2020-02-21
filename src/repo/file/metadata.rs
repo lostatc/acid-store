@@ -14,21 +14,22 @@
  * limitations under the License.
  */
 
-use std::fs::set_permissions;
 use std::io;
-#[cfg(unix)]
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::Path;
-use std::time::SystemTime;
 
-#[cfg(all(unix, feature = "file-metadata"))]
-use filetime::set_file_times;
-#[cfg(all(unix, feature = "file-metadata"))]
-use nix::sys::stat::Mode;
-#[cfg(all(unix, feature = "file-metadata"))]
-use nix::unistd::{chown, Gid, Uid};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "file-metadata")]
+use {filetime::set_file_times, std::time::SystemTime};
+#[cfg(all(unix, feature = "file-metadata"))]
+use {
+    nix::sys::stat::Mode,
+    nix::unistd::{chown, Gid, Uid},
+    std::collections::HashMap,
+    std::fs::set_permissions,
+    std::os::unix::fs::{MetadataExt, PermissionsExt},
+};
 
 /// The metadata for a file in the file system.
 ///
@@ -60,7 +61,7 @@ impl FileMetadata for NoMetadata {
 /// If the current user does not have the necessary permissions to set the UID/GID of the file,
 /// `write_metadata` will silently ignore the error.
 #[cfg(all(unix, feature = "file-metadata"))]
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct UnixMetadata {
     /// The file mode (st_mode).
     pub mode: u32,
@@ -76,22 +77,37 @@ pub struct UnixMetadata {
 
     /// The GID of the group which owns the file (st_gid).
     pub group: u32,
+
+    /// The extended attributes of the file.
+    pub attributes: HashMap<String, Vec<u8>>,
 }
 
 #[cfg(all(unix, feature = "file-metadata"))]
 impl FileMetadata for UnixMetadata {
     fn read_metadata(path: &Path) -> io::Result<Self> {
         let metadata = path.metadata()?;
+
+        let mut attributes = HashMap::new();
+        for attr_name in xattr::list(&path)? {
+            if let Some(attr_value) = xattr::get(&path, &attr_name)? {
+                attributes.insert(attr_name.to_string_lossy().to_string(), attr_value);
+            }
+        }
+
         Ok(Self {
             mode: metadata.mode(),
             modified: metadata.modified()?,
             accessed: metadata.accessed()?,
             user: metadata.uid(),
             group: metadata.gid(),
+            attributes,
         })
     }
 
     fn write_metadata(&self, path: &Path) -> io::Result<()> {
+        for (attr_name, attr_value) in self.attributes.iter() {
+            xattr::set(&path, &attr_name, &attr_value)?;
+        }
         set_permissions(path, PermissionsExt::from_mode(self.mode))?;
         match chown(
             path,
@@ -117,13 +133,14 @@ impl Default for UnixMetadata {
             modified: SystemTime::now(),
             user: Uid::current().as_raw(),
             group: Gid::current().as_raw(),
+            attributes: HashMap::new(),
         }
     }
 }
 
 /// A `FileMetadata` for metadata that is common to most platforms.
 #[cfg(feature = "file-metadata")]
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct CommonMetadata {
     /// The time the file was last modified.
     pub modified: SystemTime,

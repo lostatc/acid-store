@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use std::collections::HashMap;
 use std::fs::{create_dir, File};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -360,12 +361,16 @@ fn write_unix_metadata() -> anyhow::Result<()> {
             accessed: SystemTime::UNIX_EPOCH,
             user: 1000,
             group: 1000,
+            attributes: HashMap::new(),
         },
     };
 
     repository.create("source", &entry)?;
     repository.extract("source", &dest_path)?;
     let dest_metadata = dest_path.metadata()?;
+
+    // This test currently does not test writing extended attributes because extended attributes are
+    // not supported on tmpfs.
 
     assert_eq!(
         dest_metadata.mode() & entry.metadata.mode,
@@ -393,6 +398,9 @@ fn read_unix_metadata() -> anyhow::Result<()> {
     repository.archive(&source_path, "dest")?;
     let entry = repository.entry("dest")?;
     let source_metadata = source_path.metadata()?;
+
+    // This test currently does not test reading extended attributes because extended attributes are
+    // not supported on tmpfs.
 
     assert_eq!(entry.metadata.mode, source_metadata.mode());
     assert_eq!(entry.metadata.modified, source_metadata.modified()?);
