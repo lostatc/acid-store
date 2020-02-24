@@ -15,6 +15,7 @@
  */
 
 use std::borrow::Borrow;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::{Read, Write};
 use std::time::SystemTime;
@@ -196,7 +197,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     }
 
     /// Return an object for modifying the current version of `key` or `None` if it doesn't exist.
-    pub fn get<Q>(&mut self, key: &Q) -> Option<Object<VersionKey<K>, S>>
+    pub fn get<Q>(&self, key: &Q) -> Option<Object<VersionKey<K>, S>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
@@ -205,7 +206,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     }
 
     /// Return an iterator over all the keys in this repository.
-    pub fn keys(&self) -> impl Iterator<Item = &K> {
+    pub fn keys(&mut self) -> impl Iterator<Item = &K> {
         self.repository
             .keys()
             .filter_map(|version_key| match version_key {
@@ -276,7 +277,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// Get an object for reading the version of `key` with the given `id`.
     ///
     /// If there is no version with the given `id`, this returns `None`.
-    pub fn get_version<Q>(&mut self, key: &Q, id: usize) -> Option<ReadOnlyObject<VersionKey<K>, S>>
+    pub fn get_version<Q>(&self, key: &Q, id: usize) -> Option<ReadOnlyObject<VersionKey<K>, S>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
@@ -293,7 +294,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn list_versions<Q>(&mut self, key: &Q) -> crate::Result<Vec<Version>>
+    pub fn list_versions<Q>(&self, key: &Q) -> crate::Result<Vec<Version>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,

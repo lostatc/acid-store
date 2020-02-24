@@ -14,8 +14,11 @@
  * limitations under the License.
  */
 
+use std::cell::{Ref, RefCell, RefMut};
+use std::clone::Clone;
 use std::cmp::min;
 use std::fmt::{self, Debug, Formatter};
+use std::hash::Hash;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::mem::replace;
 
@@ -26,9 +29,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::store::DataStore;
 
+use super::chunk_store::ChunkStore;
 use super::chunking::IncrementalChunker;
 use super::header::Key;
-use super::repository::ObjectRepository;
+use super::state::ObjectState;
 
 /// The size of the checksums used for uniquely identifying chunks.
 pub const CHUNK_HASH_SIZE: usize = 32;
@@ -138,8 +142,8 @@ pub struct ContentId([u8; 32]);
 /// be converted `Into` a `acid_store::Error` to be consistent with the rest of the library. The
 /// implementations document which `acid_store::Error` values can be returned.
 pub struct Object<'a, K: Key, S: DataStore> {
-    /// The repository where chunks are stored.
-    repository: &'a mut ObjectRepository<K, S>,
+    /// The state for the object repository.
+    state: &'a RefCell<ObjectState<K, S>>,
 
     /// The key which represents this object.
     key: K,
@@ -169,18 +173,14 @@ pub struct Object<'a, K: Key, S: DataStore> {
 
 impl<'a, K: Key, S: DataStore> Debug for Object<'a, K, S> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", stringify!(Object<'a, K, S>))
+        write!(f, "{}", stringify!(Object<K, S>))
     }
 }
 
 impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
-    pub(super) fn new(
-        repository: &'a mut ObjectRepository<K, S>,
-        key: K,
-        chunker_bits: usize,
-    ) -> Self {
+    pub(super) fn new(state: &'a RefCell<ObjectState<K, S>>, key: K, chunker_bits: usize) -> Self {
         Self {
-            repository,
+            state,
             key,
             chunker: IncrementalChunker::new(ZPAQ::new(chunker_bits)),
             new_chunks: Vec::new(),
@@ -191,28 +191,42 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
         }
     }
 
-    /// Get the object handle for the object associated with `key`.
-    fn get_handle(&self) -> &ObjectHandle {
-        self.repository.get_handle(&self.key)
+    /// Borrow the repository's state immutably.
+    ///
+    /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
+    fn borrow_state(&self) -> Ref<ObjectState<K, S>> {
+        self.state.borrow()
     }
 
-    /// Get the object handle for the object associated with `key`.
-    fn get_handle_mut(&mut self) -> &mut ObjectHandle {
-        self.repository.get_handle_mut(&self.key)
+    /// Borrow the repository's state mutably.
+    ///
+    /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
+    fn borrow_state_mut(&mut self) -> RefMut<ObjectState<K, S>> {
+        self.state.borrow_mut()
+    }
+
+    /// Get a `ChunkStore` for this repository.
+    fn chunk_store(&self) -> ChunkStore<K, S> {
+        ChunkStore::new(&self.state)
     }
 
     /// Return the size of the object in bytes.
     pub fn size(&self) -> u64 {
-        self.repository.get_handle(&self.key).size
+        let state = self.borrow_state();
+        let handle = state.header.objects.get(&self.key).unwrap();
+        handle.size
     }
 
     /// Return a `ContentId` representing the contents of this object.
     ///
     /// The returned value represents the contents of the object at the time this method was called.
     pub fn content_id(&self) -> ContentId {
+        let state = self.borrow_state();
+        let handle = state.header.objects.get(&self.key).unwrap();
+
         // The content ID is just a hash of all the chunk hashes, which is cheap to compute.
         let mut concatenation = Vec::new();
-        for chunk in &self.get_handle().chunks {
+        for chunk in &handle.chunks {
             concatenation.extend_from_slice(&chunk.hash);
         }
         ContentId(chunk_hash(concatenation.as_slice()))
@@ -227,10 +241,13 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn verify(&mut self) -> crate::Result<bool> {
-        let expected_chunks = self.get_handle().chunks.iter().copied().collect::<Vec<_>>();
+        let state = self.borrow_state();
+        let handle = state.header.objects.get(&self.key).unwrap();
+
+        let expected_chunks = handle.chunks.iter().copied().collect::<Vec<_>>();
 
         for chunk in expected_chunks {
-            match self.repository.read_chunk(chunk) {
+            match self.chunk_store().read_chunk(chunk) {
                 Ok(data) => {
                     if data.len() != chunk.size || chunk_hash(&data) != chunk.hash {
                         return Ok(false);
@@ -260,8 +277,13 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
         self.new_chunks.clear();
         self.chunker.clear();
 
-        if length >= self.get_handle().size {
-            return Ok(());
+        {
+            let state = self.borrow_state();
+            let handle = state.header.objects.get(&self.key).unwrap();
+
+            if length >= handle.size {
+                return Ok(());
+            }
         }
 
         let original_position = self.position;
@@ -273,19 +295,25 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
             Some(location) => location,
             None => return Ok(()),
         };
-        let last_chunk = self.repository.read_chunk(end_location.chunk)?;
+        let last_chunk = self.chunk_store().read_chunk(end_location.chunk)?;
         let new_last_chunk = &last_chunk[..end_location.relative_position()];
-        let new_last_chunk = self.repository.write_chunk(&new_last_chunk)?;
+        let new_last_chunk = self.chunk_store().write_chunk(&new_last_chunk)?;
 
-        // Remove all chunks including and after the final chunk.
-        self.get_handle_mut().chunks.drain(end_location.index..);
+        {
+            let key = self.key.clone();
+            let mut state = self.borrow_state_mut();
+            let mut handle = state.header.objects.get_mut(&key).unwrap();
 
-        // Append the new final chunk which has been sliced.
-        self.get_handle_mut().chunks.push(new_last_chunk);
+            // Remove all chunks including and after the final chunk.
+            handle.chunks.drain(end_location.index..);
 
-        // Update the object size.
-        let current_size = self.get_handle().size;
-        self.get_handle_mut().size = min(length, current_size);
+            // Append the new final chunk which has been sliced.
+            handle.chunks.push(new_last_chunk);
+
+            // Update the object size.
+            let current_size = handle.size;
+            handle.size = min(length, current_size);
+        }
 
         // Restore the seek position.
         self.position = min(original_position, length);
@@ -295,10 +323,13 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
 
     /// Return the chunk at the current seek position or `None` if there is none.
     fn current_chunk(&self) -> Option<ChunkLocation> {
+        let state = self.borrow_state();
+        let handle = state.header.objects.get(&self.key).unwrap();
+
         let mut chunk_start = 0u64;
         let mut chunk_end = 0u64;
 
-        for (index, chunk) in self.get_handle().chunks.iter().enumerate() {
+        for (index, chunk) in handle.chunks.iter().enumerate() {
             chunk_end += chunk.size as u64;
             if self.position >= chunk_start && self.position < chunk_end {
                 return Some(ChunkLocation {
@@ -329,7 +360,7 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
         // If we're reading from a new chunk, read the contents of that chunk into the read buffer.
         if Some(current_location.chunk) != self.buffered_chunk {
             self.buffered_chunk = Some(current_location.chunk);
-            self.read_buffer = self.repository.read_chunk(current_location.chunk)?;
+            self.read_buffer = self.chunk_store().read_chunk(current_location.chunk)?;
         }
 
         let start = current_location.relative_position();
@@ -340,7 +371,7 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// Write chunks stored in the chunker to the repository.
     fn write_chunks(&mut self) -> crate::Result<()> {
         for chunk_data in self.chunker.chunks() {
-            let chunk = self.repository.write_chunk(&chunk_data)?;
+            let chunk = self.chunk_store().write_chunk(&chunk_data)?;
             self.new_chunks.push(chunk);
         }
         Ok(())
@@ -353,7 +384,11 @@ impl<'a, K: Key, S: DataStore> Seek for Object<'a, K, S> {
         self.new_chunks.clear();
         self.chunker.clear();
 
-        let object_size = self.get_handle().size;
+        let object_size = {
+            let state = self.borrow_state();
+            let handle = state.header.objects.get(&self.key).unwrap();
+            handle.size
+        };
 
         let new_position = match pos {
             SeekFrom::Start(offset) => min(object_size, offset),
@@ -404,7 +439,7 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
             if let Some(location) = &self.start_location {
                 // We need to make sure the data before the seek position is saved when we replace
                 // the chunk. Read this data from the repository and write it to the chunker.
-                let first_chunk = self.repository.read_chunk(location.chunk)?;
+                let first_chunk = self.chunk_store().read_chunk(location.chunk)?;
                 self.chunker
                     .write_all(&first_chunk[..location.relative_position()])?;
             }
@@ -432,7 +467,7 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
         if let Some(location) = &current_chunk {
             // We need to make sure the data after the seek position is saved when we replace the
             // current chunk. Read this data from the repository and write it to the chunker.
-            let last_chunk = self.repository.read_chunk(location.chunk)?;
+            let last_chunk = self.chunk_store().read_chunk(location.chunk)?;
             self.chunker
                 .write_all(&last_chunk[location.relative_position()..])?;
         }
@@ -448,25 +483,30 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
             .map(|location| location.index)
             .unwrap_or(0);
 
-        // Find the index of the last chunk which is being overwritten.
-        let end_index = match &current_chunk {
-            Some(location) => location.index + 1,
-            None => self.get_handle().chunks.len(),
+        let end_index = {
+            let state = self.borrow_state();
+            let handle = state.header.objects.get(&self.key).unwrap();
+
+            // Find the index of the last chunk which is being overwritten.
+            match &current_chunk {
+                Some(location) => location.index + 1,
+                None => handle.chunks.len(),
+            }
         };
 
-        // Update chunk references in the object handle to reflect changes.
         let new_chunks = replace(&mut self.new_chunks, Vec::new());
-        self.get_handle_mut()
-            .chunks
-            .splice(start_index..end_index, new_chunks);
 
-        // Update the size of the object in the object handle to reflect changes.
-        self.get_handle_mut().size = self
-            .get_handle_mut()
-            .chunks
-            .iter()
-            .map(|chunk| chunk.size as u64)
-            .sum();
+        {
+            let key = self.key.clone();
+            let mut state = self.borrow_state_mut();
+            let mut handle = state.header.objects.get_mut(&key).unwrap();
+
+            // Update chunk references in the object handle to reflect changes.
+            handle.chunks.splice(start_index..end_index, new_chunks);
+
+            // Update the size of the object in the object handle to reflect changes.
+            handle.size = handle.chunks.iter().map(|chunk| chunk.size as u64).sum();
+        }
 
         self.start_location = None;
 

@@ -22,6 +22,7 @@ pub use self::metadata::{RepositoryInfo, RepositoryStats};
 pub use self::object::{ContentId, Object};
 pub use self::repository::{LockStrategy, ObjectRepository};
 
+mod chunk_store;
 mod chunking;
 mod compression;
 mod config;
@@ -31,3 +32,4 @@ mod lock;
 mod metadata;
 mod object;
 mod repository;
+mod state;
