@@ -15,7 +15,9 @@
  */
 
 use std::borrow::Borrow;
+use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashSet;
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::RwLock;
 use std::time::SystemTime;
@@ -27,12 +29,14 @@ use lazy_static::lazy_static;
 
 use crate::store::DataStore;
 
+use super::chunk_store::ChunkStore;
 use super::config::RepositoryConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt};
 use super::header::{Header, Key};
-use super::lock::{Lock, LockTable};
+use super::lock::LockTable;
 use super::metadata::{RepositoryInfo, RepositoryMetadata, RepositoryStats};
-use super::object::{chunk_hash, Chunk, Object, ObjectHandle};
+use super::object::{chunk_hash, Object, ObjectHandle};
+use super::state::ObjectState;
 
 lazy_static! {
     /// The block ID of the block which stores unencrypted metadata for the repository.
@@ -66,19 +70,19 @@ pub enum LockStrategy {
 
 /// A persistent object store.
 ///
-/// An `ObjectRepository` maps keys of type `K` to binary blobs called objects and stores them
-/// persistently in a `DataStore`.
+/// An `ObjectRepository` maps keys of type `K` to seekable binary blobs called objects and stores
+/// them persistently in a `DataStore`.
 ///
 /// Data in a repository is transparently deduplicated using content-defined block-level
 /// deduplication via the ZPAQ chunking algorithm. The data and metadata in the repository can
 /// optionally be compressed and encrypted.
 ///
 /// A repository cannot be open more than once simultaneously. Once it is opened, it is locked from
-/// further open attempts until it is dropped. These locks are only valid for the current user on
-/// the local machine and do not protect against multiple users or multiple machines trying to open
-/// a repository simultaneously.
+/// further open attempts until the `ObjectRepository` is dropped. This lock prevents the repository
+/// from being opened from other threads and processes, but not from other machines.
 ///
-/// Changes made to a repository are not persisted to the data store until `commit` is called.
+/// Changes made to a repository are not persisted to the data store until `commit` is called. When
+/// the `ObjectRepository` is dropped, any uncommitted changes are rolled back automatically.
 ///
 /// # Encryption
 /// If encryption is enabled, the Argon2id key derivation function is used to derive a key from a
@@ -93,26 +97,28 @@ pub enum LockStrategy {
 /// repository does not attempt to hide the size of chunks produced by the chunking algorithm, but
 /// information about which chunks belong to which objects is encrypted.
 ///
-/// The information in `RepositoryInfo` is not encrypted.
+/// The information in `RepositoryInfo` is never encrypted.
 #[derive(Debug)]
 pub struct ObjectRepository<K: Key, S: DataStore> {
-    /// The data store which backs this repository.
-    store: S,
-
-    /// The metadata for the repository.
-    metadata: RepositoryMetadata,
-
-    /// The repository's header.
-    header: Header<K>,
-
-    /// The master encryption key for the repository.
-    master_key: EncryptionKey,
-
-    /// The lock on this repository.
-    lock: Lock,
+    /// The state for this object repository.
+    state: RefCell<ObjectState<K, S>>,
 }
 
 impl<K: Key, S: DataStore> ObjectRepository<K, S> {
+    /// Borrow this repository's state immutably.
+    ///
+    /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
+    fn borrow_state(&self) -> Ref<ObjectState<K, S>> {
+        self.state.borrow()
+    }
+
+    /// Borrow this repository's state mutably.
+    ///
+    /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
+    fn borrow_state_mut(&mut self) -> RefMut<ObjectState<K, S>> {
+        self.state.borrow_mut()
+    }
+
     /// Create a new repository backed by the given data `store`.
     ///
     /// A `config` must be provided to configure the new repository. If encryption is enabled, a
@@ -212,13 +218,15 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             .write_block(*VERSION_BLOCK_ID, VERSION_ID.as_bytes())
             .map_err(anyhow::Error::from)?;
 
-        Ok(ObjectRepository {
+        let state = RefCell::new(ObjectState {
             store,
             metadata,
             header,
             master_key,
             lock,
-        })
+        });
+
+        Ok(ObjectRepository { state })
     }
 
     /// Open the repository in the given data `store`.
@@ -303,13 +311,20 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         let header: Header<K> =
             from_read(serialized_header.as_slice()).map_err(|_| crate::Error::KeyType)?;
 
-        Ok(ObjectRepository {
+        let state = RefCell::new(ObjectState {
             store,
             metadata,
             header,
             master_key,
             lock,
-        })
+        });
+
+        Ok(ObjectRepository { state })
+    }
+
+    /// Get a `ChunkStore` for this repository.
+    fn chunk_store(&self) -> ChunkStore<K, S> {
+        ChunkStore::new(&self.state)
     }
 
     /// Return whether the given `key` exists in this repository.
@@ -318,7 +333,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         K: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        self.header.objects.contains_key(key)
+        let state = self.borrow_state();
+        state.header.objects.contains_key(key)
     }
 
     /// Insert the given `key` into the repository and return a new object.
@@ -326,11 +342,16 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// If the given `key` already exists in the repository, its object is replaced. The returned
     /// object represents the data associated with the `key`.
     pub fn insert(&mut self, key: K) -> Object<K, S> {
-        self.header
+        let mut state = self.borrow_state_mut();
+        state
+            .header
             .objects
             .insert(key.clone(), ObjectHandle::default());
-        self.header.clean_chunks();
-        Object::new(self, key, self.metadata.chunker_bits as usize)
+        state.header.clean_chunks();
+
+        let chunker_bits = state.metadata.chunker_bits;
+        drop(state);
+        Object::new(&self.state, key, chunker_bits as usize)
     }
 
     /// Remove the object associated with `key` from the repository.
@@ -344,28 +365,30 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         K: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        let handle = self.header.objects.remove(key);
-        self.header.clean_chunks();
+        let mut state = self.borrow_state_mut();
+        let handle = state.header.objects.remove(key);
+        state.header.clean_chunks();
         handle.is_some()
     }
 
     /// Return the object associated with `key` or `None` if it doesn't exist.
-    pub fn get<Q>(&mut self, key: &Q) -> Option<Object<K, S>>
+    pub fn get<Q>(&self, key: &Q) -> Option<Object<K, S>>
     where
         K: Borrow<Q>,
         Q: Eq + Hash + ToOwned<Owned = K> + ?Sized,
     {
-        self.header.objects.get(&key)?;
+        let state = self.borrow_state();
+        state.header.objects.get(&key)?;
         Some(Object::new(
-            self,
+            &self.state,
             key.to_owned(),
-            self.metadata.chunker_bits as usize,
+            state.metadata.chunker_bits as usize,
         ))
     }
 
     /// Return an iterator over all the keys in this repository.
-    pub fn keys(&self) -> impl Iterator<Item = &K> {
-        self.header.objects.keys()
+    pub fn keys<'a>(&'a mut self) -> impl Iterator<Item = &'a K> + 'a {
+        self.state.get_mut().header.objects.keys()
     }
 
     /// Copy the object at `source` to `dest`.
@@ -384,110 +407,33 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             return Err(crate::Error::AlreadyExists);
         }
 
-        let source_object = self
+        let mut state = self.borrow_state_mut();
+
+        let source_object = state
             .header
             .objects
             .get(source)
             .ok_or(crate::Error::NotFound)?
             .clone();
 
-        self.header.objects.insert(dest, source_object);
+        state.header.objects.insert(dest, source_object);
 
         Ok(())
     }
 
-    /// Compress and encrypt the given `data` and return it.
-    fn encode_data(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
-        let compressed_data = self.metadata.compression.compress(data)?;
-
-        Ok(self
-            .metadata
-            .encryption
-            .encrypt(compressed_data.as_slice(), &self.master_key))
-    }
-
-    /// Decrypt and decompress the given `data` and return it.
-    fn decode_data(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
-        let decrypted_data = self.metadata.encryption.decrypt(data, &self.master_key)?;
-
-        Ok(self
-            .metadata
-            .compression
-            .decompress(decrypted_data.as_slice())?)
-    }
-
-    /// Write the given `data` as a new chunk and returns its checksum.
-    ///
-    /// If a chunk with the given `data` already exists, its checksum may be returned without
-    /// writing any new data.
-    pub(super) fn write_chunk(&mut self, data: &[u8]) -> crate::Result<Chunk> {
-        // Get a checksum of the unencoded data.
-        let chunk = Chunk {
-            hash: chunk_hash(data),
-            size: data.len(),
-        };
-
-        // Check if the chunk already exists.
-        if self.header.chunks.contains_key(&chunk) {
-            return Ok(chunk);
-        }
-
-        // Encode the data and write it to the data store.
-        let encoded_data = self.encode_data(data)?;
-        let block_id = Uuid::new_v4();
-        self.store
-            .write_block(block_id, &encoded_data)
-            .map_err(anyhow::Error::from)?;
-
-        // Add the chunk to the header.
-        self.header.chunks.insert(chunk, block_id);
-
-        Ok(chunk)
-    }
-
-    /// Return the bytes of the chunk with the given checksum.
-    pub(super) fn read_chunk(&mut self, chunk: Chunk) -> crate::Result<Vec<u8>> {
-        let chunk_id = self
-            .header
-            .chunks
-            .get(&chunk)
-            .ok_or(crate::Error::InvalidData)?;
-        let chunk = self
-            .store
-            .read_block(*chunk_id)
-            .map_err(anyhow::Error::from)?
-            .ok_or(crate::Error::InvalidData)?;
-        self.decode_data(chunk.as_slice())
-    }
-
-    /// Get the object handle for the object associated with `key`.
-    pub(super) fn get_handle<Q>(&self, key: &Q) -> &ObjectHandle
-    where
-        K: Borrow<Q>,
-        Q: Eq + Hash + ?Sized,
-    {
-        self.header.objects.get(key).unwrap()
-    }
-
-    /// Get the object handle for the object associated with `key`.
-    pub(super) fn get_handle_mut<Q>(&mut self, key: &Q) -> &mut ObjectHandle
-    where
-        K: Borrow<Q>,
-        Q: Eq + Hash + ?Sized,
-    {
-        self.header.objects.get_mut(key).unwrap()
-    }
-
     /// Return a list of blocks in `store` excluding those used to store metadata.
     fn list_data_blocks(&mut self) -> crate::Result<Vec<Uuid>> {
-        Ok(self
-            .store
-            .list_blocks()
-            .map_err(anyhow::Error::from)?
+        let mut state = self.borrow_state_mut();
+
+        let all_blocks = state.store.list_blocks().map_err(anyhow::Error::from)?;
+
+        Ok(all_blocks
             .iter()
             .copied()
             .filter(|id| {
-                *id != *METADATA_BLOCK_ID && *id != *VERSION_BLOCK_ID && *id != self.metadata.header
+                *id != *METADATA_BLOCK_ID
+                    && *id != *VERSION_BLOCK_ID
+                    && *id != state.metadata.header
             })
             .collect())
     }
@@ -503,28 +449,46 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn commit(&mut self) -> crate::Result<()> {
+        let state = self.borrow_state();
+
         // Serialize and encode the header.
-        let serialized_header = to_vec(&self.header).expect("Could not serialize header.");
-        let encoded_header = self.encode_data(&serialized_header)?;
+        let serialized_header = to_vec(&state.header).expect("Could not serialize header.");
+        let encoded_header = self.chunk_store().encode_data(&serialized_header)?;
+
+        drop(state);
+        let mut state = self.borrow_state_mut();
 
         // Write the new header to the data store.
         let header_id = Uuid::new_v4();
-        self.store
+        state
+            .store
             .write_block(header_id, &encoded_header)
             .map_err(anyhow::Error::from)?;
-        self.metadata.header = header_id;
+        state.metadata.header = header_id;
 
         // Write the repository metadata, atomically completing the commit.
-        let serialized_metadata = to_vec(&self.metadata).expect("Could not serialize metadata.");
-        self.store
+        let serialized_metadata = to_vec(&state.metadata).expect("Could not serialize metadata.");
+        state
+            .store
             .write_block(*METADATA_BLOCK_ID, &serialized_metadata)
             .map_err(anyhow::Error::from)?;
 
         // After changes are committed, remove any unused chunks from the data store.
-        let referenced_chunks = self.header.chunks.values().copied().collect::<HashSet<_>>();
-        for stored_chunk in self.list_data_blocks()? {
+        let referenced_chunks = state
+            .header
+            .chunks
+            .values()
+            .copied()
+            .collect::<HashSet<_>>();
+
+        drop(state);
+        let data_blocks = self.list_data_blocks()?;
+        let mut state = self.borrow_state_mut();
+
+        for stored_chunk in data_blocks {
             if !referenced_chunks.contains(&stored_chunk) {
-                self.store
+                state
+                    .store
                     .remove_block(stored_chunk)
                     .map_err(anyhow::Error::from)?;
             }
@@ -543,12 +507,14 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn verify(&mut self) -> crate::Result<HashSet<&K>> {
+        let state = self.borrow_state();
+
         let mut corrupt_chunks = HashSet::new();
-        let expected_chunks = self.header.chunks.keys().copied().collect::<Vec<_>>();
+        let expected_chunks = state.header.chunks.keys().copied().collect::<Vec<_>>();
 
         // Get the set of hashes of chunks which are corrupt.
         for chunk in expected_chunks {
-            match self.read_chunk(chunk) {
+            match self.chunk_store().read_chunk(chunk) {
                 Ok(data) => {
                     if data.len() != chunk.size || chunk_hash(&data) != chunk.hash {
                         corrupt_chunks.insert(chunk.hash);
@@ -569,7 +535,9 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         let mut corrupt_objects = HashSet::new();
 
-        for (key, object) in self.header.objects.iter() {
+        drop(state);
+
+        for (key, object) in self.state.get_mut().header.objects.iter() {
             for chunk in &object.chunks {
                 // If any one of the object's chunks is corrupt, the object is corrupt.
                 if corrupt_chunks.contains(&chunk.hash) {
@@ -588,24 +556,30 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// require re-encrypting any data. The change does not take effect until `commit` is called.
     /// If encryption is disabled, this method does nothing.
     pub fn change_password(&mut self, new_password: &[u8]) {
+        let mut state = self.borrow_state_mut();
+
         let salt = KeySalt::generate();
         let user_key = EncryptionKey::derive(
             new_password,
             &salt,
-            self.metadata.encryption.key_size(),
-            self.metadata.memory_limit.to_mem_limit(),
-            self.metadata.operations_limit.to_ops_limit(),
+            state.metadata.encryption.key_size(),
+            state.metadata.memory_limit.to_mem_limit(),
+            state.metadata.operations_limit.to_ops_limit(),
         );
-        self.metadata.salt = salt;
-        self.metadata.master_key = self
+
+        let encrypted_master_key = state
             .metadata
             .encryption
-            .encrypt(self.master_key.as_ref(), &user_key);
+            .encrypt(state.master_key.as_ref(), &user_key);
+
+        state.metadata.salt = salt;
+        state.metadata.master_key = encrypted_master_key;
     }
 
     /// Return information about the repository.
     pub fn info(&self) -> RepositoryInfo {
-        self.metadata.to_info()
+        let state = self.borrow_state();
+        state.metadata.to_info()
     }
 
     /// Return information about the repository in `store` without opening it.
@@ -631,8 +605,15 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
     /// Calculate statistics about the repository.
     pub fn stats(&self) -> RepositoryStats {
-        let apparent_size = self.header.objects.values().map(|object| object.size).sum();
-        let actual_size = self
+        let state = self.borrow_state();
+
+        let apparent_size = state
+            .header
+            .objects
+            .values()
+            .map(|object| object.size)
+            .sum();
+        let actual_size = state
             .header
             .chunks
             .keys()
@@ -647,6 +628,6 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
     /// Consume this repository and return the wrapped `DataStore`.
     pub fn into_store(self) -> S {
-        self.store
+        self.state.into_inner().store
     }
 }

@@ -16,6 +16,7 @@
 
 use std::cmp::Reverse;
 use std::collections::HashSet;
+use std::fmt::Debug;
 use std::fs::{create_dir, create_dir_all, metadata, File, OpenOptions};
 use std::io::{self, copy, Read, Write};
 use std::marker::PhantomData;
@@ -111,7 +112,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         password: Option<&[u8]>,
         strategy: LockStrategy,
     ) -> crate::Result<Self> {
-        let mut repository = ObjectRepository::open_repo(store, password, strategy)?;
+        let repository = ObjectRepository::open_repo(store, password, strategy)?;
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository
@@ -281,20 +282,14 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     pub fn remove_tree(&mut self, path: impl AsRef<EntryPath>) -> crate::Result<()> {
         let path = Self::convert_path(path)?;
 
-        let descendants = match self.walk(&path) {
-            Ok(descendants) => {
-                // We must convert to owned paths so we're not borrowing `self`.
-                let mut owned_descendants =
-                    descendants.map(|path| path.to_owned()).collect::<Vec<_>>();
-
-                // Sort paths in reverse order by depth.
-                owned_descendants.sort_by_key(|path| Reverse(path.iter().count()));
-
-                owned_descendants
-            }
+        let mut descendants = match self.walk(&path) {
+            Ok(descendants) => descendants.map(|path| path.to_owned()).collect::<Vec<_>>(),
             Err(crate::Error::NotDirectory) => Vec::new(),
             Err(error) => return Err(error),
         };
+
+        // Sort paths in reverse order by depth.
+        descendants.sort_by_key(|path| Reverse(path.iter().count()));
 
         // Extract the descendants.
         for descendant in descendants {
@@ -314,7 +309,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn entry(&mut self, path: impl AsRef<EntryPath>) -> crate::Result<Entry<M>> {
+    pub fn entry(&self, path: impl AsRef<EntryPath>) -> crate::Result<Entry<M>> {
         let path = Self::convert_path(path)?;
 
         let mut object = self
@@ -367,7 +362,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn open(&mut self, path: impl AsRef<EntryPath>) -> crate::Result<Object<EntryKey, S>> {
+    pub fn open(&self, path: impl AsRef<EntryPath>) -> crate::Result<Object<EntryKey, S>> {
         let path = Self::convert_path(path)?;
 
         let entry = self.entry(&path)?;
@@ -452,20 +447,14 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         // Copy the root directory.
         self.copy(&source, &dest)?;
 
-        let descendants = match self.walk(&source) {
-            Ok(descendants) => {
-                // We must convert to owned paths so we're not borrowing `self`.
-                let mut owned_descendants =
-                    descendants.map(|path| path.to_owned()).collect::<Vec<_>>();
-
-                // Sort paths in order by depth.
-                owned_descendants.sort_by_key(|path| path.iter().count());
-
-                owned_descendants
-            }
+        let mut descendants = match self.walk(&source) {
+            Ok(descendants) => descendants.map(|path| path.to_owned()).collect::<Vec<_>>(),
             Err(crate::Error::NotDirectory) => return Ok(()),
             Err(error) => return Err(error),
         };
+
+        // Sort paths in order by depth.
+        descendants.sort_by_key(|path| path.iter().count());
 
         // Copy the descendants.
         for source_path in descendants {
@@ -491,7 +480,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::Io`: An I/O error occurred.
     pub fn list<'a>(
         &'a mut self,
-        parent: impl AsRef<EntryPath> + 'a,
+        parent: impl AsRef<EntryPath>,
     ) -> crate::Result<impl Iterator<Item = &'a EntryPath> + 'a> {
         let parent = Self::convert_path(parent)?;
 
@@ -500,7 +489,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         }
 
         let children = self.repository.keys().filter_map(move |entry| match entry {
-            EntryKey::Entry(path) if path.parent() == Some(&parent) => Some(path.as_ref()),
+            EntryKey::Entry(path) if path.parent() == Some(&parent) => Some(path.as_path()),
             _ => None,
         });
 
@@ -521,7 +510,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::Io`: An I/O error occurred.
     pub fn walk<'a>(
         &'a mut self,
-        parent: impl AsRef<EntryPath> + 'a,
+        parent: impl AsRef<EntryPath>,
     ) -> crate::Result<impl Iterator<Item = &'a EntryPath> + 'a> {
         let parent = Self::convert_path(parent)?;
 
@@ -531,7 +520,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
 
         let descendants = self.repository.keys().filter_map(move |entry| match entry {
             EntryKey::Entry(path) if path.starts_with(&parent) && path != &parent => {
-                Some(path.as_ref())
+                Some(path.as_path())
             }
             _ => None,
         });
@@ -710,8 +699,8 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
 
         let relative_descendants = match self.walk(&source) {
             Ok(descendants) => {
-                // We must convert to owned paths so we're not borrowing `self`.
                 let mut relative_descendants = descendants
+                    .into_iter()
                     .map(|path| path.strip_prefix(&source).unwrap().to_owned())
                     .collect::<Vec<_>>();
 
@@ -755,8 +744,8 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
             .verify()?
             .iter()
             .filter_map(|entry| match entry {
-                EntryKey::Data(path) => Some(path.as_ref()),
-                EntryKey::Entry(path) => Some(path.as_ref()),
+                EntryKey::Data(path) => Some(path.as_path()),
+                EntryKey::Entry(path) => Some(path.as_path()),
                 _ => None,
             })
             .collect();
