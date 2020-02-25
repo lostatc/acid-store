@@ -27,11 +27,18 @@ All the usual disclaimers apply.
 - Content-based deduplication using the ZPAQ chunking algorithm
 - Integrity checking of data and metadata using checksums and (if encryption is enabled) AEAD
 - Transactional operations providing atomicity, consistency, isolation, and durability (ACID)
-- Provides a small interface for implementing new storage backends, with support for the local file
-system, SQLite, Redis, and Amazon S3 out of the box
+- Copy-on-write semantics
+- New storage backends are easy to implement
 
 This library provides the following abstractions for data storage:
 - An object store which maps keys to seekable binary blobs
 - A virtual file system which can import and export files to the local OS file system
 - A persistent, heterogeneous, map-like collection
 - An object store with support for content versioning
+
+This library provides the following storage backends out of the box:
+- Local file system directory
+- SQLite
+- Redis
+- Amazon S3
+- In-Memory
