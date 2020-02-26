@@ -349,7 +349,6 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             .insert(key.clone(), ObjectHandle::default());
         state.header.clean_chunks();
 
-        let chunker_bits = state.metadata.chunker_bits;
         drop(state);
         Object::new(&self.state, key)
     }

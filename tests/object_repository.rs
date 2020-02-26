@@ -162,7 +162,7 @@ fn committed_changes_are_persisted() -> anyhow::Result<()> {
     repository.commit()?;
 
     // Re-open the repository.
-    let mut repository = ObjectRepository::<String, _>::open_repo(
+    let repository = ObjectRepository::<String, _>::open_repo(
         repository.into_store(),
         Some(PASSWORD),
         LockStrategy::Abort,
@@ -186,7 +186,7 @@ fn uncommitted_changes_are_not_persisted() -> anyhow::Result<()> {
     drop(object);
 
     // Re-open the repository.
-    let mut repository = ObjectRepository::<String, _>::open_repo(
+    let repository = ObjectRepository::<String, _>::open_repo(
         repository.into_store(),
         Some(PASSWORD),
         LockStrategy::Abort,

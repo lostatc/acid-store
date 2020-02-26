@@ -22,6 +22,7 @@ use s3::bucket::Bucket;
 use s3::credentials::Credentials;
 #[cfg(feature = "store-s3")]
 use s3::region::Region;
+#[cfg(any(feature = "store-s3", feature = "store-redis"))]
 use serial_test::serial;
 use tempfile::tempdir;
 use uuid::Uuid;
@@ -36,6 +37,7 @@ use acid_store::store::S3Store;
 use acid_store::store::SqliteStore;
 use acid_store::store::{DataStore, MemoryStore, Open, OpenOption};
 use common::{assert_contains_all, random_buffer};
+#[cfg(feature = "store-redis")]
 use lazy_static::lazy_static;
 
 mod common;

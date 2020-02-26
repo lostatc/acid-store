@@ -22,9 +22,7 @@ use std::hash::Hash;
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 
-use acid_store::repo::{
-    Compression, Encryption, ObjectRepository, RepositoryConfig, ResourceLimit,
-};
+use acid_store::repo::{Compression, Encryption, ObjectRepository, RepositoryConfig};
 use acid_store::store::MemoryStore;
 use lazy_static::lazy_static;
 

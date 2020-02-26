@@ -17,7 +17,7 @@
 use std::cell::{Ref, RefCell, RefMut};
 use std::clone::Clone;
 use std::cmp::min;
-use std::fmt::{Debug, Formatter};
+use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::mem::replace;
