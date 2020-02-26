@@ -123,7 +123,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         password: Option<&[u8]>,
         strategy: LockStrategy,
     ) -> crate::Result<Self> {
-        let mut repository = ObjectRepository::open_repo(store, password, strategy)?;
+        let repository = ObjectRepository::open_repo(store, password, strategy)?;
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository

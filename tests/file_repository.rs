@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
 use std::fs::{create_dir, File};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -22,7 +21,7 @@ use std::path::Path;
 use matches::assert_matches;
 use tempfile::tempdir;
 
-use acid_store::repo::{Entry, FileRepository, FileType, LockStrategy, NoMetadata};
+use acid_store::repo::{Entry, FileRepository, LockStrategy, NoMetadata};
 use acid_store::store::MemoryStore;
 use common::{assert_contains_all, PASSWORD, REPO_CONFIG};
 #[cfg(all(unix, feature = "file-metadata"))]
@@ -149,7 +148,7 @@ fn opening_non_regular_file_errs() -> anyhow::Result<()> {
 
 #[test]
 fn opening_nonexistent_file_errs() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let repository = create_repo()?;
     let result = repository.open("nonexistent");
 
     assert_matches!(result, Err(acid_store::Error::NotFound));
