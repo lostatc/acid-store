@@ -102,10 +102,8 @@ pub struct ContentId([u8; 32]);
 /// Because `Object` internally buffers data when reading, there's no need to use a buffered reader
 /// like `BufReader`.
 ///
-/// When writing to the object, `flush` must be called explicitly. When the object is dropped or
-/// `seek` or `truncate` is called, any unflushed data is discarded. The object's `size` and
-/// `content_id` are not updated until `flush` is called, and `verify` will not verify the integrity
-/// of unflushed data.
+/// Written data is automatically flushed when this value is dropped. If an error occurs while
+/// flushing data in the `Drop` implementation, it is ignored and unflushed data is discarded.
 ///
 /// If encryption is enabled for the repository, data integrity is automatically verified as it is
 /// read and methods will return an `Err` if corrupt data is found. The `verify` method can be used
@@ -156,6 +154,9 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     }
 
     /// Return the size of the object in bytes.
+    ///
+    /// Unflushed data is not accounted for when calculating the size, so you may want to explicitly
+    /// flush written data with `flush` before calling this method.
     pub fn size(&self) -> u64 {
         let state = self.borrow_state();
         let handle = state.header.objects.get(&self.key).unwrap();
@@ -164,7 +165,11 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
 
     /// Return a `ContentId` representing the contents of this object.
     ///
-    /// The returned value represents the contents of the object at the time this method was called.
+    /// The returned `ContentId` represents the contents of the object at the time this method was
+    /// called.
+    ///
+    /// Unflushed data is not accounted for when calculating the `ContentId`, so you may want to
+    /// explicitly flush written data with `flush` before calling this method.
     pub fn content_id(&self) -> ContentId {
         let state = self.borrow_state();
         let handle = state.header.objects.get(&self.key).unwrap();
@@ -186,6 +191,8 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn verify(&mut self) -> crate::Result<bool> {
+        self.flush()?;
+
         let state = self.borrow_state();
         let handle = state.header.objects.get(&self.key).unwrap();
 
@@ -218,9 +225,7 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn truncate(&mut self, length: u64) -> crate::Result<()> {
-        // Clear all written data which has not been flushed.
-        self.object_state.new_chunks.clear();
-        self.object_state.chunker.clear();
+        self.flush()?;
 
         {
             let state = self.borrow_state();
@@ -322,23 +327,11 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
         }
         Ok(())
     }
-
-    /// Set the state associated with this object.
-    pub(crate) fn set_state(&mut self, state: ObjectState) {
-        self.object_state = state;
-    }
-
-    /// Consume this object and return the state associated with it.
-    pub(crate) fn into_state(self) -> ObjectState {
-        self.object_state
-    }
 }
 
 impl<'a, K: Key, S: DataStore> Seek for Object<'a, K, S> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        // Clear all written data which has not been flushed.
-        self.object_state.new_chunks.clear();
-        self.object_state.chunker.clear();
+        self.flush()?;
 
         let object_size = {
             let state = self.borrow_state();
@@ -486,10 +479,17 @@ impl<'a, K: Key, S: DataStore> Read for Object<'a, K, S> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.flush()?;
         let next_chunk = self.read_chunk(buf.len())?;
         let bytes_read = next_chunk.len();
         buf[..bytes_read].copy_from_slice(next_chunk);
         self.object_state.position += bytes_read as u64;
         Ok(bytes_read)
+    }
+}
+
+impl<'a, K: Key, S: DataStore> Drop for Object<'a, K, S> {
+    fn drop(&mut self) {
+        self.flush().ok();
     }
 }
