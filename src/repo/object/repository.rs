@@ -36,7 +36,7 @@ use super::header::{Header, Key};
 use super::lock::LockTable;
 use super::metadata::{RepositoryInfo, RepositoryMetadata, RepositoryStats};
 use super::object::{chunk_hash, Object, ObjectHandle};
-use super::state::ObjectState;
+use super::state::RepositoryState;
 
 lazy_static! {
     /// The block ID of the block which stores unencrypted metadata for the repository.
@@ -101,21 +101,21 @@ pub enum LockStrategy {
 #[derive(Debug)]
 pub struct ObjectRepository<K: Key, S: DataStore> {
     /// The state for this object repository.
-    state: RefCell<ObjectState<K, S>>,
+    state: RefCell<RepositoryState<K, S>>,
 }
 
 impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// Borrow this repository's state immutably.
     ///
     /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
-    fn borrow_state(&self) -> Ref<ObjectState<K, S>> {
+    fn borrow_state(&self) -> Ref<RepositoryState<K, S>> {
         self.state.borrow()
     }
 
     /// Borrow this repository's state mutably.
     ///
     /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
-    fn borrow_state_mut(&mut self) -> RefMut<ObjectState<K, S>> {
+    fn borrow_state_mut(&mut self) -> RefMut<RepositoryState<K, S>> {
         self.state.borrow_mut()
     }
 
@@ -218,7 +218,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             .write_block(*VERSION_BLOCK_ID, VERSION_ID.as_bytes())
             .map_err(anyhow::Error::from)?;
 
-        let state = RefCell::new(ObjectState {
+        let state = RefCell::new(RepositoryState {
             store,
             metadata,
             header,
@@ -311,7 +311,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         let header: Header<K> =
             from_read(serialized_header.as_slice()).map_err(|_| crate::Error::KeyType)?;
 
-        let state = RefCell::new(ObjectState {
+        let state = RefCell::new(RepositoryState {
             store,
             metadata,
             header,
@@ -351,7 +351,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         let chunker_bits = state.metadata.chunker_bits;
         drop(state);
-        Object::new(&self.state, key, chunker_bits as usize)
+        Object::new(&self.state, key)
     }
 
     /// Remove the object associated with `key` from the repository.
@@ -379,11 +379,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     {
         let state = self.borrow_state();
         state.header.objects.get(&key)?;
-        Some(Object::new(
-            &self.state,
-            key.to_owned(),
-            state.metadata.chunker_bits as usize,
-        ))
+        Some(Object::new(&self.state, key.to_owned()))
     }
 
     /// Return an iterator over all the keys in this repository.
