@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::borrow::Borrow;
+use std::borrow::{Borrow, ToOwned};
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -33,7 +33,7 @@ use super::chunk_store::ChunkStore;
 use super::config::RepositoryConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt};
 use super::header::{Header, Key};
-use super::lock::LockTable;
+use super::lock::{LockStrategy, LockTable};
 use super::metadata::{RepositoryInfo, RepositoryMetadata, RepositoryStats};
 use super::object::{chunk_hash, Object, ObjectHandle};
 use super::state::RepositoryState;
@@ -56,16 +56,6 @@ lazy_static! {
 
     /// A table of locks on repositories.
     static ref REPO_LOCKS: RwLock<LockTable> = RwLock::new(LockTable::new());
-}
-
-/// A strategy for handling a repository which is already locked.
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub enum LockStrategy {
-    /// Return immediately with an `Err`.
-    Abort,
-
-    /// Block and wait for the lock on the repository to be released.
-    Wait,
 }
 
 /// A persistent object store.
@@ -323,7 +313,9 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     }
 
     /// Get a `ChunkStore` for this repository.
-    fn chunk_store(&self) -> ChunkStore<K, S> {
+    ///
+    /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
+    fn chunk_store(&mut self) -> ChunkStore<K, S> {
         ChunkStore::new(&self.state)
     }
 
@@ -448,9 +440,9 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         // Serialize and encode the header.
         let serialized_header = to_vec(&state.header).expect("Could not serialize header.");
+        drop(state);
         let encoded_header = self.chunk_store().encode_data(&serialized_header)?;
 
-        drop(state);
         let mut state = self.borrow_state_mut();
 
         // Write the new header to the data store.
@@ -506,6 +498,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         let mut corrupt_chunks = HashSet::new();
         let expected_chunks = state.header.chunks.keys().copied().collect::<Vec<_>>();
+        drop(state);
 
         // Get the set of hashes of chunks which are corrupt.
         for chunk in expected_chunks {
@@ -529,8 +522,6 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         }
 
         let mut corrupt_objects = HashSet::new();
-
-        drop(state);
 
         for (key, object) in self.state.get_mut().header.objects.iter() {
             for chunk in &object.chunks {

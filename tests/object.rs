@@ -205,12 +205,14 @@ fn compare_content_ids() -> anyhow::Result<()> {
     object.write_all(initial_data.as_slice())?;
     object.flush()?;
     let content_id1 = object.content_id();
+    drop(object);
 
     // Write the same data to the second object.
     let mut object = repository.insert("Test2".into());
     object.write_all(initial_data.as_slice())?;
     object.flush()?;
     let content_id2 = object.content_id();
+    drop(object);
 
     assert_eq!(content_id1, content_id2);
 
@@ -222,5 +224,16 @@ fn compare_content_ids() -> anyhow::Result<()> {
 
     assert_ne!(content_id1, content_id2);
 
+    Ok(())
+}
+
+#[test]
+fn verify_valid_object_is_valid() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    let mut object = repository.insert("Test".into());
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+
+    assert!(object.verify()?);
     Ok(())
 }

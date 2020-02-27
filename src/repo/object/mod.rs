@@ -18,9 +18,10 @@ pub use self::compression::Compression;
 pub use self::config::RepositoryConfig;
 pub use self::encryption::{Encryption, ResourceLimit};
 pub use self::header::Key;
+pub use self::lock::LockStrategy;
 pub use self::metadata::{RepositoryInfo, RepositoryStats};
 pub use self::object::{ContentId, Object};
-pub use self::repository::{LockStrategy, ObjectRepository};
+pub use self::repository::ObjectRepository;
 
 mod chunk_store;
 mod chunking;

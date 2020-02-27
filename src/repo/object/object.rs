@@ -149,7 +149,9 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     }
 
     /// Get a `ChunkStore` for this repository.
-    fn chunk_store(&self) -> ChunkStore<K, S> {
+    ///
+    /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
+    fn chunk_store(&mut self) -> ChunkStore<K, S> {
         ChunkStore::new(&self.repo_state)
     }
 
@@ -195,8 +197,8 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
 
         let state = self.borrow_state();
         let handle = state.header.objects.get(&self.key).unwrap();
-
         let expected_chunks = handle.chunks.iter().copied().collect::<Vec<_>>();
+        drop(state);
 
         for chunk in expected_chunks {
             match self.chunk_store().read_chunk(chunk) {
@@ -389,12 +391,16 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
             self.object_state.start_location = self.current_chunk();
 
             if let Some(location) = &self.object_state.start_location {
+                let chunk = location.chunk;
+                let position = location.relative_position();
+                drop(location);
+
                 // We need to make sure the data before the seek position is saved when we replace
                 // the chunk. Read this data from the repository and write it to the chunker.
-                let first_chunk = self.chunk_store().read_chunk(location.chunk)?;
+                let first_chunk = self.chunk_store().read_chunk(chunk)?;
                 self.object_state
                     .chunker
-                    .write_all(&first_chunk[..location.relative_position()])?;
+                    .write_all(&first_chunk[..position])?;
             }
         }
 

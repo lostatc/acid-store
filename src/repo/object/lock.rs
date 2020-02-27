@@ -25,8 +25,6 @@ use weak_table::WeakHashSet;
 
 use lazy_static::lazy_static;
 
-use crate::repo::LockStrategy;
-
 lazy_static! {
     /// The path of the directory where repository lock files are stored.
     static ref LOCKS_DIR: PathBuf = runtime_dir()
@@ -46,6 +44,16 @@ pub struct Lock {
 
     /// The file lock that is held to lock the resource between processes.
     file: File,
+}
+
+/// A strategy for handling a repository which is already locked.
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum LockStrategy {
+    /// Return immediately with an `Err`.
+    Abort,
+
+    /// Block and wait for the lock on the repository to be released.
+    Wait,
 }
 
 /// A value which keeps track of locks on resources identified by UUIDs.
