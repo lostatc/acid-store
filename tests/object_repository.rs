@@ -19,8 +19,9 @@ use std::io::Write;
 use matches::assert_matches;
 
 use acid_store::repo::{LockStrategy, ObjectRepository, RepositoryConfig};
-use acid_store::store::MemoryStore;
+use acid_store::store::{DirectoryStore, MemoryStore, Open, OpenOption};
 use common::{create_repo, random_buffer, PASSWORD, REPO_CONFIG};
+use tempfile::tempdir;
 
 mod common;
 
@@ -62,6 +63,67 @@ fn opening_with_invalid_password_errs() -> anyhow::Result<()> {
 }
 
 #[test]
+fn opening_without_password_errs() -> anyhow::Result<()> {
+    let repository = ObjectRepository::<String, _>::create_repo(
+        MemoryStore::new(),
+        REPO_CONFIG.to_owned(),
+        None,
+    );
+    assert_matches!(repository.unwrap_err(), acid_store::Error::Password);
+    Ok(())
+}
+
+#[test]
+fn opening_with_unnecessary_password_errs() -> anyhow::Result<()> {
+    let repository = ObjectRepository::<String, _>::create_repo(
+        MemoryStore::new(),
+        Default::default(),
+        Some(b"unnecessary password"),
+    );
+    assert_matches!(repository.unwrap_err(), acid_store::Error::Password);
+    Ok(())
+}
+
+#[test]
+fn opening_locked_repo_errs() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+
+    let store = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::CREATE_NEW)?;
+    let store_copy = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::empty())?;
+
+    let mut repository =
+        ObjectRepository::<String, _>::create_repo(store, REPO_CONFIG.to_owned(), Some(PASSWORD))?;
+    repository.commit()?;
+
+    let open_attempt =
+        ObjectRepository::<String, _>::open_repo(store_copy, Some(PASSWORD), LockStrategy::Abort);
+
+    assert_matches!(open_attempt.unwrap_err(), acid_store::Error::Locked);
+    Ok(())
+}
+
+#[test]
+fn creating_locked_repo_errs() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+
+    let store = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::CREATE_NEW)?;
+    let store_copy = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::empty())?;
+
+    let mut repository =
+        ObjectRepository::<String, _>::create_repo(store, REPO_CONFIG.to_owned(), Some(PASSWORD))?;
+    repository.commit()?;
+
+    let open_attempt = ObjectRepository::<String, _>::create_repo(
+        store_copy,
+        REPO_CONFIG.to_owned(),
+        Some(PASSWORD),
+    );
+
+    assert_matches!(open_attempt.unwrap_err(), acid_store::Error::AlreadyExists);
+    Ok(())
+}
+
+#[test]
 fn opening_with_wrong_key_type_errs() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.insert("Test".into());
@@ -88,6 +150,7 @@ fn inserted_key_replaces_existing_key() -> anyhow::Result<()> {
     assert_ne!(object.size(), 0);
 
     // Replace the object with an empty one.
+    drop(object);
     let object = repository.insert("Test".into());
 
     assert_eq!(object.size(), 0);
@@ -114,10 +177,11 @@ fn copied_object_has_same_contents() -> anyhow::Result<()> {
     object.write_all(random_buffer().as_slice())?;
     object.flush()?;
     let source_id = object.content_id();
+    drop(object);
 
     // Copy the object.
     repository.copy("Source", "Dest".into())?;
-    let object = repository.get("Dest".into()).unwrap();
+    let object = repository.get("Dest").unwrap();
     let dest_id = object.content_id();
 
     assert_eq!(source_id, dest_id);
@@ -194,6 +258,20 @@ fn uncommitted_changes_are_not_persisted() -> anyhow::Result<()> {
 
     assert!(repository.get("Test".into()).is_none());
 
+    Ok(())
+}
+
+#[test]
+fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    let mut object = repository.insert("Test".into());
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    let corrupt_keys = repository.verify()?;
+
+    assert!(corrupt_keys.is_empty());
     Ok(())
 }
 
