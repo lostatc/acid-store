@@ -415,6 +415,11 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     fn flush(&mut self) -> io::Result<()> {
+        if self.object_state.chunker.is_empty() {
+            // No new data has been written since data was last flushed.
+            return Ok(());
+        }
+
         let current_chunk = self.current_chunk();
 
         if let Some(location) = &current_chunk {

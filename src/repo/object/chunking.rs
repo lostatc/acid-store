@@ -80,8 +80,10 @@ impl<T: ChunkerImpl> Write for IncrementalChunker<T> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        let new_chunk = replace(&mut self.buffer, Vec::new());
-        self.chunks.push(new_chunk);
+        if !self.buffer.is_empty() {
+            let new_chunk = replace(&mut self.buffer, Vec::new());
+            self.chunks.push(new_chunk);
+        }
         self.chunker.reset();
         Ok(())
     }
