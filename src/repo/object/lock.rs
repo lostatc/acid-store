@@ -25,6 +25,8 @@ use weak_table::WeakHashSet;
 
 use lazy_static::lazy_static;
 
+use crate::repo::LockStrategy;
+
 lazy_static! {
     /// The path of the directory where repository lock files are stored.
     static ref LOCKS_DIR: PathBuf = runtime_dir()
@@ -32,24 +34,6 @@ lazy_static! {
         .join("acid-store")
         .join("locks");
 
-}
-
-/// A strategy for handling a locked resource.
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub enum LockStrategy {
-    /// Return immediately with an `Err` if the resource is locked.
-    Abort,
-
-    /// Block and wait for the lock on the resource to be released.
-    ///
-    /// This will only block if the lock is held by another process. If the lock is held by another
-    /// thread within the same process, this will behave like `LockStrategy::Abort`.
-    Wait,
-
-    /// Open the resource and acquires a lock regardless of whether it is already locked.
-    ///
-    /// If the resource is already locked by another thread or process, that lock is released.
-    Force,
 }
 
 /// A lock acquired on a resource.
@@ -91,7 +75,7 @@ impl LockTable {
             .open(LOCKS_DIR.join(file_name))?;
 
         // Check if this repository is already locked within this process.
-        if self.0.contains(&id) && strategy != LockStrategy::Force {
+        if self.0.contains(&id) {
             Err(crate::Error::Locked)
         } else {
             match strategy {
@@ -99,12 +83,6 @@ impl LockTable {
                     .try_lock_exclusive()
                     .map_err(|_| crate::Error::Locked)?,
                 LockStrategy::Wait => lock_file.lock_exclusive()?,
-                LockStrategy::Force => {
-                    lock_file.unlock()?;
-                    lock_file
-                        .try_lock_exclusive()
-                        .map_err(|_| crate::Error::Locked)?;
-                }
             };
 
             let id_arc = Arc::from(id);

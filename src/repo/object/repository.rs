@@ -33,7 +33,7 @@ use super::chunk_store::ChunkStore;
 use super::config::RepositoryConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt};
 use super::header::{Header, Key};
-use super::lock::{LockStrategy, LockTable};
+use super::lock::LockTable;
 use super::metadata::{RepositoryInfo, RepositoryMetadata, RepositoryStats};
 use super::object::{chunk_hash, Object, ObjectHandle};
 use super::state::RepositoryState;
@@ -56,6 +56,16 @@ lazy_static! {
 
     /// A table of locks on repositories.
     static ref REPO_LOCKS: RwLock<LockTable> = RwLock::new(LockTable::new());
+}
+
+/// A strategy for handling a repository which is already locked.
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+pub enum LockStrategy {
+    /// Return immediately with an `Err`.
+    Abort,
+
+    /// Block and wait for the lock on the repository to be released.
+    Wait,
 }
 
 /// A persistent object store.
