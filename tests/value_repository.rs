@@ -85,3 +85,12 @@ fn list_keys() -> anyhow::Result<()> {
     assert_contains_all(actual, expected);
     Ok(())
 }
+
+#[test]
+fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.insert("Test".into(), &SERIALIZABLE_VALUE)?;
+
+    assert!(repository.verify()?.is_empty());
+    Ok(())
+}

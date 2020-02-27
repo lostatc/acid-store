@@ -59,6 +59,15 @@ fn creating_existing_file_errs() -> anyhow::Result<()> {
 }
 
 #[test]
+fn absolute_entry_path_errs() -> anyhow::Result<()> {
+    let repository = create_repo()?;
+    let result = repository.entry("/home/lostatc/data");
+
+    assert_matches!(result.unwrap_err(), acid_store::Error::InvalidPath);
+    Ok(())
+}
+
+#[test]
 fn creating_file_without_parent_errs() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
 
@@ -84,6 +93,16 @@ fn create_parents() -> anyhow::Result<()> {
     assert!(repository.entry("home/lostatc")?.is_directory());
     assert!(repository.entry("home")?.is_directory());
 
+    Ok(())
+}
+
+#[test]
+fn create_parent_of_top_level_file() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+
+    repository.create_parents("home", &Entry::directory())?;
+
+    assert!(repository.entry("home")?.is_directory());
     Ok(())
 }
 
@@ -129,11 +148,42 @@ fn remove_tree() -> anyhow::Result<()> {
 }
 
 #[test]
+fn remove_tree_without_descendants() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.create("home", &Entry::directory())?;
+    repository.remove_tree("home")?;
+
+    assert!(!repository.exists("home")?);
+    Ok(())
+}
+
+#[test]
 fn setting_metadata_on_nonexistent_file_errs() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     let result = repository.set_metadata("file", NoMetadata);
 
     assert_matches!(result, Err(acid_store::Error::NotFound));
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "file-metadata")]
+fn set_metadata() -> anyhow::Result<()> {
+    let mut repository = FileRepository::<_, CommonMetadata>::create_repo(
+        MemoryStore::new(),
+        REPO_CONFIG.to_owned(),
+        Some(PASSWORD),
+    )?;
+
+    let expected_metadata = CommonMetadata {
+        modified: SystemTime::UNIX_EPOCH,
+        accessed: SystemTime::UNIX_EPOCH,
+    };
+    repository.create("file", &Entry::file())?;
+    repository.set_metadata("file", expected_metadata.clone())?;
+    let actual_metadata = repository.entry("file")?.metadata;
+
+    assert_eq!(actual_metadata, expected_metadata);
     Ok(())
 }
 
@@ -233,6 +283,18 @@ fn copy_tree() -> anyhow::Result<()> {
 }
 
 #[test]
+fn copy_tree_which_is_a_file() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.create("source", &Entry::file())?;
+
+    repository.copy_tree("source", "dest")?;
+
+    assert!(repository.entry("dest")?.is_file());
+
+    Ok(())
+}
+
+#[test]
 fn list_children() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.create_parents("root/child1", &Entry::file())?;
@@ -242,6 +304,17 @@ fn list_children() -> anyhow::Result<()> {
     let expected = vec![Path::new("root/child1"), Path::new("root/child2")];
 
     assert_contains_all(actual, expected);
+    Ok(())
+}
+
+#[test]
+fn listing_children_of_file_errs() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.create("file", &Entry::file())?;
+
+    let result = repository.list("file").map(|iter| iter.collect::<Vec<_>>());
+
+    assert_matches!(result, Err(acid_store::Error::NotDirectory));
     Ok(())
 }
 
@@ -263,6 +336,17 @@ fn walk_descendants() -> anyhow::Result<()> {
 }
 
 #[test]
+fn walking_descendants_of_file_errs() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.create("file", &Entry::file())?;
+
+    let result = repository.walk("file").map(|iter| iter.collect::<Vec<_>>());
+
+    assert_matches!(result, Err(acid_store::Error::NotDirectory));
+    Ok(())
+}
+
+#[test]
 fn archive_file() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let source_path = temp_dir.as_ref().join("source");
@@ -278,6 +362,20 @@ fn archive_file() -> anyhow::Result<()> {
     object.read_to_end(&mut actual_contents)?;
 
     assert_eq!(actual_contents, b"file contents");
+    Ok(())
+}
+
+#[test]
+fn archiving_file_with_existing_dest_errs() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let source_path = temp_dir.as_ref().join("source");
+    File::create(&source_path)?;
+
+    let mut repository = create_repo()?;
+    repository.create("dest", &Entry::file())?;
+    let result = repository.archive(&source_path, "dest");
+
+    assert_matches!(result, Err(acid_store::Error::AlreadyExists));
     Ok(())
 }
 
@@ -319,6 +417,20 @@ fn extract_file() -> anyhow::Result<()> {
     dest_file.read_to_end(&mut actual_contents)?;
 
     assert_eq!(actual_contents, b"file contents");
+    Ok(())
+}
+
+#[test]
+fn extracting_file_with_existing_dest_errs() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let dest_path = temp_dir.as_ref().join("dest");
+    File::create(&dest_path)?;
+
+    let mut repository = create_repo()?;
+    repository.create("source", &Entry::file())?;
+    let result = repository.extract("source", &dest_path);
+
+    assert_matches!(result, Err(acid_store::Error::AlreadyExists));
     Ok(())
 }
 
@@ -459,5 +571,14 @@ fn read_common_metadata() -> anyhow::Result<()> {
 
     assert_eq!(entry.metadata.modified, source_metadata.modified()?);
 
+    Ok(())
+}
+
+#[test]
+fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.create_parents("home/lostatc/file", &Entry::file())?;
+
+    assert!(repository.verify()?.is_empty());
     Ok(())
 }
