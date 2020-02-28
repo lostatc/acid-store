@@ -20,14 +20,13 @@ use tempfile::tempdir;
 
 #[cfg(feature = "store-directory")]
 use acid_store::store::DirectoryStore;
-#[cfg(feature = "store-redis")]
-use acid_store::store::RedisStore;
-#[cfg(feature = "store-s3")]
-use acid_store::store::S3Store;
 #[cfg(feature = "store-sqlite")]
 use acid_store::store::SqliteStore;
 use acid_store::store::{Open, OpenOption};
-use common::{REDIS_INFO, S3_BUCKET};
+#[cfg(feature = "store-redis")]
+use {acid_store::store::RedisStore, common::REDIS_INFO};
+#[cfg(feature = "store-s3")]
+use {acid_store::store::S3Store, common::S3_BUCKET};
 
 mod common;
 
