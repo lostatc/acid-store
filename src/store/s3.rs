@@ -52,6 +52,9 @@ impl Open for S3Store {
         let (version_bytes, _) = config.get_object("version").map_err(anyhow::Error::from)?;
         let version = Uuid::from_slice(version_bytes.as_slice()).ok();
 
+        dbg!(version);
+        dbg!(*CURRENT_VERSION);
+
         match version {
             Some(version) if version == *CURRENT_VERSION => {
                 if options.contains(OpenOption::CREATE_NEW) {
@@ -70,9 +73,6 @@ impl Open for S3Store {
         }
 
         if options.contains(OpenOption::TRUNCATE) {
-            config
-                .delete_object("version")
-                .map_err(anyhow::Error::from)?;
             let block_paths = config
                 .list_all(String::from("block/"), None)
                 .map_err(anyhow::Error::from)?

@@ -21,6 +21,14 @@ use std::hash::Hash;
 
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
+#[cfg(feature = "store-redis")]
+use redis::{ConnectionInfo, IntoConnectionInfo};
+#[cfg(feature = "store-s3")]
+use s3::bucket::Bucket;
+#[cfg(feature = "store-s3")]
+use s3::credentials::Credentials;
+#[cfg(feature = "store-s3")]
+use s3::region::Region;
 
 use acid_store::repo::{Compression, Encryption, ObjectRepository, RepositoryConfig};
 use acid_store::store::MemoryStore;
@@ -44,6 +52,29 @@ lazy_static! {
         config.compression = Compression::Lz4 { level: 2 };
         config
     };
+}
+
+#[cfg(feature = "store-redis")]
+lazy_static! {
+    pub static ref REDIS_INFO: ConnectionInfo = dotenv::var("REDIS_URL")
+        .unwrap()
+        .into_connection_info()
+        .unwrap();
+}
+
+#[cfg(feature = "store-s3")]
+lazy_static! {
+    pub static ref S3_BUCKET: Bucket = Bucket::new(
+        &dotenv::var("S3_BUCKET").unwrap(),
+        Region::UsEast1,
+        Credentials::new(
+            Some(dotenv::var("S3_ACCESS_KEY").unwrap()),
+            Some(dotenv::var("S3_SECRET_KEY").unwrap()),
+            None,
+            None
+        )
+    )
+    .unwrap();
 }
 
 /// Assert that two collections contain all the same elements, regardless of order.
