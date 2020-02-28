@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-use std::cell::{Ref, RefCell, RefMut};
 use std::clone::Clone;
 use std::cmp::min;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::mem::replace;
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use blake2::digest::{Input, VariableOutput};
 use blake2::VarBlake2b;
@@ -103,19 +103,20 @@ pub struct ContentId([u8; 32]);
 /// like `BufReader`.
 ///
 /// Written data is automatically flushed when this value is dropped. If an error occurs while
-/// flushing data in the `Drop` implementation, it is ignored and unflushed data is discarded.
+/// flushing data in the `Drop` implementation, it is ignored and unflushed data is discarded. To
+/// handle these errors, you should call `flush` manually.
 ///
 /// If encryption is enabled for the repository, data integrity is automatically verified as it is
 /// read and methods will return an `Err` if corrupt data is found. The `verify` method can be used
 /// to check the integrity of all the data in the object whether encryption is enabled or not.
 ///
 /// The methods of `Read`, `Write`, and `Seek` return `io::Result`, but the returned `io::Error` can
-/// be converted `Into` a `acid_store::Error` to be consistent with the rest of the library. The
+/// be converted `Into` an `acid_store::Error` to be consistent with the rest of the library. The
 /// implementations document which `acid_store::Error` values can be returned.
 #[derive(Debug)]
 pub struct Object<'a, K: Key, S: DataStore> {
     /// The state for the object repository.
-    repo_state: &'a RefCell<RepositoryState<K, S>>,
+    repo_state: &'a RwLock<RepositoryState<K, S>>,
 
     /// The state for the object itself.
     object_state: ObjectState,
@@ -125,8 +126,8 @@ pub struct Object<'a, K: Key, S: DataStore> {
 }
 
 impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
-    pub(super) fn new(repo_state: &'a RefCell<RepositoryState<K, S>>, key: K) -> Self {
-        let chunker_bits = repo_state.borrow().metadata.chunker_bits;
+    pub(super) fn new(repo_state: &'a RwLock<RepositoryState<K, S>>, key: K) -> Self {
+        let chunker_bits = repo_state.read().unwrap().metadata.chunker_bits;
         Self {
             repo_state,
             object_state: ObjectState::new(chunker_bits),
@@ -136,21 +137,21 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
 
     /// Borrow the repository's state immutably.
     ///
-    /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
-    fn borrow_state(&self) -> Ref<RepositoryState<K, S>> {
-        self.repo_state.borrow()
+    /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
+    fn borrow_state(&self) -> RwLockReadGuard<RepositoryState<K, S>> {
+        self.repo_state.read().unwrap()
     }
 
     /// Borrow the repository's state mutably.
     ///
-    /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
-    fn borrow_state_mut(&mut self) -> RefMut<RepositoryState<K, S>> {
-        self.repo_state.borrow_mut()
+    /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
+    fn borrow_state_mut(&mut self) -> RwLockWriteGuard<RepositoryState<K, S>> {
+        self.repo_state.write().unwrap()
     }
 
     /// Get a `ChunkStore` for this repository.
     ///
-    /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
+    /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
     fn chunk_store(&mut self) -> ChunkStore<K, S> {
         ChunkStore::new(&self.repo_state)
     }

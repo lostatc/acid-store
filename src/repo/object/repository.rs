@@ -15,11 +15,10 @@
  */
 
 use std::borrow::{Borrow, ToOwned};
-use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::sync::RwLock;
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::SystemTime;
 
 use rmp_serde::{from_read, to_vec};
@@ -91,22 +90,29 @@ lazy_static! {
 #[derive(Debug)]
 pub struct ObjectRepository<K: Key, S: DataStore> {
     /// The state for this object repository.
-    state: RefCell<RepositoryState<K, S>>,
+    state: RwLock<RepositoryState<K, S>>,
 }
 
 impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// Borrow this repository's state immutably.
     ///
-    /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
-    fn borrow_state(&self) -> Ref<RepositoryState<K, S>> {
-        self.state.borrow()
+    /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
+    fn borrow_state(&self) -> RwLockReadGuard<RepositoryState<K, S>> {
+        self.state.read().unwrap()
     }
 
     /// Borrow this repository's state mutably.
     ///
-    /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
-    fn borrow_state_mut(&mut self) -> RefMut<RepositoryState<K, S>> {
-        self.state.borrow_mut()
+    /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
+    fn borrow_state_mut(&mut self) -> RwLockWriteGuard<RepositoryState<K, S>> {
+        self.state.write().unwrap()
+    }
+
+    /// Get a `ChunkStore` for this repository.
+    ///
+    /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
+    fn chunk_store(&mut self) -> ChunkStore<K, S> {
+        ChunkStore::new(&self.state)
     }
 
     /// Create a new repository backed by the given data `store`.
@@ -208,7 +214,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             .write_block(*VERSION_BLOCK_ID, VERSION_ID.as_bytes())
             .map_err(anyhow::Error::from)?;
 
-        let state = RefCell::new(RepositoryState {
+        let state = RwLock::new(RepositoryState {
             store,
             metadata,
             header,
@@ -301,7 +307,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         let header: Header<K> =
             from_read(serialized_header.as_slice()).map_err(|_| crate::Error::KeyType)?;
 
-        let state = RefCell::new(RepositoryState {
+        let state = RwLock::new(RepositoryState {
             store,
             metadata,
             header,
@@ -310,13 +316,6 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         });
 
         Ok(ObjectRepository { state })
-    }
-
-    /// Get a `ChunkStore` for this repository.
-    ///
-    /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
-    fn chunk_store(&mut self) -> ChunkStore<K, S> {
-        ChunkStore::new(&self.state)
     }
 
     /// Return whether the given `key` exists in this repository.
@@ -375,7 +374,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
     /// Return an iterator over all the keys in this repository.
     pub fn keys<'a>(&'a mut self) -> impl Iterator<Item = &'a K> + 'a {
-        self.state.get_mut().header.objects.keys()
+        self.state.get_mut().unwrap().header.objects.keys()
     }
 
     /// Copy the object at `source` to `dest`.
@@ -523,7 +522,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         let mut corrupt_objects = HashSet::new();
 
-        for (key, object) in self.state.get_mut().header.objects.iter() {
+        for (key, object) in self.state.get_mut().unwrap().header.objects.iter() {
             for chunk in &object.chunks {
                 // If any one of the object's chunks is corrupt, the object is corrupt.
                 if corrupt_chunks.contains(&chunk.hash) {
@@ -614,6 +613,6 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
     /// Consume this repository and return the wrapped `DataStore`.
     pub fn into_store(self) -> S {
-        self.state.into_inner().store
+        self.state.into_inner().unwrap().store
     }
 }
