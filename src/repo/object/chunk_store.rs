@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::cell::{Ref, RefCell, RefMut};
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use uuid::Uuid;
 
@@ -29,26 +29,26 @@ use super::state::RepositoryState;
 /// This type allows for reading and writing chunks, which are independently compressed and
 /// encrypted blobs of data which are identified by their checksum.
 #[derive(Debug)]
-pub struct ChunkStore<'a, K: Key, S: DataStore>(&'a RefCell<RepositoryState<K, S>>);
+pub struct ChunkStore<'a, K: Key, S: DataStore>(&'a RwLock<RepositoryState<K, S>>);
 
 impl<'a, K: Key, S: DataStore> ChunkStore<'a, K, S> {
     /// Create a new instance of `ChunkStore`.
-    pub fn new(state: &'a RefCell<RepositoryState<K, S>>) -> Self {
+    pub fn new(state: &'a RwLock<RepositoryState<K, S>>) -> Self {
         Self(state)
     }
 
     /// Borrow the repository's state immutably.
     ///
-    /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
-    fn borrow_state(&self) -> Ref<RepositoryState<K, S>> {
-        self.0.borrow()
+    /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
+    fn borrow_state(&self) -> RwLockReadGuard<RepositoryState<K, S>> {
+        self.0.read().unwrap()
     }
 
     /// Borrow the repository's state mutably.
     ///
-    /// The purpose of this method is to enforce safe usage of the `RefCell` using references.
-    fn borrow_state_mut(&mut self) -> RefMut<RepositoryState<K, S>> {
-        self.0.borrow_mut()
+    /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
+    fn borrow_state_mut(&mut self) -> RwLockWriteGuard<RepositoryState<K, S>> {
+        self.0.write().unwrap()
     }
 
     /// Compress and encrypt the given `data` and return it.
