@@ -16,6 +16,8 @@
 
 #![cfg(feature = "store-redis")]
 
+use std::fmt::{self, Debug, Formatter};
+
 use redis::{Client, Commands, Connection, ConnectionInfo, RedisError};
 use uuid::Uuid;
 
@@ -27,6 +29,12 @@ const CURRENT_VERSION: &str = "b733bd82-4206-11ea-a3dc-7354076bdaf9";
 /// A `DataStore` which stores data on a Redis server.
 pub struct RedisStore {
     connection: Connection,
+}
+
+impl Debug for RedisStore {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "RedisStore")
+    }
 }
 
 impl Open for RedisStore {
@@ -60,9 +68,12 @@ impl Open for RedisStore {
         }
 
         if options.contains(OpenOption::TRUNCATE) {
-            redis::cmd("FLUSHDB")
-                .query(&mut connection)
+            let keys = connection
+                .keys::<_, Vec<String>>("block:*")
                 .map_err(anyhow::Error::from)?;
+            for key in keys {
+                connection.del(key).map_err(anyhow::Error::from)?;
+            }
         }
 
         Ok(Self { connection })

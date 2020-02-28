@@ -14,14 +14,6 @@
  * limitations under the License.
  */
 
-#[cfg(feature = "store-redis")]
-use redis::{ConnectionInfo, IntoConnectionInfo};
-#[cfg(feature = "store-s3")]
-use s3::bucket::Bucket;
-#[cfg(feature = "store-s3")]
-use s3::credentials::Credentials;
-#[cfg(feature = "store-s3")]
-use s3::region::Region;
 #[cfg(any(feature = "store-s3", feature = "store-redis"))]
 use serial_test::serial;
 use tempfile::tempdir;
@@ -36,34 +28,9 @@ use acid_store::store::S3Store;
 #[cfg(feature = "store-sqlite")]
 use acid_store::store::SqliteStore;
 use acid_store::store::{DataStore, MemoryStore, Open, OpenOption};
-use common::{assert_contains_all, random_buffer};
-#[cfg(feature = "store-redis")]
-use lazy_static::lazy_static;
+use common::{assert_contains_all, random_buffer, REDIS_INFO, S3_BUCKET};
 
 mod common;
-
-#[cfg(feature = "store-redis")]
-lazy_static! {
-    static ref REDIS_INFO: ConnectionInfo = dotenv::var("REDIS_URL")
-        .unwrap()
-        .into_connection_info()
-        .unwrap();
-}
-
-#[cfg(feature = "store-s3")]
-lazy_static! {
-    static ref S3_BUCKET: Bucket = Bucket::new(
-        &dotenv::var("S3_BUCKET").unwrap(),
-        Region::UsEast1,
-        Credentials::new(
-            Some(dotenv::var("S3_ACCESS_KEY").unwrap()),
-            Some(dotenv::var("S3_SECRET_KEY").unwrap()),
-            None,
-            None
-        )
-    )
-    .unwrap();
-}
 
 // Some tests in this module use the `serial_test` crate to force them to run in sequence because
 // they access a shared resource. However, that crate doesn't seem to support test functions which

@@ -64,17 +64,17 @@ pub trait DataStore {
 }
 
 bitflags! {
-    /// Options for opening a resource.
+    /// Options for opening a data store.
     pub struct OpenOption: u32 {
-        /// Create the resource if it doesn't exist.
+        /// Create the data store if it doesn't exist.
         const CREATE = 1;
 
-        /// Create the resource, failing if it already exists.
+        /// Create the data store, failing if it already exists.
         ///
         /// `CREATE` and `TRUNCATE` are ignored if this is used.
         const CREATE_NEW = 2;
 
-        /// Delete all data in the resource before opening it.
+        /// Delete all blocks in the data store before opening it.
         const TRUNCATE = 4;
     }
 }
