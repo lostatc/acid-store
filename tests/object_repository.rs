@@ -17,11 +17,11 @@
 use std::io::Write;
 
 use matches::assert_matches;
+use tempfile::tempdir;
 
 use acid_store::repo::{LockStrategy, ObjectRepository, RepositoryConfig};
 use acid_store::store::{DirectoryStore, MemoryStore, Open, OpenOption};
 use common::{create_repo, random_buffer, PASSWORD, REPO_CONFIG};
-use tempfile::tempdir;
 
 mod common;
 
@@ -226,7 +226,7 @@ fn committed_changes_are_persisted() -> anyhow::Result<()> {
     repository.commit()?;
 
     // Re-open the repository.
-    let repository = ObjectRepository::<String, _>::open_repo(
+    let mut repository = ObjectRepository::<String, _>::open_repo(
         repository.into_store(),
         Some(PASSWORD),
         LockStrategy::Abort,
@@ -250,7 +250,7 @@ fn uncommitted_changes_are_not_persisted() -> anyhow::Result<()> {
     drop(object);
 
     // Re-open the repository.
-    let repository = ObjectRepository::<String, _>::open_repo(
+    let mut repository = ObjectRepository::<String, _>::open_repo(
         repository.into_store(),
         Some(PASSWORD),
         LockStrategy::Abort,

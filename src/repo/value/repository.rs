@@ -82,7 +82,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
         password: Option<&[u8]>,
         strategy: LockStrategy,
     ) -> crate::Result<Self> {
-        let repository = ObjectRepository::open_repo(store, password, strategy)?;
+        let mut repository = ObjectRepository::open_repo(store, password, strategy)?;
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository
@@ -150,7 +150,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn get<Q, V>(&self, key: &Q) -> crate::Result<V>
+    pub fn get<Q, V>(&mut self, key: &Q) -> crate::Result<V>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
@@ -172,7 +172,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     }
 
     /// Return a list of all the keys in this repository.
-    pub fn keys(&mut self) -> impl Iterator<Item = &K> {
+    pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.repository
             .keys()
             .filter_map(|value_key| match value_key {

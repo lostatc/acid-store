@@ -123,7 +123,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         password: Option<&[u8]>,
         strategy: LockStrategy,
     ) -> crate::Result<Self> {
-        let repository = ObjectRepository::open_repo(store, password, strategy)?;
+        let mut repository = ObjectRepository::open_repo(store, password, strategy)?;
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository
@@ -197,7 +197,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     }
 
     /// Return an object for modifying the current version of `key` or `None` if it doesn't exist.
-    pub fn get<Q>(&self, key: &Q) -> Option<Object<VersionKey<K>, S>>
+    pub fn get<Q>(&mut self, key: &Q) -> Option<Object<VersionKey<K>, S>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
@@ -277,7 +277,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// Get an object for reading the version of `key` with the given `id`.
     ///
     /// If there is no version with the given `id`, this returns `None`.
-    pub fn get_version<Q>(&self, key: &Q, id: usize) -> Option<ReadOnlyObject<VersionKey<K>, S>>
+    pub fn get_version<Q>(&mut self, key: &Q, id: usize) -> Option<ReadOnlyObject<VersionKey<K>, S>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
@@ -294,7 +294,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn list_versions<Q>(&self, key: &Q) -> crate::Result<Vec<Version>>
+    pub fn list_versions<Q>(&mut self, key: &Q) -> crate::Result<Vec<Version>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,

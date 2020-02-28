@@ -112,7 +112,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         password: Option<&[u8]>,
         strategy: LockStrategy,
     ) -> crate::Result<Self> {
-        let repository = ObjectRepository::open_repo(store, password, strategy)?;
+        let mut repository = ObjectRepository::open_repo(store, password, strategy)?;
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository
@@ -309,7 +309,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn entry(&self, path: impl AsRef<EntryPath>) -> crate::Result<Entry<M>> {
+    pub fn entry(&mut self, path: impl AsRef<EntryPath>) -> crate::Result<Entry<M>> {
         let path = Self::convert_path(path)?;
 
         let mut object = self
@@ -362,7 +362,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn open(&self, path: impl AsRef<EntryPath>) -> crate::Result<Object<EntryKey, S>> {
+    pub fn open(&mut self, path: impl AsRef<EntryPath>) -> crate::Result<Object<EntryKey, S>> {
         let path = Self::convert_path(path)?;
 
         let entry = self.entry(&path)?;
