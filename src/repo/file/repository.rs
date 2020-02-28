@@ -149,7 +149,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::InvalidPath`: The given `path` is absolute.
     pub fn exists(&self, path: impl AsRef<EntryPath>) -> crate::Result<bool> {
         let path = Self::convert_path(path)?;
-        Ok(self.repository.contains(&EntryKey::Entry(path.to_owned())))
+        Ok(self.repository.contains(&EntryKey::Entry(path)))
     }
 
     /// Add a new empty file or directory entry to the repository at the given `path`.
@@ -266,7 +266,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         }
 
         self.repository.remove(&EntryKey::Data(path.to_owned()));
-        self.repository.remove(&EntryKey::Entry(path.to_owned()));
+        self.repository.remove(&EntryKey::Entry(path));
 
         Ok(())
     }
@@ -314,7 +314,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
 
         let mut object = self
             .repository
-            .get(&EntryKey::Entry(path.to_owned()))
+            .get(&EntryKey::Entry(path))
             .ok_or(crate::Error::NotFound)?;
 
         // Catch any errors before passing to `from_read`.
@@ -342,7 +342,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
 
         let mut object = self
             .repository
-            .get(&EntryKey::Entry(path.to_owned()))
+            .get(&EntryKey::Entry(path))
             .ok_or(crate::Error::NotFound)?;
 
         let serialized_entry = to_vec(&entry).map_err(|_| crate::Error::Serialize)?;
@@ -372,7 +372,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
 
         let object = self
             .repository
-            .get(&EntryKey::Data(path.to_owned()))
+            .get(&EntryKey::Data(path))
             .expect("There is no object associated with this file.");
 
         Ok(object)
@@ -409,10 +409,9 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         self.create(&dest, &source_entry)?;
 
         if source_entry.is_file() {
-            let data_key = EntryKey::Data(dest.to_owned());
+            let data_key = EntryKey::Data(dest);
             self.repository.remove(&data_key);
-            self.repository
-                .copy(&EntryKey::Data(source.to_owned()), data_key)?;
+            self.repository.copy(&EntryKey::Data(source), data_key)?;
         }
 
         Ok(())
@@ -700,7 +699,6 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         let relative_descendants = match self.walk(&source) {
             Ok(descendants) => {
                 let mut relative_descendants = descendants
-                    .into_iter()
                     .map(|path| path.strip_prefix(&source).unwrap().to_owned())
                     .collect::<Vec<_>>();
 
