@@ -20,7 +20,6 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::mem::replace;
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use blake2::digest::{Input, VariableOutput};
 use blake2::VarBlake2b;
@@ -116,7 +115,7 @@ pub struct ContentId([u8; 32]);
 #[derive(Debug)]
 pub struct Object<'a, K: Key, S: DataStore> {
     /// The state for the object repository.
-    repo_state: &'a RwLock<RepositoryState<K, S>>,
+    repo_state: &'a mut RepositoryState<K, S>,
 
     /// The state for the object itself.
     object_state: ObjectState,
@@ -126,8 +125,8 @@ pub struct Object<'a, K: Key, S: DataStore> {
 }
 
 impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
-    pub(super) fn new(repo_state: &'a RwLock<RepositoryState<K, S>>, key: K) -> Self {
-        let chunker_bits = repo_state.read().unwrap().metadata.chunker_bits;
+    pub(super) fn new(repo_state: &'a mut RepositoryState<K, S>, key: K) -> Self {
+        let chunker_bits = repo_state.metadata.chunker_bits;
         Self {
             repo_state,
             object_state: ObjectState::new(chunker_bits),
@@ -135,25 +134,11 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
         }
     }
 
-    /// Borrow the repository's state immutably.
-    ///
-    /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
-    fn borrow_state(&self) -> RwLockReadGuard<RepositoryState<K, S>> {
-        self.repo_state.read().unwrap()
-    }
-
-    /// Borrow the repository's state mutably.
-    ///
-    /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
-    fn borrow_state_mut(&mut self) -> RwLockWriteGuard<RepositoryState<K, S>> {
-        self.repo_state.write().unwrap()
-    }
-
     /// Get a `ChunkStore` for this repository.
     ///
     /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
     fn chunk_store(&mut self) -> ChunkStore<K, S> {
-        ChunkStore::new(&self.repo_state)
+        ChunkStore::new(&mut self.repo_state)
     }
 
     /// Return the size of the object in bytes.
@@ -161,8 +146,7 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// Unflushed data is not accounted for when calculating the size, so you may want to explicitly
     /// flush written data with `flush` before calling this method.
     pub fn size(&self) -> u64 {
-        let state = self.borrow_state();
-        let handle = state.header.objects.get(&self.key).unwrap();
+        let handle = self.repo_state.header.objects.get(&self.key).unwrap();
         handle.size
     }
 
@@ -174,8 +158,7 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// Unflushed data is not accounted for when calculating the `ContentId`, so you may want to
     /// explicitly flush written data with `flush` before calling this method.
     pub fn content_id(&self) -> ContentId {
-        let state = self.borrow_state();
-        let handle = state.header.objects.get(&self.key).unwrap();
+        let handle = self.repo_state.header.objects.get(&self.key).unwrap();
 
         // The content ID is just a hash of all the chunk hashes, which is cheap to compute.
         let mut concatenation = Vec::new();
@@ -196,10 +179,8 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     pub fn verify(&mut self) -> crate::Result<bool> {
         self.flush()?;
 
-        let state = self.borrow_state();
-        let handle = state.header.objects.get(&self.key).unwrap();
+        let handle = self.repo_state.header.objects.get(&self.key).unwrap();
         let expected_chunks = handle.chunks.iter().copied().collect::<Vec<_>>();
-        drop(state);
 
         for chunk in expected_chunks {
             match self.chunk_store().read_chunk(chunk) {
@@ -231,8 +212,7 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
         self.flush()?;
 
         {
-            let state = self.borrow_state();
-            let handle = state.header.objects.get(&self.key).unwrap();
+            let handle = self.repo_state.header.objects.get(&self.key).unwrap();
 
             if length >= handle.size {
                 return Ok(());
@@ -254,8 +234,7 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
 
         {
             let key = self.key.clone();
-            let mut state = self.borrow_state_mut();
-            let mut handle = state.header.objects.get_mut(&key).unwrap();
+            let mut handle = self.repo_state.header.objects.get_mut(&key).unwrap();
 
             // Remove all chunks including and after the final chunk.
             handle.chunks.drain(end_location.index..);
@@ -276,8 +255,7 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
 
     /// Return the chunk at the current seek position or `None` if there is none.
     fn current_chunk(&self) -> Option<ChunkLocation> {
-        let state = self.borrow_state();
-        let handle = state.header.objects.get(&self.key).unwrap();
+        let handle = self.repo_state.header.objects.get(&self.key).unwrap();
 
         let mut chunk_start = 0u64;
         let mut chunk_end = 0u64;
@@ -337,8 +315,7 @@ impl<'a, K: Key, S: DataStore> Seek for Object<'a, K, S> {
         self.flush()?;
 
         let object_size = {
-            let state = self.borrow_state();
-            let handle = state.header.objects.get(&self.key).unwrap();
+            let handle = self.repo_state.header.objects.get(&self.key).unwrap();
             handle.size
         };
 
@@ -394,7 +371,6 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
             if let Some(location) = &self.object_state.start_location {
                 let chunk = location.chunk;
                 let position = location.relative_position();
-                drop(location);
 
                 // We need to make sure the data before the seek position is saved when we replace
                 // the chunk. Read this data from the repository and write it to the chunker.
@@ -451,8 +427,7 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
             .unwrap_or(0);
 
         let end_index = {
-            let state = self.borrow_state();
-            let handle = state.header.objects.get(&self.key).unwrap();
+            let handle = self.repo_state.header.objects.get(&self.key).unwrap();
 
             // Find the index of the last chunk which is being overwritten.
             match &current_chunk {
@@ -465,8 +440,7 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
 
         {
             let key = self.key.clone();
-            let mut state = self.borrow_state_mut();
-            let mut handle = state.header.objects.get_mut(&key).unwrap();
+            let mut handle = self.repo_state.header.objects.get_mut(&key).unwrap();
 
             // Update chunk references in the object handle to reflect changes.
             handle.chunks.splice(start_index..end_index, new_chunks);

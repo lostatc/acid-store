@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-
 use uuid::Uuid;
 
 use crate::repo::Key;
@@ -29,45 +27,35 @@ use super::state::RepositoryState;
 /// This type allows for reading and writing chunks, which are independently compressed and
 /// encrypted blobs of data which are identified by their checksum.
 #[derive(Debug)]
-pub struct ChunkStore<'a, K: Key, S: DataStore>(&'a RwLock<RepositoryState<K, S>>);
+pub struct ChunkStore<'a, K: Key, S: DataStore>(&'a mut RepositoryState<K, S>);
 
 impl<'a, K: Key, S: DataStore> ChunkStore<'a, K, S> {
     /// Create a new instance of `ChunkStore`.
-    pub fn new(state: &'a RwLock<RepositoryState<K, S>>) -> Self {
+    pub fn new(state: &'a mut RepositoryState<K, S>) -> Self {
         Self(state)
-    }
-
-    /// Borrow the repository's state immutably.
-    ///
-    /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
-    fn borrow_state(&self) -> RwLockReadGuard<RepositoryState<K, S>> {
-        self.0.read().unwrap()
-    }
-
-    /// Borrow the repository's state mutably.
-    ///
-    /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
-    fn borrow_state_mut(&mut self) -> RwLockWriteGuard<RepositoryState<K, S>> {
-        self.0.write().unwrap()
     }
 
     /// Compress and encrypt the given `data` and return it.
     pub fn encode_data(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
-        let state = self.borrow_state();
-        let compressed_data = state.metadata.compression.compress(data)?;
+        let compressed_data = self.0.metadata.compression.compress(data)?;
 
-        Ok(state
+        Ok(self
+            .0
             .metadata
             .encryption
-            .encrypt(compressed_data.as_slice(), &state.master_key))
+            .encrypt(compressed_data.as_slice(), &self.0.master_key))
     }
 
     /// Decrypt and decompress the given `data` and return it.
     pub fn decode_data(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
-        let state = self.borrow_state();
-        let decrypted_data = state.metadata.encryption.decrypt(data, &state.master_key)?;
+        let decrypted_data = self
+            .0
+            .metadata
+            .encryption
+            .decrypt(data, &self.0.master_key)?;
 
-        Ok(state
+        Ok(self
+            .0
             .metadata
             .compression
             .decompress(decrypted_data.as_slice())?)
@@ -78,8 +66,6 @@ impl<'a, K: Key, S: DataStore> ChunkStore<'a, K, S> {
     /// If a chunk with the given `data` already exists, its checksum may be returned without
     /// writing any new data.
     pub fn write_chunk(&mut self, data: &[u8]) -> crate::Result<Chunk> {
-        let state = self.borrow_state();
-
         // Get a checksum of the unencoded data.
         let chunk = Chunk {
             hash: chunk_hash(data),
@@ -87,7 +73,7 @@ impl<'a, K: Key, S: DataStore> ChunkStore<'a, K, S> {
         };
 
         // Check if the chunk already exists.
-        if state.header.chunks.contains_key(&chunk) {
+        if self.0.header.chunks.contains_key(&chunk) {
             return Ok(chunk);
         }
 
@@ -95,37 +81,32 @@ impl<'a, K: Key, S: DataStore> ChunkStore<'a, K, S> {
         let encoded_data = self.encode_data(data)?;
         let block_id = Uuid::new_v4();
 
-        drop(state);
-        let mut state = self.borrow_state_mut();
-
         // Write the data to the data store.
-        state
+        self.0
             .store
             .write_block(block_id, &encoded_data)
             .map_err(anyhow::Error::from)?;
 
         // Add the chunk to the header.
-        state.header.chunks.insert(chunk, block_id);
+        self.0.header.chunks.insert(chunk, block_id);
 
         Ok(chunk)
     }
 
     /// Return the bytes of the chunk with the given checksum.
     pub fn read_chunk(&mut self, chunk: Chunk) -> crate::Result<Vec<u8>> {
-        let mut state = self.borrow_state_mut();
-
-        let chunk_id = *state
+        let chunk_id = *self
+            .0
             .header
             .chunks
             .get(&chunk)
             .ok_or(crate::Error::InvalidData)?;
-        let chunk = state
+        let chunk = self
+            .0
             .store
             .read_block(chunk_id)
             .map_err(anyhow::Error::from)?
             .ok_or(crate::Error::InvalidData)?;
-
-        drop(state);
 
         self.decode_data(chunk.as_slice())
     }
