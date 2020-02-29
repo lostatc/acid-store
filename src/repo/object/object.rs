@@ -25,10 +25,10 @@ use blake2::digest::{Input, VariableOutput};
 use blake2::VarBlake2b;
 use serde::{Deserialize, Serialize};
 
+use crate::repo::object::chunk_store::{ChunkReader, ChunkWriter};
 use crate::repo::object::state::{ChunkLocation, ObjectState};
 use crate::store::DataStore;
 
-use super::chunk_store::ChunkStore;
 use super::header::Key;
 use super::state::RepositoryState;
 
@@ -92,72 +92,22 @@ impl Default for ObjectHandle {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct ContentId([u8; 32]);
 
-/// A handle for accessing data in a repository.
-///
-/// An `Object` represents the data associated with a key in an `ObjectRepository`. It implements
-/// `Read`, `Write`, and `Seek` for reading data from the repository and writing data to the
-/// repository.
-///
-/// Because `Object` internally buffers data when reading, there's no need to use a buffered reader
-/// like `BufReader`.
-///
-/// Written data is automatically flushed when this value is dropped. If an error occurs while
-/// flushing data in the `Drop` implementation, it is ignored and unflushed data is discarded. To
-/// handle these errors, you should call `flush` manually.
-///
-/// If encryption is enabled for the repository, data integrity is automatically verified as it is
-/// read and methods will return an `Err` if corrupt data is found. The `verify` method can be used
-/// to check the integrity of all the data in the object whether encryption is enabled or not.
-///
-/// The methods of `Read`, `Write`, and `Seek` return `io::Result`, but the returned `io::Error` can
-/// be converted `Into` an `acid_store::Error` to be consistent with the rest of the library. The
-/// implementations document which `acid_store::Error` values can be returned.
-#[derive(Debug)]
-pub struct Object<'a, K: Key, S: DataStore> {
-    /// The state for the object repository.
-    repo_state: &'a mut RepositoryState<K, S>,
-
-    /// The state for the object itself.
-    object_state: ObjectState,
-
-    /// The key associated with this object.
-    key: K,
+/// A wrapper for getting information about an object.
+struct ObjectInfo<'a, K: Key, S: DataStore> {
+    repo_state: &'a RepositoryState<K, S>,
+    object_state: &'a ObjectState,
+    key: &'a K,
 }
 
-impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
-    pub(super) fn new(repo_state: &'a mut RepositoryState<K, S>, key: K) -> Self {
-        let chunker_bits = repo_state.metadata.chunker_bits;
-        Self {
-            repo_state,
-            object_state: ObjectState::new(chunker_bits),
-            key,
-        }
-    }
-
-    /// Get a `ChunkStore` for this repository.
-    ///
-    /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
-    fn chunk_store(&mut self) -> ChunkStore<K, S> {
-        ChunkStore::new(&mut self.repo_state)
-    }
-
+impl<'a, K: Key, S: DataStore> ObjectInfo<'a, K, S> {
     /// Return the size of the object in bytes.
-    ///
-    /// Unflushed data is not accounted for when calculating the size, so you may want to explicitly
-    /// flush written data with `flush` before calling this method.
-    pub fn size(&self) -> u64 {
+    fn size(&self) -> u64 {
         let handle = self.repo_state.header.objects.get(&self.key).unwrap();
         handle.size
     }
 
     /// Return a `ContentId` representing the contents of this object.
-    ///
-    /// The returned `ContentId` represents the contents of the object at the time this method was
-    /// called.
-    ///
-    /// Unflushed data is not accounted for when calculating the `ContentId`, so you may want to
-    /// explicitly flush written data with `flush` before calling this method.
-    pub fn content_id(&self) -> ContentId {
+    fn content_id(&self) -> ContentId {
         let handle = self.repo_state.header.objects.get(&self.key).unwrap();
 
         // The content ID is just a hash of all the chunk hashes, which is cheap to compute.
@@ -169,21 +119,12 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     }
 
     /// Verify the integrity of the data in this object.
-    ///
-    /// This returns `true` if the object is valid and `false` if it is corrupt.
-    ///
-    /// # Errors
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn verify(&mut self) -> crate::Result<bool> {
-        self.flush()?;
-
+    fn verify(&self) -> crate::Result<bool> {
         let handle = self.repo_state.header.objects.get(&self.key).unwrap();
         let expected_chunks = handle.chunks.iter().copied().collect::<Vec<_>>();
 
         for chunk in expected_chunks {
-            match self.chunk_store().read_chunk(chunk) {
+            match ChunkReader::new(self.repo_state).read_chunk(chunk) {
                 Ok(data) => {
                     if data.len() != chunk.size || chunk_hash(&data) != chunk.hash {
                         return Ok(false);
@@ -196,61 +137,6 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
         }
 
         Ok(true)
-    }
-
-    /// Truncate the object to the given `length`.
-    ///
-    /// If the given `length` is greater than or equal to the current size of the object, this does
-    /// nothing. If the seek position is past the point which the object is truncated to, it is
-    /// moved to the new end of the object.
-    ///
-    /// # Errors
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn truncate(&mut self, length: u64) -> crate::Result<()> {
-        self.flush()?;
-
-        {
-            let handle = self.repo_state.header.objects.get(&self.key).unwrap();
-
-            if length >= handle.size {
-                return Ok(());
-            }
-        }
-
-        let original_position = self.object_state.position;
-        self.object_state.position = length;
-
-        // Truncating the object may mean slicing a chunk in half. Because we can't edit chunks
-        // in-place, we need to read the final chunk, slice it, and write it back.
-        let end_location = match self.current_chunk() {
-            Some(location) => location,
-            None => return Ok(()),
-        };
-        let last_chunk = self.chunk_store().read_chunk(end_location.chunk)?;
-        let new_last_chunk = &last_chunk[..end_location.relative_position()];
-        let new_last_chunk = self.chunk_store().write_chunk(&new_last_chunk)?;
-
-        {
-            let key = self.key.clone();
-            let mut handle = self.repo_state.header.objects.get_mut(&key).unwrap();
-
-            // Remove all chunks including and after the final chunk.
-            handle.chunks.drain(end_location.index..);
-
-            // Append the new final chunk which has been sliced.
-            handle.chunks.push(new_last_chunk);
-
-            // Update the object size.
-            let current_size = handle.size;
-            handle.size = min(length, current_size);
-        }
-
-        // Restore the seek position.
-        self.object_state.position = min(original_position, length);
-
-        Ok(())
     }
 
     /// Return the chunk at the current seek position or `None` if there is none.
@@ -277,13 +163,30 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
         // There are no chunks in the object.
         None
     }
+}
+
+struct ObjectReader<'a, K: Key, S: DataStore> {
+    repo_state: &'a RepositoryState<K, S>,
+    object_state: &'a mut ObjectState,
+    key: &'a K,
+}
+
+/// A wrapper for reading data from an object.
+impl<'a, K: Key, S: DataStore> ObjectReader<'a, K, S> {
+    fn object_info(&'a self) -> ObjectInfo<'a, K, S> {
+        ObjectInfo {
+            repo_state: self.repo_state,
+            object_state: self.object_state,
+            key: self.key,
+        }
+    }
 
     /// Return the slice of bytes between the current seek position and the end of the chunk.
     ///
     /// The returned slice will be no longer than `size`.
     fn read_chunk(&mut self, size: usize) -> crate::Result<&[u8]> {
         // If the object is empty, there's no data to read.
-        let current_location = match self.current_chunk() {
+        let current_location = match self.object_info().current_chunk() {
             Some(location) => location,
             None => return Ok(&[]),
         };
@@ -292,28 +195,17 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
         if Some(current_location.chunk) != self.object_state.buffered_chunk {
             self.object_state.buffered_chunk = Some(current_location.chunk);
             self.object_state.read_buffer =
-                self.chunk_store().read_chunk(current_location.chunk)?;
+                ChunkReader::new(self.repo_state).read_chunk(current_location.chunk)?;
         }
 
         let start = current_location.relative_position();
         let end = min(start + size, current_location.chunk.size as usize);
         Ok(&self.object_state.read_buffer[start..end])
     }
-
-    /// Write chunks stored in the chunker to the repository.
-    fn write_chunks(&mut self) -> crate::Result<()> {
-        for chunk_data in self.object_state.chunker.chunks() {
-            let chunk = self.chunk_store().write_chunk(&chunk_data)?;
-            self.object_state.new_chunks.push(chunk);
-        }
-        Ok(())
-    }
 }
 
-impl<'a, K: Key, S: DataStore> Seek for Object<'a, K, S> {
+impl<'a, K: Key, S: DataStore> Seek for ObjectReader<'a, K, S> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        self.flush()?;
-
         let object_size = {
             let handle = self.repo_state.header.objects.get(&self.key).unwrap();
             handle.size
@@ -351,22 +243,94 @@ impl<'a, K: Key, S: DataStore> Seek for Object<'a, K, S> {
     }
 }
 
+// To avoid reading the same chunk from the repository multiple times, the chunk which was most
+// recently read from is cached in a buffer.
+impl<'a, K: Key, S: DataStore> Read for ObjectReader<'a, K, S> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let next_chunk = self.read_chunk(buf.len())?;
+        let bytes_read = next_chunk.len();
+        buf[..bytes_read].copy_from_slice(next_chunk);
+        self.object_state.position += bytes_read as u64;
+        Ok(bytes_read)
+    }
+}
+
+/// A wrapper for writing data to an object.
+struct ObjectWriter<'a, K: Key, S: DataStore> {
+    repo_state: &'a mut RepositoryState<K, S>,
+    object_state: &'a mut ObjectState,
+    key: &'a K,
+}
+
+impl<'a, K: Key, S: DataStore> ObjectWriter<'a, K, S> {
+    fn object_info(&'a self) -> ObjectInfo<'a, K, S> {
+        ObjectInfo {
+            repo_state: self.repo_state,
+            object_state: self.object_state,
+            key: self.key,
+        }
+    }
+
+    fn truncate(&mut self, length: u64) -> crate::Result<()> {
+        self.flush()?;
+        let handle = self.repo_state.header.objects.get(&self.key).unwrap();
+
+        if length >= handle.size {
+            return Ok(());
+        }
+
+        let original_position = self.object_state.position;
+        self.object_state.position = length;
+
+        // Truncating the object may mean slicing a chunk in half. Because we can't edit chunks
+        // in-place, we need to read the final chunk, slice it, and write it back.
+        let end_location = match self.object_info().current_chunk() {
+            Some(location) => location,
+            None => return Ok(()),
+        };
+        let last_chunk = ChunkReader::new(self.repo_state).read_chunk(end_location.chunk)?;
+        let new_last_chunk = &last_chunk[..end_location.relative_position()];
+        let new_last_chunk = ChunkWriter::new(self.repo_state).write_chunk(&new_last_chunk)?;
+
+        let key = self.key.clone();
+        let mut handle = self.repo_state.header.objects.get_mut(&key).unwrap();
+
+        // Remove all chunks including and after the final chunk.
+        handle.chunks.drain(end_location.index..);
+
+        // Append the new final chunk which has been sliced.
+        handle.chunks.push(new_last_chunk);
+
+        // Update the object size.
+        let current_size = handle.size;
+        handle.size = min(length, current_size);
+
+        // Restore the seek position.
+        self.object_state.position = min(original_position, length);
+
+        Ok(())
+    }
+
+    /// Write chunks stored in the chunker to the repository.
+    fn write_chunks(&mut self) -> crate::Result<()> {
+        for chunk_data in self.object_state.chunker.chunks() {
+            let chunk = ChunkWriter::new(self.repo_state).write_chunk(&chunk_data)?;
+            self.object_state.new_chunks.push(chunk);
+        }
+        Ok(())
+    }
+}
+
 // Content-defined chunking makes writing and seeking more complicated. Chunks can't be modified
 // in-place; they can only be read or written in their entirety. This means we need to do a lot of
 // buffering to wait for a chunk boundary before writing a chunk to the repository. It also means
 // the user needs to explicitly call `flush` when they're done writing data.
-impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
-    /// The `io::Error` returned by this method can be converted into a `acid_store::Error`.
-    ///
-    /// # Errors
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
+impl<'a, K: Key, S: DataStore> Write for ObjectWriter<'a, K, S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         // Check if this is the first time `write` is being called after calling `flush`.
         if self.object_state.chunker.is_empty() {
             // Because we're starting a new write, we need to set the starting location.
-            self.object_state.start_location = self.current_chunk();
+            self.object_state.start_location = self.object_info().current_chunk();
 
             if let Some(location) = &self.object_state.start_location {
                 let chunk = location.chunk;
@@ -374,7 +338,7 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
 
                 // We need to make sure the data before the seek position is saved when we replace
                 // the chunk. Read this data from the repository and write it to the chunker.
-                let first_chunk = self.chunk_store().read_chunk(chunk)?;
+                let first_chunk = ChunkReader::new(self.repo_state).read_chunk(chunk)?;
                 self.object_state
                     .chunker
                     .write_all(&first_chunk[..position])?;
@@ -391,24 +355,18 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
         Ok(buf.len())
     }
 
-    /// The `io::Error` returned by this method can be converted into a `acid_store::Error`.
-    ///
-    /// # Errors
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
     fn flush(&mut self) -> io::Result<()> {
         if self.object_state.chunker.is_empty() {
             // No new data has been written since data was last flushed.
             return Ok(());
         }
 
-        let current_chunk = self.current_chunk();
+        let current_chunk = self.object_info().current_chunk();
 
         if let Some(location) = &current_chunk {
             // We need to make sure the data after the seek position is saved when we replace the
             // current chunk. Read this data from the repository and write it to the chunker.
-            let last_chunk = self.chunk_store().read_chunk(location.chunk)?;
+            let last_chunk = ChunkReader::new(self.repo_state).read_chunk(location.chunk)?;
             self.object_state
                 .chunker
                 .write_all(&last_chunk[location.relative_position()..])?;
@@ -455,8 +413,196 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
     }
 }
 
-// To avoid reading the same chunk from the repository multiple times, the chunk which was most
-// recently read from is cached in a buffer.
+/// A handle for accessing data in a repository.
+///
+/// This is a read-only version of `Object` which provides read-only access to data in the
+/// repository.
+pub struct ReadOnlyObject<'a, K: Key, S: DataStore> {
+    /// The state for the object repository.
+    repo_state: &'a RepositoryState<K, S>,
+
+    /// The state for the object itself.
+    object_state: ObjectState,
+
+    /// The key associated with this object.
+    key: K,
+}
+
+impl<'a, K: Key, S: DataStore> ReadOnlyObject<'a, K, S> {
+    pub(super) fn new(repo_state: &'a RepositoryState<K, S>, key: K) -> Self {
+        let chunker_bits = repo_state.metadata.chunker_bits;
+        Self {
+            repo_state,
+            object_state: ObjectState::new(chunker_bits),
+            key,
+        }
+    }
+
+    fn object_info(&self) -> ObjectInfo<K, S> {
+        ObjectInfo {
+            repo_state: self.repo_state,
+            object_state: &self.object_state,
+            key: &self.key,
+        }
+    }
+
+    fn object_reader(&mut self) -> ObjectReader<K, S> {
+        ObjectReader {
+            repo_state: self.repo_state,
+            object_state: &mut self.object_state,
+            key: &self.key,
+        }
+    }
+
+    /// Return the size of the object in bytes.
+    ///
+    /// See `Object::size` for details.
+    pub fn size(&self) -> u64 {
+        self.object_info().size()
+    }
+
+    /// Return a `ContentId` representing the contents of this object.
+    ///
+    /// See `Object::content_id` for details.
+    pub fn content_id(&self) -> ContentId {
+        self.object_info().content_id()
+    }
+
+    /// Verify the integrity of the data in this object.
+    ///
+    /// See `Object::verify` for details.
+    pub fn verify(&self) -> crate::Result<bool> {
+        self.object_info().verify()
+    }
+}
+
+impl<'a, K: Key, S: DataStore> Read for ReadOnlyObject<'a, K, S> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.object_reader().read(buf)
+    }
+}
+
+impl<'a, K: Key, S: DataStore> Seek for ReadOnlyObject<'a, K, S> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.object_reader().seek(pos)
+    }
+}
+
+/// A handle for accessing data in a repository.
+///
+/// An `Object` represents the data associated with a key in an `ObjectRepository`. It implements
+/// `Read`, `Write`, and `Seek` for reading data from the repository and writing data to the
+/// repository.
+///
+/// Because `Object` internally buffers data when reading, there's no need to use a buffered reader
+/// like `BufReader`.
+///
+/// Written data is automatically flushed when this value is dropped. If an error occurs while
+/// flushing data in the `Drop` implementation, it is ignored and unflushed data is discarded. To
+/// handle these errors, you should call `flush` manually.
+///
+/// If encryption is enabled for the repository, data integrity is automatically verified as it is
+/// read and methods will return an `Err` if corrupt data is found. The `verify` method can be used
+/// to check the integrity of all the data in the object whether encryption is enabled or not.
+///
+/// The methods of `Read`, `Write`, and `Seek` return `io::Result`, but the returned `io::Error` can
+/// be converted `Into` an `acid_store::Error` to be consistent with the rest of the library. The
+/// implementations document which `acid_store::Error` values can be returned.
+#[derive(Debug)]
+pub struct Object<'a, K: Key, S: DataStore> {
+    /// The state for the object repository.
+    repo_state: &'a mut RepositoryState<K, S>,
+
+    /// The state for the object itself.
+    object_state: ObjectState,
+
+    /// The key associated with this object.
+    key: K,
+}
+
+impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
+    pub(super) fn new(repo_state: &'a mut RepositoryState<K, S>, key: K) -> Self {
+        let chunker_bits = repo_state.metadata.chunker_bits;
+        Self {
+            repo_state,
+            object_state: ObjectState::new(chunker_bits),
+            key,
+        }
+    }
+
+    fn object_info(&self) -> ObjectInfo<K, S> {
+        ObjectInfo {
+            repo_state: self.repo_state,
+            object_state: &self.object_state,
+            key: &self.key,
+        }
+    }
+
+    fn object_reader(&mut self) -> ObjectReader<K, S> {
+        ObjectReader {
+            repo_state: self.repo_state,
+            object_state: &mut self.object_state,
+            key: &self.key,
+        }
+    }
+
+    fn object_writer(&mut self) -> ObjectWriter<K, S> {
+        ObjectWriter {
+            repo_state: self.repo_state,
+            object_state: &mut self.object_state,
+            key: &self.key,
+        }
+    }
+
+    /// Return the size of the object in bytes.
+    ///
+    /// Unflushed data is not accounted for when calculating the size, so you may want to explicitly
+    /// flush written data with `flush` before calling this method.
+    pub fn size(&self) -> u64 {
+        self.object_info().size()
+    }
+
+    /// Return a `ContentId` representing the contents of this object.
+    ///
+    /// The returned `ContentId` represents the contents of the object at the time this method was
+    /// called.
+    ///
+    /// Unflushed data is not accounted for when calculating the `ContentId`, so you may want to
+    /// explicitly flush written data with `flush` before calling this method.
+    pub fn content_id(&self) -> ContentId {
+        self.object_info().content_id()
+    }
+
+    /// Verify the integrity of the data in this object.
+    ///
+    /// This returns `true` if the object is valid and `false` if it is corrupt.
+    ///
+    /// Unflushed data is not accounted for when verifying data integrity, so you may want to
+    /// explicitly flush written data with `flush` before calling this method.
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn verify(&self) -> crate::Result<bool> {
+        self.object_info().verify()
+    }
+
+    /// Truncate the object to the given `length`.
+    ///
+    /// If the given `length` is greater than or equal to the current size of the object, this does
+    /// nothing. If the seek position is past the point which the object is truncated to, it is
+    /// moved to the new end of the object.
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn truncate(&mut self, length: u64) -> crate::Result<()> {
+        self.object_writer().truncate(length)
+    }
+}
+
 impl<'a, K: Key, S: DataStore> Read for Object<'a, K, S> {
     /// The `io::Error` returned by this method can be converted into a `acid_store::Error`.
     ///
@@ -465,12 +611,37 @@ impl<'a, K: Key, S: DataStore> Read for Object<'a, K, S> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.flush()?;
-        let next_chunk = self.read_chunk(buf.len())?;
-        let bytes_read = next_chunk.len();
-        buf[..bytes_read].copy_from_slice(next_chunk);
-        self.object_state.position += bytes_read as u64;
-        Ok(bytes_read)
+        self.object_writer().flush()?;
+        self.object_reader().read(buf)
+    }
+}
+
+impl<'a, K: Key, S: DataStore> Seek for Object<'a, K, S> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.object_writer().flush()?;
+        self.object_reader().seek(pos)
+    }
+}
+
+impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
+    /// The `io::Error` returned by this method can be converted into a `acid_store::Error`.
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.object_writer().write(buf)
+    }
+
+    /// The `io::Error` returned by this method can be converted into a `acid_store::Error`.
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    fn flush(&mut self) -> io::Result<()> {
+        self.object_writer().flush()
     }
 }
 

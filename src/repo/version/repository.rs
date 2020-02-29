@@ -26,11 +26,11 @@ use uuid::Uuid;
 use lazy_static::lazy_static;
 
 use crate::repo::{
-    Key, LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo, RepositoryStats,
+    Key, LockStrategy, Object, ObjectRepository, ReadOnlyObject, RepositoryConfig, RepositoryInfo,
+    RepositoryStats,
 };
 use crate::store::DataStore;
 
-use super::object::ReadOnlyObject;
 use super::version::{Version, VersionKey};
 
 lazy_static! {
@@ -73,7 +73,7 @@ lazy_static! {
 ///         let version = repository.create_version(String::from("Key"))?;
 ///
 ///         // Modify the current version of the object.
-///         let mut object = repository.get("Key").unwrap();
+///         let mut object = repository.get_mut("Key").unwrap();
 ///         object.truncate(0)?;
 ///         drop(object);
 ///
@@ -123,7 +123,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         password: Option<&[u8]>,
         strategy: LockStrategy,
     ) -> crate::Result<Self> {
-        let mut repository = ObjectRepository::open_repo(store, password, strategy)?;
+        let repository = ObjectRepository::open_repo(store, password, strategy)?;
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository
@@ -197,7 +197,10 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     }
 
     /// Return an object for modifying the current version of `key` or `None` if it doesn't exist.
-    pub fn get<Q>(&mut self, key: &Q) -> Option<Object<VersionKey<K>, S>>
+    ///
+    /// The returned object provides read-only access to the data. To get read-write access, use
+    /// `get_mut`.
+    pub fn get<Q>(&self, key: &Q) -> Option<ReadOnlyObject<VersionKey<K>, S>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
@@ -205,8 +208,20 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         self.repository.get(&VersionKey::Object(key.to_owned()))
     }
 
+    /// Return an object for modifying the current version of `key` or `None` if it doesn't exist.
+    ///
+    /// The returned object provides read-write access to the data. To get read-only access, use
+    /// `get`.
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<Object<VersionKey<K>, S>>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+    {
+        self.repository.get_mut(&VersionKey::Object(key.to_owned()))
+    }
+
     /// Return an iterator over all the keys in this repository.
-    pub fn keys(&mut self) -> impl Iterator<Item = &K> {
+    pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.repository
             .keys()
             .filter_map(|version_key| match version_key {
@@ -277,14 +292,13 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// Get an object for reading the version of `key` with the given `id`.
     ///
     /// If there is no version with the given `id`, this returns `None`.
-    pub fn get_version<Q>(&mut self, key: &Q, id: usize) -> Option<ReadOnlyObject<VersionKey<K>, S>>
+    pub fn get_version<Q>(&self, key: &Q, id: usize) -> Option<ReadOnlyObject<VersionKey<K>, S>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
     {
         self.repository
             .get(&VersionKey::Version(key.to_owned(), id))
-            .map(|object| object.into())
     }
 
     /// Return the list of versions of the given `key`.
@@ -294,7 +308,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn list_versions<Q>(&mut self, key: &Q) -> crate::Result<Vec<Version>>
+    pub fn list_versions<Q>(&self, key: &Q) -> crate::Result<Vec<Version>>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,

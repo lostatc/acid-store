@@ -161,7 +161,7 @@ fn restore_version() -> anyhow::Result<()> {
     let version = repository.create_version("Key".into())?;
 
     // Modify the contents of the object.
-    let mut object = repository.get("Key").unwrap();
+    let mut object = repository.get_mut("Key").unwrap();
     object.write_all(random_buffer().as_slice())?;
     object.flush()?;
     drop(object);
@@ -185,7 +185,7 @@ fn modifying_object_doesnt_modify_versions() -> anyhow::Result<()> {
     repository.insert("Key".into())?;
     let version = repository.create_version("Key".into())?;
 
-    let mut object = repository.get("Key").unwrap();
+    let mut object = repository.get_mut("Key").unwrap();
     object.write_all(random_buffer().as_slice())?;
     object.flush()?;
     drop(object);

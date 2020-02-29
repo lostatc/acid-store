@@ -14,10 +14,8 @@
  * limitations under the License.
  */
 
-pub use self::object::ReadOnlyObject;
 pub use self::repository::VersionRepository;
 pub use self::version::Version;
 
-mod object;
 mod repository;
 mod version;

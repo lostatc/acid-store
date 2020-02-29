@@ -20,7 +20,7 @@ pub use self::encryption::{Encryption, ResourceLimit};
 pub use self::header::Key;
 pub use self::lock::LockStrategy;
 pub use self::metadata::{RepositoryInfo, RepositoryStats};
-pub use self::object::{ContentId, Object};
+pub use self::object::{ContentId, Object, ReadOnlyObject};
 pub use self::repository::ObjectRepository;
 
 mod chunk_store;
