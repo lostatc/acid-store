@@ -82,7 +82,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
         password: Option<&[u8]>,
         strategy: LockStrategy,
     ) -> crate::Result<Self> {
-        let mut repository = ObjectRepository::open_repo(store, password, strategy)?;
+        let repository = ObjectRepository::open_repo(store, password, strategy)?;
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository
@@ -150,7 +150,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn get<Q, V>(&mut self, key: &Q) -> crate::Result<V>
+    pub fn get<Q, V>(&self, key: &Q) -> crate::Result<V>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
@@ -212,7 +212,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn verify(&mut self) -> crate::Result<HashSet<&K>> {
+    pub fn verify(&self) -> crate::Result<HashSet<&K>> {
         Ok(self
             .repository
             .verify()?

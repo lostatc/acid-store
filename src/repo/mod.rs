@@ -31,10 +31,10 @@ pub use file::UnixMetadata;
 pub use file::{Entry, EntryPath, FileMetadata, FileRepository, FileType, NoMetadata};
 pub use object::{
     Compression, ContentId, Encryption, Key, LockStrategy, Object, ObjectRepository,
-    RepositoryConfig, RepositoryInfo, RepositoryStats, ResourceLimit,
+    ReadOnlyObject, RepositoryConfig, RepositoryInfo, RepositoryStats, ResourceLimit,
 };
 pub use value::ValueRepository;
-pub use version::{ReadOnlyObject, Version, VersionRepository};
+pub use version::{Version, VersionRepository};
 
 mod file;
 mod object;

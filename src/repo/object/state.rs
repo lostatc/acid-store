@@ -15,6 +15,7 @@
  */
 
 use std::fmt::{self, Debug, Formatter};
+use std::sync::Mutex;
 
 use cdchunking::ZPAQ;
 
@@ -32,7 +33,7 @@ use super::metadata::RepositoryMetadata;
 #[derive(Debug)]
 pub struct RepositoryState<K: Key, S: DataStore> {
     /// The data store which backs this repository.
-    pub store: S,
+    pub store: Mutex<S>,
 
     /// The metadata for the repository.
     pub metadata: RepositoryMetadata,

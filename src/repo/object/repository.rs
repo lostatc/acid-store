@@ -18,7 +18,7 @@ use std::borrow::{Borrow, ToOwned};
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
 use std::time::SystemTime;
 
 use rmp_serde::{from_read, to_vec};
@@ -26,9 +26,10 @@ use uuid::Uuid;
 
 use lazy_static::lazy_static;
 
+use crate::repo::object::chunk_store::{ChunkEncoder, ChunkReader};
+use crate::repo::object::object::ReadOnlyObject;
 use crate::store::DataStore;
 
-use super::chunk_store::ChunkStore;
 use super::config::RepositoryConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt};
 use super::header::{Header, Key};
@@ -94,13 +95,6 @@ pub struct ObjectRepository<K: Key, S: DataStore> {
 }
 
 impl<K: Key, S: DataStore> ObjectRepository<K, S> {
-    /// Get a `ChunkStore` for this repository.
-    ///
-    /// The purpose of this method is to enforce safe usage of the `RwLock` using references.
-    fn chunk_store(&mut self) -> ChunkStore<K, S> {
-        ChunkStore::new(&mut self.state)
-    }
-
     /// Create a new repository backed by the given data `store`.
     ///
     /// A `config` must be provided to configure the new repository. If encryption is enabled, a
@@ -201,7 +195,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             .map_err(anyhow::Error::from)?;
 
         let state = RepositoryState {
-            store,
+            store: Mutex::new(store),
             metadata,
             header,
             master_key,
@@ -294,7 +288,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             from_read(serialized_header.as_slice()).map_err(|_| crate::Error::KeyType)?;
 
         let state = RepositoryState {
-            store,
+            store: Mutex::new(store),
             metadata,
             header,
             master_key,
@@ -344,7 +338,23 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     }
 
     /// Return the object associated with `key` or `None` if it doesn't exist.
-    pub fn get<Q>(&mut self, key: &Q) -> Option<Object<K, S>>
+    ///
+    /// The returned object provides read-only access to the data. To get read-write access, use
+    /// `get_mut`.
+    pub fn get<Q>(&self, key: &Q) -> Option<ReadOnlyObject<K, S>>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ToOwned<Owned = K> + ?Sized,
+    {
+        self.state.header.objects.get(&key)?;
+        Some(ReadOnlyObject::new(&self.state, key.to_owned()))
+    }
+
+    /// Return the object associated with `key` or `None` if it doesn't exist.
+    ///
+    /// The returned object provides read-write access to the data. To get read-only access, use
+    /// `get`.
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<Object<K, S>>
     where
         K: Borrow<Q>,
         Q: Eq + Hash + ToOwned<Owned = K> + ?Sized,
@@ -392,6 +402,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         let all_blocks = self
             .state
             .store
+            .lock()
+            .unwrap()
             .list_blocks()
             .map_err(anyhow::Error::from)?;
 
@@ -419,12 +431,14 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     pub fn commit(&mut self) -> crate::Result<()> {
         // Serialize and encode the header.
         let serialized_header = to_vec(&self.state.header).expect("Could not serialize header.");
-        let encoded_header = self.chunk_store().encode_data(&serialized_header)?;
+        let encoded_header = ChunkEncoder::new(&self.state).encode_data(&serialized_header)?;
 
         // Write the new header to the data store.
         let header_id = Uuid::new_v4();
         self.state
             .store
+            .lock()
+            .unwrap()
             .write_block(header_id, &encoded_header)
             .map_err(anyhow::Error::from)?;
         self.state.metadata.header = header_id;
@@ -434,6 +448,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             to_vec(&self.state.metadata).expect("Could not serialize metadata.");
         self.state
             .store
+            .lock()
+            .unwrap()
             .write_block(*METADATA_BLOCK_ID, &serialized_metadata)
             .map_err(anyhow::Error::from)?;
 
@@ -448,12 +464,16 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         let data_blocks = self.list_data_blocks()?;
 
-        for stored_chunk in data_blocks {
-            if !referenced_chunks.contains(&stored_chunk) {
-                self.state
-                    .store
-                    .remove_block(stored_chunk)
-                    .map_err(anyhow::Error::from)?;
+        // We need to be careful getting a lock on the data store to avoid a panic. We're scoping it
+        // just to be careful.
+        {
+            let mut store = self.state.store.lock().unwrap();
+            for stored_chunk in data_blocks {
+                if !referenced_chunks.contains(&stored_chunk) {
+                    store
+                        .remove_block(stored_chunk)
+                        .map_err(anyhow::Error::from)?;
+                }
             }
         }
 
@@ -469,13 +489,13 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn verify(&mut self) -> crate::Result<HashSet<&K>> {
+    pub fn verify(&self) -> crate::Result<HashSet<&K>> {
         let mut corrupt_chunks = HashSet::new();
         let expected_chunks = self.state.header.chunks.keys().copied().collect::<Vec<_>>();
 
         // Get the set of hashes of chunks which are corrupt.
         for chunk in expected_chunks {
-            match self.chunk_store().read_chunk(chunk) {
+            match ChunkReader::new(&self.state).read_chunk(chunk) {
                 Ok(data) => {
                     if data.len() != chunk.size || chunk_hash(&data) != chunk.hash {
                         corrupt_chunks.insert(chunk.hash);
@@ -585,6 +605,6 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
     /// Consume this repository and return the wrapped `DataStore`.
     pub fn into_store(self) -> S {
-        self.state.store
+        self.state.store.into_inner().unwrap()
     }
 }

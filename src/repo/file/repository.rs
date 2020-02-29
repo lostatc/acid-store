@@ -112,7 +112,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         password: Option<&[u8]>,
         strategy: LockStrategy,
     ) -> crate::Result<Self> {
-        let mut repository = ObjectRepository::open_repo(store, password, strategy)?;
+        let repository = ObjectRepository::open_repo(store, password, strategy)?;
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository
@@ -309,7 +309,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn entry(&mut self, path: impl AsRef<EntryPath>) -> crate::Result<Entry<M>> {
+    pub fn entry(&self, path: impl AsRef<EntryPath>) -> crate::Result<Entry<M>> {
         let path = Self::convert_path(path)?;
 
         let mut object = self
@@ -342,7 +342,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
 
         let mut object = self
             .repository
-            .get(&EntryKey::Entry(path))
+            .get_mut(&EntryKey::Entry(path))
             .ok_or(crate::Error::NotFound)?;
 
         let serialized_entry = to_vec(&entry).map_err(|_| crate::Error::Serialize)?;
@@ -372,7 +372,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
 
         let object = self
             .repository
-            .get(&EntryKey::Data(path))
+            .get_mut(&EntryKey::Data(path))
             .expect("There is no object associated with this file.");
 
         Ok(object)
@@ -478,7 +478,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn list<'a>(
-        &'a mut self,
+        &'a self,
         parent: impl AsRef<EntryPath>,
     ) -> crate::Result<impl Iterator<Item = &'a EntryPath> + 'a> {
         let parent = Self::convert_path(parent)?;
@@ -508,7 +508,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn walk<'a>(
-        &'a mut self,
+        &'a self,
         parent: impl AsRef<EntryPath>,
     ) -> crate::Result<impl Iterator<Item = &'a EntryPath> + 'a> {
         let parent = Self::convert_path(parent)?;
@@ -736,7 +736,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn verify(&mut self) -> crate::Result<HashSet<&EntryPath>> {
+    pub fn verify(&self) -> crate::Result<HashSet<&EntryPath>> {
         let paths = self
             .repository
             .verify()?

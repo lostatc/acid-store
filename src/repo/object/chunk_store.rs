@@ -22,16 +22,11 @@ use crate::store::DataStore;
 use super::object::{chunk_hash, Chunk};
 use super::state::RepositoryState;
 
-/// A wrapper over a `DataStore` which adds support for encryption and compression.
-///
-/// This type allows for reading and writing chunks, which are independently compressed and
-/// encrypted blobs of data which are identified by their checksum.
 #[derive(Debug)]
-pub struct ChunkStore<'a, K: Key, S: DataStore>(&'a mut RepositoryState<K, S>);
+pub struct ChunkEncoder<'a, K: Key, S: DataStore>(&'a RepositoryState<K, S>);
 
-impl<'a, K: Key, S: DataStore> ChunkStore<'a, K, S> {
-    /// Create a new instance of `ChunkStore`.
-    pub fn new(state: &'a mut RepositoryState<K, S>) -> Self {
+impl<'a, K: Key, S: DataStore> ChunkEncoder<'a, K, S> {
+    pub fn new(state: &'a RepositoryState<K, S>) -> Self {
         Self(state)
     }
 
@@ -60,6 +55,44 @@ impl<'a, K: Key, S: DataStore> ChunkStore<'a, K, S> {
             .compression
             .decompress(decrypted_data.as_slice())?)
     }
+}
+
+#[derive(Debug)]
+pub struct ChunkReader<'a, K: Key, S: DataStore>(&'a RepositoryState<K, S>);
+
+impl<'a, K: Key, S: DataStore> ChunkReader<'a, K, S> {
+    pub fn new(state: &'a RepositoryState<K, S>) -> Self {
+        Self(state)
+    }
+
+    /// Return the bytes of the chunk with the given checksum.
+    pub fn read_chunk(&self, chunk: Chunk) -> crate::Result<Vec<u8>> {
+        let chunk_id = *self
+            .0
+            .header
+            .chunks
+            .get(&chunk)
+            .ok_or(crate::Error::InvalidData)?;
+        let chunk = self
+            .0
+            .store
+            .lock()
+            .unwrap()
+            .read_block(chunk_id)
+            .map_err(anyhow::Error::from)?
+            .ok_or(crate::Error::InvalidData)?;
+
+        ChunkEncoder(&self.0).decode_data(chunk.as_slice())
+    }
+}
+
+#[derive(Debug)]
+pub struct ChunkWriter<'a, K: Key, S: DataStore>(&'a mut RepositoryState<K, S>);
+
+impl<'a, K: Key, S: DataStore> ChunkWriter<'a, K, S> {
+    pub fn new(state: &'a mut RepositoryState<K, S>) -> Self {
+        Self(state)
+    }
 
     /// Write the given `data` as a new chunk and returns its checksum.
     ///
@@ -78,12 +111,14 @@ impl<'a, K: Key, S: DataStore> ChunkStore<'a, K, S> {
         }
 
         // Encode the data.
-        let encoded_data = self.encode_data(data)?;
+        let encoded_data = ChunkEncoder::new(&self.0).encode_data(data)?;
         let block_id = Uuid::new_v4();
 
         // Write the data to the data store.
         self.0
             .store
+            .lock()
+            .unwrap()
             .write_block(block_id, &encoded_data)
             .map_err(anyhow::Error::from)?;
 
@@ -91,23 +126,5 @@ impl<'a, K: Key, S: DataStore> ChunkStore<'a, K, S> {
         self.0.header.chunks.insert(chunk, block_id);
 
         Ok(chunk)
-    }
-
-    /// Return the bytes of the chunk with the given checksum.
-    pub fn read_chunk(&mut self, chunk: Chunk) -> crate::Result<Vec<u8>> {
-        let chunk_id = *self
-            .0
-            .header
-            .chunks
-            .get(&chunk)
-            .ok_or(crate::Error::InvalidData)?;
-        let chunk = self
-            .0
-            .store
-            .read_block(chunk_id)
-            .map_err(anyhow::Error::from)?
-            .ok_or(crate::Error::InvalidData)?;
-
-        self.decode_data(chunk.as_slice())
     }
 }

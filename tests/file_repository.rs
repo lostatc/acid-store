@@ -60,7 +60,7 @@ fn creating_existing_file_errs() -> anyhow::Result<()> {
 
 #[test]
 fn absolute_entry_path_errs() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let repository = create_repo()?;
     let result = repository.entry("/home/lostatc/data");
 
     assert_matches!(result.unwrap_err(), acid_store::Error::InvalidPath);
