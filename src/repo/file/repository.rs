@@ -30,7 +30,8 @@ use walkdir::WalkDir;
 use lazy_static::lazy_static;
 
 use crate::repo::{
-    LockStrategy, Object, ObjectRepository, RepositoryConfig, RepositoryInfo, RepositoryStats,
+    LockStrategy, Object, ObjectRepository, ReadOnlyObject, RepositoryConfig, RepositoryInfo,
+    RepositoryStats,
 };
 use crate::store::DataStore;
 
@@ -352,7 +353,10 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         Ok(())
     }
 
-    /// Return an `Object` for reading and writing the contents of the file entry at `path`.
+    /// Return an `Object` for reading the contents of the file entry at `path`.
+    ///
+    /// The returned object provides read-only access to the file. To get read-write access, use
+    /// `open_mut`.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `path` is absolute.
@@ -362,7 +366,36 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn open(&mut self, path: impl AsRef<EntryPath>) -> crate::Result<Object<EntryKey, S>> {
+    pub fn open(&self, path: impl AsRef<EntryPath>) -> crate::Result<ReadOnlyObject<EntryKey, S>> {
+        let path = Self::convert_path(path)?;
+
+        let entry = self.entry(&path)?;
+        if !entry.is_file() {
+            return Err(crate::Error::NotFile);
+        }
+
+        let object = self
+            .repository
+            .get(&EntryKey::Data(path))
+            .expect("There is no object associated with this file.");
+
+        Ok(object)
+    }
+
+    /// Return an `Object` for reading and writing the contents of the file entry at `path`.
+    ///
+    /// The returned object provides read-write access to the file. To get read-only access, use
+    /// `open`.
+    ///
+    /// # Errors
+    /// - `Error::InvalidPath`: The given `path` is absolute.
+    /// - `Error::NotFound`: There is no entry with the given `path`.
+    /// - `Error::NotFile`: The entry does not represent a regular file.
+    /// - `Error::Deserialize`: The file metadata could not be deserialized.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn open_mut(&mut self, path: impl AsRef<EntryPath>) -> crate::Result<Object<EntryKey, S>> {
         let path = Self::convert_path(path)?;
 
         let entry = self.entry(&path)?;
@@ -572,7 +605,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         self.create(&dest, &entry)?;
 
         if entry.is_file() {
-            let mut object = self.open(&dest)?;
+            let mut object = self.open_mut(&dest)?;
             let mut file = File::open(&source)?;
             copy(&mut file, &mut object)?;
             object.flush()?;
