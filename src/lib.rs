@@ -61,8 +61,11 @@
 //!     object.write_all(b"Data")?;
 //!     object.flush();
 //!
+//!     // Get the object associated with a key.
+//!     drop(object);
+//!     let mut object = repository.get("Key").unwrap();
+//! 
 //!     // Read data from the repository via `std::io::Read`.
-//!     object.seek(SeekFrom::Start(0))?;
 //!     let mut data = Vec::new();
 //!     object.read_to_end(&mut data)?;
 //!

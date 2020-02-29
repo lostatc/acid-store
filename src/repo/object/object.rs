@@ -417,6 +417,9 @@ impl<'a, K: Key, S: DataStore> Write for ObjectWriter<'a, K, S> {
 ///
 /// This is a read-only version of `Object` which provides read-only access to data in the
 /// repository.
+///
+/// See `Object` for details.
+#[derive(Debug)]
 pub struct ReadOnlyObject<'a, K: Key, S: DataStore> {
     /// The state for the object repository.
     repo_state: &'a RepositoryState<K, S>,
@@ -498,8 +501,8 @@ impl<'a, K: Key, S: DataStore> Seek for ReadOnlyObject<'a, K, S> {
 /// like `BufReader`.
 ///
 /// Written data is automatically flushed when this value is dropped. If an error occurs while
-/// flushing data in the `Drop` implementation, it is ignored and unflushed data is discarded. To
-/// handle these errors, you should call `flush` manually.
+/// flushing data in the `Drop` implementation, it is ignored and unflushed data is discarded. If
+/// you need to handle these errors, you should call `flush` manually.
 ///
 /// If encryption is enabled for the repository, data integrity is automatically verified as it is
 /// read and methods will return an `Err` if corrupt data is found. The `verify` method can be used
@@ -507,7 +510,7 @@ impl<'a, K: Key, S: DataStore> Seek for ReadOnlyObject<'a, K, S> {
 ///
 /// The methods of `Read`, `Write`, and `Seek` return `io::Result`, but the returned `io::Error` can
 /// be converted `Into` an `acid_store::Error` to be consistent with the rest of the library. The
-/// implementations document which `acid_store::Error` values can be returned.
+/// implementations document which `acid_store::Error` values they can be converted into.
 #[derive(Debug)]
 pub struct Object<'a, K: Key, S: DataStore> {
     /// The state for the object repository.
@@ -604,7 +607,7 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
 }
 
 impl<'a, K: Key, S: DataStore> Read for Object<'a, K, S> {
-    /// The `io::Error` returned by this method can be converted into a `acid_store::Error`.
+    /// The `io::Error` returned by this method can be converted into an `acid_store::Error`.
     ///
     /// # Errors
     /// - `Error::InvalidData`: Ciphertext verification failed.
@@ -624,7 +627,7 @@ impl<'a, K: Key, S: DataStore> Seek for Object<'a, K, S> {
 }
 
 impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
-    /// The `io::Error` returned by this method can be converted into a `acid_store::Error`.
+    /// The `io::Error` returned by this method can be converted into an `acid_store::Error`.
     ///
     /// # Errors
     /// - `Error::InvalidData`: Ciphertext verification failed.
@@ -634,7 +637,7 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
         self.object_writer().write(buf)
     }
 
-    /// The `io::Error` returned by this method can be converted into a `acid_store::Error`.
+    /// The `io::Error` returned by this method can be converted into an `acid_store::Error`.
     ///
     /// # Errors
     /// - `Error::InvalidData`: Ciphertext verification failed.

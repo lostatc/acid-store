@@ -210,7 +210,7 @@ fn opening_nonexistent_file_errs() -> anyhow::Result<()> {
 fn open_file() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.create("file", &Entry::file())?;
-    let mut object = repository.open("file")?;
+    let mut object = repository.open_mut("file")?;
 
     object.write_all(b"expected data")?;
     object.flush()?;
@@ -233,7 +233,7 @@ fn copied_file_has_same_contents() -> anyhow::Result<()> {
 
     // Add a file entry and write data to it.
     repository.create("source", &Entry::file())?;
-    let mut object = repository.open("source")?;
+    let mut object = repository.open_mut("source")?;
     object.write_all(expected_data)?;
     object.flush()?;
     drop(object);
@@ -406,7 +406,7 @@ fn extract_file() -> anyhow::Result<()> {
 
     let mut repository = create_repo()?;
     repository.create("source", &Entry::file())?;
-    let mut object = repository.open("source")?;
+    let mut object = repository.open_mut("source")?;
     object.write_all(b"file contents")?;
     object.flush()?;
     drop(object);
