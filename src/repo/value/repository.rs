@@ -79,10 +79,10 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// See `ObjectRepository::open_repo` for details.
     pub fn open_repo(
         store: S,
-        password: Option<&[u8]>,
         strategy: LockStrategy,
+        password: Option<&[u8]>,
     ) -> crate::Result<Self> {
-        let repository = ObjectRepository::open_repo(store, password, strategy)?;
+        let repository = ObjectRepository::open_repo(store, strategy, password)?;
 
         // Read the repository version to see if this is a compatible repository.
         let mut object = repository

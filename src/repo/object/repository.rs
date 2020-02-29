@@ -221,8 +221,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// - `Error::Store`: An error occurred with the data store.
     pub fn open_repo(
         mut store: S,
-        password: Option<&[u8]>,
         strategy: LockStrategy,
+        password: Option<&[u8]>,
     ) -> crate::Result<Self> {
         // Acquire a lock on the repository.
         let repository_id = Self::peek_info(&mut store)?.id();

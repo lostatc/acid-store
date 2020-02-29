@@ -42,8 +42,8 @@ fn creating_existing_repo_errs() -> anyhow::Result<()> {
 fn opening_nonexistent_repo_errs() {
     let repository = ObjectRepository::<String, _>::open_repo(
         MemoryStore::new(),
-        Some(PASSWORD),
         LockStrategy::Abort,
+        Some(PASSWORD),
     );
 
     assert_matches!(repository.unwrap_err(), acid_store::Error::NotFound);
@@ -54,8 +54,8 @@ fn opening_with_invalid_password_errs() -> anyhow::Result<()> {
     let repository = create_repo()?;
     let repository = ObjectRepository::<String, _>::open_repo(
         repository.into_store(),
-        Some(b"not the password"),
         LockStrategy::Abort,
+        Some(b"not the password"),
     );
 
     assert_matches!(repository.unwrap_err(), acid_store::Error::Password);
@@ -96,7 +96,7 @@ fn opening_locked_repo_errs() -> anyhow::Result<()> {
     repository.commit()?;
 
     let open_attempt =
-        ObjectRepository::<String, _>::open_repo(store_copy, Some(PASSWORD), LockStrategy::Abort);
+        ObjectRepository::<String, _>::open_repo(store_copy, LockStrategy::Abort, Some(PASSWORD));
 
     assert_matches!(open_attempt.unwrap_err(), acid_store::Error::Locked);
     Ok(())
@@ -131,8 +131,8 @@ fn opening_with_wrong_key_type_errs() -> anyhow::Result<()> {
 
     let repository = ObjectRepository::<isize, _>::open_repo(
         repository.into_store(),
-        Some(PASSWORD),
         LockStrategy::Abort,
+        Some(PASSWORD),
     );
 
     assert_matches!(repository.unwrap_err(), acid_store::Error::KeyType);
@@ -226,10 +226,10 @@ fn committed_changes_are_persisted() -> anyhow::Result<()> {
     repository.commit()?;
 
     // Re-open the repository.
-    let mut repository = ObjectRepository::<String, _>::open_repo(
+    let repository = ObjectRepository::<String, _>::open_repo(
         repository.into_store(),
-        Some(PASSWORD),
         LockStrategy::Abort,
+        Some(PASSWORD),
     )?;
     let object = repository.get("Test".into()).unwrap();
     let actual_id = object.content_id();
@@ -250,10 +250,10 @@ fn uncommitted_changes_are_not_persisted() -> anyhow::Result<()> {
     drop(object);
 
     // Re-open the repository.
-    let mut repository = ObjectRepository::<String, _>::open_repo(
+    let repository = ObjectRepository::<String, _>::open_repo(
         repository.into_store(),
-        Some(PASSWORD),
         LockStrategy::Abort,
+        Some(PASSWORD),
     )?;
 
     assert!(repository.get("Test".into()).is_none());
@@ -283,8 +283,8 @@ fn change_password() -> anyhow::Result<()> {
 
     ObjectRepository::<String, _>::open_repo(
         repository.into_store(),
-        Some(b"new password"),
         LockStrategy::Abort,
+        Some(b"new password"),
     )?;
 
     Ok(())
