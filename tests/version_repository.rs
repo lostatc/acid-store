@@ -33,7 +33,7 @@ fn open_repository() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.commit()?;
     let store = repository.into_store();
-    VersionRepository::<String, _>::open_repo(store, Some(PASSWORD), LockStrategy::Abort)?;
+    VersionRepository::<String, _>::open_repo(store, LockStrategy::Abort, Some(PASSWORD))?;
     Ok(())
 }
 

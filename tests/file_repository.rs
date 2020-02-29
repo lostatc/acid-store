@@ -43,7 +43,7 @@ fn open_repository() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.commit()?;
     let store = repository.into_store();
-    FileRepository::<_, NoMetadata>::open_repo(store, Some(PASSWORD), LockStrategy::Abort)?;
+    FileRepository::<_, NoMetadata>::open_repo(store, LockStrategy::Abort, Some(PASSWORD))?;
     Ok(())
 }
 
@@ -199,7 +199,7 @@ fn opening_non_regular_file_errs() -> anyhow::Result<()> {
 
 #[test]
 fn opening_nonexistent_file_errs() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let repository = create_repo()?;
     let result = repository.open("nonexistent");
 
     assert_matches!(result, Err(acid_store::Error::NotFound));
