@@ -16,9 +16,8 @@
 
 #![cfg(feature = "store-redis")]
 
-use std::fmt::{self, Debug, Formatter};
-
 use redis::{Client, Commands, Connection, ConnectionInfo, RedisError};
+use std::fmt::{self, Debug, Formatter};
 use uuid::Uuid;
 
 use crate::store::common::{DataStore, Open, OpenOption};

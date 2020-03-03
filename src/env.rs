@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-use std::sync::Once;
-
 use sodiumoxide::init as sodiumoxide_init;
+use std::sync::Once;
 
 // A synchronization primitive for global initialization.
 static INIT: Once = Once::new();

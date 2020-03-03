@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-use std::time::SystemTime;
-
 use serde::{Deserialize, Serialize};
+use std::time::SystemTime;
 
 use crate::repo::ContentId;
 

@@ -15,7 +15,6 @@
  */
 use std::io;
 use std::result;
-
 use thiserror::Error as DeriveError;
 
 /// The error type for operations with a repository.

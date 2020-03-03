@@ -16,7 +16,6 @@
 
 use std::collections::HashMap;
 use std::convert::Infallible;
-
 use uuid::Uuid;
 
 use super::common::DataStore;

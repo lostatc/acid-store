@@ -23,7 +23,7 @@ All the usual disclaimers apply.
 ## Features
 - Optional encryption of all data and metadata using XChaCha20-Poly1305 and Argon2, powered by
 [libsodium](https://download.libsodium.org/doc/)
-- Optional compression using DEFLATE, LZMA, OR LZ4
+- Optional compression using DEFLATE, LZMA, or LZ4
 - Content-based deduplication using the ZPAQ chunking algorithm
 - Integrity checking of data and metadata using checksums and (if encryption is enabled) AEAD
 - Transactional operations providing atomicity, consistency, isolation, and durability (ACID)

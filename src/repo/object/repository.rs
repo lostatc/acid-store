@@ -14,17 +14,15 @@
  * limitations under the License.
  */
 
+use lazy_static::lazy_static;
+use rmp_serde::{from_read, to_vec};
 use std::borrow::{Borrow, ToOwned};
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::{Mutex, RwLock};
 use std::time::SystemTime;
-
-use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
-
-use lazy_static::lazy_static;
 
 use crate::repo::object::chunk_store::{ChunkEncoder, ChunkReader};
 use crate::repo::object::object::ReadOnlyObject;

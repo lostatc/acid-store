@@ -14,11 +14,10 @@
  * limitations under the License.
  */
 
-use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
-
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 use uuid::Uuid;
 
 use super::object::{Chunk, ObjectHandle};

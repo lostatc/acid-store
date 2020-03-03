@@ -14,16 +14,14 @@
  * limitations under the License.
  */
 
+use dirs::{data_dir, runtime_dir};
+use fs2::FileExt;
+use lazy_static::lazy_static;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
-
-use dirs::{data_dir, runtime_dir};
-use fs2::FileExt;
 use uuid::Uuid;
 use weak_table::WeakHashSet;
-
-use lazy_static::lazy_static;
 
 lazy_static! {
     /// The path of the directory where repository lock files are stored.

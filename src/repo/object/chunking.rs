@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
+use cdchunking::ChunkerImpl;
 use std::io::{self, Write};
 use std::mem::replace;
-
-use cdchunking::ChunkerImpl;
 
 /// A chunker which partitions data written to it into chunks.
 pub struct IncrementalChunker<T: ChunkerImpl> {

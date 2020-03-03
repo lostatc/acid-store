@@ -16,12 +16,10 @@
 
 #![cfg(feature = "store-sqlite")]
 
-use std::path::{Path, PathBuf};
-
-use rusqlite::{params, Connection, OptionalExtension};
-use uuid::Uuid;
-
 use lazy_static::lazy_static;
+use rusqlite::{params, Connection, OptionalExtension};
+use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
 use crate::store::common::{DataStore, Open, OpenOption};
 

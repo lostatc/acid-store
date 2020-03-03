@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-use std::path::PathBuf;
-
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 use super::metadata::FileMetadata;
 

@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-use std::io::{Read, Write};
-
 use flate2::read::{GzDecoder, GzEncoder};
 use flate2::Compression as CompressionLevel;
 use lz4::{Decoder as Lz4Decoder, EncoderBuilder as Lz4EncoderBuilder};
 use serde::{Deserialize, Serialize};
+use std::io::{Read, Write};
 use xz2::read::{XzDecoder, XzEncoder};
 
 /// A data compression method.

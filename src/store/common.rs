@@ -14,11 +14,9 @@
  * limitations under the License.
  */
 
-use std::error;
-
-use uuid::Uuid;
-
 use bitflags::bitflags;
+use std::error;
+use uuid::Uuid;
 
 /// A persistent store for blocks of data.
 ///

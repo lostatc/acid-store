@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
+use cdchunking::ZPAQ;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Mutex;
-
-use cdchunking::ZPAQ;
 
 use crate::repo::object::chunking::IncrementalChunker;
 use crate::repo::object::object::Chunk;

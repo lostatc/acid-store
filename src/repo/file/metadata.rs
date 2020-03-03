@@ -14,12 +14,10 @@
  * limitations under the License.
  */
 
-use std::io;
-use std::path::Path;
-
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-
+use std::io;
+use std::path::Path;
 #[cfg(feature = "file-metadata")]
 use {filetime::set_file_times, std::time::SystemTime};
 #[cfg(all(unix, feature = "file-metadata"))]

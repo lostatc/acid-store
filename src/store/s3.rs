@@ -16,11 +16,10 @@
 
 #![cfg(feature = "store-s3")]
 
+use lazy_static::lazy_static;
 use s3::bucket::Bucket;
 use s3::error::S3Error;
 use uuid::Uuid;
-
-use lazy_static::lazy_static;
 
 use super::common::{DataStore, Open, OpenOption};
 

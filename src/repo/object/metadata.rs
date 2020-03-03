@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-use std::time::SystemTime;
-
 use serde::{Deserialize, Serialize};
+use std::time::SystemTime;
 use uuid::Uuid;
 
 use super::config::RepositoryConfig;
