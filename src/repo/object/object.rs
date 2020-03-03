@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Garrett Powell
+ * Copyright 2019-2020 Wren Powell
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,15 @@
  * limitations under the License.
  */
 
+use blake2::digest::{Input, VariableOutput};
+use blake2::VarBlake2b;
+use serde::{Deserialize, Serialize};
 use std::clone::Clone;
 use std::cmp::min;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::mem::replace;
-
-use blake2::digest::{Input, VariableOutput};
-use blake2::VarBlake2b;
-use serde::{Deserialize, Serialize};
 
 use crate::repo::object::chunk_store::{ChunkReader, ChunkWriter};
 use crate::repo::object::state::{ChunkLocation, ObjectState};

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Garrett Powell
+ * Copyright 2019-2020 Wren Powell
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,16 @@
  * limitations under the License.
  */
 
+use lazy_static::lazy_static;
+use rmp_serde::{from_read, to_vec};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::{Read, Write};
-
-use rmp_serde::{from_read, to_vec};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use uuid::Uuid;
-
-use lazy_static::lazy_static;
 
 use crate::repo::{
     Key, LockStrategy, ObjectRepository, RepositoryConfig, RepositoryInfo, RepositoryStats,

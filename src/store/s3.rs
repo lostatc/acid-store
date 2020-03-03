@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Garrett Powell
+ * Copyright 2019-2020 Wren Powell
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,10 @@
 
 #![cfg(feature = "store-s3")]
 
+use lazy_static::lazy_static;
 use s3::bucket::Bucket;
 use s3::error::S3Error;
 use uuid::Uuid;
-
-use lazy_static::lazy_static;
 
 use super::common::{DataStore, Open, OpenOption};
 

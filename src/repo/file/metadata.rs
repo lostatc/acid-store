@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Garrett Powell
+ * Copyright 2019-2020 Wren Powell
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,10 @@
  * limitations under the License.
  */
 
-use std::io;
-use std::path::Path;
-
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-
+use std::io;
+use std::path::Path;
 #[cfg(feature = "file-metadata")]
 use {filetime::set_file_times, std::time::SystemTime};
 #[cfg(all(unix, feature = "file-metadata"))]

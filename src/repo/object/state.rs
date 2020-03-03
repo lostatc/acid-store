@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Garrett Powell
+ * Copyright 2019-2020 Wren Powell
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
+use cdchunking::ZPAQ;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Mutex;
-
-use cdchunking::ZPAQ;
 
 use crate::repo::object::chunking::IncrementalChunker;
 use crate::repo::object::object::Chunk;

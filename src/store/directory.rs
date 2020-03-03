@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Garrett Powell
+ * Copyright 2019-2020 Wren Powell
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@
 use std::fs::{create_dir, create_dir_all, remove_dir_all, remove_file, rename, File};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
-
 use uuid::Uuid;
 use walkdir::WalkDir;
 

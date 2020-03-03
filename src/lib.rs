@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 Garrett Powell
+ * Copyright 2019-2020 Wren Powell
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,7 +64,7 @@
 //!     // Get the object associated with a key.
 //!     drop(object);
 //!     let mut object = repository.get("Key").unwrap();
-//! 
+//!
 //!     // Read data from the repository via `std::io::Read`.
 //!     let mut data = Vec::new();
 //!     object.read_to_end(&mut data)?;
