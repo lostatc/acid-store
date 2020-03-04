@@ -20,7 +20,7 @@ use matches::assert_matches;
 use tempfile::tempdir;
 
 use acid_store::repo::{LockStrategy, ObjectRepository, RepositoryConfig};
-use acid_store::store::{DirectoryStore, MemoryStore, Open, OpenOption};
+use acid_store::store::{DataStore, DirectoryStore, MemoryStore, Open, OpenOption};
 use common::{create_repo, random_buffer, PASSWORD, REPO_CONFIG};
 
 mod common;
@@ -258,6 +258,30 @@ fn uncommitted_changes_are_not_persisted() -> anyhow::Result<()> {
 
     assert!(repository.get("Test".into()).is_none());
 
+    Ok(())
+}
+
+#[test]
+fn unused_data_is_reclaimed_on_commit() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    let mut object = repository.insert("Test".into());
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+    repository.commit()?;
+
+    let mut store = repository.into_store();
+    let original_blocks = store.list_blocks()?.len();
+
+    let mut repository =
+        ObjectRepository::<String, _>::open_repo(store, LockStrategy::Abort, Some(PASSWORD))?;
+    repository.remove("Test");
+    repository.commit()?;
+
+    let mut store = repository.into_store();
+    let new_blocks = store.list_blocks()?.len();
+
+    assert!(new_blocks < original_blocks);
     Ok(())
 }
 
