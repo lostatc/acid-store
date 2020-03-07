@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-use lazy_static::lazy_static;
-use path_slash::PathExt;
-use rmp_serde::{from_read, to_vec};
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -24,8 +21,13 @@ use std::fs::{create_dir, create_dir_all, metadata, File, OpenOptions};
 use std::io::{self, copy, Read, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+
+use path_slash::PathExt;
+use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
 use walkdir::WalkDir;
+
+use lazy_static::lazy_static;
 
 use crate::repo::{
     LockStrategy, Object, ObjectRepository, ReadOnlyObject, RepositoryConfig, RepositoryInfo,
@@ -48,7 +50,7 @@ lazy_static! {
 /// A path to a file in a `FileRepository`.
 pub type EntryPath = Path;
 
-/// A persistent file store.
+/// A virtual file system.
 ///
 /// This is a wrapper around `ObjectRepository` which allows it to function as a virtual file
 /// system.

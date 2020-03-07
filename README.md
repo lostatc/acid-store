@@ -9,10 +9,11 @@
 
 This library provides high-level abstractions for data storage over a number of storage backends.
 The goal is to decouple how you access your data from where you store it. You can access your data
-as a virtual file system, an object store, or a persistent collection, regardless of where it's
-stored. Out of the box, this library supports the local file system, SQLite, Redis, and Amazon S3 as
-storage backends. Storage backends are easy to implement, and this library builds on top of them to
-provide features like encryption, compression, deduplication, locking, and atomic transactions.
+as an object store, a virtual file system, a persistent collection, or a content-addressable
+storage, regardless of where the data is stored. Out of the box, this library supports the local
+file system, SQLite, Redis, and Amazon S3 as storage backends. Storage backends are easy to
+implement, and this library builds on top of them to provide features like encryption, compression,
+deduplication, locking, and atomic transactions.
 
 For details and examples, see the [documentation](https://docs.rs/acid-store).
 
@@ -35,6 +36,7 @@ This library provides the following abstractions for data storage:
 - A virtual file system which can import and export files to the local OS file system
 - A persistent, heterogeneous, map-like collection
 - An object store with support for content versioning
+- A content-addressable storage which allows for accessing data by its cryptographic hash
 
 This library provides the following storage backends out of the box:
 - Local file system directory

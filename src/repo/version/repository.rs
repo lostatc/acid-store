@@ -14,14 +14,16 @@
  * limitations under the License.
  */
 
-use lazy_static::lazy_static;
-use rmp_serde::{from_read, to_vec};
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::{Read, Write};
 use std::time::SystemTime;
+
+use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
+
+use lazy_static::lazy_static;
 
 use crate::repo::{
     Key, LockStrategy, Object, ObjectRepository, ReadOnlyObject, RepositoryConfig, RepositoryInfo,
@@ -218,7 +220,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         self.repository.get_mut(&VersionKey::Object(key.to_owned()))
     }
 
-    /// Return an iterator over all the keys in this repository.
+    /// Return an iterator of all the keys in this repository.
     pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.repository
             .keys()
