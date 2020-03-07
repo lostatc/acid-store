@@ -14,16 +14,18 @@
  * limitations under the License.
  */
 
-use lazy_static::lazy_static;
-use rmp_serde::{from_read, to_vec};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::{Read, Write};
+
+use rmp_serde::{from_read, to_vec};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use uuid::Uuid;
+
+use lazy_static::lazy_static;
 
 use crate::repo::{
     Key, LockStrategy, ObjectRepository, RepositoryConfig, RepositoryInfo, RepositoryStats,
@@ -169,7 +171,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
         Ok(value)
     }
 
-    /// Return a list of all the keys in this repository.
+    /// Return an iterator of all the keys in this repository.
     pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.repository
             .keys()

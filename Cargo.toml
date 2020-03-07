@@ -36,7 +36,10 @@ redis = { version = "0.15.1", optional = true }
 rust-s3 =  { version = "0.18.11", optional = true }
 
 # Hashing
+digest = "0.8.1"
 blake2 = "0.8.1"
+sha2 = "0.8.1"
+sha3 = "0.8.2"
 
 # Error handling
 thiserror = "1.0.9"

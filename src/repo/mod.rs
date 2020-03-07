@@ -24,6 +24,7 @@
 //! in this module. `ObjectRepository` is meant to be easily extensible to fit most use-cases; all
 //! the other repositories in this module are implemented using `ObjectRepository`.
 
+pub use content::{ContentRepository, HashAlgorithm};
 #[cfg(feature = "file-metadata")]
 pub use file::CommonMetadata;
 #[cfg(all(unix, feature = "file-metadata"))]
@@ -36,6 +37,7 @@ pub use object::{
 pub use value::ValueRepository;
 pub use version::{Version, VersionRepository};
 
+mod content;
 mod file;
 mod object;
 mod value;

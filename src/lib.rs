@@ -24,6 +24,8 @@
 //! file system.
 //! - `ValueRepository` is a persistent, heterogeneous, map-like collection.
 //! - `VersionRepository` is an object store with support for content versioning.
+//! - `ContentRepository` is a content-addressable storage which allows for accessing data by its
+//! cryptographic hash.
 //!
 //! A repository stores its data in a `DataStore`, which is a small trait that can be implemented to
 //! create new storage backends. The following data stores are provided out of the box:

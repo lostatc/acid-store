@@ -1,0 +1,272 @@
+/*
+ * Copyright 2019-2020 Wren Powell
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+use std::collections::HashSet;
+use std::io::{Read, Write};
+
+use rmp_serde::{from_read, to_vec};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use lazy_static::lazy_static;
+
+use crate::repo::content::hash::HashAlgorithm;
+use crate::repo::{
+    LockStrategy, ObjectRepository, ReadOnlyObject, RepositoryConfig, RepositoryInfo,
+    RepositoryStats,
+};
+use crate::store::DataStore;
+
+lazy_static! {
+    /// The current repository format version ID.
+    static ref VERSION_ID: Uuid = Uuid::parse_str("c8903e2a-6092-11ea-b0bb-3bbaa967b54a").unwrap();
+}
+
+/// The size of the buffer to use when copying bytes.
+const BUFFER_SIZE: usize = 4096;
+
+/// The key to use in the `ObjectRepository` which backs a `ContentRepository`.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+pub enum ContentKey {
+    /// An object identified by its hash.
+    Object(Vec<u8>),
+
+    /// A location to write data to before we know its hash.
+    Stage,
+
+    /// The serialized hash algorithm in use by this repository.
+    HashAlgorithm,
+
+    /// The serialized repository version ID.
+    RepositoryVersion,
+}
+
+/// A content-addressable storage.
+///
+/// This is a wrapper around `ObjectRepository` which allows for accessing data by its cryptographic
+/// hash. See `HashAlgorithm` for a list of supported hash algorithms.
+///
+/// Like `ObjectRepository`, changes made to the repository are not persisted to the data store
+/// until `commit` is called. For details about deduplication, compression, encryption, and locking,
+/// see `ObjectRepository`.
+pub struct ContentRepository<S: DataStore> {
+    repository: ObjectRepository<ContentKey, S>,
+    hash_algorithm: HashAlgorithm,
+}
+
+impl<S: DataStore> ContentRepository<S> {
+    /// Create a new repository backed by the given data `store`.
+    ///
+    /// The hash `algorithm` to use must be provided. Once the repository is created, this cannot be
+    /// changed.
+    ///
+    /// See `ObjectRepository::create_repo` for details.
+    pub fn create_repo(
+        store: S,
+        config: RepositoryConfig,
+        algorithm: HashAlgorithm,
+        password: Option<&[u8]>,
+    ) -> crate::Result<Self> {
+        let mut repository = ObjectRepository::create_repo(store, config, password)?;
+
+        // Write the repository version.
+        let mut object = repository.insert(ContentKey::RepositoryVersion);
+        object.write_all(VERSION_ID.as_bytes())?;
+        object.flush()?;
+        drop(object);
+
+        // Write the hash ato_vec(&algorithm)to_vec(&algorithm)lgorithm.
+        let mut object = repository.insert(ContentKey::HashAlgorithm);
+        let serialized_algorithm = to_vec(&algorithm).expect("Could not serialize hash algorithm.");
+        object.write_all(&serialized_algorithm)?;
+        object.flush()?;
+        drop(object);
+
+        Ok(Self {
+            repository,
+            hash_algorithm: algorithm,
+        })
+    }
+
+    /// Open the existing repository in the given data `store`.
+    ///
+    /// See `ObjectRepository::open_repo` for details.
+    pub fn open_repo(
+        store: S,
+        strategy: LockStrategy,
+        password: Option<&[u8]>,
+    ) -> crate::Result<Self> {
+        let repository = ObjectRepository::open_repo(store, strategy, password)?;
+
+        // Read the repository version.
+        let mut object = repository
+            .get(&ContentKey::RepositoryVersion)
+            .ok_or(crate::Error::NotFound)?;
+        let mut version_buffer = Vec::new();
+        object.read_to_end(&mut version_buffer)?;
+        drop(object);
+
+        // Check the repository version to see if this is a compatible repository.
+        let version =
+            Uuid::from_slice(version_buffer.as_slice()).map_err(|_| crate::Error::Corrupt)?;
+        if version != *VERSION_ID {
+            return Err(crate::Error::UnsupportedFormat);
+        }
+
+        // Read the hash algorithm.
+        let mut object = repository
+            .get(&ContentKey::HashAlgorithm)
+            .ok_or(crate::Error::Corrupt)?;
+        let mut algorithm_buffer = Vec::new();
+        object.read_to_end(&mut algorithm_buffer)?;
+        let hash_algorithm =
+            from_read(algorithm_buffer.as_slice()).map_err(|_| crate::Error::Corrupt)?;
+        drop(object);
+
+        Ok(Self {
+            repository,
+            hash_algorithm,
+        })
+    }
+
+    /// Return whether the repository contains an object with the given `hash`.
+    pub fn contains(&self, hash: &[u8]) -> bool {
+        self.repository.contains(&ContentKey::Object(hash.to_vec()))
+    }
+
+    /// Add the given `data` to the repository as a new object and return its hash.
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn put(&mut self, data: &mut impl Read) -> crate::Result<Vec<u8>> {
+        let mut buffer = Vec::with_capacity(BUFFER_SIZE);
+        let mut digest = self.hash_algorithm.digest();
+        let mut bytes_read;
+
+        // We write to a temporary object because we don't know the data's hash yet.
+        let mut object = self.repository.insert(ContentKey::Stage);
+
+        // Calculate the hash and write to the repository simultaneously so the `data` is only read
+        // once.
+        loop {
+            bytes_read = data.read(&mut buffer)?;
+            if bytes_read == 0 {
+                break;
+            }
+            digest.input(&buffer[..bytes_read]);
+            object.write_all(&buffer[..bytes_read])?;
+        }
+
+        object.flush()?;
+        drop(object);
+
+        // Now that we know the hash, we can associate the object with its hash.
+        let hash = digest.result();
+        let key = ContentKey::Object(hash.clone());
+        if !self.repository.contains(&key) {
+            self.repository.copy(&ContentKey::Stage, key)?;
+        }
+        self.repository.remove(&ContentKey::Stage);
+
+        Ok(hash)
+    }
+
+    /// Remove the object with the given `hash` from the repository.
+    ///
+    /// This returns `true` if the object was removed or `false` if it didn't exist.
+    ///
+    /// The space used by the given object isn't freed and made available for new objects until
+    /// `commit` is called.
+    pub fn remove(&mut self, hash: &[u8]) -> bool {
+        self.repository.remove(&ContentKey::Object(hash.to_vec()))
+    }
+
+    /// Return the object with the given `hash` or `None` if it doesn't exist.
+    pub fn get(&self, hash: &[u8]) -> Option<ReadOnlyObject<ContentKey, S>> {
+        self.repository.get(&ContentKey::Object(hash.to_vec()))
+    }
+
+    /// Return an iterator of hashes of all the objects in this repository.
+    pub fn list(&self) -> impl Iterator<Item = &[u8]> {
+        self.repository.keys().filter_map(|key| match key {
+            ContentKey::Object(hash) => Some(hash.as_slice()),
+            _ => None,
+        })
+    }
+
+    /// Return the hash algorithm used by this repository.
+    pub fn hash_algorithm(&self) -> HashAlgorithm {
+        self.hash_algorithm
+    }
+
+    /// Commit changes which have been made to the repository.
+    ///
+    /// See `ObjectRepository::commit` for details.
+    pub fn commit(&mut self) -> crate::Result<()> {
+        self.repository.commit()
+    }
+
+    /// Verify the integrity of all the data in the repository.
+    ///
+    /// This returns the set of hashes of objects which are corrupt.
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn verify(&self) -> crate::Result<HashSet<&[u8]>> {
+        Ok(self
+            .repository
+            .verify()?
+            .iter()
+            .filter_map(|key| match key {
+                ContentKey::Object(hash) => Some(hash.as_slice()),
+                _ => None,
+            })
+            .collect())
+    }
+
+    /// Change the password for this repository.
+    ///
+    /// See `ObjectRepository::change_password` for details.
+    pub fn change_password(&mut self, new_password: &[u8]) {
+        self.repository.change_password(new_password)
+    }
+
+    /// Return information about the repository.
+    pub fn info(&self) -> RepositoryInfo {
+        self.repository.info()
+    }
+
+    /// Return information about the repository in `store` without opening it.
+    ///
+    /// See `ObjectRepository::peek_info` for details.
+    pub fn peek_info(store: &mut S) -> crate::Result<RepositoryInfo> {
+        ObjectRepository::<ContentKey, S>::peek_info(store)
+    }
+
+    /// Calculate statistics about the repository.
+    pub fn stats(&self) -> RepositoryStats {
+        self.repository.stats()
+    }
+
+    /// Consume this repository and return the wrapped `DataStore`.
+    pub fn into_store(self) -> S {
+        self.repository.into_store()
+    }
+}
