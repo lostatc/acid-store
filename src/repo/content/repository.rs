@@ -70,8 +70,7 @@ pub struct ContentRepository<S: DataStore> {
 impl<S: DataStore> ContentRepository<S> {
     /// Create a new repository backed by the given data `store`.
     ///
-    /// The hash `algorithm` to use must be provided. Once the repository is created, this cannot be
-    /// changed.
+    /// The hash `algorithm` to use must be provided.
     ///
     /// See `ObjectRepository::create_repo` for details.
     pub fn create_repo(
@@ -88,7 +87,7 @@ impl<S: DataStore> ContentRepository<S> {
         object.flush()?;
         drop(object);
 
-        // Write the hash ato_vec(&algorithm)to_vec(&algorithm)lgorithm.
+        // Write the hash algorithm.
         let mut object = repository.insert(ContentKey::HashAlgorithm);
         let serialized_algorithm = to_vec(&algorithm).expect("Could not serialize hash algorithm.");
         object.write_all(&serialized_algorithm)?;
@@ -210,8 +209,47 @@ impl<S: DataStore> ContentRepository<S> {
     }
 
     /// Return the hash algorithm used by this repository.
-    pub fn hash_algorithm(&self) -> HashAlgorithm {
+    pub fn algorithm(&self) -> HashAlgorithm {
         self.hash_algorithm
+    }
+
+    /// Change the hash algorithm used by this repository.
+    ///
+    /// This re-computes the hashes of all the objects in the repository. If the given hash
+    /// algorithm is the same as the current hash algorithm, this does nothing.
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn change_algorithm(&mut self, new_algorithm: HashAlgorithm) -> crate::Result<()> {
+        if new_algorithm == self.hash_algorithm {
+            return Ok(());
+        }
+
+        self.hash_algorithm = new_algorithm;
+
+        // Serialize and write the new hash algorithm.
+        let mut object = self.repository.insert(ContentKey::HashAlgorithm);
+        let serialized_algorithm =
+            to_vec(&new_algorithm).expect("Could not serialize hash algorithm.");
+        object.write_all(&serialized_algorithm)?;
+        object.flush()?;
+        drop(object);
+
+        // Re-compute the hashes of the objects in the repository.
+        let old_hashes = self.list().map(|hash| hash.to_vec()).collect::<Vec<_>>();
+        for old_hash in old_hashes {
+            let mut object = self.get(&old_hash).unwrap();
+            let new_hash = new_algorithm.hash(&mut object)?;
+            drop(object);
+            let old_key = ContentKey::Object(old_hash);
+            self.repository
+                .copy(&old_key, ContentKey::Object(new_hash))?;
+            self.repository.remove(&old_key);
+        }
+
+        Ok(())
     }
 
     /// Commit changes which have been made to the repository.
