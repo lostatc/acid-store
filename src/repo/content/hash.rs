@@ -119,7 +119,6 @@ impl HashAlgorithm {
             HashAlgorithm::Sha3_512 => Sha3_512::output_size(),
             HashAlgorithm::Blake2b(size) => *size,
             HashAlgorithm::Blake2s(size) => *size,
-            _ => panic!("Unsupported hash algorithm."),
         }
     }
 
@@ -127,8 +126,8 @@ impl HashAlgorithm {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
-    pub fn hash(&self, data: &mut impl Read) -> crate::Result<Vec<u8>> {
-        let mut buffer = Vec::with_capacity(BUFFER_SIZE);
+    pub fn hash(&self, mut data: impl Read) -> crate::Result<Vec<u8>> {
+        let mut buffer = [0u8; BUFFER_SIZE];
         let mut digest = self.digest();
         let mut bytes_read;
 
@@ -161,7 +160,6 @@ impl HashAlgorithm {
             HashAlgorithm::Blake2s(size) => Box::new(VariableDigest(
                 VarBlake2s::new(*size).expect("Invalid digest size for BLAKE2s."),
             )),
-            _ => panic!("Unsupported hash algorithm."),
         }
     }
 }
