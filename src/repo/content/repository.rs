@@ -152,8 +152,8 @@ impl<S: DataStore> ContentRepository<S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn put(&mut self, data: &mut impl Read) -> crate::Result<Vec<u8>> {
-        let mut buffer = Vec::with_capacity(BUFFER_SIZE);
+    pub fn put(&mut self, mut data: impl Read) -> crate::Result<Vec<u8>> {
+        let mut buffer = [0u8; BUFFER_SIZE];
         let mut digest = self.hash_algorithm.digest();
         let mut bytes_read;
 
