@@ -62,6 +62,7 @@ pub enum ContentKey {
 /// Like `ObjectRepository`, changes made to the repository are not persisted to the data store
 /// until `commit` is called. For details about deduplication, compression, encryption, and locking,
 /// see `ObjectRepository`.
+#[derive(Debug)]
 pub struct ContentRepository<S: DataStore> {
     repository: ObjectRepository<ContentKey, S>,
     hash_algorithm: HashAlgorithm,
