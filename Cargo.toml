@@ -76,6 +76,8 @@ tempfile = "3.1.0"
 serial_test = "0.3.2"
 matches = "0.1.8"
 dotenv = "0.15.0"
+criterion = "0.3.1"
+bytesize = "1.0.0"
 
 [features]
 default = ["store-directory"]
@@ -89,3 +91,7 @@ store-redis = ["redis"]
 store-s3 = ["rust-s3"]
 
 file-metadata = ["nix", "filetime", "xattr"]
+
+[[bench]]
+name = "io"
+harness = false
