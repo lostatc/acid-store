@@ -47,25 +47,30 @@ pub fn new_repo(directory: &Path) -> ObjectRepository<String, DirectoryStore> {
         .unwrap()
 }
 
+/// The number of bytes to write when a trivial amount of data must be written.
+const TRIVIAL_DATA_SIZE: usize = 16;
+
 pub fn insert_object(criterion: &mut Criterion) {
     let tmp_dir = tempdir().unwrap();
     let mut group = criterion.benchmark_group("Insert an object");
 
-    for num_objects in [200, 1_000, 5_000].iter() {
+    for num_objects in [100, 1_000, 10_000].iter() {
+        // Create a new repository.
+        let mut repo = new_repo(tmp_dir.path());
+
+        // Insert objects and write to them but don't commit them.
+        for i in 0..*num_objects {
+            let mut object = repo.insert(String::from(format!("Uncommitted object {}", i)));
+            object.write_all(random_bytes(TRIVIAL_DATA_SIZE).as_slice()).unwrap();
+            object.flush().unwrap();
+        }
+
         group.throughput(Throughput::Elements(1));
-        group.bench_with_input(
+
+        // Benchmark inserting a new object.
+        group.bench_function(
             format!("with {} uncommitted objects", num_objects),
-            num_objects,
-            |bencher, num_objects| {
-                // Create a new repository.
-                let mut repo = new_repo(tmp_dir.path());
-
-                // Insert objects but don't commit them.
-                for i in 0..*num_objects {
-                    repo.insert(String::from(format!("Uncommitted object {}", i)));
-                }
-
-                // Benchmark inserting a new object.
+            |bencher| {
                 bencher.iter(|| {
                     repo.insert(String::from("Test"));
                 });
@@ -78,28 +83,25 @@ pub fn insert_object_and_write(criterion: &mut Criterion) {
     let tmp_dir = tempdir().unwrap();
     let mut group = criterion.benchmark_group("Insert an object and write to it");
 
-    // This is meant to be as small as possible while ensuring there is no duplicate data.
-    const DATA_SIZE: usize = 16;
+    for num_objects in [100, 1_000, 10_000].iter() {
+        // Create a new repository.
+        let mut repo = new_repo(tmp_dir.path());
 
-    for num_objects in [200, 1_000, 5_000].iter() {
+        // Insert objects and write to them but don't commit them.
+        for i in 0..*num_objects {
+            let mut object = repo.insert(String::from(format!("Uncommitted object {}", i)));
+            object.write_all(random_bytes(TRIVIAL_DATA_SIZE).as_slice()).unwrap();
+            object.flush().unwrap();
+        }
+
         group.throughput(Throughput::Elements(1));
-        group.bench_with_input(
+
+        // Benchmark inserting a new object and writing to it.
+        group.bench_function(
             format!("with {} uncommitted objects", num_objects),
-            num_objects,
-            |bencher, num_objects| {
-                // Create a new repository.
-                let mut repo = new_repo(tmp_dir.path());
-
-                // Insert objects and write to them but don't commit them.
-                for i in 0..*num_objects {
-                    let mut object = repo.insert(String::from(format!("Uncommitted object {}", i)));
-                    object.write_all(random_bytes(DATA_SIZE).as_slice()).unwrap();
-                    object.flush().unwrap();
-                }
-
-                // Benchmark inserting a new object and writing to it.
+            |bencher| {
                 bencher.iter_batched(
-                    || random_bytes(DATA_SIZE),
+                    || random_bytes(TRIVIAL_DATA_SIZE),
                     |data| {
                         let mut object = repo.insert(String::from("Test"));
                         object.write_all(data.as_slice()).unwrap();
