@@ -14,15 +14,17 @@
  * limitations under the License.
  */
 
-use lazy_static::lazy_static;
-use rmp_serde::{from_read, to_vec};
 use std::borrow::{Borrow, ToOwned};
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::{Mutex, RwLock};
 use std::time::SystemTime;
+
+use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
+
+use lazy_static::lazy_static;
 
 use crate::repo::object::chunk_store::{ChunkEncoder, ChunkReader};
 use crate::repo::object::object::ReadOnlyObject;
@@ -429,7 +431,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     pub fn commit(&mut self) -> crate::Result<()> {
         // Serialize and encode the header.
         let serialized_header = to_vec(&self.state.header).expect("Could not serialize header.");
-        let encoded_header = ChunkEncoder::new(&self.state).encode_data(&serialized_header)?;
+        let encoded_header = self.state.encode_data(&serialized_header)?;
 
         // Write the new header to the data store.
         let header_id = Uuid::new_v4();
@@ -493,7 +495,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
 
         // Get the set of hashes of chunks which are corrupt.
         for chunk in expected_chunks {
-            match ChunkReader::new(&self.state).read_chunk(chunk) {
+            match self.state.read_chunk(chunk) {
                 Ok(data) => {
                     if data.len() != chunk.size || chunk_hash(&data) != chunk.hash {
                         corrupt_chunks.insert(chunk.hash);

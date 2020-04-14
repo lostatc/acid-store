@@ -14,15 +14,16 @@
  * limitations under the License.
  */
 
-use blake2::digest::{Input, VariableOutput};
-use blake2::VarBlake2b;
-use serde::{Deserialize, Serialize};
 use std::clone::Clone;
 use std::cmp::min;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::mem::replace;
+
+use blake2::digest::{Input, VariableOutput};
+use blake2::VarBlake2b;
+use serde::{Deserialize, Serialize};
 
 use crate::repo::object::chunk_store::{ChunkReader, ChunkWriter};
 use crate::repo::object::state::{ChunkLocation, ObjectState};
@@ -123,7 +124,7 @@ impl<'a, K: Key, S: DataStore> ObjectInfo<'a, K, S> {
         let expected_chunks = handle.chunks.iter().copied().collect::<Vec<_>>();
 
         for chunk in expected_chunks {
-            match ChunkReader::new(self.repo_state).read_chunk(chunk) {
+            match self.repo_state.read_chunk(chunk) {
                 Ok(data) => {
                     if data.len() != chunk.size || chunk_hash(&data) != chunk.hash {
                         return Ok(false);
@@ -193,8 +194,7 @@ impl<'a, K: Key, S: DataStore> ObjectReader<'a, K, S> {
         // If we're reading from a new chunk, read the contents of that chunk into the read buffer.
         if Some(current_location.chunk) != self.object_state.buffered_chunk {
             self.object_state.buffered_chunk = Some(current_location.chunk);
-            self.object_state.read_buffer =
-                ChunkReader::new(self.repo_state).read_chunk(current_location.chunk)?;
+            self.object_state.read_buffer = self.repo_state.read_chunk(current_location.chunk)?;
         }
 
         let start = current_location.relative_position();
@@ -287,9 +287,9 @@ impl<'a, K: Key, S: DataStore> ObjectWriter<'a, K, S> {
             Some(location) => location,
             None => return Ok(()),
         };
-        let last_chunk = ChunkReader::new(self.repo_state).read_chunk(end_location.chunk)?;
+        let last_chunk = self.repo_state.read_chunk(end_location.chunk)?;
         let new_last_chunk = &last_chunk[..end_location.relative_position()];
-        let new_last_chunk = ChunkWriter::new(self.repo_state).write_chunk(&new_last_chunk)?;
+        let new_last_chunk = self.repo_state.write_chunk(&new_last_chunk)?;
 
         let key = self.key.clone();
         let mut handle = self.repo_state.header.objects.get_mut(&key).unwrap();
@@ -313,7 +313,7 @@ impl<'a, K: Key, S: DataStore> ObjectWriter<'a, K, S> {
     /// Write chunks stored in the chunker to the repository.
     fn write_chunks(&mut self) -> crate::Result<()> {
         for chunk_data in self.object_state.chunker.chunks() {
-            let chunk = ChunkWriter::new(self.repo_state).write_chunk(&chunk_data)?;
+            let chunk = self.repo_state.write_chunk(&chunk_data)?;
             self.object_state.new_chunks.push(chunk);
         }
         Ok(())
@@ -337,7 +337,7 @@ impl<'a, K: Key, S: DataStore> Write for ObjectWriter<'a, K, S> {
 
                 // We need to make sure the data before the seek position is saved when we replace
                 // the chunk. Read this data from the repository and write it to the chunker.
-                let first_chunk = ChunkReader::new(self.repo_state).read_chunk(chunk)?;
+                let first_chunk = self.repo_state.read_chunk(chunk)?;
                 self.object_state
                     .chunker
                     .write_all(&first_chunk[..position])?;
@@ -365,7 +365,7 @@ impl<'a, K: Key, S: DataStore> Write for ObjectWriter<'a, K, S> {
         if let Some(location) = &current_chunk {
             // We need to make sure the data after the seek position is saved when we replace the
             // current chunk. Read this data from the repository and write it to the chunker.
-            let last_chunk = ChunkReader::new(self.repo_state).read_chunk(location.chunk)?;
+            let last_chunk = self.repo_state.read_chunk(location.chunk)?;
             self.object_state
                 .chunker
                 .write_all(&last_chunk[location.relative_position()..])?;
