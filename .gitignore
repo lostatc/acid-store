@@ -106,3 +106,9 @@ Cargo.lock
 
 # Test database
 /test.db
+
+# direnv
+/.envrc
+
+# Nix
+/result
