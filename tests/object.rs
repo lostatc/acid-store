@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 
+#![cfg(all(feature = "encryption", feature = "compression"))]
+
 use std::io::{Read, Seek, SeekFrom, Write};
 
-use common::{create_repo, random_buffer, random_bytes, MIN_BUFFER_SIZE};
+use common::{create_repo, MIN_BUFFER_SIZE, random_buffer, random_bytes};
 
 mod common;
 

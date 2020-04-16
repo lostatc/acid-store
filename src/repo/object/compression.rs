@@ -14,12 +14,17 @@
  * limitations under the License.
  */
 
-use flate2::read::{GzDecoder, GzEncoder};
-use flate2::Compression as CompressionLevel;
-use lz4::{Decoder as Lz4Decoder, EncoderBuilder as Lz4EncoderBuilder};
+
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
-use xz2::read::{XzDecoder, XzEncoder};
+
+#[cfg(feature = "compression")]
+use {
+    flate2::Compression as CompressionLevel,
+    flate2::read::{GzDecoder, GzEncoder},
+    lz4::{Decoder as Lz4Decoder, EncoderBuilder as Lz4EncoderBuilder},
+    std::io::{Read, Write},
+    xz2::read::{XzDecoder, XzEncoder},
+};
 
 /// A data compression method.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
@@ -29,6 +34,7 @@ pub enum Compression {
     None,
 
     /// Compress data using the DEFLATE compression algorithm.
+    #[cfg(feature = "compression")]
     Deflate {
         /// The compression level to use.
         ///
@@ -37,6 +43,7 @@ pub enum Compression {
     },
 
     /// Compress data using the LZMA compression algorithm.
+    #[cfg(feature = "compression")]
     Lzma {
         /// The compression level to use.
         ///
@@ -45,6 +52,7 @@ pub enum Compression {
     },
 
     /// Compress data using the LZ4 compression algorithm.
+    #[cfg(feature = "compression")]
     Lz4 {
         /// The compression level to use.
         ///
@@ -58,16 +66,19 @@ impl Compression {
     pub(super) fn compress(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
         match self {
             Compression::None => Ok(data.to_vec()),
+            #[cfg(feature = "compression")]
             Compression::Deflate { level } => {
                 let mut output = Vec::with_capacity(data.len());
                 GzEncoder::new(data, CompressionLevel::new(*level)).read_to_end(&mut output)?;
                 Ok(output)
             }
+            #[cfg(feature = "compression")]
             Compression::Lzma { level } => {
                 let mut output = Vec::with_capacity(data.len());
                 XzEncoder::new(data, *level).read_to_end(&mut output)?;
                 Ok(output)
             }
+            #[cfg(feature = "compression")]
             Compression::Lz4 { level } => {
                 let mut output = Vec::with_capacity(data.len());
                 let mut encoder = Lz4EncoderBuilder::new().level(*level).build(&mut output)?;
@@ -75,7 +86,8 @@ impl Compression {
                 let (_, result) = encoder.finish();
                 result?;
                 Ok(output)
-            }
+            },
+            _ => panic!("Unsupported compression method.")
         }
     }
 
@@ -83,16 +95,19 @@ impl Compression {
     pub(super) fn decompress<'a>(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
         match self {
             Compression::None => Ok(data.to_vec()),
+            #[cfg(feature = "compression")]
             Compression::Deflate { .. } => {
                 let mut output = Vec::with_capacity(data.len());
                 GzDecoder::new(data).read_to_end(&mut output)?;
                 Ok(output)
             }
+            #[cfg(feature = "compression")]
             Compression::Lzma { .. } => {
                 let mut output = Vec::with_capacity(data.len());
                 XzDecoder::new(data).read_to_end(&mut output)?;
                 Ok(output)
             }
+            #[cfg(feature = "compression")]
             Compression::Lz4 { .. } => {
                 let mut output = Vec::with_capacity(data.len());
                 let mut decoder = Lz4Decoder::new(data)?;
@@ -100,7 +115,8 @@ impl Compression {
                 let (_, result) = decoder.finish();
                 result?;
                 Ok(output)
-            }
+            },
+            _ => panic!("Unsupported compression method.")
         }
     }
 }

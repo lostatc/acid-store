@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
+#![cfg(all(feature = "encryption", feature = "compression"))]
+
 use std::collections::HashSet;
 use std::io::Read;
 
 use acid_store::repo::{ContentRepository, HashAlgorithm, LockStrategy};
 use acid_store::store::MemoryStore;
-use common::{random_buffer, PASSWORD, REPO_CONFIG};
+use common::{PASSWORD, random_buffer, REPO_CONFIG};
 
 mod common;
 

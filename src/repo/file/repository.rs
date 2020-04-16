@@ -17,7 +17,7 @@
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::fmt::Debug;
-use std::fs::{create_dir, create_dir_all, metadata, File, OpenOptions};
+use std::fs::{create_dir, create_dir_all, File, metadata, OpenOptions};
 use std::io::{self, copy, Read, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
@@ -787,6 +787,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// Change the password for this repository.
     ///
     /// See `ObjectRepository::change_password` for details.
+    #[cfg(feature = "encryption")]
     pub fn change_password(&mut self, new_password: &[u8]) {
         self.repository.change_password(new_password);
     }

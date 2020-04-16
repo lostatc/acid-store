@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#![cfg(all(feature = "encryption", feature = "compression"))]
+
 use std::fs::{create_dir, File};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -21,9 +23,6 @@ use std::path::Path;
 use matches::assert_matches;
 use tempfile::tempdir;
 
-use acid_store::repo::{Entry, FileRepository, LockStrategy, NoMetadata};
-use acid_store::store::MemoryStore;
-use common::{assert_contains_all, PASSWORD, REPO_CONFIG};
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
     acid_store::repo::{CommonMetadata, FileType, UnixMetadata},
@@ -31,6 +30,9 @@ use {
     std::os::unix::fs::MetadataExt,
     std::time::SystemTime,
 };
+use acid_store::repo::{Entry, FileRepository, LockStrategy, NoMetadata};
+use acid_store::store::MemoryStore;
+use common::{assert_contains_all, PASSWORD, REPO_CONFIG};
 
 mod common;
 

@@ -15,12 +15,13 @@
  */
 
 #![allow(dead_code)]
+#![cfg(all(feature = "encryption", feature = "compression"))]
 
 use std::fmt::Debug;
 use std::hash::Hash;
 
-use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
+use rand::rngs::SmallRng;
 #[cfg(feature = "store-redis")]
 use redis::{ConnectionInfo, IntoConnectionInfo};
 #[cfg(feature = "store-s3")]

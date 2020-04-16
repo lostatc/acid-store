@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
+#![cfg(all(feature = "encryption", feature = "compression"))]
+
 use std::io::{Read, Write};
 
 use matches::assert_matches;
 
 use acid_store::repo::{LockStrategy, VersionRepository};
 use acid_store::store::MemoryStore;
-use common::{assert_contains_all, random_buffer, PASSWORD, REPO_CONFIG};
+use common::{assert_contains_all, PASSWORD, random_buffer, REPO_CONFIG};
 
 mod common;
 

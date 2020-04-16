@@ -16,4 +16,4 @@ jobs:
       - name: Run tests
         env:
           REDIS_URL: redis://localhost:6379
-        run: cargo test --verbose --features 'store-directory store-sqlite store-redis file-metadata'
+        run: cargo test --verbose --features 'store-directory store-sqlite store-redis file-metadata encryption compression'

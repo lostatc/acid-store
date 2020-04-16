@@ -86,11 +86,13 @@
 //!
 //! Types | Cargo Feature | Default
 //! --- | --- | ---
+//! `Encryption::XChaCha20Poly1305` | `encryption` | No
+//! `Compression::Deflate`, `Compression::Lzma`, `Compression::Lz4` | `compression` | No
+//! `CommonMetadata`, `UnixMetadata` | `file-metadata` | No
 //! `DirectoryStore` | `store-directory` | Yes
 //! `SqliteStore` | `store-sqlite` | No
 //! `RedisStore` | `store-redis` | No
 //! `S3Store` | `store-s3` | No
-//! `CommonMetadata`, `UnixMetadata` | `file-metadata` | No
 //!
 //! To use a feature which is not enabled by default, you must enable it in your `Cargo.toml`.
 

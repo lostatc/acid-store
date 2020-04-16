@@ -21,7 +21,7 @@ jobs:
       - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
         with:
-          args: --features 'store-directory store-sqlite store-redis file-metadata' --ignore-tests
+          args: --features 'store-directory store-sqlite store-redis file-metadata encryption compression' --ignore-tests
         env:
           REDIS_URL: redis://localhost:6379
 

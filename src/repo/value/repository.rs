@@ -227,6 +227,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// Change the password for this repository.
     ///
     /// See `ObjectRepository::change_password` for details.
+    #[cfg(feature = "encryption")]
     pub fn change_password(&mut self, new_password: &[u8]) {
         self.repository.change_password(new_password);
     }
