@@ -316,7 +316,6 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             .header
             .objects
             .insert(key.clone(), ObjectHandle::default());
-        self.state.header.clean_chunks();
 
         Object::new(&mut self.state, key)
     }
@@ -332,9 +331,7 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         K: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        let handle = self.state.header.objects.remove(key);
-        self.state.header.clean_chunks();
-        handle.is_some()
+        self.state.header.objects.remove(key).is_some()
     }
 
     /// Return the object associated with `key` or `None` if it doesn't exist.
@@ -429,6 +426,9 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn commit(&mut self) -> crate::Result<()> {
+        // Remove chunks which are not referenced by any object.
+        self.state.header.clean_chunks();
+
         // Serialize and encode the header.
         let serialized_header = to_vec(&self.state.header).expect("Could not serialize header.");
         let encoded_header = self.state.encode_data(&serialized_header)?;
