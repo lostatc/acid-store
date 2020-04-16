@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#![cfg(all(feature = "encryption", feature = "compression"))]
+
 use matches::assert_matches;
 
 use acid_store::repo::{LockStrategy, ValueRepository};

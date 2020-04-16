@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
-use sodiumoxide::init as sodiumoxide_init;
 use std::sync::Once;
+
+#[cfg(feature = "encryption")]
+use sodiumoxide::init as sodiumoxide_init;
 
 // A synchronization primitive for global initialization.
 static INIT: Once = Once::new();
@@ -25,6 +27,7 @@ static INIT: Once = Once::new();
 /// This function should be called before any other in this crate. This function can be called more
 /// than once.
 pub fn init() {
+    #[cfg(feature = "encryption")]
     INIT.call_once(|| {
         sodiumoxide_init().expect("Failed to initialize environment.");
     });

@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#![cfg(all(feature = "encryption", feature = "compression"))]
+
 use std::io::Write;
 
 use matches::assert_matches;
@@ -21,7 +23,7 @@ use tempfile::tempdir;
 
 use acid_store::repo::{LockStrategy, ObjectRepository, RepositoryConfig};
 use acid_store::store::{DataStore, DirectoryStore, MemoryStore, Open, OpenOption};
-use common::{create_repo, random_buffer, PASSWORD, REPO_CONFIG};
+use common::{create_repo, PASSWORD, random_buffer, REPO_CONFIG};
 
 mod common;
 

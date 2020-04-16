@@ -23,11 +23,11 @@ use uuid::Uuid;
 
 use lazy_static::lazy_static;
 
-use crate::repo::content::hash::HashAlgorithm;
 use crate::repo::{
     LockStrategy, ObjectRepository, ReadOnlyObject, RepositoryConfig, RepositoryInfo,
     RepositoryStats,
 };
+use crate::repo::content::hash::HashAlgorithm;
 use crate::store::DataStore;
 
 lazy_static! {
@@ -283,6 +283,7 @@ impl<S: DataStore> ContentRepository<S> {
     /// Change the password for this repository.
     ///
     /// See `ObjectRepository::change_password` for details.
+    #[cfg(feature = "encryption")]
     pub fn change_password(&mut self, new_password: &[u8]) {
         self.repository.change_password(new_password)
     }
