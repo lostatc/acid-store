@@ -31,14 +31,20 @@ All the usual disclaimers apply.
 - Copy-on-write semantics
 - New storage backends are easy to implement
 
-This library provides the following abstractions for data storage:
+### Abstractions
+
+This library provides the following abstractions for data storage.
+
 - An object store which maps keys to seekable binary blobs
 - A virtual file system which can import and export files to the local OS file system
 - A persistent, heterogeneous, map-like collection
 - An object store with support for content versioning
 - A content-addressable storage which allows for accessing data by its cryptographic hash
 
-This library provides the following storage backends out of the box:
+### Backends
+
+This library provides the following storage backends out of the box.
+
 - Local file system directory
 - SQLite
 - Redis
