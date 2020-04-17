@@ -28,9 +28,11 @@ use uuid::Uuid;
 use lazy_static::lazy_static;
 
 use crate::repo::{
-    Key, LockStrategy, ObjectRepository, RepositoryConfig, RepositoryInfo, RepositoryStats,
+    Key, LockStrategy, ObjectRepository, OpenRepo, RepositoryConfig, RepositoryInfo,
+    RepositoryStats,
 };
 use crate::store::DataStore;
+use crate::Error;
 
 use super::key::KeyType;
 
@@ -54,34 +56,11 @@ pub struct ValueRepository<K: Key, S: DataStore> {
     repository: ObjectRepository<KeyType<K>, S>,
 }
 
-impl<K: Key, S: DataStore> ValueRepository<K, S> {
-    /// Create a new repository backed by the given data `store`.
-    ///
-    /// See `ObjectRepository::create_repo` for details.
-    pub fn create_repo(
-        store: S,
-        config: RepositoryConfig,
-        password: Option<&[u8]>,
-    ) -> crate::Result<Self> {
-        let mut repository = ObjectRepository::create_repo(store, config, password)?;
-
-        // Write the repository version.
-        let mut object = repository.insert(KeyType::Version);
-        object.write_all(VERSION_ID.as_bytes())?;
-        object.flush()?;
-        drop(object);
-
-        Ok(Self { repository })
-    }
-
-    /// Open the existing repository in the given data `store`.
-    ///
-    /// See `ObjectRepository::open_repo` for details.
-    pub fn open_repo(
-        store: S,
-        strategy: LockStrategy,
-        password: Option<&[u8]>,
-    ) -> crate::Result<Self> {
+impl<K: Key, S: DataStore> OpenRepo<S> for ValueRepository<K, S> {
+    fn open_repo(store: S, strategy: LockStrategy, password: Option<&[u8]>) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
         let repository = ObjectRepository::open_repo(store, strategy, password)?;
 
         // Read the repository version to see if this is a compatible repository.
@@ -101,6 +80,31 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
         Ok(Self { repository })
     }
 
+    fn create_new_repo(
+        store: S,
+        config: RepositoryConfig,
+        password: Option<&[u8]>,
+    ) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut repository = ObjectRepository::create_new_repo(store, config, password)?;
+
+        // Write the repository version.
+        let mut object = repository.insert(KeyType::Version);
+        object.write_all(VERSION_ID.as_bytes())?;
+        object.flush()?;
+        drop(object);
+
+        Ok(Self { repository })
+    }
+
+    fn repo_exists(store: &mut S) -> crate::Result<bool> {
+        ObjectRepository::<KeyType<K>, S>::repo_exists(store)
+    }
+}
+
+impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where

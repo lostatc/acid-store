@@ -16,12 +16,13 @@
 
 #![cfg(feature = "store-s3")]
 
-use lazy_static::lazy_static;
 use s3::bucket::Bucket;
 use s3::error::S3Error;
 use uuid::Uuid;
 
-use super::common::{DataStore, Open, OpenOption};
+use lazy_static::lazy_static;
+
+use super::common::{DataStore, OpenOption, OpenStore};
 
 lazy_static! {
     /// A UUID which acts as the version ID of the store format.
@@ -41,7 +42,7 @@ pub struct S3Store {
     bucket: Bucket,
 }
 
-impl Open for S3Store {
+impl OpenStore for S3Store {
     type Config = Bucket;
 
     fn open(config: Self::Config, options: OpenOption) -> crate::Result<Self>

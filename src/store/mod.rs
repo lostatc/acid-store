@@ -32,7 +32,7 @@
 //! Open a data store which stores data in a directory of the local file system. Create the data
 //! store if it doesn't already exist, and truncate it if it does.
 //! ```no_run
-//! use acid_store::store::{DirectoryStore, Open, OpenOption};
+//! use acid_store::store::{DirectoryStore, OpenStore, OpenOption};
 //!
 //! let store = DirectoryStore::open(
 //!     "/home/lostatc/store".into(),
@@ -40,7 +40,7 @@
 //! ).unwrap();
 //! ```
 
-pub use self::common::{DataStore, Open, OpenOption};
+pub use self::common::{DataStore, OpenOption, OpenStore};
 #[cfg(feature = "store-directory")]
 pub use self::directory::DirectoryStore;
 pub use self::memory::MemoryStore;

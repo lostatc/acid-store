@@ -19,7 +19,7 @@ use uuid::Uuid;
 use crate::repo::Key;
 use crate::store::DataStore;
 
-use super::object::{Chunk, chunk_hash};
+use super::object::{chunk_hash, Chunk};
 use super::state::RepositoryState;
 
 /// Encode and decode chunks of data.
@@ -42,10 +42,7 @@ impl<K: Key, S: DataStore> ChunkEncoder for RepositoryState<K, S> {
     }
 
     fn decode_data(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
-        let decrypted_data = self
-            .metadata
-            .encryption
-            .decrypt(data, &self.master_key)?;
+        let decrypted_data = self.metadata.encryption.decrypt(data, &self.master_key)?;
 
         Ok(self
             .metadata
@@ -106,8 +103,7 @@ impl<K: Key, S: DataStore> ChunkWriter for RepositoryState<K, S> {
         let block_id = Uuid::new_v4();
 
         // Write the data to the data store.
-        self
-            .store
+        self.store
             .lock()
             .unwrap()
             .write_block(block_id, &encoded_data)

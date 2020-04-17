@@ -20,15 +20,15 @@ use matches::assert_matches;
 use serial_test::serial;
 use tempfile::tempdir;
 
-#[cfg(feature = "store-redis")]
-use {acid_store::store::RedisStore, common::REDIS_INFO};
-#[cfg(feature = "store-s3")]
-use {acid_store::store::S3Store, common::S3_BUCKET};
-use acid_store::store::{Open, OpenOption};
 #[cfg(feature = "store-directory")]
 use acid_store::store::DirectoryStore;
 #[cfg(feature = "store-sqlite")]
 use acid_store::store::SqliteStore;
+use acid_store::store::{OpenOption, OpenStore};
+#[cfg(feature = "store-redis")]
+use {acid_store::store::RedisStore, common::REDIS_INFO};
+#[cfg(feature = "store-s3")]
+use {acid_store::store::S3Store, common::S3_BUCKET};
 
 mod common;
 

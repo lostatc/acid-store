@@ -17,7 +17,7 @@
 use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::fmt::Debug;
-use std::fs::{create_dir, create_dir_all, File, metadata, OpenOptions};
+use std::fs::{create_dir, create_dir_all, metadata, File, OpenOptions};
 use std::io::{self, copy, Read, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
@@ -30,10 +30,11 @@ use walkdir::WalkDir;
 use lazy_static::lazy_static;
 
 use crate::repo::{
-    LockStrategy, Object, ObjectRepository, ReadOnlyObject, RepositoryConfig, RepositoryInfo,
-    RepositoryStats,
+    LockStrategy, Object, ObjectRepository, OpenRepo, ReadOnlyObject, RepositoryConfig,
+    RepositoryInfo, RepositoryStats,
 };
 use crate::store::DataStore;
+use crate::Error;
 
 use super::entry::{Entry, EntryKey, FileType};
 use super::metadata::FileMetadata;
@@ -82,37 +83,11 @@ pub struct FileRepository<S: DataStore, M: FileMetadata> {
     marker: PhantomData<M>,
 }
 
-impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
-    /// Create a new repository backed by the given data `store`.
-    ///
-    /// See `ObjectRepository::create_repo` for details.
-    pub fn create_repo(
-        store: S,
-        config: RepositoryConfig,
-        password: Option<&[u8]>,
-    ) -> crate::Result<Self> {
-        let mut repository = ObjectRepository::create_repo(store, config, password)?;
-
-        // Write the repository version.
-        let mut object = repository.insert(EntryKey::Version);
-        object.write_all(VERSION_ID.as_bytes())?;
-        object.flush()?;
-        drop(object);
-
-        Ok(Self {
-            repository,
-            marker: PhantomData,
-        })
-    }
-
-    /// Open the existing repository in the given data `store`.
-    ///
-    /// See `ObjectRepository::open_repo` for details.
-    pub fn open_repo(
-        store: S,
-        strategy: LockStrategy,
-        password: Option<&[u8]>,
-    ) -> crate::Result<Self> {
+impl<S: DataStore, M: FileMetadata> OpenRepo<S> for FileRepository<S, M> {
+    fn open_repo(store: S, strategy: LockStrategy, password: Option<&[u8]>) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
         let repository = ObjectRepository::open_repo(store, strategy, password)?;
 
         // Read the repository version to see if this is a compatible repository.
@@ -135,6 +110,34 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         })
     }
 
+    fn create_new_repo(
+        store: S,
+        config: RepositoryConfig,
+        password: Option<&[u8]>,
+    ) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut repository = ObjectRepository::create_new_repo(store, config, password)?;
+
+        // Write the repository version.
+        let mut object = repository.insert(EntryKey::Version);
+        object.write_all(VERSION_ID.as_bytes())?;
+        object.flush()?;
+        drop(object);
+
+        Ok(Self {
+            repository,
+            marker: PhantomData,
+        })
+    }
+
+    fn repo_exists(store: &mut S) -> crate::Result<bool> {
+        ObjectRepository::<EntryKey, S>::repo_exists(store)
+    }
+}
+
+impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// Convert the given `path` to a platform-agnostic path and check if it is relative.
     fn convert_path(path: impl AsRef<EntryPath>) -> crate::Result<PathBuf> {
         if path.as_ref().has_root() {

@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 
-use bitflags::bitflags;
 use std::error;
+
 use uuid::Uuid;
+
+use bitflags::bitflags;
 
 /// A persistent store for blocks of data.
 ///
@@ -77,18 +79,18 @@ bitflags! {
     }
 }
 
-/// A resource which can be opened.
-pub trait Open {
-    /// The type of the configuration used to open a resource.
+/// A data store which can be opened.
+pub trait OpenStore {
+    /// The type of the configuration used to open the data store.
     type Config;
 
-    /// Open this resource using the given `config` and open `options`.
+    /// Open this data store using the given `config` and open `options`.
     ///
     /// # Errors
-    /// - `Error::NotFound`: The resource does not exist and `OpenOption::CREATE` and
+    /// - `Error::NotFound`: The data store does not exist and `OpenOption::CREATE` and
     /// `OpenOption::CREATE_NEW` were not passed.
-    /// - `Error::UnsupportedFormat`: The resource exists but is an unsupported format.
-    /// - `Error::AlreadyExists`: The resource already exists and `OpenOption::CREATE_NEW` was
+    /// - `Error::UnsupportedFormat`: The data store exists but is an unsupported format.
+    /// - `Error::AlreadyExists`: The data store already exists and `OpenOption::CREATE_NEW` was
     /// passed.
     /// - `Error::Io`: An I/O error occurred.
     /// - `Error::Store`: An error occurred with the underlying data store.
