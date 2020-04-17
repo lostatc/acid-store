@@ -23,11 +23,11 @@ use uuid::Uuid;
 
 use lazy_static::lazy_static;
 
+use crate::repo::content::hash::HashAlgorithm;
 use crate::repo::{
-    LockStrategy, ObjectRepository, ReadOnlyObject, RepositoryConfig, RepositoryInfo,
+    LockStrategy, ObjectRepository, OpenRepo, ReadOnlyObject, RepositoryConfig, RepositoryInfo,
     RepositoryStats,
 };
-use crate::repo::content::hash::HashAlgorithm;
 use crate::store::DataStore;
 
 lazy_static! {
@@ -54,10 +54,14 @@ pub enum ContentKey {
     RepositoryVersion,
 }
 
+/// The default hash algorithm to use for `ContentRepository`.
+const DEFAULT_ALGORITHM: HashAlgorithm = HashAlgorithm::Blake2b(32);
+
 /// A content-addressable storage.
 ///
 /// This is a wrapper around `ObjectRepository` which allows for accessing data by its cryptographic
-/// hash. See `HashAlgorithm` for a list of supported hash algorithms.
+/// hash. See `HashAlgorithm` for a list of supported hash algorithms. The default hash algorithm is
+/// 256-bit BLAKE2b, but this can be changed using `change_algorithm`.
 ///
 /// Like `ObjectRepository`, changes made to the repository are not persisted to the data store
 /// until `commit` is called. For details about deduplication, compression, encryption, and locking,
@@ -68,47 +72,11 @@ pub struct ContentRepository<S: DataStore> {
     hash_algorithm: HashAlgorithm,
 }
 
-impl<S: DataStore> ContentRepository<S> {
-    /// Create a new repository backed by the given data `store`.
-    ///
-    /// The hash `algorithm` to use must be provided.
-    ///
-    /// See `ObjectRepository::create_repo` for details.
-    pub fn create_repo(
-        store: S,
-        config: RepositoryConfig,
-        algorithm: HashAlgorithm,
-        password: Option<&[u8]>,
-    ) -> crate::Result<Self> {
-        let mut repository = ObjectRepository::create_repo(store, config, password)?;
-
-        // Write the repository version.
-        let mut object = repository.insert(ContentKey::RepositoryVersion);
-        object.write_all(VERSION_ID.as_bytes())?;
-        object.flush()?;
-        drop(object);
-
-        // Write the hash algorithm.
-        let mut object = repository.insert(ContentKey::HashAlgorithm);
-        let serialized_algorithm = to_vec(&algorithm).expect("Could not serialize hash algorithm.");
-        object.write_all(&serialized_algorithm)?;
-        object.flush()?;
-        drop(object);
-
-        Ok(Self {
-            repository,
-            hash_algorithm: algorithm,
-        })
-    }
-
-    /// Open the existing repository in the given data `store`.
-    ///
-    /// See `ObjectRepository::open_repo` for details.
-    pub fn open_repo(
-        store: S,
-        strategy: LockStrategy,
-        password: Option<&[u8]>,
-    ) -> crate::Result<Self> {
+impl<S: DataStore> OpenRepo<S> for ContentRepository<S> {
+    fn open_repo(store: S, strategy: LockStrategy, password: Option<&[u8]>) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
         let repository = ObjectRepository::open_repo(store, strategy, password)?;
 
         // Read the repository version.
@@ -142,6 +110,42 @@ impl<S: DataStore> ContentRepository<S> {
         })
     }
 
+    fn create_new_repo(
+        store: S,
+        config: RepositoryConfig,
+        password: Option<&[u8]>,
+    ) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut repository = ObjectRepository::create_new_repo(store, config, password)?;
+
+        // Write the repository version.
+        let mut object = repository.insert(ContentKey::RepositoryVersion);
+        object.write_all(VERSION_ID.as_bytes())?;
+        object.flush()?;
+        drop(object);
+
+        // Write the hash algorithm.
+        let mut object = repository.insert(ContentKey::HashAlgorithm);
+        let serialized_algorithm =
+            to_vec(&DEFAULT_ALGORITHM).expect("Could not serialize hash algorithm.");
+        object.write_all(&serialized_algorithm)?;
+        object.flush()?;
+        drop(object);
+
+        Ok(Self {
+            repository,
+            hash_algorithm: DEFAULT_ALGORITHM,
+        })
+    }
+
+    fn repo_exists(store: &mut S) -> crate::Result<bool> {
+        ObjectRepository::<ContentKey, S>::repo_exists(store)
+    }
+}
+
+impl<S: DataStore> ContentRepository<S> {
     /// Return whether the repository contains an object with the given `hash`.
     pub fn contains(&self, hash: &[u8]) -> bool {
         self.repository.contains(&ContentKey::Object(hash.to_vec()))

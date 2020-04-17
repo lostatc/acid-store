@@ -18,7 +18,7 @@
 
 use matches::assert_matches;
 
-use acid_store::repo::{LockStrategy, ValueRepository};
+use acid_store::repo::{LockStrategy, OpenRepo, ValueRepository};
 use acid_store::store::MemoryStore;
 use common::{assert_contains_all, PASSWORD, REPO_CONFIG};
 
@@ -28,7 +28,7 @@ mod common;
 const SERIALIZABLE_VALUE: (bool, i32) = (true, 42);
 
 fn create_repo() -> acid_store::Result<ValueRepository<String, MemoryStore>> {
-    ValueRepository::create_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
+    ValueRepository::create_new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
 }
 
 #[test]

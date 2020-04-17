@@ -41,8 +41,8 @@
 //! # Examples
 //! ```
 //! use std::io::{Read, Seek, Write, SeekFrom};
-//! use acid_store::store::{MemoryStore, Open, OpenOption};
-//! use acid_store::repo::{ObjectRepository, RepositoryConfig};
+//! use acid_store::store::{MemoryStore, OpenStore, OpenOption};
+//! use acid_store::repo::{OpenRepo, ObjectRepository, RepositoryConfig};
 //! use acid_store::init;
 //!
 //! fn main() -> acid_store::Result<()> {
@@ -50,7 +50,7 @@
 //!     init();
 //!
 //!     // Create a repository with the default configuration that stores data in memory.
-//!     let mut repository = ObjectRepository::create_repo(
+//!     let mut repository = ObjectRepository::create_new_repo(
 //!         MemoryStore::new(),
 //!         RepositoryConfig::default(),
 //!         None

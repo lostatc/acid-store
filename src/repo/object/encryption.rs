@@ -18,14 +18,14 @@ use zeroize::Zeroize;
 
 #[cfg(feature = "encryption")]
 use {
-    rand::RngCore,
     rand::rngs::OsRng,
+    rand::RngCore,
     sodiumoxide::crypto::aead::xchacha20poly1305_ietf::{
-        gen_nonce, Key as ChaChaKey, KEYBYTES, Nonce, NONCEBYTES, open, seal,
+        gen_nonce, open, seal, Key as ChaChaKey, Nonce, KEYBYTES, NONCEBYTES,
     },
     sodiumoxide::crypto::pwhash::argon2id13::{
-        derive_key, gen_salt, MemLimit, MEMLIMIT_INTERACTIVE, MEMLIMIT_MODERATE, MEMLIMIT_SENSITIVE, OpsLimit,
-        OPSLIMIT_INTERACTIVE, OPSLIMIT_MODERATE, OPSLIMIT_SENSITIVE, Salt,
+        derive_key, gen_salt, MemLimit, OpsLimit, Salt, MEMLIMIT_INTERACTIVE, MEMLIMIT_MODERATE,
+        MEMLIMIT_SENSITIVE, OPSLIMIT_INTERACTIVE, OPSLIMIT_MODERATE, OPSLIMIT_SENSITIVE,
     },
 };
 
@@ -193,7 +193,7 @@ impl EncryptionKey {
             operations,
             memory,
         )
-            .expect("Failed to derive an encryption key.");
+        .expect("Failed to derive an encryption key.");
         EncryptionKey::new(bytes)
     }
 }

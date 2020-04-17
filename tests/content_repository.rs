@@ -19,19 +19,14 @@
 use std::collections::HashSet;
 use std::io::Read;
 
-use acid_store::repo::{ContentRepository, HashAlgorithm, LockStrategy};
+use acid_store::repo::{ContentRepository, HashAlgorithm, LockStrategy, OpenRepo};
 use acid_store::store::MemoryStore;
-use common::{PASSWORD, random_buffer, REPO_CONFIG};
+use common::{random_buffer, PASSWORD, REPO_CONFIG};
 
 mod common;
 
 fn create_repo() -> acid_store::Result<ContentRepository<MemoryStore>> {
-    ContentRepository::create_repo(
-        MemoryStore::new(),
-        REPO_CONFIG.to_owned(),
-        HashAlgorithm::Blake2b(32),
-        Some(PASSWORD),
-    )
+    ContentRepository::create_new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
 }
 
 #[test]

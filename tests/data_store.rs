@@ -21,16 +21,16 @@ use serial_test::serial;
 use tempfile::tempdir;
 use uuid::Uuid;
 
-#[cfg(feature = "store-redis")]
-use {acid_store::store::RedisStore, common::REDIS_INFO};
-#[cfg(feature = "store-s3")]
-use {acid_store::store::S3Store, common::S3_BUCKET};
-use acid_store::store::{DataStore, MemoryStore, Open, OpenOption};
 #[cfg(feature = "store-directory")]
 use acid_store::store::DirectoryStore;
 #[cfg(feature = "store-sqlite")]
 use acid_store::store::SqliteStore;
+use acid_store::store::{DataStore, MemoryStore, OpenOption, OpenStore};
 use common::{assert_contains_all, random_buffer};
+#[cfg(feature = "store-redis")]
+use {acid_store::store::RedisStore, common::REDIS_INFO};
+#[cfg(feature = "store-s3")]
+use {acid_store::store::S3Store, common::S3_BUCKET};
 
 mod common;
 

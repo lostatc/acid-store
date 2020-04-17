@@ -19,10 +19,11 @@
 use std::fs::{create_dir, create_dir_all, remove_dir_all, remove_file, rename, File};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
+
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use super::common::{DataStore, Open, OpenOption};
+use super::common::{DataStore, OpenOption, OpenStore};
 
 /// A UUID which acts as the version ID of the directory store format.
 const CURRENT_VERSION: &str = "2891c3da-297e-11ea-a7c9-1b8f8be4fc9b";
@@ -91,7 +92,7 @@ impl DirectoryStore {
     }
 }
 
-impl Open for DirectoryStore {
+impl OpenStore for DirectoryStore {
     type Config = PathBuf;
 
     fn open(config: Self::Config, options: OpenOption) -> crate::Result<Self>

@@ -18,7 +18,7 @@
 
 use std::io::{Read, Seek, SeekFrom, Write};
 
-use common::{create_repo, MIN_BUFFER_SIZE, random_buffer, random_bytes};
+use common::{create_repo, random_buffer, random_bytes, MIN_BUFFER_SIZE};
 
 mod common;
 

@@ -16,12 +16,14 @@
 
 #![cfg(feature = "store-sqlite")]
 
-use lazy_static::lazy_static;
-use rusqlite::{params, Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
+
+use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-use crate::store::common::{DataStore, Open, OpenOption};
+use lazy_static::lazy_static;
+
+use crate::store::common::{DataStore, OpenOption, OpenStore};
 
 lazy_static! {
     /// A UUID which acts as the version ID of the store format.
@@ -103,7 +105,7 @@ impl SqliteStore {
     }
 }
 
-impl Open for SqliteStore {
+impl OpenStore for SqliteStore {
     type Config = PathBuf;
 
     fn open(config: Self::Config, options: OpenOption) -> crate::Result<Self>

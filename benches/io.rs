@@ -17,13 +17,13 @@
 use std::io::Write;
 use std::path::Path;
 
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main, Throughput};
-use rand::{RngCore, SeedableRng};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use rand::rngs::SmallRng;
+use rand::{RngCore, SeedableRng};
 use tempfile::tempdir;
 
 use acid_store::repo::{ObjectRepository, RepositoryConfig};
-use acid_store::store::{DirectoryStore, Open, OpenOption};
+use acid_store::store::{DirectoryStore, OpenOption, OpenStore};
 
 /// Return a buffer containing `size` random bytes for testing purposes.
 pub fn random_bytes(size: usize) -> Vec<u8> {
@@ -40,11 +40,11 @@ pub fn new_repo(directory: &Path) -> ObjectRepository<String, DirectoryStore> {
             directory.join("store"),
             OpenOption::CREATE | OpenOption::TRUNCATE,
         )
-            .unwrap(),
+        .unwrap(),
         RepositoryConfig::default(),
         None,
     )
-        .unwrap()
+    .unwrap()
 }
 
 /// The number of bytes to write when a trivial amount of data must be written.
@@ -61,7 +61,9 @@ pub fn insert_object(criterion: &mut Criterion) {
         // Insert objects and write to them but don't commit them.
         for i in 0..*num_objects {
             let mut object = repo.insert(String::from(format!("Uncommitted object {}", i)));
-            object.write_all(random_bytes(TRIVIAL_DATA_SIZE).as_slice()).unwrap();
+            object
+                .write_all(random_bytes(TRIVIAL_DATA_SIZE).as_slice())
+                .unwrap();
             object.flush().unwrap();
         }
 
@@ -90,7 +92,9 @@ pub fn insert_object_and_write(criterion: &mut Criterion) {
         // Insert objects and write to them but don't commit them.
         for i in 0..*num_objects {
             let mut object = repo.insert(String::from(format!("Uncommitted object {}", i)));
-            object.write_all(random_bytes(TRIVIAL_DATA_SIZE).as_slice()).unwrap();
+            object
+                .write_all(random_bytes(TRIVIAL_DATA_SIZE).as_slice())
+                .unwrap();
             object.flush().unwrap();
         }
 

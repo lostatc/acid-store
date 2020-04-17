@@ -28,7 +28,9 @@ use lazy_static::lazy_static;
 
 use crate::repo::object::chunk_store::{ChunkEncoder, ChunkReader};
 use crate::repo::object::object::ReadOnlyObject;
+use crate::repo::OpenRepo;
 use crate::store::DataStore;
+use crate::Error;
 
 use super::config::RepositoryConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt};
@@ -94,21 +96,99 @@ pub struct ObjectRepository<K: Key, S: DataStore> {
     state: RepositoryState<K, S>,
 }
 
-impl<K: Key, S: DataStore> ObjectRepository<K, S> {
-    /// Create a new repository backed by the given data `store`.
-    ///
-    /// A `config` must be provided to configure the new repository. If encryption is enabled, a
-    /// `password` must be provided; otherwise, this argument can be `None`.
-    ///
-    /// # Errors
-    /// - `Error::AlreadyExists`: A repository already exists in the given `store`.
-    /// - `Error::Password` A password was required but not provided or provided but not required.
-    /// - `Error::Store`: An error occurred with the data store.
-    pub fn create_repo(
+impl<K: Key, S: DataStore> OpenRepo<S> for ObjectRepository<K, S> {
+    fn open_repo(
+        mut store: S,
+        strategy: LockStrategy,
+        password: Option<&[u8]>,
+    ) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        // Acquire a lock on the repository.
+        let repository_id = Self::peek_info(&mut store)?.id();
+        let lock = REPO_LOCKS
+            .write()
+            .unwrap()
+            .acquire_lock(repository_id, strategy)?;
+
+        // Read the repository version to see if this is a compatible repository.
+        let serialized_version = store
+            .read_block(*VERSION_BLOCK_ID)
+            .map_err(anyhow::Error::from)?
+            .ok_or(crate::Error::NotFound)?;
+        let version =
+            Uuid::from_slice(serialized_version.as_slice()).map_err(|_| crate::Error::Corrupt)?;
+        if version != *VERSION_ID {
+            return Err(crate::Error::UnsupportedFormat);
+        }
+
+        // We read the metadata again after reading the UUID to prevent a race condition when
+        // acquiring the lock.
+        let serialized_metadata = store
+            .read_block(*METADATA_BLOCK_ID)
+            .map_err(anyhow::Error::from)?
+            .ok_or(crate::Error::Corrupt)?;
+        let metadata: RepositoryMetadata =
+            from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
+
+        // Decrypt the master key for the repository.
+        let master_key = match password {
+            #[cfg(feature = "encryption")]
+            Some(password_bytes) => {
+                let user_key = EncryptionKey::derive(
+                    password_bytes,
+                    &metadata.salt,
+                    metadata.encryption.key_size(),
+                    metadata.memory_limit.to_mem_limit(),
+                    metadata.operations_limit.to_ops_limit(),
+                );
+                EncryptionKey::new(
+                    metadata
+                        .encryption
+                        .decrypt(&metadata.master_key, &user_key)
+                        .map_err(|_| crate::Error::Password)?,
+                )
+            }
+            None => EncryptionKey::new(Vec::new()),
+            _ => panic!("Encryption is disabled."),
+        };
+
+        // Read, decrypt, decompress, and deserialize the header.
+        let encrypted_header = store
+            .read_block(metadata.header)
+            .map_err(anyhow::Error::from)?
+            .ok_or(crate::Error::Corrupt)?;
+        let compressed_header = metadata
+            .encryption
+            .decrypt(&encrypted_header, &master_key)
+            .map_err(|_| crate::Error::Corrupt)?;
+        let serialized_header = metadata
+            .compression
+            .decompress(&compressed_header)
+            .map_err(|_| crate::Error::Corrupt)?;
+        let header: Header<K> =
+            from_read(serialized_header.as_slice()).map_err(|_| crate::Error::KeyType)?;
+
+        let state = RepositoryState {
+            store: Mutex::new(store),
+            metadata,
+            header,
+            master_key,
+            lock,
+        };
+
+        Ok(ObjectRepository { state })
+    }
+
+    fn create_new_repo(
         mut store: S,
         config: RepositoryConfig,
         password: Option<&[u8]>,
-    ) -> crate::Result<Self> {
+    ) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
         // Return an error if a password was required but not provided.
         if password.is_none() && config.encryption != Encryption::None {
             return Err(crate::Error::Password);
@@ -215,101 +295,16 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
         Ok(ObjectRepository { state })
     }
 
-    /// Open the repository in the given data `store`.
-    ///
-    /// If encryption is enabled, a `password` must be provided. Otherwise, this argument can be
-    /// `None`.
-    ///
-    /// # Errors
-    /// - `Error::NotFound`: There is no repository in the given `store`.
-    /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
-    /// - `Error::Locked`: The repository is locked and `LockStrategy::Abort` was used.
-    /// - `Error::Password`: The password provided is invalid.
-    /// - `Error::KeyType`: The type `K` does not match the data in the repository.
-    /// - `Error::UnsupportedFormat`: This repository format is not supported by this version of
-    /// the library.
-    /// - `Error::Store`: An error occurred with the data store.
-    pub fn open_repo(
-        mut store: S,
-        strategy: LockStrategy,
-        password: Option<&[u8]>,
-    ) -> crate::Result<Self> {
-        // Acquire a lock on the repository.
-        let repository_id = Self::peek_info(&mut store)?.id();
-        let lock = REPO_LOCKS
-            .write()
-            .unwrap()
-            .acquire_lock(repository_id, strategy)?;
-
-        // Read the repository version to see if this is a compatible repository.
-        let serialized_version = store
-            .read_block(*VERSION_BLOCK_ID)
-            .map_err(anyhow::Error::from)?
-            .ok_or(crate::Error::NotFound)?;
-        let version =
-            Uuid::from_slice(serialized_version.as_slice()).map_err(|_| crate::Error::Corrupt)?;
-        if version != *VERSION_ID {
-            return Err(crate::Error::UnsupportedFormat);
+    fn repo_exists(store: &mut S) -> crate::Result<bool> {
+        match store.read_block(*VERSION_BLOCK_ID) {
+            Err(error) => Err(crate::Error::Store(anyhow::Error::from(error))),
+            Ok(None) => Ok(false),
+            _ => Ok(true),
         }
-
-        // We read the metadata again after reading the UUID to prevent a race condition when
-        // acquiring the lock.
-        let serialized_metadata = store
-            .read_block(*METADATA_BLOCK_ID)
-            .map_err(anyhow::Error::from)?
-            .ok_or(crate::Error::Corrupt)?;
-        let metadata: RepositoryMetadata =
-            from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
-
-        // Decrypt the master key for the repository.
-        let master_key = match password {
-            #[cfg(feature = "encryption")]
-            Some(password_bytes) => {
-                let user_key = EncryptionKey::derive(
-                    password_bytes,
-                    &metadata.salt,
-                    metadata.encryption.key_size(),
-                    metadata.memory_limit.to_mem_limit(),
-                    metadata.operations_limit.to_ops_limit(),
-                );
-                EncryptionKey::new(
-                    metadata
-                        .encryption
-                        .decrypt(&metadata.master_key, &user_key)
-                        .map_err(|_| crate::Error::Password)?,
-                )
-            }
-            None => EncryptionKey::new(Vec::new()),
-            _ => panic!("Encryption is disabled."),
-        };
-
-        // Read, decrypt, decompress, and deserialize the header.
-        let encrypted_header = store
-            .read_block(metadata.header)
-            .map_err(anyhow::Error::from)?
-            .ok_or(crate::Error::Corrupt)?;
-        let compressed_header = metadata
-            .encryption
-            .decrypt(&encrypted_header, &master_key)
-            .map_err(|_| crate::Error::Corrupt)?;
-        let serialized_header = metadata
-            .compression
-            .decompress(&compressed_header)
-            .map_err(|_| crate::Error::Corrupt)?;
-        let header: Header<K> =
-            from_read(serialized_header.as_slice()).map_err(|_| crate::Error::KeyType)?;
-
-        let state = RepositoryState {
-            store: Mutex::new(store),
-            metadata,
-            header,
-            master_key,
-            lock,
-        };
-
-        Ok(ObjectRepository { state })
     }
+}
 
+impl<K: Key, S: DataStore> ObjectRepository<K, S> {
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where

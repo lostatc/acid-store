@@ -16,11 +16,12 @@
 
 #![cfg(feature = "store-redis")]
 
-use redis::{Client, Commands, Connection, ConnectionInfo, RedisError};
 use std::fmt::{self, Debug, Formatter};
+
+use redis::{Client, Commands, Connection, ConnectionInfo, RedisError};
 use uuid::Uuid;
 
-use crate::store::common::{DataStore, Open, OpenOption};
+use crate::store::common::{DataStore, OpenOption, OpenStore};
 
 /// A UUID which acts as the version ID of the store format.
 const CURRENT_VERSION: &str = "b733bd82-4206-11ea-a3dc-7354076bdaf9";
@@ -36,7 +37,7 @@ impl Debug for RedisStore {
     }
 }
 
-impl Open for RedisStore {
+impl OpenStore for RedisStore {
     type Config = ConnectionInfo;
 
     fn open(config: Self::Config, options: OpenOption) -> crate::Result<Self>

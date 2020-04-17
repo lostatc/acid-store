@@ -14,13 +14,12 @@
  * limitations under the License.
  */
 
-
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "compression")]
 use {
-    flate2::Compression as CompressionLevel,
     flate2::read::{GzDecoder, GzEncoder},
+    flate2::Compression as CompressionLevel,
     lz4::{Decoder as Lz4Decoder, EncoderBuilder as Lz4EncoderBuilder},
     std::io::{Read, Write},
     xz2::read::{XzDecoder, XzEncoder},
@@ -86,8 +85,8 @@ impl Compression {
                 let (_, result) = encoder.finish();
                 result?;
                 Ok(output)
-            },
-            _ => panic!("Unsupported compression method.")
+            }
+            _ => panic!("Unsupported compression method."),
         }
     }
 
@@ -115,8 +114,8 @@ impl Compression {
                 let (_, result) = decoder.finish();
                 result?;
                 Ok(output)
-            },
-            _ => panic!("Unsupported compression method.")
+            }
+            _ => panic!("Unsupported compression method."),
         }
     }
 }

@@ -20,6 +20,9 @@
 //! backed by a `DataStore`, and provides features like encryption, compression, deduplication,
 //! integrity checking, locking, and atomic transactions.
 //!
+//! Repositories implement `OpenRepo`, which can be used to create a new repository or open an
+//! existing one.
+//!
 //! See the crate-level documentation for a summary of the different types of repositories provided
 //! in this module. `ObjectRepository` is meant to be easily extensible to fit most use-cases; all
 //! the other repositories in this module are implemented using `ObjectRepository`.
@@ -31,7 +34,7 @@ pub use file::CommonMetadata;
 pub use file::UnixMetadata;
 pub use file::{Entry, EntryPath, FileMetadata, FileRepository, FileType, NoMetadata};
 pub use object::{
-    Compression, ContentId, Encryption, Key, LockStrategy, Object, ObjectRepository,
+    Compression, ContentId, Encryption, Key, LockStrategy, Object, ObjectRepository, OpenRepo,
     ReadOnlyObject, RepositoryConfig, RepositoryInfo, RepositoryStats, ResourceLimit,
 };
 pub use value::ValueRepository;

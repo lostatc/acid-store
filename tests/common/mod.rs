@@ -20,8 +20,8 @@
 use std::fmt::Debug;
 use std::hash::Hash;
 
-use rand::{Rng, RngCore, SeedableRng};
 use rand::rngs::SmallRng;
+use rand::{Rng, RngCore, SeedableRng};
 #[cfg(feature = "store-redis")]
 use redis::{ConnectionInfo, IntoConnectionInfo};
 #[cfg(feature = "store-s3")]
@@ -31,7 +31,7 @@ use s3::credentials::Credentials;
 #[cfg(feature = "store-s3")]
 use s3::region::Region;
 
-use acid_store::repo::{Compression, Encryption, ObjectRepository, RepositoryConfig};
+use acid_store::repo::{Compression, Encryption, ObjectRepository, OpenRepo, RepositoryConfig};
 use acid_store::store::MemoryStore;
 use lazy_static::lazy_static;
 
@@ -107,5 +107,5 @@ pub fn random_buffer() -> Vec<u8> {
 
 /// Create a new `ObjectRepository` that stores data in memory.
 pub fn create_repo() -> acid_store::Result<ObjectRepository<String, MemoryStore>> {
-    ObjectRepository::create_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
+    ObjectRepository::create_new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
 }
