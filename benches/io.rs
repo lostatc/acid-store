@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
+use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use rand::rngs::SmallRng;
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng};
 use tempfile::tempdir;
 
 use acid_store::repo::{ObjectRepository, OpenRepo, RepositoryConfig};
@@ -118,5 +118,66 @@ pub fn insert_object_and_write(criterion: &mut Criterion) {
     }
 }
 
+pub fn write_object(criterion: &mut Criterion) {
+    let tmp_dir = tempdir().unwrap();
+
+    let mut group = criterion.benchmark_group("Write to an object");
+
+    let mut repo = new_repo(tmp_dir.path());
+    let object_size = bytesize::kib(100u64);
+
+    group.throughput(Throughput::Bytes(object_size));
+
+    group.bench_function(
+        format!("{} bytes", bytesize::to_string(object_size, true)),
+        |bencher| {
+            bencher.iter_batched(
+                || random_bytes(object_size as usize),
+                |data| {
+                    let mut object = repo.insert(String::from("Test"));
+                    object.write_all(data.as_slice()).unwrap();
+                    object.flush().unwrap();
+                },
+                BatchSize::SmallInput,
+            );
+        },
+    );
+}
+
+pub fn write_read_object(criterion: &mut Criterion) {
+    let tmp_dir = tempdir().unwrap();
+
+    let mut group = criterion.benchmark_group("Write to and then read from an object");
+
+    let mut repo = new_repo(tmp_dir.path());
+    let object_size = bytesize::kib(100u64);
+
+    group.throughput(Throughput::Bytes(object_size));
+
+    group.bench_function(
+        format!("{} bytes", bytesize::to_string(object_size, true)),
+        |bencher| {
+            bencher.iter_batched(
+                || random_bytes(object_size as usize),
+                |data| {
+                    // Write to the object.
+                    let mut object = repo.insert(String::from("Test"));
+                    object.write_all(data.as_slice()).unwrap();
+                    object.flush().unwrap();
+                    drop(object);
+
+                    // Read from the object.
+                    let mut buffer = Vec::new();
+                    let mut object = repo.get("Test").unwrap();
+                    object.seek(SeekFrom::Start(0)).unwrap();
+                    object.read_to_end(black_box(&mut buffer)).unwrap();
+                },
+                BatchSize::SmallInput,
+            );
+        },
+    );
+}
+
+criterion_group!(throughput, write_object, write_read_object);
 criterion_group!(insert, insert_object, insert_object_and_write);
-criterion_main!(insert);
+criterion_main!(insert, throughput);
