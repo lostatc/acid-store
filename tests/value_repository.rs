@@ -16,8 +16,6 @@
 
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
-use matches::assert_matches;
-
 use acid_store::repo::{LockStrategy, OpenRepo, ValueRepository};
 use acid_store::store::MemoryStore;
 use common::{assert_contains_all, PASSWORD, REPO_CONFIG};
@@ -70,7 +68,7 @@ fn deserializing_value_to_wrong_type_errs() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.insert("Key".into(), &SERIALIZABLE_VALUE)?;
     let actual = repository.get::<_, String>("Key");
-    assert_matches!(actual, Err(acid_store::Error::Deserialize));
+    assert!(matches!(actual, Err(acid_store::Error::Deserialize)));
     Ok(())
 }
 

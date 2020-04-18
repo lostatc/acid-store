@@ -18,8 +18,6 @@
 
 use std::io::{Read, Write};
 
-use matches::assert_matches;
-
 use acid_store::repo::{LockStrategy, OpenRepo, VersionRepository};
 use acid_store::store::MemoryStore;
 use common::{assert_contains_all, random_buffer, PASSWORD, REPO_CONFIG};
@@ -116,18 +114,18 @@ fn remove_and_list_versions() -> anyhow::Result<()> {
 #[test]
 fn versioning_nonexistent_key_errs() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
-    assert_matches!(
+    assert!(matches!(
         repository.create_version("Key".into()),
         Err(acid_store::Error::NotFound)
-    );
-    assert_matches!(
+    ));
+    assert!(matches!(
         repository.remove_version("Key", 1),
         Err(acid_store::Error::NotFound)
-    );
-    assert_matches!(
+    ));
+    assert!(matches!(
         repository.list_versions("Key"),
         Err(acid_store::Error::NotFound)
-    );
+    ));
     Ok(())
 }
 
@@ -140,10 +138,10 @@ fn removing_key_removes_versions() -> anyhow::Result<()> {
     repository.remove("Key")?;
 
     assert!(repository.get_version("Key", version.id()).is_none());
-    assert_matches!(
+    assert!(matches!(
         repository.list_versions("Key"),
         Err(acid_store::Error::NotFound)
-    );
+    ));
     Ok(())
 }
 

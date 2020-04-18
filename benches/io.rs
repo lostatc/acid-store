@@ -22,7 +22,7 @@ use rand::rngs::SmallRng;
 use rand::{RngCore, SeedableRng};
 use tempfile::tempdir;
 
-use acid_store::repo::{ObjectRepository, RepositoryConfig};
+use acid_store::repo::{ObjectRepository, OpenRepo, RepositoryConfig};
 use acid_store::store::{DirectoryStore, OpenOption, OpenStore};
 
 /// Return a buffer containing `size` random bytes for testing purposes.
@@ -35,7 +35,7 @@ pub fn random_bytes(size: usize) -> Vec<u8> {
 
 /// Return a new repository in the given `directory` for benchmarking.
 pub fn new_repo(directory: &Path) -> ObjectRepository<String, DirectoryStore> {
-    ObjectRepository::create_repo(
+    ObjectRepository::new_repo(
         DirectoryStore::open(
             directory.join("store"),
             OpenOption::CREATE | OpenOption::TRUNCATE,
