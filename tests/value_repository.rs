@@ -28,7 +28,7 @@ mod common;
 const SERIALIZABLE_VALUE: (bool, i32) = (true, 42);
 
 fn create_repo() -> acid_store::Result<ValueRepository<String, MemoryStore>> {
-    ValueRepository::create_new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
+    ValueRepository::new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
 }
 
 #[test]

@@ -40,7 +40,7 @@ pub trait OpenRepo<S: DataStore> {
     where
         Self: Sized;
 
-    /// Create a new repository backed by the given data `store`.
+    /// Create a new repository backed by the given data `store`, failing if one already exists.
     ///
     /// A `config` must be provided to configure the new repository. If encryption is enabled, a
     /// `password` must be provided; otherwise, this argument can be `None`.
@@ -49,11 +49,7 @@ pub trait OpenRepo<S: DataStore> {
     /// - `Error::AlreadyExists`: A repository already exists in the given `store`.
     /// - `Error::Password` A password was required but not provided or provided but not required.
     /// - `Error::Store`: An error occurred with the data store.
-    fn create_new_repo(
-        store: S,
-        config: RepositoryConfig,
-        password: Option<&[u8]>,
-    ) -> crate::Result<Self>
+    fn new_repo(store: S, config: RepositoryConfig, password: Option<&[u8]>) -> crate::Result<Self>
     where
         Self: Sized;
 
@@ -73,27 +69,11 @@ pub trait OpenRepo<S: DataStore> {
     /// repository being opened is of a different type.
     /// - `Error::Store`: An error occurred with the data store.
     fn create_repo(
-        mut store: S,
+        store: S,
         config: RepositoryConfig,
         strategy: LockStrategy,
         password: Option<&[u8]>,
     ) -> crate::Result<Self>
     where
-        Self: Sized,
-    {
-        if Self::repo_exists(&mut store)? {
-            Self::open_repo(store, strategy, password)
-        } else {
-            Self::create_new_repo(store, config, password)
-        }
-    }
-
-    /// Returns whether there is a repository in the given `store`.
-    ///
-    /// If there is a repository in the given `store` but it is an unsupported format, this returns
-    /// `true`.
-    ///
-    /// # Errors
-    /// - `Error::Store`: An error occurred with the data store.
-    fn repo_exists(store: &mut S) -> crate::Result<bool>;
+        Self: Sized;
 }
