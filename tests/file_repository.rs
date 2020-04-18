@@ -37,7 +37,7 @@ use {
 mod common;
 
 fn create_repo() -> acid_store::Result<FileRepository<MemoryStore, NoMetadata>> {
-    FileRepository::create_new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
+    FileRepository::new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
 }
 
 #[test]
@@ -171,7 +171,7 @@ fn setting_metadata_on_nonexistent_file_errs() -> anyhow::Result<()> {
 #[test]
 #[cfg(feature = "file-metadata")]
 fn set_metadata() -> anyhow::Result<()> {
-    let mut repository = FileRepository::<_, CommonMetadata>::create_new_repo(
+    let mut repository = FileRepository::<_, CommonMetadata>::new_repo(
         MemoryStore::new(),
         REPO_CONFIG.to_owned(),
         Some(PASSWORD),
@@ -461,7 +461,7 @@ fn write_unix_metadata() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let dest_path = temp_dir.as_ref().join("dest");
 
-    let mut repository = FileRepository::<_, UnixMetadata>::create_new_repo(
+    let mut repository = FileRepository::<_, UnixMetadata>::new_repo(
         MemoryStore::new(),
         REPO_CONFIG.to_owned(),
         Some(PASSWORD),
@@ -503,7 +503,7 @@ fn read_unix_metadata() -> anyhow::Result<()> {
     let source_path = temp_dir.as_ref().join("source");
     File::create(&source_path)?;
 
-    let mut repository = FileRepository::<_, UnixMetadata>::create_new_repo(
+    let mut repository = FileRepository::<_, UnixMetadata>::new_repo(
         MemoryStore::new(),
         REPO_CONFIG.to_owned(),
         Some(PASSWORD),
@@ -530,7 +530,7 @@ fn write_common_metadata() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let dest_path = temp_dir.as_ref().join("dest");
 
-    let mut repository = FileRepository::<_, CommonMetadata>::create_new_repo(
+    let mut repository = FileRepository::<_, CommonMetadata>::new_repo(
         MemoryStore::new(),
         REPO_CONFIG.to_owned(),
         Some(PASSWORD),
@@ -561,7 +561,7 @@ fn read_common_metadata() -> anyhow::Result<()> {
     let source_path = temp_dir.as_ref().join("source");
     File::create(&source_path)?;
 
-    let mut repository = FileRepository::<_, CommonMetadata>::create_new_repo(
+    let mut repository = FileRepository::<_, CommonMetadata>::new_repo(
         MemoryStore::new(),
         REPO_CONFIG.to_owned(),
         Some(PASSWORD),

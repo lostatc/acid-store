@@ -107,5 +107,5 @@ pub fn random_buffer() -> Vec<u8> {
 
 /// Create a new `ObjectRepository` that stores data in memory.
 pub fn create_repo() -> acid_store::Result<ObjectRepository<String, MemoryStore>> {
-    ObjectRepository::create_new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
+    ObjectRepository::new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
 }

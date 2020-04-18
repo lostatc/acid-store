@@ -80,15 +80,11 @@ impl<K: Key, S: DataStore> OpenRepo<S> for ValueRepository<K, S> {
         Ok(Self { repository })
     }
 
-    fn create_new_repo(
-        store: S,
-        config: RepositoryConfig,
-        password: Option<&[u8]>,
-    ) -> crate::Result<Self>
+    fn new_repo(store: S, config: RepositoryConfig, password: Option<&[u8]>) -> crate::Result<Self>
     where
         Self: Sized,
     {
-        let mut repository = ObjectRepository::create_new_repo(store, config, password)?;
+        let mut repository = ObjectRepository::new_repo(store, config, password)?;
 
         // Write the repository version.
         let mut object = repository.insert(KeyType::Version);
@@ -99,8 +95,20 @@ impl<K: Key, S: DataStore> OpenRepo<S> for ValueRepository<K, S> {
         Ok(Self { repository })
     }
 
-    fn repo_exists(store: &mut S) -> crate::Result<bool> {
-        ObjectRepository::<KeyType<K>, S>::repo_exists(store)
+    fn create_repo(
+        mut store: S,
+        config: RepositoryConfig,
+        strategy: LockStrategy,
+        password: Option<&[u8]>,
+    ) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        if store.list_blocks().map_err(anyhow::Error::from)?.is_empty() {
+            Self::new_repo(store, config, password)
+        } else {
+            Self::open_repo(store, strategy, password)
+        }
     }
 }
 

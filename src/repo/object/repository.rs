@@ -30,7 +30,6 @@ use crate::repo::object::chunk_store::{ChunkEncoder, ChunkReader};
 use crate::repo::object::object::ReadOnlyObject;
 use crate::repo::OpenRepo;
 use crate::store::DataStore;
-use crate::Error;
 
 use super::config::RepositoryConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt};
@@ -181,7 +180,7 @@ impl<K: Key, S: DataStore> OpenRepo<S> for ObjectRepository<K, S> {
         Ok(ObjectRepository { state })
     }
 
-    fn create_new_repo(
+    fn new_repo(
         mut store: S,
         config: RepositoryConfig,
         password: Option<&[u8]>,
@@ -295,11 +294,19 @@ impl<K: Key, S: DataStore> OpenRepo<S> for ObjectRepository<K, S> {
         Ok(ObjectRepository { state })
     }
 
-    fn repo_exists(store: &mut S) -> crate::Result<bool> {
-        match store.read_block(*VERSION_BLOCK_ID) {
-            Err(error) => Err(crate::Error::Store(anyhow::Error::from(error))),
-            Ok(None) => Ok(false),
-            _ => Ok(true),
+    fn create_repo(
+        mut store: S,
+        config: RepositoryConfig,
+        strategy: LockStrategy,
+        password: Option<&[u8]>,
+    ) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        if store.list_blocks().map_err(anyhow::Error::from)?.is_empty() {
+            Self::new_repo(store, config, password)
+        } else {
+            Self::open_repo(store, strategy, password)
         }
     }
 }

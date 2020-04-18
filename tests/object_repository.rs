@@ -30,7 +30,7 @@ mod common;
 #[test]
 fn creating_existing_repo_errs() -> anyhow::Result<()> {
     let initial_repo = create_repo()?;
-    let new_repo = ObjectRepository::<String, _>::create_new_repo(
+    let new_repo = ObjectRepository::<String, _>::new_repo(
         initial_repo.into_store(),
         REPO_CONFIG.to_owned(),
         Some(PASSWORD),
@@ -66,18 +66,15 @@ fn opening_with_invalid_password_errs() -> anyhow::Result<()> {
 
 #[test]
 fn opening_without_password_errs() -> anyhow::Result<()> {
-    let repository = ObjectRepository::<String, _>::create_new_repo(
-        MemoryStore::new(),
-        REPO_CONFIG.to_owned(),
-        None,
-    );
+    let repository =
+        ObjectRepository::<String, _>::new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), None);
     assert_matches!(repository.unwrap_err(), acid_store::Error::Password);
     Ok(())
 }
 
 #[test]
 fn opening_with_unnecessary_password_errs() -> anyhow::Result<()> {
-    let repository = ObjectRepository::<String, _>::create_new_repo(
+    let repository = ObjectRepository::<String, _>::new_repo(
         MemoryStore::new(),
         Default::default(),
         Some(b"unnecessary password"),
@@ -93,11 +90,8 @@ fn opening_locked_repo_errs() -> anyhow::Result<()> {
     let store = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::CREATE_NEW)?;
     let store_copy = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::empty())?;
 
-    let mut repository = ObjectRepository::<String, _>::create_new_repo(
-        store,
-        REPO_CONFIG.to_owned(),
-        Some(PASSWORD),
-    )?;
+    let mut repository =
+        ObjectRepository::<String, _>::new_repo(store, REPO_CONFIG.to_owned(), Some(PASSWORD))?;
     repository.commit()?;
 
     let open_attempt =
@@ -114,18 +108,12 @@ fn creating_locked_repo_errs() -> anyhow::Result<()> {
     let store = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::CREATE_NEW)?;
     let store_copy = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::empty())?;
 
-    let mut repository = ObjectRepository::<String, _>::create_new_repo(
-        store,
-        REPO_CONFIG.to_owned(),
-        Some(PASSWORD),
-    )?;
+    let mut repository =
+        ObjectRepository::<String, _>::new_repo(store, REPO_CONFIG.to_owned(), Some(PASSWORD))?;
     repository.commit()?;
 
-    let open_attempt = ObjectRepository::<String, _>::create_new_repo(
-        store_copy,
-        REPO_CONFIG.to_owned(),
-        Some(PASSWORD),
-    );
+    let open_attempt =
+        ObjectRepository::<String, _>::new_repo(store_copy, REPO_CONFIG.to_owned(), Some(PASSWORD));
 
     assert_matches!(open_attempt.unwrap_err(), acid_store::Error::AlreadyExists);
     Ok(())
@@ -326,7 +314,7 @@ fn change_password() -> anyhow::Result<()> {
 fn calculate_apparent_and_actual_size() -> anyhow::Result<()> {
     // Create a repository with compression and encryption disabled.
     let mut repository =
-        ObjectRepository::create_new_repo(MemoryStore::new(), RepositoryConfig::default(), None)?;
+        ObjectRepository::new_repo(MemoryStore::new(), RepositoryConfig::default(), None)?;
     let data = random_buffer();
 
     let mut object = repository.insert("Test1".to_string());

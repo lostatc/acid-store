@@ -27,7 +27,7 @@ use common::{assert_contains_all, random_buffer, PASSWORD, REPO_CONFIG};
 mod common;
 
 fn create_repo() -> acid_store::Result<VersionRepository<String, MemoryStore>> {
-    VersionRepository::create_new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
+    VersionRepository::new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
 }
 
 #[test]

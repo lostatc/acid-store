@@ -26,7 +26,7 @@ use common::{random_buffer, PASSWORD, REPO_CONFIG};
 mod common;
 
 fn create_repo() -> acid_store::Result<ContentRepository<MemoryStore>> {
-    ContentRepository::create_new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
+    ContentRepository::new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
 }
 
 #[test]

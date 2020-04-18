@@ -50,7 +50,7 @@
 //!     init();
 //!
 //!     // Create a repository with the default configuration that stores data in memory.
-//!     let mut repository = ObjectRepository::create_new_repo(
+//!     let mut repository = ObjectRepository::new_repo(
 //!         MemoryStore::new(),
 //!         RepositoryConfig::default(),
 //!         None
