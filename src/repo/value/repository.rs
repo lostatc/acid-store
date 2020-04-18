@@ -32,7 +32,6 @@ use crate::repo::{
     RepositoryStats,
 };
 use crate::store::DataStore;
-use crate::Error;
 
 use super::key::KeyType;
 
