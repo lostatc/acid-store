@@ -53,7 +53,7 @@ lazy_static! {
 /// ```
 ///     use std::io::{Read, Write};
 ///
-///     use acid_store::repo::{OpenRepo, Object, VersionRepository, RepositoryConfig};
+///     use acid_store::repo::{OpenRepo, Object, version::VersionRepository, RepositoryConfig};
 ///     use acid_store::store::MemoryStore;
 ///
 ///     fn main() -> acid_store::Result<()> {

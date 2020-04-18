@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+//! A virtual file system which can import and export files to the local OS file system.
+
 pub use self::entry::{Entry, FileType};
 #[cfg(feature = "file-metadata")]
 pub use self::metadata::CommonMetadata;

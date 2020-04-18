@@ -23,25 +23,17 @@
 //! Repositories implement `OpenRepo`, which can be used to create a new repository or open an
 //! existing one.
 //!
-//! See the crate-level documentation for a summary of the different types of repositories provided
-//! in this module. `ObjectRepository` is meant to be easily extensible to fit most use-cases; all
-//! the other repositories in this module are implemented using `ObjectRepository`.
+//! `ObjectRepository` is the main repository type provided by this module. It's meant to be easily
+//! extensible to fit most use-cases, and all other repository types are implemented on top of it.
+//! The other repository types provided by this module can be found in sub-modules.
 
-pub use content::{ContentRepository, HashAlgorithm};
-#[cfg(feature = "file-metadata")]
-pub use file::CommonMetadata;
-#[cfg(all(unix, feature = "file-metadata"))]
-pub use file::UnixMetadata;
-pub use file::{Entry, EntryPath, FileMetadata, FileRepository, FileType, NoMetadata};
 pub use object::{
     Compression, ContentId, Encryption, Key, LockStrategy, Object, ObjectRepository, OpenRepo,
     ReadOnlyObject, RepositoryConfig, RepositoryInfo, RepositoryStats, ResourceLimit,
 };
-pub use value::ValueRepository;
-pub use version::{Version, VersionRepository};
 
-mod content;
-mod file;
+pub mod content;
+pub mod file;
 mod object;
-mod value;
-mod version;
+pub mod value;
+pub mod version;
