@@ -5,4 +5,5 @@ let
 in
   mkShell {
     buildInputs = inputs;
+    TMPDIR = "/tmp";
   }
