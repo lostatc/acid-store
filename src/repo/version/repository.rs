@@ -30,7 +30,6 @@ use crate::repo::{
     RepositoryInfo, RepositoryStats,
 };
 use crate::store::DataStore;
-use crate::Error;
 
 use super::version::{Version, VersionKey};
 

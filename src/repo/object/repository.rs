@@ -30,7 +30,6 @@ use crate::repo::object::chunk_store::{ChunkEncoder, ChunkReader};
 use crate::repo::object::object::ReadOnlyObject;
 use crate::repo::OpenRepo;
 use crate::store::DataStore;
-use crate::Error;
 
 use super::config::RepositoryConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt};
