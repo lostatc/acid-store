@@ -25,7 +25,7 @@ use uuid::Uuid;
 use acid_store::store::DirectoryStore;
 #[cfg(feature = "store-sqlite")]
 use acid_store::store::SqliteStore;
-use acid_store::store::{DataStore, MemoryStore, OpenOption, OpenStore};
+use acid_store::store::{DataStore, MemoryStore, MultiStore, OpenOption, OpenStore};
 use common::{assert_contains_all, random_buffer};
 #[cfg(feature = "store-redis")]
 use {acid_store::store::RedisStore, common::REDIS_INFO};
@@ -100,6 +100,13 @@ fn s3_read_block() {
     read_block(store).unwrap();
 }
 
+#[test]
+fn multi_read_block() -> anyhow::Result<()> {
+    let mut multi_store = MultiStore::new(MemoryStore::new())?;
+    let store = multi_store.insert(String::from("Test"))?;
+    read_block(store)
+}
+
 fn overwrite_block(mut store: impl DataStore) -> anyhow::Result<()> {
     let id = Uuid::new_v4();
     let expected_block = random_buffer();
@@ -161,6 +168,13 @@ fn s3_overwrite_block() {
     overwrite_block(store).unwrap();
 }
 
+#[test]
+fn multi_overwrite_block() -> anyhow::Result<()> {
+    let mut multi_store = MultiStore::new(MemoryStore::new())?;
+    let store = multi_store.insert(String::from("Test"))?;
+    overwrite_block(store)
+}
+
 fn remove_block(mut store: impl DataStore) -> anyhow::Result<()> {
     let id = Uuid::new_v4();
     store.write_block(id, random_buffer().as_slice())?;
@@ -220,6 +234,13 @@ fn s3_remove_block() {
     )
     .unwrap();
     remove_block(store).unwrap();
+}
+
+#[test]
+fn multi_remove_block() -> anyhow::Result<()> {
+    let mut multi_store = MultiStore::new(MemoryStore::new())?;
+    let store = multi_store.insert(String::from("Test"))?;
+    remove_block(store)
 }
 
 fn list_blocks(mut store: impl DataStore) -> anyhow::Result<()> {
@@ -288,4 +309,11 @@ fn s3_list_blocks() {
     )
     .unwrap();
     list_blocks(store).unwrap();
+}
+
+#[test]
+fn multi_list_block() -> anyhow::Result<()> {
+    let mut multi_store = MultiStore::new(MemoryStore::new())?;
+    let store = multi_store.insert(String::from("Test"))?;
+    list_blocks(store)
 }
