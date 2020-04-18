@@ -16,7 +16,6 @@
 
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
-use matches::assert_matches;
 use serial_test::serial;
 use tempfile::tempdir;
 
@@ -43,7 +42,7 @@ fn directory_create_new_with_existing_store_errs() -> anyhow::Result<()> {
     DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::CREATE_NEW)?;
     let result = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::CREATE_NEW);
 
-    assert_matches!(result, Err(acid_store::Error::AlreadyExists));
+    assert!(matches!(result, Err(acid_store::Error::AlreadyExists)));
     Ok(())
 }
 
@@ -54,7 +53,7 @@ fn sqlite_create_new_with_existing_store_errs() -> anyhow::Result<()> {
     SqliteStore::open(temp_dir.as_ref().join("store.db"), OpenOption::CREATE_NEW)?;
     let result = SqliteStore::open(temp_dir.as_ref().join("store.db"), OpenOption::CREATE_NEW);
 
-    assert_matches!(result, Err(acid_store::Error::AlreadyExists));
+    assert!(matches!(result, Err(acid_store::Error::AlreadyExists)));
     Ok(())
 }
 
@@ -69,7 +68,7 @@ fn redis_create_new_with_existing_store_errs() {
     .unwrap();
     let result = RedisStore::open(REDIS_INFO.to_owned(), OpenOption::CREATE_NEW);
 
-    assert_matches!(result, Err(acid_store::Error::AlreadyExists));
+    assert!(matches!(result, Err(acid_store::Error::AlreadyExists)));
 }
 
 #[test]
@@ -83,5 +82,5 @@ fn s3_create_new_with_existing_store_errs() {
     .unwrap();
     let result = S3Store::open(S3_BUCKET.to_owned(), OpenOption::CREATE_NEW);
 
-    assert_matches!(result, Err(acid_store::Error::AlreadyExists));
+    assert!(matches!(result, Err(acid_store::Error::AlreadyExists)));
 }

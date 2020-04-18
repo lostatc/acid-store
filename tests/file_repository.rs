@@ -20,7 +20,6 @@ use std::fs::{create_dir, File};
 use std::io::{Read, Write};
 use std::path::Path;
 
-use matches::assert_matches;
 use tempfile::tempdir;
 
 use acid_store::repo::{Entry, FileRepository, LockStrategy, NoMetadata, OpenRepo};
@@ -56,7 +55,10 @@ fn creating_existing_file_errs() -> anyhow::Result<()> {
     repository.create("home", &Entry::directory())?;
     let result = repository.create("home", &Entry::directory());
 
-    assert_matches!(result.unwrap_err(), acid_store::Error::AlreadyExists);
+    assert!(matches!(
+        result.unwrap_err(),
+        acid_store::Error::AlreadyExists
+    ));
     Ok(())
 }
 
@@ -65,7 +67,10 @@ fn absolute_entry_path_errs() -> anyhow::Result<()> {
     let repository = create_repo()?;
     let result = repository.entry("/home/lostatc/data");
 
-    assert_matches!(result.unwrap_err(), acid_store::Error::InvalidPath);
+    assert!(matches!(
+        result.unwrap_err(),
+        acid_store::Error::InvalidPath
+    ));
     Ok(())
 }
 
@@ -75,12 +80,18 @@ fn creating_file_without_parent_errs() -> anyhow::Result<()> {
 
     // Creating a directory without a parent fails.
     let result = repository.create("home/lostatc", &Entry::directory());
-    assert_matches!(result.unwrap_err(), acid_store::Error::InvalidPath);
+    assert!(matches!(
+        result.unwrap_err(),
+        acid_store::Error::InvalidPath
+    ));
 
     // Creating a directory as a child of a file fails.
     repository.create("home", &Entry::file())?;
     let result = repository.create("home/lostatc", &Entry::directory());
-    assert_matches!(result.unwrap_err(), acid_store::Error::InvalidPath);
+    assert!(matches!(
+        result.unwrap_err(),
+        acid_store::Error::InvalidPath
+    ));
 
     Ok(())
 }
@@ -113,7 +124,7 @@ fn removing_nonexistent_path_errs() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     let result = repository.remove("home");
 
-    assert_matches!(result, Err(acid_store::Error::NotFound));
+    assert!(matches!(result, Err(acid_store::Error::NotFound)));
     Ok(())
 }
 
@@ -123,7 +134,7 @@ fn removing_non_empty_directory_errs() -> anyhow::Result<()> {
     repository.create_parents("home/lostatc", &Entry::directory())?;
     let result = repository.remove("home");
 
-    assert_matches!(result, Err(acid_store::Error::NotEmpty));
+    assert!(matches!(result, Err(acid_store::Error::NotEmpty)));
     Ok(())
 }
 
@@ -164,7 +175,7 @@ fn setting_metadata_on_nonexistent_file_errs() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     let result = repository.set_metadata("file", NoMetadata);
 
-    assert_matches!(result, Err(acid_store::Error::NotFound));
+    assert!(matches!(result, Err(acid_store::Error::NotFound)));
     Ok(())
 }
 
@@ -195,7 +206,7 @@ fn opening_non_regular_file_errs() -> anyhow::Result<()> {
     repository.create("directory", &Entry::directory())?;
     let result = repository.open("directory");
 
-    assert_matches!(result, Err(acid_store::Error::NotFile));
+    assert!(matches!(result, Err(acid_store::Error::NotFile)));
     Ok(())
 }
 
@@ -204,7 +215,7 @@ fn opening_nonexistent_file_errs() -> anyhow::Result<()> {
     let repository = create_repo()?;
     let result = repository.open("nonexistent");
 
-    assert_matches!(result, Err(acid_store::Error::NotFound));
+    assert!(matches!(result, Err(acid_store::Error::NotFound)));
     Ok(())
 }
 
@@ -255,17 +266,17 @@ fn copy_file_with_invalid_destination() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.create("source", &Entry::file())?;
 
-    assert_matches!(
+    assert!(matches!(
         repository.copy("source", "nonexistent/dest"),
         Err(acid_store::Error::InvalidPath)
-    );
+    ));
 
     repository.create("dest", &Entry::file())?;
 
-    assert_matches!(
+    assert!(matches!(
         repository.copy("source", "dest"),
         Err(acid_store::Error::AlreadyExists)
-    );
+    ));
 
     Ok(())
 }
@@ -316,7 +327,7 @@ fn listing_children_of_file_errs() -> anyhow::Result<()> {
 
     let result = repository.list("file").map(|iter| iter.collect::<Vec<_>>());
 
-    assert_matches!(result, Err(acid_store::Error::NotDirectory));
+    assert!(matches!(result, Err(acid_store::Error::NotDirectory)));
     Ok(())
 }
 
@@ -344,7 +355,7 @@ fn walking_descendants_of_file_errs() -> anyhow::Result<()> {
 
     let result = repository.walk("file").map(|iter| iter.collect::<Vec<_>>());
 
-    assert_matches!(result, Err(acid_store::Error::NotDirectory));
+    assert!(matches!(result, Err(acid_store::Error::NotDirectory)));
     Ok(())
 }
 
@@ -377,7 +388,7 @@ fn archiving_file_with_existing_dest_errs() -> anyhow::Result<()> {
     repository.create("dest", &Entry::file())?;
     let result = repository.archive(&source_path, "dest");
 
-    assert_matches!(result, Err(acid_store::Error::AlreadyExists));
+    assert!(matches!(result, Err(acid_store::Error::AlreadyExists)));
     Ok(())
 }
 
@@ -432,7 +443,7 @@ fn extracting_file_with_existing_dest_errs() -> anyhow::Result<()> {
     repository.create("source", &Entry::file())?;
     let result = repository.extract("source", &dest_path);
 
-    assert_matches!(result, Err(acid_store::Error::AlreadyExists));
+    assert!(matches!(result, Err(acid_store::Error::AlreadyExists)));
     Ok(())
 }
 
