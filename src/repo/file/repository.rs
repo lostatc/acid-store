@@ -34,7 +34,6 @@ use crate::repo::{
     RepositoryInfo, RepositoryStats,
 };
 use crate::store::DataStore;
-use crate::Error;
 
 use super::entry::{Entry, EntryKey, FileType};
 use super::metadata::FileMetadata;
