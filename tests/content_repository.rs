@@ -19,7 +19,8 @@
 use std::collections::HashSet;
 use std::io::Read;
 
-use acid_store::repo::{ContentRepository, HashAlgorithm, LockStrategy, OpenRepo};
+use acid_store::repo::content::{ContentRepository, HashAlgorithm};
+use acid_store::repo::{LockStrategy, OpenRepo};
 use acid_store::store::MemoryStore;
 use common::{random_buffer, PASSWORD, REPO_CONFIG};
 

@@ -18,7 +18,8 @@
 
 use std::io::{Read, Write};
 
-use acid_store::repo::{LockStrategy, OpenRepo, VersionRepository};
+use acid_store::repo::version::VersionRepository;
+use acid_store::repo::{LockStrategy, OpenRepo};
 use acid_store::store::MemoryStore;
 use common::{assert_contains_all, random_buffer, PASSWORD, REPO_CONFIG};
 

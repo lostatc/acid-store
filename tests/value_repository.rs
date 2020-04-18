@@ -16,7 +16,8 @@
 
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
-use acid_store::repo::{LockStrategy, OpenRepo, ValueRepository};
+use acid_store::repo::value::ValueRepository;
+use acid_store::repo::{LockStrategy, OpenRepo};
 use acid_store::store::MemoryStore;
 use common::{assert_contains_all, PASSWORD, REPO_CONFIG};
 

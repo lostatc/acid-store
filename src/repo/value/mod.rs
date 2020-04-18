@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+//! A persistent, heterogeneous, map-like collection.
+
 pub use self::repository::ValueRepository;
 
 mod key;

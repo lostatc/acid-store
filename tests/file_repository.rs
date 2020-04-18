@@ -22,12 +22,13 @@ use std::path::Path;
 
 use tempfile::tempdir;
 
-use acid_store::repo::{Entry, FileRepository, LockStrategy, NoMetadata, OpenRepo};
+use acid_store::repo::file::{Entry, FileRepository, NoMetadata};
+use acid_store::repo::{LockStrategy, OpenRepo};
 use acid_store::store::MemoryStore;
 use common::{assert_contains_all, PASSWORD, REPO_CONFIG};
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
-    acid_store::repo::{CommonMetadata, FileType, UnixMetadata},
+    acid_store::repo::file::{CommonMetadata, FileType, UnixMetadata},
     std::collections::HashMap,
     std::os::unix::fs::MetadataExt,
     std::time::SystemTime,
