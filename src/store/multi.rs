@@ -208,7 +208,7 @@ impl<K: Key, S: DataStore> MultiStore<K, S> {
         Ok(())
     }
 
-    /// Create a new `MultiStore` which wraps the given data `store`.
+    /// Create or open a `MultiStore` which wraps the given data `store`.
     ///
     /// # Errors
     /// - `Error::AlreadyExists`: The data store is not a `MultiStore` and it is not empty.
@@ -332,5 +332,10 @@ impl<K: Key, S: DataStore> MultiStore<K, S> {
     /// Return an iterator over all the keys in this `MultiStore`.
     pub fn keys<'a>(&'a self) -> impl Iterator<Item = &'a K> + 'a {
         self.store_table.keys()
+    }
+
+    /// Consume this `MultiStore` and return the backing data store.
+    pub fn into_store(self) -> S {
+        self.store.into_inner().unwrap()
     }
 }
