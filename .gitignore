@@ -104,9 +104,6 @@ Cargo.lock
 # Environment variables
 /.env
 
-# Test database
-/test.db
-
 # direnv
 /.envrc
 
@@ -115,4 +112,5 @@ Cargo.lock
 
 # Profiling
 /perf.data
+/perf.data.old
 /flamegraph.svg
