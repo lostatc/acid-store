@@ -33,7 +33,7 @@ rusqlite = { version = "0.21.0", features = ["bundled"], optional = true }
 redis = { version = "0.15.1", optional = true }
 
 # Amazon S3
-rust-s3 =  { version = "0.18.11", optional = true }
+rust-s3 =  { version = "0.20.0", optional = true }
 
 # Hashing
 digest = "0.8.1"
