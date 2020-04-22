@@ -74,7 +74,7 @@ xattr = { version = "0.2.2", optional = true }
 [dev-dependencies]
 rand = { version = "0.7.2", features = ["small_rng"] }
 tempfile = "3.1.0"
-serial_test = "0.3.2"
+serial_test = "0.4.0"
 dotenv = "0.15.0"
 criterion = "0.3.1"
 bytesize = "1.0.0"
