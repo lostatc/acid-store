@@ -29,6 +29,7 @@ use walkdir::WalkDir;
 
 use lazy_static::lazy_static;
 
+use crate::repo::version_id::{check_version, write_version};
 use crate::repo::{
     LockStrategy, Object, ObjectRepository, OpenRepo, ReadOnlyObject, RepositoryConfig,
     RepositoryInfo, RepositoryStats,
@@ -90,18 +91,10 @@ impl<S: DataStore, M: FileMetadata> OpenRepo<S> for FileRepository<S, M> {
         let repository = ObjectRepository::open_repo(store, strategy, password)?;
 
         // Read the repository version to see if this is a compatible repository.
-        let mut object = repository
+        let object = repository
             .get(&EntryKey::Version)
             .ok_or(crate::Error::NotFound)?;
-        let mut version_buffer = Vec::new();
-        object.read_to_end(&mut version_buffer)?;
-        drop(object);
-
-        let version =
-            Uuid::from_slice(version_buffer.as_slice()).map_err(|_| crate::Error::Corrupt)?;
-        if version != *VERSION_ID {
-            return Err(crate::Error::UnsupportedFormat);
-        }
+        check_version(object, *VERSION_ID)?;
 
         Ok(Self {
             repository,
@@ -116,10 +109,8 @@ impl<S: DataStore, M: FileMetadata> OpenRepo<S> for FileRepository<S, M> {
         let mut repository = ObjectRepository::new_repo(store, config, password)?;
 
         // Write the repository version.
-        let mut object = repository.insert(EntryKey::Version);
-        object.write_all(VERSION_ID.as_bytes())?;
-        object.flush()?;
-        drop(object);
+        let object = repository.insert(EntryKey::Version);
+        write_version(object, *VERSION_ID)?;
 
         Ok(Self {
             repository,
