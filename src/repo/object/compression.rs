@@ -86,7 +86,6 @@ impl Compression {
                 result?;
                 Ok(output)
             }
-            _ => panic!("Unsupported compression method."),
         }
     }
 
@@ -115,7 +114,6 @@ impl Compression {
                 result?;
                 Ok(output)
             }
-            _ => panic!("Unsupported compression method."),
         }
     }
 }
