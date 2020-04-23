@@ -120,6 +120,8 @@ impl<S: DataStore> OpenRepo<S> for ContentRepository<S> {
         object.flush()?;
         drop(object);
 
+        repository.commit()?;
+
         Ok(Self {
             repository,
             hash_algorithm: DEFAULT_ALGORITHM,

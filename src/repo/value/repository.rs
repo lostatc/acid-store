@@ -27,6 +27,7 @@ use uuid::Uuid;
 
 use lazy_static::lazy_static;
 
+use crate::repo::key_id::KeyTable;
 use crate::repo::version_id::{check_version, write_version};
 use crate::repo::{
     Key, LockStrategy, ObjectRepository, OpenRepo, RepositoryConfig, RepositoryInfo,
@@ -34,12 +35,12 @@ use crate::repo::{
 };
 use crate::store::DataStore;
 
-use super::key::KeyType;
+use super::key::ValueKey;
 
 lazy_static! {
     /// The current repository format version ID.
     static ref VERSION_ID: Uuid =
-        Uuid::parse_str("5b93b6a4-362f-11ea-b8a5-309c230b49ee").unwrap();
+        Uuid::parse_str("4d99cf79-ffbd-43dc-9399-b03b5f0bad00").unwrap();
 }
 
 /// A persistent, heterogeneous, map-like collection.
@@ -53,7 +54,8 @@ lazy_static! {
 /// see `ObjectRepository`.
 #[derive(Debug)]
 pub struct ValueRepository<K: Key, S: DataStore> {
-    repository: ObjectRepository<KeyType<K>, S>,
+    repository: ObjectRepository<ValueKey, S>,
+    key_table: KeyTable<K>,
 }
 
 impl<K: Key, S: DataStore> OpenRepo<S> for ValueRepository<K, S> {
@@ -65,11 +67,20 @@ impl<K: Key, S: DataStore> OpenRepo<S> for ValueRepository<K, S> {
 
         // Read the repository version to see if this is a compatible repository.
         let object = repository
-            .get(&KeyType::Version)
+            .get(&ValueKey::RepositoryVersion)
             .ok_or(crate::Error::NotFound)?;
         check_version(object, *VERSION_ID)?;
 
-        Ok(Self { repository })
+        // Read and deserialize the key table.
+        let object = repository
+            .get(&ValueKey::KeyTable)
+            .ok_or(crate::Error::Corrupt)?;
+        let key_table = KeyTable::read(object)?;
+
+        Ok(Self {
+            repository,
+            key_table,
+        })
     }
 
     fn new_repo(store: S, config: RepositoryConfig, password: Option<&[u8]>) -> crate::Result<Self>
@@ -79,10 +90,20 @@ impl<K: Key, S: DataStore> OpenRepo<S> for ValueRepository<K, S> {
         let mut repository = ObjectRepository::new_repo(store, config, password)?;
 
         // Write the repository version.
-        let object = repository.insert(KeyType::Version);
+        let object = repository.insert(ValueKey::RepositoryVersion);
         write_version(object, *VERSION_ID)?;
 
-        Ok(Self { repository })
+        // Create and write a key table.
+        let object = repository.insert(ValueKey::KeyTable);
+        let key_table = KeyTable::new();
+        key_table.write(object)?;
+
+        repository.commit()?;
+
+        Ok(Self {
+            repository,
+            key_table,
+        })
     }
 
     fn create_repo(
@@ -107,9 +128,9 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        Q: Hash + Eq + ?Sized,
     {
-        self.repository.contains(&KeyType::Data(key.to_owned()))
+        self.key_table.contains(key)
     }
 
     /// Insert a new key-value pair.
@@ -122,7 +143,8 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn insert<V: Serialize>(&mut self, key: K, value: &V) -> crate::Result<()> {
-        let mut object = self.repository.insert(KeyType::Data(key));
+        let key_id = self.key_table.insert(key);
+        let mut object = self.repository.insert(ValueKey::Data(key_id));
         let serialized_value = to_vec(value).map_err(|_| crate::Error::Serialize)?;
         object.write_all(serialized_value.as_slice())?;
         object.flush()?;
@@ -139,9 +161,12 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     pub fn remove<Q>(&mut self, key: &Q) -> bool
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        Q: Hash + Eq + ?Sized,
     {
-        self.repository.remove(&KeyType::Data(key.to_owned()))
+        match self.key_table.remove(key) {
+            Some(key_id) => self.repository.remove(&ValueKey::Data(key_id)),
+            None => false,
+        }
     }
 
     /// Return the value associated with `key`.
@@ -155,12 +180,13 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     pub fn get<Q, V>(&self, key: &Q) -> crate::Result<V>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        Q: Hash + Eq + ?Sized,
         V: DeserializeOwned,
     {
+        let key_id = self.key_table.get(key).ok_or(crate::Error::NotFound)?;
         let mut object = self
             .repository
-            .get(&KeyType::Data(key.to_owned()))
+            .get(&ValueKey::Data(key_id))
             .ok_or(crate::Error::NotFound)?;
 
         // Catch any errors before passing to `from_read`.
@@ -175,12 +201,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
 
     /// Return an iterator of all the keys in this repository.
     pub fn keys(&self) -> impl Iterator<Item = &K> {
-        self.repository
-            .keys()
-            .filter_map(|value_key| match value_key {
-                KeyType::Data(key) => Some(key),
-                _ => None,
-            })
+        self.key_table.keys()
     }
 
     /// Copy the value at `source` to `dest`.
@@ -193,16 +214,23 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     pub fn copy<Q>(&mut self, source: &Q, dest: K) -> crate::Result<()>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        Q: Hash + Eq + ?Sized,
     {
+        let source_key_id = self.key_table.get(source).ok_or(crate::Error::NotFound)?;
+        let dest_key_id = self.key_table.insert(dest);
         self.repository
-            .copy(&KeyType::Data(source.to_owned()), KeyType::Data(dest))
+            .copy(&ValueKey::Data(source_key_id), ValueKey::Data(dest_key_id))
     }
 
     /// Commit changes which have been made to the repository.
     ///
     /// See `ObjectRepository::commit` for details.
     pub fn commit(&mut self) -> crate::Result<()> {
+        let object = self
+            .repository
+            .get_mut(&ValueKey::KeyTable)
+            .expect("This repository has no key table.");
+        self.key_table.write(object)?;
         self.repository.commit()
     }
 
@@ -215,13 +243,25 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn verify(&self) -> crate::Result<HashSet<&K>> {
-        Ok(self
+        let corrupt_key_ids = self
             .repository
             .verify()?
             .iter()
             .filter_map(|value_key| match value_key {
-                KeyType::Data(key) => Some(key),
+                ValueKey::Data(key) => Some(key),
                 _ => None,
+            })
+            .collect::<HashSet<_>>();
+
+        Ok(self
+            .key_table
+            .iter()
+            .filter_map(|(key, key_id)| {
+                if corrupt_key_ids.contains(&key_id) {
+                    Some(key)
+                } else {
+                    None
+                }
             })
             .collect())
     }

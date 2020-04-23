@@ -16,12 +16,17 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::repo::key_id::KeyId;
+
 /// A type of data stored in the `ObjectRepository` which backs a `ValueRepository`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
-pub enum KeyType<K> {
+pub enum ValueKey {
     /// A serialized value.
-    Data(K),
+    Data(KeyId),
+
+    /// The serialized mapping of keys to key IDs.
+    KeyTable,
 
     /// The current repository version.
-    Version,
+    RepositoryVersion,
 }
