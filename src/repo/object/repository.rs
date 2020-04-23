@@ -133,7 +133,6 @@ impl<K: Key, S: DataStore> OpenRepo<S> for ObjectRepository<K, S> {
 
         // Decrypt the master key for the repository.
         let master_key = match password {
-            #[cfg(feature = "encryption")]
             Some(password_bytes) => {
                 let user_key = EncryptionKey::derive(
                     password_bytes,
@@ -150,7 +149,6 @@ impl<K: Key, S: DataStore> OpenRepo<S> for ObjectRepository<K, S> {
                 )
             }
             None => EncryptionKey::new(Vec::new()),
-            _ => panic!("Encryption is disabled."),
         };
 
         // Read, decrypt, decompress, and deserialize the header.
@@ -217,22 +215,17 @@ impl<K: Key, S: DataStore> OpenRepo<S> for ObjectRepository<K, S> {
 
         // Generate the master encryption key.
         let master_key = match password {
-            #[cfg(feature = "encryption")]
             Some(..) => EncryptionKey::generate(config.encryption.key_size()),
             None => EncryptionKey::new(Vec::new()),
-            _ => panic!("Encryption is disabled."),
         };
 
         // Encrypt the master encryption key.
         let salt = match password {
-            #[cfg(feature = "encryption")]
             Some(..) => KeySalt::generate(),
             None => KeySalt::empty(),
-            _ => panic!("Encryption is disabled."),
         };
 
         let encrypted_master_key = match password {
-            #[cfg(feature = "encryption")]
             Some(password_bytes) => {
                 let user_key = EncryptionKey::derive(
                     password_bytes,
@@ -244,7 +237,6 @@ impl<K: Key, S: DataStore> OpenRepo<S> for ObjectRepository<K, S> {
                 config.encryption.encrypt(master_key.as_ref(), &user_key)
             }
             None => Vec::new(),
-            _ => panic!("Encryption is disabled."),
         };
 
         // Generate and write the header.

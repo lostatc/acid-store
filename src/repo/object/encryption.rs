@@ -53,6 +53,11 @@ impl ResourceLimit {
         }
     }
 
+    #[cfg(not(feature = "encryption"))]
+    pub(super) fn to_mem_limit(&self) -> MemLimit {
+        panic!("The `encryption` cargo feature is not enabled.")
+    }
+
     /// Get an operations limit based on this resource limit.
     #[cfg(feature = "encryption")]
     pub(super) fn to_ops_limit(&self) -> OpsLimit {
@@ -61,6 +66,11 @@ impl ResourceLimit {
             ResourceLimit::Moderate => OPSLIMIT_MODERATE,
             ResourceLimit::Sensitive => OPSLIMIT_SENSITIVE,
         }
+    }
+
+    #[cfg(not(feature = "encryption"))]
+    pub(super) fn to_ops_limit(&self) -> OpsLimit {
+        panic!("The `encryption` cargo feature is not enabled.")
     }
 }
 
@@ -81,7 +91,6 @@ impl Encryption {
     pub(super) fn encrypt(&self, cleartext: &[u8], key: &EncryptionKey) -> Vec<u8> {
         match self {
             Encryption::None => cleartext.to_vec(),
-            #[cfg(feature = "encryption")]
             Encryption::XChaCha20Poly1305 => {
                 let nonce = gen_nonce();
                 let chacha_key = ChaChaKey::from_slice(key.0.as_ref()).unwrap();
@@ -90,7 +99,6 @@ impl Encryption {
                 output.append(&mut ciphertext);
                 output
             }
-            _ => panic!("Unsupported encryption method."),
         }
     }
 
@@ -98,14 +106,12 @@ impl Encryption {
     pub(super) fn decrypt(&self, ciphertext: &[u8], key: &EncryptionKey) -> crate::Result<Vec<u8>> {
         match self {
             Encryption::None => Ok(ciphertext.to_vec()),
-            #[cfg(feature = "encryption")]
             Encryption::XChaCha20Poly1305 => {
                 let nonce = Nonce::from_slice(&ciphertext[..NONCEBYTES]).unwrap();
                 let chacha_key = ChaChaKey::from_slice(key.0.as_ref()).unwrap();
                 open(&ciphertext[NONCEBYTES..], None, &nonce, &chacha_key)
                     .map_err(|_| crate::Error::InvalidData)
             }
-            _ => panic!("Unsupported encryption method."),
         }
     }
 }
@@ -115,9 +121,7 @@ impl Encryption {
     pub(super) fn key_size(&self) -> usize {
         match self {
             Encryption::None => 0,
-            #[cfg(feature = "encryption")]
             Encryption::XChaCha20Poly1305 => KEYBYTES,
-            _ => panic!("Unsupported encryption method."),
         }
     }
 }
@@ -139,6 +143,11 @@ impl KeySalt {
     #[cfg(feature = "encryption")]
     pub fn generate() -> Self {
         KeySalt(gen_salt().as_ref().to_vec())
+    }
+
+    #[cfg(not(feature = "encryption"))]
+    pub fn generate() -> Self {
+        panic!("The `encryption` cargo feature is not enabled.")
     }
 }
 
@@ -174,6 +183,11 @@ impl EncryptionKey {
         EncryptionKey::new(bytes)
     }
 
+    #[cfg(not(feature = "encryption"))]
+    pub fn generate(size: usize) -> Self {
+        panic!("The `encryption` cargo feature is not enabled.")
+    }
+
     /// Derive a new encryption key of the given `size` from the given `password` and `salt`.
     ///
     /// This uses the Argon2id key derivation function.
@@ -195,5 +209,16 @@ impl EncryptionKey {
         )
         .expect("Failed to derive an encryption key.");
         EncryptionKey::new(bytes)
+    }
+
+    #[cfg(not(feature = "encryption"))]
+    pub fn derive(
+        password: &[u8],
+        salt: &KeySalt,
+        size: usize,
+        memory: MemLimit,
+        operations: OpsLimit,
+    ) -> Self {
+        panic!("The `encryption` cargo feature is not enabled.")
     }
 }
