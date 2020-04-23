@@ -138,8 +138,8 @@ impl<K: Key, S: DataStore> OpenRepo<S> for ObjectRepository<K, S> {
                     password_bytes,
                     &metadata.salt,
                     metadata.encryption.key_size(),
-                    metadata.memory_limit.to_mem_limit(),
-                    metadata.operations_limit.to_ops_limit(),
+                    metadata.memory_limit,
+                    metadata.operations_limit,
                 );
                 EncryptionKey::new(
                     metadata
@@ -231,8 +231,8 @@ impl<K: Key, S: DataStore> OpenRepo<S> for ObjectRepository<K, S> {
                     password_bytes,
                     &salt,
                     config.encryption.key_size(),
-                    config.memory_limit.to_mem_limit(),
-                    config.operations_limit.to_ops_limit(),
+                    config.memory_limit,
+                    config.operations_limit,
                 );
                 config.encryption.encrypt(master_key.as_ref(), &user_key)
             }
@@ -547,8 +547,8 @@ impl<K: Key, S: DataStore> ObjectRepository<K, S> {
             new_password,
             &salt,
             self.state.metadata.encryption.key_size(),
-            self.state.metadata.memory_limit.to_mem_limit(),
-            self.state.metadata.operations_limit.to_ops_limit(),
+            self.state.metadata.memory_limit,
+            self.state.metadata.operations_limit,
         );
 
         let encrypted_master_key = self
