@@ -25,6 +25,7 @@ use uuid::Uuid;
 
 use lazy_static::lazy_static;
 
+use crate::repo::key_id::{KeyId, KeyTable};
 use crate::repo::version_id::{check_version, write_version};
 use crate::repo::{
     Key, LockStrategy, Object, ObjectRepository, OpenRepo, ReadOnlyObject, RepositoryConfig,
@@ -37,7 +38,7 @@ use super::version::{Version, VersionKey};
 lazy_static! {
     /// The current repository format version ID.
     static ref VERSION_ID: Uuid =
-        Uuid::parse_str("0feb0a0e-37ba-11ea-9b23-309c230b49ee").unwrap();
+        Uuid::parse_str("c8b5da65-afe1-41a6-8077-a73d595456b0").unwrap();
 }
 
 /// A persistent object store with support for versioning.
@@ -71,7 +72,7 @@ lazy_static! {
 ///         drop(object);
 ///         
 ///         // Create a new, read-only version of this object.
-///         let version = repository.create_version(String::from("Key"))?;
+///         let version = repository.create_version("Key")?;
 ///
 ///         // Modify the current version of the object.
 ///         let mut object = repository.get_mut("Key").unwrap();
@@ -93,7 +94,8 @@ lazy_static! {
 /// ```
 #[derive(Debug)]
 pub struct VersionRepository<K: Key, S: DataStore> {
-    repository: ObjectRepository<VersionKey<K>, S>,
+    repository: ObjectRepository<VersionKey, S>,
+    key_table: KeyTable<K>,
 }
 
 impl<K: Key, S: DataStore> OpenRepo<S> for VersionRepository<K, S> {
@@ -109,7 +111,16 @@ impl<K: Key, S: DataStore> OpenRepo<S> for VersionRepository<K, S> {
             .ok_or(crate::Error::NotFound)?;
         check_version(object, *VERSION_ID)?;
 
-        Ok(Self { repository })
+        // Read and deserialize the key table.
+        let object = repository
+            .get(&VersionKey::KeyTable)
+            .ok_or(crate::Error::Corrupt)?;
+        let key_table = KeyTable::read(object)?;
+
+        Ok(Self {
+            repository,
+            key_table,
+        })
     }
 
     fn new_repo(store: S, config: RepositoryConfig, password: Option<&[u8]>) -> crate::Result<Self>
@@ -122,7 +133,17 @@ impl<K: Key, S: DataStore> OpenRepo<S> for VersionRepository<K, S> {
         let object = repository.insert(VersionKey::RepositoryVersion);
         write_version(object, *VERSION_ID)?;
 
-        Ok(Self { repository })
+        // Create and write a key table.
+        let object = repository.insert(VersionKey::KeyTable);
+        let key_table = KeyTable::new();
+        key_table.write(object)?;
+
+        repository.commit()?;
+
+        Ok(Self {
+            repository,
+            key_table,
+        })
     }
 
     fn create_repo(
@@ -147,10 +168,9 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        Q: Hash + Eq + ?Sized,
     {
-        self.repository
-            .contains(&VersionKey::Object(key.to_owned()))
+        self.key_table.contains(key)
     }
 
     /// Insert the given `key` into the repository and return a new object.
@@ -162,37 +182,39 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn insert(&mut self, key: K) -> crate::Result<Object<VersionKey<K>, S>> {
+    pub fn insert(&mut self, key: K) -> crate::Result<Object<VersionKey, S>> {
         if self.contains(&key) {
             return Err(crate::Error::AlreadyExists);
         }
 
-        self.write_versions(&key, &[])?;
-        Ok(self.repository.insert(VersionKey::Object(key)))
+        let key_id = self.key_table.insert(key);
+        self.write_versions(key_id, &[])?;
+        Ok(self.repository.insert(VersionKey::Object(key_id)))
     }
 
     /// Remove the given `key` and all its versions from the repository.
-    ///
-    /// This returns `true` if the object was removed or `false` if it didn't exist.
     ///
     /// The space used by the given object isn't freed and made available for new objects until
     /// `commit` is called.
     ///
     /// # Errors
-    /// - `NotFound`: The given `key` is not in the repository.
+    /// - `Error::NotFound`: The given `key` is not in the repository.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn remove<Q>(&mut self, key: &Q) -> crate::Result<()>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        Q: Hash + Eq + ?Sized,
     {
         for version in self.list_versions(key)? {
             self.remove_version(key, version.id)?;
         }
-        self.repository.remove(&VersionKey::Index(key.to_owned()));
-        self.repository.remove(&VersionKey::Object(key.to_owned()));
+
+        let key_id = self.key_table.remove(key).ok_or(crate::Error::NotFound)?;
+
+        self.repository.remove(&VersionKey::Index(key_id));
+        self.repository.remove(&VersionKey::Object(key_id));
 
         Ok(())
     }
@@ -201,34 +223,31 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     ///
     /// The returned object provides read-only access to the data. To get read-write access, use
     /// `get_mut`.
-    pub fn get<Q>(&self, key: &Q) -> Option<ReadOnlyObject<VersionKey<K>, S>>
+    pub fn get<Q>(&self, key: &Q) -> Option<ReadOnlyObject<VersionKey, S>>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        Q: Hash + Eq + ?Sized,
     {
-        self.repository.get(&VersionKey::Object(key.to_owned()))
+        let key_id = self.key_table.get(key)?;
+        self.repository.get(&VersionKey::Object(key_id))
     }
 
     /// Return an object for modifying the current version of `key` or `None` if it doesn't exist.
     ///
     /// The returned object provides read-write access to the data. To get read-only access, use
     /// `get`.
-    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<Object<VersionKey<K>, S>>
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<Object<VersionKey, S>>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        Q: Hash + Eq + ?Sized,
     {
-        self.repository.get_mut(&VersionKey::Object(key.to_owned()))
+        let key_id = self.key_table.get(key)?;
+        self.repository.get_mut(&VersionKey::Object(key_id))
     }
 
     /// Return an iterator of all the keys in this repository.
     pub fn keys(&self) -> impl Iterator<Item = &K> {
-        self.repository
-            .keys()
-            .filter_map(|version_key| match version_key {
-                VersionKey::Object(key) => Some(key),
-                _ => None,
-            })
+        self.key_table.keys()
     }
 
     /// Create a new version of the given `key`.
@@ -240,12 +259,17 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn create_version(&mut self, key: K) -> crate::Result<Version> {
+    pub fn create_version<Q>(&mut self, key: &Q) -> crate::Result<Version>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
         let mut versions = self.list_versions(&key)?;
+        let key_id = self.key_table.get(key).ok_or(crate::Error::NotFound)?;
 
         let object = self
             .repository
-            .get(&VersionKey::Object(key.clone()))
+            .get(&VersionKey::Object(key_id))
             .expect("There is no object associated with this key.");
         let size = object.size();
         let content_id = object.content_id();
@@ -259,11 +283,11 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
             content_id,
         };
         versions.push(new_version.clone());
-        self.write_versions(&key, versions.as_slice())?;
+        self.write_versions(key_id, versions.as_slice())?;
 
         self.repository.copy(
-            &VersionKey::Object(key.clone()),
-            VersionKey::Version(key, next_id),
+            &VersionKey::Object(key_id),
+            VersionKey::Version(key_id, next_id),
         )?;
 
         Ok(new_version)
@@ -280,26 +304,26 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     pub fn remove_version<Q>(&mut self, key: &Q, id: usize) -> crate::Result<()>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        Q: Hash + Eq + ?Sized,
     {
-        self.repository
-            .remove(&VersionKey::Version(key.to_owned(), id));
+        let key_id = self.key_table.get(key).ok_or(crate::Error::NotFound)?;
+        self.repository.remove(&VersionKey::Version(key_id, id));
         let mut versions = self.list_versions(key)?;
         versions.retain(|version| version.id() != id);
-        self.write_versions(key, versions.as_slice())?;
+        self.write_versions(key_id, versions.as_slice())?;
         Ok(())
     }
 
     /// Get an object for reading the version of `key` with the given `id`.
     ///
     /// If there is no version with the given `id`, this returns `None`.
-    pub fn get_version<Q>(&self, key: &Q, id: usize) -> Option<ReadOnlyObject<VersionKey<K>, S>>
+    pub fn get_version<Q>(&self, key: &Q, id: usize) -> Option<ReadOnlyObject<VersionKey, S>>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        Q: Hash + Eq + ?Sized,
     {
-        self.repository
-            .get(&VersionKey::Version(key.to_owned(), id))
+        let key_id = self.key_table.get(key)?;
+        self.repository.get(&VersionKey::Version(key_id, id))
     }
 
     /// Return the list of versions of the given `key`.
@@ -312,11 +336,12 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     pub fn list_versions<Q>(&self, key: &Q) -> crate::Result<Vec<Version>>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        Q: Hash + Eq + ?Sized,
     {
+        let key_id = self.key_table.get(key).ok_or(crate::Error::NotFound)?;
         let mut object = self
             .repository
-            .get(&VersionKey::Index(key.to_owned()))
+            .get(&VersionKey::Index(key_id))
             .ok_or(crate::Error::NotFound)?;
 
         // Catch any errors before passing to `from_read`.
@@ -338,10 +363,11 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     pub fn restore_version<Q>(&mut self, key: &Q, id: usize) -> crate::Result<()>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
+        Q: Hash + Eq + ?Sized,
     {
-        let current_key = VersionKey::Object(key.to_owned());
-        let version_key = VersionKey::Version(key.to_owned(), id);
+        let key_id = self.key_table.get(key).ok_or(crate::Error::NotFound)?;
+        let current_key = VersionKey::Object(key_id);
+        let version_key = VersionKey::Version(key_id, id);
 
         if !self.repository.contains(&version_key) {
             return Err(crate::Error::NotFound);
@@ -351,13 +377,9 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         self.repository.copy(&version_key, current_key)
     }
 
-    /// Write the given `versions` list for the given `key`.
-    fn write_versions<Q>(&mut self, key: &Q, versions: &[Version]) -> crate::Result<()>
-    where
-        K: Borrow<Q>,
-        Q: Hash + Eq + ToOwned<Owned = K> + ?Sized,
-    {
-        let mut object = self.repository.insert(VersionKey::Index(key.to_owned()));
+    /// Write the given `versions` list for the given `key_id`.
+    fn write_versions(&mut self, key_id: KeyId, versions: &[Version]) -> crate::Result<()> {
+        let mut object = self.repository.insert(VersionKey::Index(key_id));
         let serialized_versions = to_vec(versions).expect("Could not serialize list of versions.");
         object.write_all(serialized_versions.as_slice())?;
         object.flush()?;
@@ -369,6 +391,11 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     ///
     /// See `ObjectRepository::commit` for details.
     pub fn commit(&mut self) -> crate::Result<()> {
+        let object = self
+            .repository
+            .get_mut(&VersionKey::KeyTable)
+            .expect("This repository has no key table.");
+        self.key_table.write(object)?;
         self.repository.commit()
     }
 
@@ -389,7 +416,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     ///
     /// See `ObjectRepository::peek_info` for details.
     pub fn peek_info(store: &mut S) -> crate::Result<RepositoryInfo> {
-        ObjectRepository::<VersionKey<K>, S>::peek_info(store)
+        ObjectRepository::<VersionKey, S>::peek_info(store)
     }
 
     /// Calculate statistics about the repository.

@@ -112,6 +112,8 @@ impl<S: DataStore, M: FileMetadata> OpenRepo<S> for FileRepository<S, M> {
         let object = repository.insert(EntryKey::Version);
         write_version(object, *VERSION_ID)?;
 
+        repository.commit()?;
+
         Ok(Self {
             repository,
             marker: PhantomData,

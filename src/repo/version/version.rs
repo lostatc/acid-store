@@ -14,9 +14,11 @@
  * limitations under the License.
  */
 
-use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 
+use serde::{Deserialize, Serialize};
+
+use crate::repo::key_id::KeyId;
 use crate::repo::ContentId;
 
 /// Information about a version in a `VersionRepository`.
@@ -54,15 +56,18 @@ impl Version {
 
 /// The key to use in the `ObjectRepository` which backs a `VersionRepository`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
-pub enum VersionKey<K> {
+pub enum VersionKey {
     /// The list of versions of a given key.
-    Index(K),
+    Index(KeyId),
 
     /// The current version of a given key.
-    Object(K),
+    Object(KeyId),
 
     /// The version of a given key with a given index.
-    Version(K, usize),
+    Version(KeyId, usize),
+
+    /// The serialized mapping of keys to key IDs.
+    KeyTable,
 
     /// The current version of the repository.
     RepositoryVersion,

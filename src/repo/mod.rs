@@ -34,6 +34,7 @@ pub use object::{
 
 pub mod content;
 pub mod file;
+mod key_id;
 mod object;
 pub mod value;
 pub mod version;
