@@ -80,20 +80,15 @@ criterion = "0.3.1"
 bytesize = "1.0.0"
 
 [features]
-default = ["store-directory"]
+default = ["store-directory", "store-rclone"]
 
 store-directory = []
-
 store-sqlite = ["rusqlite"]
-
 store-redis = ["redis"]
-
 store-s3 = ["rust-s3"]
-
+store-rclone = []
 file-metadata = ["nix", "filetime", "xattr"]
-
 compression = ["flate2", "xz2", "lz4"]
-
 encryption = ["sodiumoxide", "rand"]
 
 [[bench]]

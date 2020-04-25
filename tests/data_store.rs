@@ -16,7 +16,11 @@
 
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
-#[cfg(any(feature = "store-s3", feature = "store-redis"))]
+#[cfg(any(
+    feature = "store-s3",
+    feature = "store-redis",
+    feature = "store-rclone"
+))]
 use serial_test::serial;
 use tempfile::tempdir;
 use uuid::Uuid;
@@ -27,6 +31,8 @@ use acid_store::store::DirectoryStore;
 use acid_store::store::SqliteStore;
 use acid_store::store::{DataStore, MemoryStore, MultiStore, OpenOption, OpenStore};
 use common::{assert_contains_all, random_buffer};
+#[cfg(feature = "store-rclone")]
+use {acid_store::store::RcloneStore, common::RCLONE_REMOTE};
 #[cfg(feature = "store-redis")]
 use {acid_store::store::RedisStore, common::REDIS_INFO};
 #[cfg(feature = "store-s3")]
@@ -107,6 +113,18 @@ fn multi_read_block() -> anyhow::Result<()> {
     read_block(store)
 }
 
+#[test]
+#[serial(rclone)]
+#[cfg(feature = "store-rclone")]
+fn rclone_read_block() {
+    let store = RcloneStore::open(
+        RCLONE_REMOTE.to_owned(),
+        OpenOption::CREATE | OpenOption::TRUNCATE,
+    )
+    .unwrap();
+    read_block(store).unwrap();
+}
+
 fn overwrite_block(mut store: impl DataStore) -> anyhow::Result<()> {
     let id = Uuid::new_v4();
     let expected_block = random_buffer();
@@ -175,6 +193,18 @@ fn multi_overwrite_block() -> anyhow::Result<()> {
     overwrite_block(store)
 }
 
+#[test]
+#[serial(rclone)]
+#[cfg(feature = "store-rclone")]
+fn rclone_overwrite_block() {
+    let store = RcloneStore::open(
+        RCLONE_REMOTE.to_owned(),
+        OpenOption::CREATE | OpenOption::TRUNCATE,
+    )
+    .unwrap();
+    overwrite_block(store).unwrap();
+}
+
 fn remove_block(mut store: impl DataStore) -> anyhow::Result<()> {
     let id = Uuid::new_v4();
     store.write_block(id, random_buffer().as_slice())?;
@@ -241,6 +271,18 @@ fn multi_remove_block() -> anyhow::Result<()> {
     let mut multi_store = MultiStore::new(MemoryStore::new())?;
     let store = multi_store.insert(String::from("Test"))?;
     remove_block(store)
+}
+
+#[test]
+#[serial(rclone)]
+#[cfg(feature = "store-rclone")]
+fn rclone_remove_block() {
+    let store = RcloneStore::open(
+        RCLONE_REMOTE.to_owned(),
+        OpenOption::CREATE | OpenOption::TRUNCATE,
+    )
+    .unwrap();
+    remove_block(store).unwrap();
 }
 
 fn list_blocks(mut store: impl DataStore) -> anyhow::Result<()> {
@@ -316,4 +358,16 @@ fn multi_list_block() -> anyhow::Result<()> {
     let mut multi_store = MultiStore::new(MemoryStore::new())?;
     let store = multi_store.insert(String::from("Test"))?;
     list_blocks(store)
+}
+
+#[test]
+#[serial(rclone)]
+#[cfg(feature = "store-rclone")]
+fn rclone_list_block() {
+    let store = RcloneStore::open(
+        RCLONE_REMOTE.to_owned(),
+        OpenOption::CREATE | OpenOption::TRUNCATE,
+    )
+    .unwrap();
+    list_blocks(store).unwrap();
 }
