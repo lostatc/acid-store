@@ -90,10 +90,10 @@
 //! `Compression::Deflate`, `Compression::Lzma`, `Compression::Lz4` | `compression` | No
 //! `CommonMetadata`, `UnixMetadata` | `file-metadata` | No
 //! `DirectoryStore` | `store-directory` | Yes
-//! `RcloneStore` | `store-rclone` | Yes
 //! `SqliteStore` | `store-sqlite` | No
 //! `RedisStore` | `store-redis` | No
 //! `S3Store` | `store-s3` | No
+//! `RcloneStore` | `store-rclone` | No
 //!
 //! To use a feature which is not enabled by default, you must enable it in your `Cargo.toml`.
 

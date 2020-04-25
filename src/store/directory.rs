@@ -43,10 +43,6 @@ pub struct DirectoryStore {
 impl DirectoryStore {
     /// Create a new `DirectoryStore` at the given `path`.
     fn create_new(path: PathBuf) -> crate::Result<Self> {
-        if path.exists() {
-            return Err(crate::Error::AlreadyExists);
-        }
-
         // Create the directories in the data store.
         create_dir_all(&path)?;
         create_dir(&path.join(BLOCKS_DIRECTORY))?;
@@ -60,10 +56,6 @@ impl DirectoryStore {
 
     /// Open an existing `DirectoryStore` at the given `path`.
     fn open_existing(path: PathBuf) -> crate::Result<Self> {
-        if !path.is_dir() {
-            return Err(crate::Error::NotFound);
-        }
-
         // Read the version ID file.
         let mut version_file = File::open(path.join(VERSION_FILE))?;
         let mut version_id = String::new();
@@ -99,11 +91,21 @@ impl OpenStore for DirectoryStore {
     where
         Self: Sized,
     {
+        let exists = config.is_file() || (config.is_dir() && config.read_dir()?.next().is_some());
+
         if options.contains(OpenOption::CREATE_NEW) {
-            Self::create_new(config)
-        } else if options.contains(OpenOption::CREATE) && !config.exists() {
+            if exists {
+                Err(crate::Error::AlreadyExists)
+            } else {
+                Self::create_new(config)
+            }
+        } else if options.contains(OpenOption::CREATE) && !exists {
             Self::create_new(config)
         } else {
+            if !exists {
+                return Err(crate::Error::NotFound);
+            }
+
             let store = Self::open_existing(config)?;
 
             if options.contains(OpenOption::TRUNCATE) {
