@@ -65,6 +65,7 @@ uuid = { version = "0.8.1", features = ["serde", "v4"] }
 lazy_static = "1.4.0"
 weak-table = "0.2.3"
 bitflags = "1.2.1"
+tempfile = { version = "3.1.0", optional = true }
 
 # Unix-specific dependencies
 [target.'cfg(unix)'.dependencies]
@@ -80,13 +81,13 @@ criterion = "0.3.1"
 bytesize = "1.0.0"
 
 [features]
-default = ["store-directory", "store-rclone"]
+default = ["store-directory"]
 
 store-directory = []
 store-sqlite = ["rusqlite"]
 store-redis = ["redis"]
 store-s3 = ["rust-s3"]
-store-rclone = []
+store-rclone = ["tempfile"]
 file-metadata = ["nix", "filetime", "xattr"]
 compression = ["flate2", "xz2", "lz4"]
 encryption = ["sodiumoxide", "rand"]

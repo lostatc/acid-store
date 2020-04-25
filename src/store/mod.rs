@@ -50,7 +50,7 @@ pub use self::common::{DataStore, OpenOption, OpenStore};
 pub use self::directory::DirectoryStore;
 pub use self::memory::MemoryStore;
 #[cfg(feature = "store-rclone")]
-pub use self::rclone::{RcloneConfig, RcloneStore};
+pub use self::rclone::RcloneStore;
 #[cfg(feature = "store-redis")]
 pub use self::redis::RedisStore;
 #[cfg(feature = "store-s3")]

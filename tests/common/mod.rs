@@ -34,8 +34,6 @@ use s3::region::Region;
 use acid_store::repo::{Compression, Encryption, ObjectRepository, OpenRepo, RepositoryConfig};
 use acid_store::store::MemoryStore;
 use lazy_static::lazy_static;
-#[cfg(feature = "store-rclone")]
-use {acid_store::store::RcloneConfig, std::path::Path};
 
 /// The minimum size of test data buffers.
 pub const MIN_BUFFER_SIZE: usize = 1024;
@@ -82,10 +80,7 @@ lazy_static! {
 
 #[cfg(feature = "store-rclone")]
 lazy_static! {
-    pub static ref RCLONE_REMOTE: RcloneConfig = RcloneConfig {
-        remote: dotenv::var("RCLONE_REMOTE").unwrap(),
-        root: Path::new("test").to_path_buf(),
-    };
+    pub static ref RCLONE_REMOTE: String = dotenv::var("RCLONE_REMOTE").unwrap();
 }
 
 /// Assert that two collections contain all the same elements, regardless of order.
