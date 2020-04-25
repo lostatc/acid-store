@@ -187,6 +187,9 @@ impl<'a, S: DataStore> DataStore for ProxyStore<'a, S> {
 /// Every data store in the `MultiStore` is associated with a key of type `K`. Inserting a key
 /// returns a `ProxyStore`, which is a sort of logical data store which delegates to the backing
 /// data store of type `S`.
+///
+/// Unlike with repositories, the keys in a `MultiStore` are not encrypted. Also, data is not
+/// deduplicated between data stores in a `MultiStore`.
 pub struct MultiStore<K: Key, S: DataStore> {
     /// The wrapped data store.
     store: Mutex<S>,
