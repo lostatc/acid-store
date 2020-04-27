@@ -17,7 +17,6 @@
 use std::borrow::Borrow;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::io::{Read, Write};
 use std::time::SystemTime;
 
 use uuid::Uuid;
@@ -111,10 +110,10 @@ impl<K: Key, S: DataStore> OpenRepo<S> for VersionRepository<K, S> {
         check_version(object, *VERSION_ID)?;
 
         // Read and deserialize the key table.
-        let object = repository
+        let mut object = repository
             .get(&VersionKey::KeyTable)
             .ok_or(crate::Error::Corrupt)?;
-        let key_table = KeyTable::read(object)?;
+        let key_table = object.deserialize()?;
 
         Ok(Self {
             repository,
@@ -133,9 +132,10 @@ impl<K: Key, S: DataStore> OpenRepo<S> for VersionRepository<K, S> {
         write_version(object, *VERSION_ID)?;
 
         // Create and write a key table.
-        let object = repository.insert(VersionKey::KeyTable);
+        let mut object = repository.insert(VersionKey::KeyTable);
         let key_table = KeyTable::new();
-        key_table.write(object)?;
+        object.serialize(&key_table)?;
+        drop(object);
 
         repository.commit()?;
 
@@ -169,7 +169,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        self.key_table.contains(key)
+        self.key_table.contains_key(key)
     }
 
     /// Insert the given `key` into the repository and return a new object.
@@ -186,7 +186,8 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
             return Err(crate::Error::AlreadyExists);
         }
 
-        let key_id = self.key_table.insert(key);
+        let key_id = KeyId::new();
+        self.key_table.insert(key, key_id);
         self.write_versions(key_id, &[])?;
         Ok(self.repository.insert(VersionKey::Object(key_id)))
     }
@@ -228,7 +229,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         Q: Hash + Eq + ?Sized,
     {
         let key_id = self.key_table.get(key)?;
-        self.repository.get(&VersionKey::Object(key_id))
+        self.repository.get(&VersionKey::Object(*key_id))
     }
 
     /// Return an object for modifying the current version of `key` or `None` if it doesn't exist.
@@ -241,7 +242,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         Q: Hash + Eq + ?Sized,
     {
         let key_id = self.key_table.get(key)?;
-        self.repository.get_mut(&VersionKey::Object(key_id))
+        self.repository.get_mut(&VersionKey::Object(*key_id))
     }
 
     /// Return an iterator of all the keys in this repository.
@@ -264,7 +265,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         Q: Eq + Hash + ?Sized,
     {
         let mut versions = self.list_versions(&key)?;
-        let key_id = self.key_table.get(key).ok_or(crate::Error::NotFound)?;
+        let key_id = *self.key_table.get(key).ok_or(crate::Error::NotFound)?;
 
         let object = self
             .repository
@@ -305,7 +306,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let key_id = self.key_table.get(key).ok_or(crate::Error::NotFound)?;
+        let key_id = *self.key_table.get(key).ok_or(crate::Error::NotFound)?;
         self.repository.remove(&VersionKey::Version(key_id, id));
         let mut versions = self.list_versions(key)?;
         versions.retain(|version| version.id() != id);
@@ -322,7 +323,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         Q: Hash + Eq + ?Sized,
     {
         let key_id = self.key_table.get(key)?;
-        self.repository.get(&VersionKey::Version(key_id, id))
+        self.repository.get(&VersionKey::Version(*key_id, id))
     }
 
     /// Return the list of versions of the given `key`.
@@ -340,7 +341,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         let key_id = self.key_table.get(key).ok_or(crate::Error::NotFound)?;
         let mut object = self
             .repository
-            .get(&VersionKey::Index(key_id))
+            .get(&VersionKey::Index(*key_id))
             .ok_or(crate::Error::NotFound)?;
 
         object.deserialize()
@@ -361,8 +362,8 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
         Q: Hash + Eq + ?Sized,
     {
         let key_id = self.key_table.get(key).ok_or(crate::Error::NotFound)?;
-        let current_key = VersionKey::Object(key_id);
-        let version_key = VersionKey::Version(key_id, id);
+        let current_key = VersionKey::Object(*key_id);
+        let version_key = VersionKey::Version(*key_id, id);
 
         if !self.repository.contains(&version_key) {
             return Err(crate::Error::NotFound);
@@ -375,18 +376,19 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// Write the given `versions` list for the given `key_id`.
     fn write_versions(&mut self, key_id: KeyId, versions: &[Version]) -> crate::Result<()> {
         let mut object = self.repository.insert(VersionKey::Index(key_id));
-        object.serialize(versions)
+        object.serialize(&versions)
     }
 
     /// Commit changes which have been made to the repository.
     ///
     /// See `ObjectRepository::commit` for details.
     pub fn commit(&mut self) -> crate::Result<()> {
-        let object = self
+        let mut object = self
             .repository
             .get_mut(&VersionKey::KeyTable)
             .expect("This repository has no key table.");
-        self.key_table.write(object)?;
+        object.serialize(&self.key_table)?;
+        drop(object);
         self.repository.commit()
     }
 

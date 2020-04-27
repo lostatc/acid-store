@@ -18,7 +18,7 @@ use std::cmp::Reverse;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::fs::{create_dir, create_dir_all, metadata, File, OpenOptions};
-use std::io::{self, copy, Read, Write};
+use std::io::{self, copy, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
