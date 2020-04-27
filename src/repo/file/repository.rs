@@ -23,7 +23,6 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
 use path_slash::PathExt;
-use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
@@ -199,9 +198,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
 
         // Write the metadata for the file.
         let mut object = self.repository.insert(entry_key);
-        let serialized_entry = to_vec(entry).map_err(|_| crate::Error::Serialize)?;
-        object.write_all(serialized_entry.as_slice())?;
-        object.flush()?;
+        object.serialize(entry)?;
 
         Ok(())
     }
@@ -321,11 +318,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
             .get(&EntryKey::Entry(path))
             .ok_or(crate::Error::NotFound)?;
 
-        // Catch any errors before passing to `from_read`.
-        let mut serialized_entry = Vec::with_capacity(object.size() as usize);
-        object.read_to_end(&mut serialized_entry)?;
-
-        Ok(from_read(serialized_entry.as_slice()).map_err(|_| crate::Error::Deserialize)?)
+        object.deserialize()
     }
 
     /// Set the file `metadata` for the entry at `path`.
@@ -349,9 +342,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
             .get_mut(&EntryKey::Entry(path))
             .ok_or(crate::Error::NotFound)?;
 
-        let serialized_entry = to_vec(&entry).map_err(|_| crate::Error::Serialize)?;
-        object.write_all(serialized_entry.as_slice())?;
-        object.flush()?;
+        object.serialize(&entry)?;
 
         Ok(())
     }

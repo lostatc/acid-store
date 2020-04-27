@@ -31,6 +31,8 @@ use crate::store::DataStore;
 
 use super::header::Key;
 use super::state::RepositoryState;
+use rmp_serde::{from_read, to_vec};
+use serde::de::DeserializeOwned;
 
 /// The size of the checksums used for uniquely identifying chunks.
 pub const CHUNK_HASH_SIZE: usize = 32;
@@ -201,6 +203,12 @@ impl<'a, K: Key, S: DataStore> ObjectReader<'a, K, S> {
         let end = min(start + size, current_location.chunk.size as usize);
         Ok(&self.object_state.read_buffer[start..end])
     }
+
+    /// Attempt to deserialize the bytes in the object as a value of type `T`.
+    fn deserialize<T: DeserializeOwned>(&mut self) -> crate::Result<T> {
+        self.seek(SeekFrom::Start(0))?;
+        from_read(self).map_err(|_| crate::Error::Deserialize)
+    }
 }
 
 impl<'a, K: Key, S: DataStore> Seek for ObjectReader<'a, K, S> {
@@ -270,6 +278,14 @@ impl<'a, K: Key, S: DataStore> ObjectWriter<'a, K, S> {
         }
     }
 
+    fn object_reader(&mut self) -> ObjectReader<K, S> {
+        ObjectReader {
+            repo_state: self.repo_state,
+            object_state: self.object_state,
+            key: self.key,
+        }
+    }
+
     fn truncate(&mut self, length: u64) -> crate::Result<()> {
         self.flush()?;
         let handle = self.repo_state.header.objects.get(&self.key).unwrap();
@@ -307,6 +323,16 @@ impl<'a, K: Key, S: DataStore> ObjectWriter<'a, K, S> {
         // Restore the seek position.
         self.object_state.position = min(original_position, length);
 
+        Ok(())
+    }
+
+    /// Serialize the given `value` and write it to the object.
+    fn serialize<T: Serialize>(&mut self, value: &T) -> crate::Result<()> {
+        let serialized = to_vec(value).map_err(|_| crate::Error::Serialize)?;
+        self.object_reader().seek(SeekFrom::Start(0))?;
+        self.write_all(serialized.as_slice())?;
+        self.flush()?;
+        self.truncate(serialized.len() as u64)?;
         Ok(())
     }
 
@@ -476,6 +502,13 @@ impl<'a, K: Key, S: DataStore> ReadOnlyObject<'a, K, S> {
     pub fn verify(&self) -> crate::Result<bool> {
         self.object_info().verify()
     }
+
+    /// Attempt to deserialize the bytes in the object as a value of type `T`.
+    ///
+    /// See `Object::deserialize` for details.
+    pub fn deserialize<T: DeserializeOwned>(&mut self) -> crate::Result<T> {
+        self.object_reader().deserialize()
+    }
 }
 
 impl<'a, K: Key, S: DataStore> Read for ReadOnlyObject<'a, K, S> {
@@ -602,6 +635,38 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// - `Error::Io`: An I/O error occurred.
     pub fn truncate(&mut self, length: u64) -> crate::Result<()> {
         self.object_writer().truncate(length)
+    }
+
+    /// Serialize the given `value` and write it to the object.
+    ///
+    /// This serializes the value using a space-efficient binary format.
+    ///
+    /// This writes the value starting at the beginning of the object and not at the current seek
+    /// position. When this method returns, the seek position will be at the end of the object and
+    /// the object will be truncated to the size of the serialized `value`.
+    ///
+    /// # Errors
+    /// - `Error::Serialize`: The given value could not be serialized.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn serialize<T: Serialize>(&mut self, value: &T) -> crate::Result<()> {
+        self.object_writer().serialize(value)
+    }
+
+    /// Deserialize a value serialized with `Object::serialize`.
+    ///
+    /// This reads the serialized value starting at the beginning of the object and not at the
+    /// current seek position. When this method returns, the seek position will be at the end of the
+    /// object.
+    ///
+    /// # Errors
+    /// - `Error::Deserialize`: The data could not be deserialized as a value of type `T`.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn deserialize<T: DeserializeOwned>(&mut self) -> crate::Result<T> {
+        self.object_reader().deserialize()
     }
 }
 

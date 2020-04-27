@@ -17,7 +17,6 @@
 use std::collections::HashSet;
 use std::io::{Read, Write};
 
-use rmp_serde::{from_read, to_vec};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -90,10 +89,7 @@ impl<S: DataStore> OpenRepo<S> for ContentRepository<S> {
         let mut object = repository
             .get(&ContentKey::HashAlgorithm)
             .ok_or(crate::Error::Corrupt)?;
-        let mut algorithm_buffer = Vec::new();
-        object.read_to_end(&mut algorithm_buffer)?;
-        let hash_algorithm =
-            from_read(algorithm_buffer.as_slice()).map_err(|_| crate::Error::Corrupt)?;
+        let hash_algorithm = object.deserialize()?;
         drop(object);
 
         Ok(Self {
@@ -114,10 +110,7 @@ impl<S: DataStore> OpenRepo<S> for ContentRepository<S> {
 
         // Write the hash algorithm.
         let mut object = repository.insert(ContentKey::HashAlgorithm);
-        let serialized_algorithm =
-            to_vec(&DEFAULT_ALGORITHM).expect("Could not serialize hash algorithm.");
-        object.write_all(&serialized_algorithm)?;
-        object.flush()?;
+        object.serialize(&DEFAULT_ALGORITHM)?;
         drop(object);
 
         repository.commit()?;
@@ -236,10 +229,7 @@ impl<S: DataStore> ContentRepository<S> {
 
         // Serialize and write the new hash algorithm.
         let mut object = self.repository.insert(ContentKey::HashAlgorithm);
-        let serialized_algorithm =
-            to_vec(&new_algorithm).expect("Could not serialize hash algorithm.");
-        object.write_all(&serialized_algorithm)?;
-        object.flush()?;
+        object.serialize(&new_algorithm)?;
         drop(object);
 
         // Re-compute the hashes of the objects in the repository.
