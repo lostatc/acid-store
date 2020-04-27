@@ -20,7 +20,6 @@ use std::hash::Hash;
 use std::io::{Read, Write};
 use std::time::SystemTime;
 
-use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
 
 use lazy_static::lazy_static;
@@ -344,11 +343,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
             .get(&VersionKey::Index(key_id))
             .ok_or(crate::Error::NotFound)?;
 
-        // Catch any errors before passing to `from_read`.
-        let mut buffer = Vec::with_capacity(object.size() as usize);
-        object.read_to_end(&mut buffer)?;
-
-        Ok(from_read(buffer.as_slice()).expect("Could not deserialize list of versions."))
+        object.deserialize()
     }
 
     /// Replace the current version of `key` with the version with the given `id`.
@@ -380,11 +375,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// Write the given `versions` list for the given `key_id`.
     fn write_versions(&mut self, key_id: KeyId, versions: &[Version]) -> crate::Result<()> {
         let mut object = self.repository.insert(VersionKey::Index(key_id));
-        let serialized_versions = to_vec(versions).expect("Could not serialize list of versions.");
-        object.write_all(serialized_versions.as_slice())?;
-        object.flush()?;
-
-        Ok(())
+        object.serialize(versions)
     }
 
     /// Commit changes which have been made to the repository.

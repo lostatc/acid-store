@@ -145,9 +145,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
     pub fn insert<V: Serialize>(&mut self, key: K, value: &V) -> crate::Result<()> {
         let key_id = self.key_table.insert(key);
         let mut object = self.repository.insert(ValueKey::Data(key_id));
-        let serialized_value = to_vec(value).map_err(|_| crate::Error::Serialize)?;
-        object.write_all(serialized_value.as_slice())?;
-        object.flush()?;
+        object.serialize(value)?;
 
         Ok(())
     }
@@ -189,14 +187,7 @@ impl<K: Key, S: DataStore> ValueRepository<K, S> {
             .get(&ValueKey::Data(key_id))
             .ok_or(crate::Error::NotFound)?;
 
-        // Catch any errors before passing to `from_read`.
-        let mut serialized_value = Vec::with_capacity(object.size() as usize);
-        object.read_to_end(&mut serialized_value)?;
-
-        let value =
-            from_read(serialized_value.as_slice()).map_err(|_| crate::Error::Deserialize)?;
-
-        Ok(value)
+        object.deserialize()
     }
 
     /// Return an iterator of all the keys in this repository.

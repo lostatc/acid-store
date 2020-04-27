@@ -103,17 +103,11 @@ impl<K: Key> KeyTable<K> {
 
     /// Serialize this table and write it to the given `object`.
     pub fn write<R: Key, S: DataStore>(&self, mut object: Object<R, S>) -> crate::Result<()> {
-        let serialized = to_vec(&self.0).expect("Could not serialize key table.");
-        object.write_all(serialized.as_slice())?;
-        object.flush()?;
-        Ok(())
+        object.serialize(&self.0)
     }
 
     /// Read and deserialize a table from the given `object` and return it.
     pub fn read<R: Key, S: DataStore>(mut object: ReadOnlyObject<R, S>) -> crate::Result<Self> {
-        let mut serialized = Vec::new();
-        object.read_to_end(&mut serialized)?;
-        let map = from_read(serialized.as_slice()).expect("Could not deserialize key table.");
-        Ok(KeyTable(map))
+        Ok(KeyTable(object.deserialize()?))
     }
 }
