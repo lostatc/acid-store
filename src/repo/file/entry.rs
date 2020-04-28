@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
+use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 use super::metadata::FileMetadata;
 
@@ -71,10 +71,10 @@ impl<M: FileMetadata> Entry<M> {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub enum EntryKey {
     /// The data for a file.
-    Data(PathBuf),
+    Data(RelativePathBuf),
 
     /// The entry representing a file.
-    Entry(PathBuf),
+    Entry(RelativePathBuf),
 
     /// The repository version.
     Version,

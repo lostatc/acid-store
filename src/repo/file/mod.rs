@@ -16,13 +16,15 @@
 
 //! A virtual file system which can import and export files to the local OS file system.
 
+pub use relative_path::{RelativePath, RelativePathBuf};
+
 pub use self::entry::{Entry, FileType};
 #[cfg(feature = "file-metadata")]
 pub use self::metadata::CommonMetadata;
 #[cfg(all(unix, feature = "file-metadata"))]
 pub use self::metadata::UnixMetadata;
 pub use self::metadata::{FileMetadata, NoMetadata};
-pub use self::repository::{EntryPath, FileRepository};
+pub use self::repository::FileRepository;
 
 mod entry;
 mod metadata;
