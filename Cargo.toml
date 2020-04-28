@@ -17,7 +17,7 @@ all-features = true
 
 [dependencies]
 # File system
-path-slash = "0.1.1"
+relative-path = { version = "1.0.0", features = ["ci"] }
 walkdir = "2.2.9"
 fs2 = "0.4.3"
 dirs = "2.0.2"

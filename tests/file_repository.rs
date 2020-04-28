@@ -18,8 +18,8 @@
 
 use std::fs::{create_dir, File};
 use std::io::{Read, Write};
-use std::path::Path;
 
+use relative_path::RelativePath;
 use tempfile::tempdir;
 
 use acid_store::repo::file::{Entry, FileRepository, NoMetadata};
@@ -59,18 +59,6 @@ fn creating_existing_file_errs() -> anyhow::Result<()> {
     assert!(matches!(
         result.unwrap_err(),
         acid_store::Error::AlreadyExists
-    ));
-    Ok(())
-}
-
-#[test]
-fn absolute_entry_path_errs() -> anyhow::Result<()> {
-    let repository = create_repo()?;
-    let result = repository.entry("/home/lostatc/data");
-
-    assert!(matches!(
-        result.unwrap_err(),
-        acid_store::Error::InvalidPath
     ));
     Ok(())
 }
@@ -145,7 +133,7 @@ fn remove_file() -> anyhow::Result<()> {
     repository.create("home", &Entry::directory())?;
     repository.remove("home")?;
 
-    assert!(!repository.exists("home")?);
+    assert!(!repository.exists("home"));
     Ok(())
 }
 
@@ -155,9 +143,9 @@ fn remove_tree() -> anyhow::Result<()> {
     repository.create_parents("home/lostatc/test", &Entry::file())?;
     repository.remove_tree("home")?;
 
-    assert!(!repository.exists("home")?);
-    assert!(!repository.exists("home/lostatc")?);
-    assert!(!repository.exists("home/lostatc/test")?);
+    assert!(!repository.exists("home"));
+    assert!(!repository.exists("home/lostatc"));
+    assert!(!repository.exists("home/lostatc/test"));
     Ok(())
 }
 
@@ -167,7 +155,7 @@ fn remove_tree_without_descendants() -> anyhow::Result<()> {
     repository.create("home", &Entry::directory())?;
     repository.remove_tree("home")?;
 
-    assert!(!repository.exists("home")?);
+    assert!(!repository.exists("home"));
     Ok(())
 }
 
@@ -315,7 +303,10 @@ fn list_children() -> anyhow::Result<()> {
     repository.create_parents("root/child2/descendant", &Entry::file())?;
 
     let actual = repository.list("root")?;
-    let expected = vec![Path::new("root/child1"), Path::new("root/child2")];
+    let expected = vec![
+        RelativePath::new("root/child1"),
+        RelativePath::new("root/child2"),
+    ];
 
     assert_contains_all(actual, expected);
     Ok(())
@@ -340,9 +331,9 @@ fn walk_descendants() -> anyhow::Result<()> {
 
     let actual = repository.walk("root")?;
     let expected = vec![
-        Path::new("root/child1"),
-        Path::new("root/child2"),
-        Path::new("root/child2/descendant"),
+        RelativePath::new("root/child1"),
+        RelativePath::new("root/child2"),
+        RelativePath::new("root/child2/descendant"),
     ];
 
     assert_contains_all(actual, expected);
