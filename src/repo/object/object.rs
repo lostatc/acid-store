@@ -23,6 +23,8 @@ use std::mem::replace;
 
 use blake2::digest::{Input, VariableOutput};
 use blake2::VarBlake2b;
+use rmp_serde::{from_read, to_vec};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::repo::object::chunk_store::{ChunkReader, ChunkWriter};
@@ -31,8 +33,6 @@ use crate::store::DataStore;
 
 use super::header::Key;
 use super::state::RepositoryState;
-use rmp_serde::{from_read, to_vec};
-use serde::de::DeserializeOwned;
 
 /// The size of the checksums used for uniquely identifying chunks.
 pub const CHUNK_HASH_SIZE: usize = 32;
@@ -503,7 +503,7 @@ impl<'a, K: Key, S: DataStore> ReadOnlyObject<'a, K, S> {
         self.object_info().verify()
     }
 
-    /// Attempt to deserialize the bytes in the object as a value of type `T`.
+    /// Deserialize a value serialized with `Object::serialize`.
     ///
     /// See `Object::deserialize` for details.
     pub fn deserialize<T: DeserializeOwned>(&mut self) -> crate::Result<T> {
@@ -639,11 +639,9 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
 
     /// Serialize the given `value` and write it to the object.
     ///
-    /// This serializes the value using a space-efficient binary format.
-    ///
-    /// This writes the value starting at the beginning of the object and not at the current seek
-    /// position. When this method returns, the seek position will be at the end of the object and
-    /// the object will be truncated to the size of the serialized `value`.
+    /// This is a convenience function that serializes the `value` using a space-efficient binary
+    /// format, overwrites all the data in the object, and truncates it to the length of the
+    /// serialized `value`.
     ///
     /// # Errors
     /// - `Error::Serialize`: The given value could not be serialized.
@@ -656,9 +654,8 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
 
     /// Deserialize a value serialized with `Object::serialize`.
     ///
-    /// This reads the serialized value starting at the beginning of the object and not at the
-    /// current seek position. When this method returns, the seek position will be at the end of the
-    /// object.
+    /// This is a convenience function that deserializes a value serialized to the object with
+    /// `Object::serialize`
     ///
     /// # Errors
     /// - `Error::Deserialize`: The data could not be deserialized as a value of type `T`.
