@@ -14,41 +14,50 @@
  * limitations under the License.
  */
 
-#![cfg(feature = "store-rclone")]
+#![cfg(all(unix, feature = "store-rclone"))]
 
+use std::fs::remove_dir;
 use std::io;
-use std::path::Path;
-use std::process::{Command, Stdio};
+use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::thread::sleep;
+use std::time::Duration;
 
-use tempfile::TempDir;
+use nix::sys::signal::{kill, Signal};
+use nix::unistd::Pid;
 use uuid::Uuid;
 
 use crate::store::{DataStore, DirectoryStore, OpenOption, OpenStore};
 
-/// Mount the rclone `remote` at `mount_directory`.
-fn mount(remote: &str, mount_directory: &Path) -> io::Result<()> {
-    let status = Command::new("rclone")
+/// The amount of time to wait between checking if the rclone remote is mounted.
+const MOUNT_WAIT_TIME: Duration = Duration::from_millis(100);
+
+/// Mount the rclone `remote` at `mount_directory` and return the mount process.
+fn mount(remote: &str, mount_directory: &Path) -> io::Result<Child> {
+    Command::new("rclone")
         .args(&[
             "mount",
             "--vfs-cache-mode",
             "writes",
-            "--daemon",
             remote,
             mount_directory.to_str().unwrap(),
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
-        .status()?;
+        .spawn()
+}
 
-    if status.success() {
-        Ok(())
-    } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Failed to mount rclone FUSE mount.",
-        ))
-    }
+/// Return whether the given `path` is a mountpoint.
+fn is_mountpoint(path: &Path) -> io::Result<bool> {
+    let device_id = path.metadata()?.dev();
+    let parent_device_id = path
+        .parent()
+        .expect("Invalid mountpoint.")
+        .metadata()?
+        .dev();
+    Ok(device_id != parent_device_id)
 }
 
 /// A `DataStore` which stores data using rclone.
@@ -57,13 +66,15 @@ fn mount(remote: &str, mount_directory: &Path) -> io::Result<()> {
 /// variety of cloud storage providers. This implementation uses FUSE, and currently only works on
 /// Linux, macOS, and Windows using WSL2.
 ///
+/// To use this data store, rclone must be installed.
+///
 /// The `OpenStore::Config` value for this data store is a string with the format `<remote>:<path>`,
 /// where `<remote>` is the name of the remote as configured using `rclone config` and `<path>` is
 /// the path of the directory on the remote to use.
 #[derive(Debug)]
 pub struct RcloneStore {
-    remote: String,
-    mount_directory: TempDir,
+    mount_directory: PathBuf,
+    mount_process: Child,
     directory_store: DirectoryStore,
 }
 
@@ -74,14 +85,20 @@ impl OpenStore for RcloneStore {
     where
         Self: Sized,
     {
-        let mount_directory = tempfile::tempdir()?;
-        mount(config.as_str(), mount_directory.as_ref())?;
-        let directory_store =
-            DirectoryStore::open(mount_directory.as_ref().to_path_buf(), options)?;
+        // Mount the rclone remote as a FUSE mount.
+        let mount_directory = tempfile::tempdir()?.into_path();
+        let mount_process = mount(config.as_str(), &mount_directory)?;
+
+        // Wait for the remote to be mounted.
+        while !is_mountpoint(&mount_directory)? {
+            sleep(MOUNT_WAIT_TIME);
+        }
+
+        let directory_store = DirectoryStore::open(mount_directory.clone(), options)?;
 
         Ok(RcloneStore {
-            remote: config,
             mount_directory,
+            mount_process,
             directory_store,
         })
     }
@@ -104,5 +121,19 @@ impl DataStore for RcloneStore {
 
     fn list_blocks(&mut self) -> Result<Vec<Uuid>, Self::Error> {
         self.directory_store.list_blocks()
+    }
+}
+
+impl Drop for RcloneStore {
+    fn drop(&mut self) {
+        // Attempt to unmount the remote by sending SIGTERM to the process.
+        kill(
+            Pid::from_raw(self.mount_process.id() as i32),
+            Signal::SIGTERM,
+        )
+        .ok();
+
+        // Attempt to remove the mount directory.
+        remove_dir(&self.mount_directory).ok();
     }
 }

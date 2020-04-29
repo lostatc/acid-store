@@ -49,7 +49,7 @@ pub use self::common::{DataStore, OpenOption, OpenStore};
 #[cfg(feature = "store-directory")]
 pub use self::directory::DirectoryStore;
 pub use self::memory::MemoryStore;
-#[cfg(feature = "store-rclone")]
+#[cfg(all(unix, feature = "store-rclone"))]
 pub use self::rclone::RcloneStore;
 #[cfg(feature = "store-redis")]
 pub use self::redis::RedisStore;
