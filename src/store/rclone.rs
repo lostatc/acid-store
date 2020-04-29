@@ -63,10 +63,10 @@ fn is_mountpoint(path: &Path) -> io::Result<bool> {
 /// A `DataStore` which stores data using rclone.
 ///
 /// This is a data store which is backed by [rclone](https://rclone.org/), allowing access to a wide
-/// variety of cloud storage providers. This implementation uses FUSE, and currently only works on
-/// Linux, macOS, and Windows using WSL2.
+/// variety of cloud storage providers. This implementation uses FUSE via the `rclone mount`
+/// command, and currently only works on Linux, macOS, and Windows using WSL2.
 ///
-/// To use this data store, rclone must be installed.
+/// To use this data store, rclone must be installed and available on the `PATH`.
 ///
 /// The `OpenStore::Config` value for this data store is a string with the format `<remote>:<path>`,
 /// where `<remote>` is the name of the remote as configured using `rclone config` and `<path>` is
