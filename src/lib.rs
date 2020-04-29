@@ -33,6 +33,8 @@
 //! - `SqliteStore` stores data in a SQLite database.
 //! - `RedisStore` stores data on a Redis server.
 //! - `S3Store` stores data in an Amazon S3 bucket.
+//! - `RcloneStore` stores data in a varity of cloud storage backends using
+//! [rclone](https://rclone.org/).
 //! - `MemoryStore` stores data in memory.
 //!
 //! The function `init` is used to initialize the environment and should be called before any other
