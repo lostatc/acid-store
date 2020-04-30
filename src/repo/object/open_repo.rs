@@ -21,7 +21,7 @@ use super::lock::LockStrategy;
 
 /// A repository which can be opened.
 pub trait OpenRepo<S: DataStore> {
-    /// Open the repository in the given data `store`.
+    /// Open the repository in the given data `store`, failing if it doesn't exist.
     ///
     /// If encryption is enabled, a `password` must be provided. Otherwise, this argument can be
     /// `None`.
@@ -55,8 +55,8 @@ pub trait OpenRepo<S: DataStore> {
 
     /// Open the repository in the given data `store` if it exists or create one if it doesn't.
     ///
-    /// If encryption is enabled, a `password` must be provided. Otherwise, this argument can be
-    /// `None`.
+    /// A `config` must be provided to configure the new repository. If encryption is enabled, a
+    /// `password` must be provided; otherwise, this argument can be `None`.
     ///
     /// # Errors
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.

@@ -13,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use std::sync::Once;
+
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
@@ -28,6 +30,16 @@ use {
         MEMLIMIT_SENSITIVE, OPSLIMIT_INTERACTIVE, OPSLIMIT_MODERATE, OPSLIMIT_SENSITIVE,
     },
 };
+
+static ENCRYPTION_INIT: Once = Once::new();
+
+/// Initialize the environment for encryption.
+fn init() {
+    #[cfg(feature = "encryption")]
+    ENCRYPTION_INIT.call_once(|| {
+        sodiumoxide::init().expect("Failed to initialize encryption.");
+    });
+}
 
 /// A limit on the resources used by a key derivation function.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
@@ -79,6 +91,7 @@ pub enum Encryption {
 impl Encryption {
     /// Encrypt the given `cleartext` with the given `key`.
     pub(super) fn encrypt(&self, cleartext: &[u8], key: &EncryptionKey) -> Vec<u8> {
+        init();
         match self {
             Encryption::None => cleartext.to_vec(),
             #[cfg(feature = "encryption")]
@@ -95,6 +108,7 @@ impl Encryption {
 
     /// Decrypt the given `ciphertext` with the given `key`.
     pub(super) fn decrypt(&self, ciphertext: &[u8], key: &EncryptionKey) -> crate::Result<Vec<u8>> {
+        init();
         match self {
             Encryption::None => Ok(ciphertext.to_vec()),
             #[cfg(feature = "encryption")]
@@ -135,6 +149,7 @@ impl KeySalt {
     /// Generate a new random `KeySalt`.
     #[cfg(feature = "encryption")]
     pub fn generate() -> Self {
+        init();
         KeySalt(gen_salt().as_ref().to_vec())
     }
 
@@ -192,6 +207,7 @@ impl EncryptionKey {
         memory: ResourceLimit,
         operations: ResourceLimit,
     ) -> Self {
+        init();
         let mut bytes = vec![0u8; size];
         derive_key(
             &mut bytes,

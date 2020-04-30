@@ -37,20 +37,13 @@
 //! [rclone](https://rclone.org/).
 //! - `MemoryStore` stores data in memory.
 //!
-//! The function `init` is used to initialize the environment and should be called before any other
-//! functions in this crate.
-//!
 //! # Examples
 //! ```
 //! use std::io::{Read, Seek, Write, SeekFrom};
 //! use acid_store::store::{MemoryStore, OpenStore, OpenOption};
 //! use acid_store::repo::{OpenRepo, ObjectRepository, RepositoryConfig};
-//! use acid_store::init;
 //!
 //! fn main() -> acid_store::Result<()> {
-//!     // Initialize the environment for this crate.
-//!     init();
-//!
 //!     // Create a repository with the default configuration that stores data in memory.
 //!     let mut repository = ObjectRepository::new_repo(
 //!         MemoryStore::new(),
@@ -103,10 +96,8 @@
 
 pub use uuid;
 
-pub use env::init;
 pub use error::{Error, Result};
 
-mod env;
 mod error;
 pub mod repo;
 pub mod store;
