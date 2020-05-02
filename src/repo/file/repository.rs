@@ -572,12 +572,16 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
 
     /// Copy a directory tree from the file system into the repository.
     ///
-    /// The `source` file's metadata will be applied to the `dest` entry according to the selected
-    /// `FileMetadata` implementation.
-    ///
     /// If `source` is a directory, this also copies its descendants. If `source` is not a
     /// directory, this is the same as calling `archive`. If one of the files in the tree is not a
     /// regular file or directory, it is skipped.
+    ///
+    /// This accepts a `filter` which is passed the path of each file in the tree. A file is only
+    /// copied if `filter` returns `true`. A directory is not descended into unless `filter` returns
+    /// `true`. To copy all files in the tree, pass `|_| true`.
+    ///
+    /// The `source` file's metadata will be applied to the `dest` entry according to the selected
+    /// `FileMetadata` implementation.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
@@ -589,10 +593,15 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         &mut self,
         source: impl AsRef<Path>,
         dest: impl AsRef<RelativePath>,
+        filter: impl Fn(&Path) -> bool,
     ) -> crate::Result<()> {
         // `WalkDir` includes `source` in the paths it iterates over.
         // It does not error if `source` is not a directory.
-        for result in WalkDir::new(&source) {
+        let all_paths = WalkDir::new(&source)
+            .into_iter()
+            .filter_entry(|entry| filter(entry.path()));
+
+        for result in all_paths {
             let dir_entry = result.map_err(io::Error::from)?;
             let relative_path =
                 RelativePath::from_path(dir_entry.path().strip_prefix(&source).unwrap())
@@ -660,11 +669,15 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
 
     /// Copy a tree of entries from the repository into the file system.
     ///
-    /// The `source` entry's metadata will be applied to the `dest` file according to the selected
-    /// `FileMetadata` implementation.
-    ///
     /// If `source` is a directory, this also copies its descendants. If `source` is not a
     /// directory, this is the same as calling `extract`.
+    ///
+    /// This accepts a `filter` which is passed the relative path of each entry in the tree. A file
+    /// is only copied if `filter` returns `true`. A directory is not descended into unless `filter`
+    /// returns `true`. To copy all files in the tree, pass `|_| true`.
+    ///
+    /// The `source` entry's metadata will be applied to the `dest` file according to the selected
+    /// `FileMetadata` implementation.
     ///
     /// # Errors
     /// - `Error::NotFound`: The `source` entry does not exist.
@@ -677,10 +690,12 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         &mut self,
         source: impl AsRef<RelativePath>,
         dest: impl AsRef<Path>,
+        filter: impl Fn(&RelativePath) -> bool,
     ) -> crate::Result<()> {
         let relative_descendants = match self.walk(&source) {
             Ok(descendants) => {
                 let mut relative_descendants = descendants
+                    .filter(|path| filter(path))
                     .map(|path| path.strip_prefix(&source).unwrap().to_owned())
                     .collect::<Vec<_>>();
 
