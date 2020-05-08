@@ -34,7 +34,7 @@ use {
 /// This type must implement `Default` to provide the default metadata for a new entry.
 pub trait FileMetadata: Default + Serialize + DeserializeOwned {
     /// Read the metadata from the file at `path` and create a new instance.
-    fn read_metadata(path: &Path) -> io::Result<Self>;
+    fn from_file(path: &Path) -> io::Result<Self>;
 
     /// Write this metadata to the file at `path`.
     fn write_metadata(&self, path: &Path) -> io::Result<()>;
@@ -45,7 +45,7 @@ pub trait FileMetadata: Default + Serialize + DeserializeOwned {
 pub struct NoMetadata;
 
 impl FileMetadata for NoMetadata {
-    fn read_metadata(_path: &Path) -> io::Result<Self> {
+    fn from_file(_path: &Path) -> io::Result<Self> {
         Ok(NoMetadata)
     }
 
@@ -82,7 +82,7 @@ pub struct UnixMetadata {
 
 #[cfg(all(unix, feature = "file-metadata"))]
 impl FileMetadata for UnixMetadata {
-    fn read_metadata(path: &Path) -> io::Result<Self> {
+    fn from_file(path: &Path) -> io::Result<Self> {
         let metadata = path.metadata()?;
 
         let mut attributes = HashMap::new();
@@ -149,7 +149,7 @@ pub struct CommonMetadata {
 
 #[cfg(feature = "file-metadata")]
 impl FileMetadata for CommonMetadata {
-    fn read_metadata(path: &Path) -> io::Result<Self> {
+    fn from_file(path: &Path) -> io::Result<Self> {
         let metadata = path.metadata()?;
         Ok(Self {
             modified: metadata.modified()?,
