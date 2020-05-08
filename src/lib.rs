@@ -83,7 +83,7 @@
 //! --- | --- | ---
 //! `Encryption::XChaCha20Poly1305` | `encryption` | No
 //! `Compression::Deflate`, `Compression::Lzma`, `Compression::Lz4` | `compression` | No
-//! `CommonMetadata`, `UnixMetadata` | `file-metadata` | No
+//! `CommonMetadata`, `UnixMetadata`, `UnixSpecialType` | `file-metadata` | No
 //! `DirectoryStore` | `store-directory` | Yes
 //! `SqliteStore` | `store-sqlite` | No
 //! `RedisStore` | `store-redis` | No

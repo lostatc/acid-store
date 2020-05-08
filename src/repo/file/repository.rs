@@ -36,12 +36,13 @@ use crate::repo::{
 use crate::store::DataStore;
 
 use super::entry::{Entry, EntryKey, FileType};
-use super::metadata::FileMetadata;
+use super::metadata::{FileMetadata, NoMetadata};
+use super::special::{NoSpecialType, SpecialType};
 
 lazy_static! {
     /// The current repository format version ID.
     static ref VERSION_ID: Uuid =
-        Uuid::parse_str("4ecf8a53-a840-4043-9799-6c3315b2f21a").unwrap();
+        Uuid::parse_str("f1eea7be-8110-4303-ac50-e548bfb6dab1").unwrap();
 
     /// The parent of a relative path with no parent.
     static ref EMPTY_PARENT: &'static RelativePath = &RelativePath::new("");
@@ -52,32 +53,54 @@ lazy_static! {
 /// This is a wrapper around `ObjectRepository` which allows it to function as a virtual file
 /// system.
 ///
-/// A `FileRepository` is composed of `Entry` values which represent either a regular file or a
-/// directory. Files in the file system can be copied into the repository using `archive` and
-/// `archive_tree`, and entries in the repository can be copied to the file system using `extract`
-/// and `extract_tree`. It is also possible to manually add, remove, query, and modify entries.
-///
-/// This repository is designed so that files archived on one platform can be extracted on another
-/// platform. Because file metadata is very platform-dependent, you can choose what metadata you
-/// want to store by implementing the `FileMetadata` trait. If you don't need to store file
-/// metadata, you can use the `NoMetadata` implementation. If you attempt to read an entry using a
-/// different `FileMetadata` implementation than it was stored with, it will fail to deserialize and
-/// return an error.
+/// A `FileRepository` is composed of `Entry` values which represent either a regular file, a
+/// directory, or a special file. Files in the file system can be copied into the repository using
+/// `archive` and `archive_tree`, and entries in the repository can be copied to the file system
+/// using `extract` and `extract_tree`. It is also possible to manually add, remove, query, and
+/// modify entries.
 ///
 /// While files in the file system are located using a `Path`, entries in the repository are located
 /// using a `RelativePath`, which is a platform-independent path representation. A `RelativePath` is
 /// always relative to the root of the repository.
 ///
+/// This repository is designed so that files archived on one platform can be extracted on another
+/// platform. Because many aspects of file systems—such as file metadata and special file types—are
+/// heavily platform-dependent, the behavior of `FileRepository` can be customized through the
+/// `FileMetadata` and `SpecialType` traits.
+///
+/// A `FileRepository` accepts a `FileMetadata` type parameter which determines how it handles file
+/// metadata. The default value is `NoMetadata`, which means that it does not store any file
+/// metadata. Other implementations are provided through the `file-metadata` cargo feature. If you
+/// attempt to read an entry using a different `FileMetadata` implementation than it was stored
+/// with, it will fail to deserialize and return an error.
+///
+/// A `FileRepository` also accepts a `SpecialType` type parameter which determines how it handles
+/// special file types. The default value is `NoSpecialType`, which means that it does not attempt
+/// to handle file types beyond regular files and directories. Other implementations are provided
+/// through the `file-metadata` cargo feature. If you attempt to read an entry using a different
+/// `SpecialType` implementation than it was stored with, it will fail to deserialize and return an
+/// error.
+///
 /// Like `ObjectRepository`, changes made to the repository are not persisted to the data store
 /// until `commit` is called. For details about deduplication, compression, encryption, and locking,
 /// see `ObjectRepository`.
 #[derive(Debug)]
-pub struct FileRepository<S: DataStore, M: FileMetadata> {
+pub struct FileRepository<S, T = NoSpecialType, M = NoMetadata>
+where
+    S: DataStore,
+    T: SpecialType,
+    M: FileMetadata,
+{
     repository: ObjectRepository<EntryKey, S>,
-    marker: PhantomData<M>,
+    marker: PhantomData<(T, M)>,
 }
 
-impl<S: DataStore, M: FileMetadata> OpenRepo<S> for FileRepository<S, M> {
+impl<S, T, M> OpenRepo<S> for FileRepository<S, T, M>
+where
+    S: DataStore,
+    T: SpecialType,
+    M: FileMetadata,
+{
     fn open_repo(store: S, strategy: LockStrategy, password: Option<&[u8]>) -> crate::Result<Self>
     where
         Self: Sized,
@@ -86,7 +109,7 @@ impl<S: DataStore, M: FileMetadata> OpenRepo<S> for FileRepository<S, M> {
 
         // Read the repository version to see if this is a compatible repository.
         let object = repository
-            .get(&EntryKey::Version)
+            .get(&EntryKey::RepositoryVersion)
             .ok_or(crate::Error::NotFound)?;
         check_version(object, *VERSION_ID)?;
 
@@ -103,7 +126,7 @@ impl<S: DataStore, M: FileMetadata> OpenRepo<S> for FileRepository<S, M> {
         let mut repository = ObjectRepository::new_repo(store, config, password)?;
 
         // Write the repository version.
-        let object = repository.insert(EntryKey::Version);
+        let object = repository.insert(EntryKey::RepositoryVersion);
         write_version(object, *VERSION_ID)?;
 
         repository.commit()?;
@@ -131,7 +154,12 @@ impl<S: DataStore, M: FileMetadata> OpenRepo<S> for FileRepository<S, M> {
     }
 }
 
-impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
+impl<S, T, M> FileRepository<S, T, M>
+where
+    S: DataStore,
+    T: SpecialType,
+    M: FileMetadata,
+{
     /// Return whether there is an entry at `path`.
     pub fn exists(&self, path: impl AsRef<RelativePath>) -> bool {
         self.repository
@@ -151,7 +179,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     pub fn create(
         &mut self,
         path: impl AsRef<RelativePath>,
-        entry: &Entry<M>,
+        entry: &Entry<T, M>,
     ) -> crate::Result<()> {
         if self.exists(&path) {
             return Err(crate::Error::AlreadyExists);
@@ -201,7 +229,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     pub fn create_parents(
         &mut self,
         path: impl AsRef<RelativePath>,
-        entry: &Entry<M>,
+        entry: &Entry<T, M>,
     ) -> crate::Result<()> {
         let parent = match path.as_ref().parent() {
             Some(parent) if parent != *EMPTY_PARENT => parent,
@@ -286,7 +314,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn entry(&self, path: impl AsRef<RelativePath>) -> crate::Result<Entry<M>> {
+    pub fn entry(&self, path: impl AsRef<RelativePath>) -> crate::Result<Entry<T, M>> {
         let mut object = self
             .repository
             .get(&EntryKey::Entry(path.as_ref().to_owned()))
@@ -522,15 +550,16 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
 
     /// Copy a file from the file system into the repository.
     ///
+    /// If `source` is a directory, its descendants are not copied.
+    ///
     /// The `source` file's metadata will be applied to the `dest` entry according to the selected
     /// `FileMetadata` implementation.
-    ///
-    /// If `source` is a directory, its descendants are not copied.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
     /// - `Error::AlreadyExists`: There is already an entry at `dest`.
-    /// - `Error::FileType`: The file at `source` is not a regular file or directory.
+    /// - `Error::FileType`: The file at `source` is not a regular file, directory, or supported
+    /// special file.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -550,12 +579,12 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
         } else if file_metadata.is_dir() {
             FileType::Directory
         } else {
-            return Err(crate::Error::FileType);
+            FileType::Special(T::from_file(path)?.ok_or(crate::Error::FileType)?)
         };
 
         let entry = Entry {
             file_type,
-            metadata: M::read_metadata(source.as_ref())?,
+            metadata: M::from_file(source.as_ref())?,
         };
 
         self.create(&dest, &entry)?;
@@ -574,7 +603,7 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
     ///
     /// If `source` is a directory, this also copies its descendants. If `source` is not a
     /// directory, this is the same as calling `archive`. If one of the files in the tree is not a
-    /// regular file or directory, it is skipped.
+    /// regular file, directory, or supported special file, it is skipped.
     ///
     /// This accepts a `filter` which is passed the path of each file in the tree. A file is only
     /// copied if `filter` returns `true`. A directory is not descended into unless `filter` returns
@@ -618,10 +647,10 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
 
     /// Copy an entry from the repository into the file system.
     ///
+    /// If `source` is a directory, its descendants are not copied.
+    ///
     /// The `source` entry's metadata will be applied to the `dest` file according to the selected
     /// `FileMetadata` implementation.
-    ///
-    /// If `source` is a directory, its descendants are not copied.
     ///
     /// # Errors
     /// - `Error::NotFound`: The `source` entry does not exist.
@@ -658,6 +687,9 @@ impl<S: DataStore, M: FileMetadata> FileRepository<S, M> {
             }
             FileType::Directory => {
                 create_dir(&dest)?;
+            }
+            FileType::Special(special_type) => {
+                special_type.create_file(&dest)?;
             }
         }
 

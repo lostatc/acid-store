@@ -18,28 +18,32 @@ use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
 
 use super::metadata::FileMetadata;
+use crate::repo::file::special::SpecialType;
 
 /// A type of file in a `FileRepository`.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
-pub enum FileType {
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+pub enum FileType<T> {
     /// A regular file.
     File,
 
     /// A directory.
     Directory,
+
+    /// A special file.
+    Special(T),
 }
 
-/// An entry in a `FileRepository` which represents a file or directory.
+/// An entry in a `FileRepository` which represents a regular file, directory, or special file.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
-pub struct Entry<M> {
+pub struct Entry<T, M> {
     /// The type of file this entry represents.
-    pub file_type: FileType,
+    pub file_type: FileType<T>,
 
     /// The metadata for the file.
     pub metadata: M,
 }
 
-impl<M: FileMetadata> Entry<M> {
+impl<T: SpecialType, M: FileMetadata> Entry<T, M> {
     /// Create an `Entry` for a new regular file.
     pub fn file() -> Self {
         Entry {
@@ -65,6 +69,11 @@ impl<M: FileMetadata> Entry<M> {
     pub fn is_directory(&self) -> bool {
         self.file_type == FileType::Directory
     }
+
+    /// Return whether this entry is a special file.
+    pub fn is_special(&self) -> bool {
+        matches!(self.file_type, FileType::Other(..))
+    }
 }
 
 /// The key to use in the `ObjectRepository` which backs a `FileRepository`.
@@ -77,5 +86,5 @@ pub enum EntryKey {
     Entry(RelativePathBuf),
 
     /// The repository version.
-    Version,
+    RepositoryVersion,
 }
