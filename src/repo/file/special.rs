@@ -15,7 +15,7 @@
  */
 
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
     std::fs::read_link,
@@ -23,11 +23,12 @@ use {
 };
 
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
     nix::sys::stat::{major, makedev, minor, mknod, Mode, SFlag},
     nix::unistd::mkfifo,
+    std::path::PathBuf,
 };
 
 /// A special file type.
@@ -56,6 +57,9 @@ impl SpecialType for NoSpecialType {
 }
 
 /// A `SpecialType` which supports special file types on unix systems.
+///
+/// If the current user does not have the necessary permissions to create a block/character device,
+/// `create_file` will silently ignore the error and return `Ok`.
 #[cfg(all(unix, feature = "file-metadata"))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub enum UnixSpecialType {
@@ -65,10 +69,11 @@ pub enum UnixSpecialType {
     CharacterDevice { major: u64, minor: u64 },
 }
 
+#[cfg(all(unix, feature = "file-metadata"))]
 impl SpecialType for UnixSpecialType {
     fn from_file(path: &Path) -> io::Result<Option<Self>> {
-        let metadata = path.metadata()?;
-        let file_type = SFlag::from_bits(metadata.mode()).unwrap();
+        let metadata = path.symlink_metadata()?;
+        let file_type = SFlag::from_bits(metadata.mode() & SFlag::S_IFMT.bits()).unwrap();
         let special_file = if file_type.contains(SFlag::S_IFLNK) {
             Some(UnixSpecialType::SymbolicLink {
                 target: read_link(path)?,
@@ -94,13 +99,22 @@ impl SpecialType for UnixSpecialType {
 
     fn create_file(&self, path: &Path) -> io::Result<()> {
         match self {
-            UnixSpecialType::SymbolicLink(target) => symlink(target, path),
-            UnixSpecialType::NamedPipe => mkfifo(path, Mode::S_IRWXU),
+            UnixSpecialType::SymbolicLink { target } => symlink(target, path)?,
+            UnixSpecialType::NamedPipe => mkfifo(path, Mode::S_IRWXU)
+                .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?,
             UnixSpecialType::CharacterDevice { major, minor } => {
-                mknod(path, SFlag::S_IFCHR, Mode::S_IRWXU, makedev(*major, *minor))?
+                match mknod(path, SFlag::S_IFCHR, Mode::S_IRWXU, makedev(*major, *minor)) {
+                    Err(nix::Error::Sys(nix::errno::Errno::EPERM)) => (),
+                    Err(error) => Err(io::Error::new(io::ErrorKind::Other, error))?,
+                    _ => (),
+                }
             }
             UnixSpecialType::BlockDevice { major, minor } => {
-                mknod(path, SFlag::S_IFBLK, Mode::S_IRWXU, makedev(*major, *minor))?
+                match mknod(path, SFlag::S_IFBLK, Mode::S_IRWXU, makedev(*major, *minor)) {
+                    Err(nix::Error::Sys(nix::errno::Errno::EPERM)) => (),
+                    Err(error) => Err(io::Error::new(io::ErrorKind::Other, error))?,
+                    _ => (),
+                }
             }
         };
 

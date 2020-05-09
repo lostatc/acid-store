@@ -579,7 +579,7 @@ where
         } else if file_metadata.is_dir() {
             FileType::Directory
         } else {
-            FileType::Special(T::from_file(path)?.ok_or(crate::Error::FileType)?)
+            FileType::Special(T::from_file(source.as_ref())?.ok_or(crate::Error::FileType)?)
         };
 
         let entry = Entry {
@@ -689,7 +689,7 @@ where
                 create_dir(&dest)?;
             }
             FileType::Special(special_type) => {
-                special_type.create_file(&dest)?;
+                special_type.create_file(dest.as_ref())?;
             }
         }
 

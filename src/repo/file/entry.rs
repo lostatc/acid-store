@@ -33,6 +33,12 @@ pub enum FileType<T> {
     Special(T),
 }
 
+impl<T: SpecialType> From<T> for FileType<T> {
+    fn from(file: T) -> Self {
+        FileType::Special(file)
+    }
+}
+
 /// An entry in a `FileRepository` which represents a regular file, directory, or special file.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct Entry<T, M> {
@@ -60,19 +66,27 @@ impl<T: SpecialType, M: FileMetadata> Entry<T, M> {
         }
     }
 
+    /// Create an `Entry` for a new special `file`.
+    pub fn special(file: T) -> Self {
+        Entry {
+            file_type: FileType::Special(file),
+            metadata: M::default(),
+        }
+    }
+
     /// Return whether this entry is a regular file.
     pub fn is_file(&self) -> bool {
-        self.file_type == FileType::File
+        matches!(self.file_type, FileType::File)
     }
 
     /// Return whether this entry is a directory.
     pub fn is_directory(&self) -> bool {
-        self.file_type == FileType::Directory
+        matches!(self.file_type, FileType::Directory)
     }
 
     /// Return whether this entry is a special file.
     pub fn is_special(&self) -> bool {
-        matches!(self.file_type, FileType::Other(..))
+        matches!(self.file_type, FileType::Special(..))
     }
 }
 
