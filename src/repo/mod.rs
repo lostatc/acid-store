@@ -28,14 +28,16 @@
 //! The other repository types provided by this module can be found in sub-modules.
 
 pub use object::{
-    Compression, ContentId, Encryption, Key, LockStrategy, Object, ObjectRepository, OpenRepo,
+    Compression, ContentId, Encryption, Key, LockStrategy, Object, ObjectRepository,
     ReadOnlyObject, RepositoryConfig, RepositoryInfo, RepositoryStats, ResourceLimit,
 };
+pub use open_repo::OpenRepo;
 
 pub mod content;
 pub mod file;
 mod key_id;
 mod object;
+mod open_repo;
 pub mod value;
 pub mod version;
 mod version_id;

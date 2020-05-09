@@ -16,8 +16,7 @@
 
 use crate::store::DataStore;
 
-use super::config::RepositoryConfig;
-use super::lock::LockStrategy;
+use super::object::{LockStrategy, RepositoryConfig};
 
 /// A repository which can be opened.
 pub trait OpenRepo<S: DataStore> {
@@ -69,11 +68,18 @@ pub trait OpenRepo<S: DataStore> {
     /// repository being opened is of a different type.
     /// - `Error::Store`: An error occurred with the data store.
     fn create_repo(
-        store: S,
+        mut store: S,
         config: RepositoryConfig,
         strategy: LockStrategy,
         password: Option<&[u8]>,
     ) -> crate::Result<Self>
     where
-        Self: Sized;
+        Self: Sized,
+    {
+        if store.list_blocks().map_err(anyhow::Error::from)?.is_empty() {
+            Self::new_repo(store, config, password)
+        } else {
+            Self::open_repo(store, strategy, password)
+        }
+    }
 }

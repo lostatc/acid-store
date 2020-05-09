@@ -136,22 +136,6 @@ where
             marker: PhantomData,
         })
     }
-
-    fn create_repo(
-        mut store: S,
-        config: RepositoryConfig,
-        strategy: LockStrategy,
-        password: Option<&[u8]>,
-    ) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        if store.list_blocks().map_err(anyhow::Error::from)?.is_empty() {
-            Self::new_repo(store, config, password)
-        } else {
-            Self::open_repo(store, strategy, password)
-        }
-    }
 }
 
 impl<S, T, M> FileRepository<S, T, M>
