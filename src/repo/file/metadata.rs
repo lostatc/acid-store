@@ -31,6 +31,8 @@ use {
 
 /// The metadata for a file in the file system.
 ///
+/// This trait can be implemented to customize how `FileRepository` handles file metadata.
+///
 /// This type must implement `Default` to provide the default metadata for a new entry.
 pub trait FileMetadata: Default + Serialize + DeserializeOwned {
     /// Read the metadata from the file at `path` and create a new instance.
