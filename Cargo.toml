@@ -71,6 +71,7 @@ tempfile = { version = "3.1.0", optional = true }
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.17.0", optional = true }
 xattr = { version = "0.2.2", optional = true }
+posix-acl = { version = "1.0.0", optional = true }
 
 [dev-dependencies]
 rand = { version = "0.7.2", features = ["small_rng"] }
@@ -79,6 +80,7 @@ serial_test = "0.4.0"
 dotenv = "0.15.0"
 criterion = "0.3.1"
 bytesize = "1.0.0"
+maplit = "1.0.2"
 
 [features]
 default = ["store-directory"]
@@ -88,7 +90,7 @@ store-sqlite = ["rusqlite"]
 store-redis = ["redis"]
 store-s3 = ["rust-s3"]
 store-rclone = ["tempfile", "nix"]
-file-metadata = ["nix", "filetime", "xattr"]
+file-metadata = ["nix", "filetime", "xattr", "posix-acl"]
 compression = ["flate2", "xz2", "lz4"]
 encryption = ["sodiumoxide", "rand"]
 

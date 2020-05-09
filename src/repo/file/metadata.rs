@@ -22,8 +22,8 @@ use std::path::Path;
 use {filetime::set_file_times, std::time::SystemTime};
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
-    nix::sys::stat::Mode,
     nix::unistd::{chown, Gid, Uid},
+    posix_acl::{PosixACL, Qualifier as PosixQualifier},
     std::collections::HashMap,
     std::fs::set_permissions,
     std::os::unix::fs::{MetadataExt, PermissionsExt},
@@ -32,9 +32,7 @@ use {
 /// The metadata for a file in the file system.
 ///
 /// This trait can be implemented to customize how `FileRepository` handles file metadata.
-///
-/// This type must implement `Default` to provide the default metadata for a new entry.
-pub trait FileMetadata: Default + Serialize + DeserializeOwned {
+pub trait FileMetadata: Serialize + DeserializeOwned {
     /// Read the metadata from the file at `path` and create a new instance.
     fn from_file(path: &Path) -> io::Result<Self>;
 
@@ -56,9 +54,26 @@ impl FileMetadata for NoMetadata {
     }
 }
 
+/// A qualifier which determines who is granted a set of permissions in an access control list.
+///
+/// The `file-metadata` cargo feature is required to use this.
+#[cfg(all(unix, feature = "file-metadata"))]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
+pub enum Qualifier {
+    /// The user with a given UID.
+    User(u32),
+
+    /// The group with a given GID.
+    Group(u32),
+}
+
 /// A `FileMetadata` for unix-like operating systems.
 ///
 /// The `file-metadata` cargo feature is required to use this.
+///
+/// Extended attributes and access control lists may not work on all platforms. If a platform is
+/// unsupported, `from_file` will acts as if files have no extended attributes or ACL entries and
+/// `write_metadata` will not attempt to write them.
 ///
 /// If the current user does not have the necessary permissions to set the UID/GID of the file,
 /// `write_metadata` will silently ignore the error and return `Ok`.
@@ -82,6 +97,11 @@ pub struct UnixMetadata {
 
     /// The extended attributes of the file.
     pub attributes: HashMap<String, Vec<u8>>,
+
+    /// The access control list for the file.
+    ///
+    /// This is a map of qualifiers to their associated permissions bits.
+    pub acl: HashMap<Qualifier, u32>,
 }
 
 #[cfg(all(unix, feature = "file-metadata"))]
@@ -90,11 +110,29 @@ impl FileMetadata for UnixMetadata {
         let metadata = path.metadata()?;
 
         let mut attributes = HashMap::new();
-        for attr_name in xattr::list(&path)? {
-            if let Some(attr_value) = xattr::get(&path, &attr_name)? {
-                attributes.insert(attr_name.to_string_lossy().to_string(), attr_value);
+        if xattr::SUPPORTED_PLATFORM {
+            for attr_name in xattr::list(&path)? {
+                if let Some(attr_value) = xattr::get(&path, &attr_name)? {
+                    attributes.insert(attr_name.to_string_lossy().to_string(), attr_value);
+                }
             }
         }
+
+        // This ACL library only supports Linux.
+        let acl = if cfg!(linux) {
+            PosixACL::read_acl(path)
+                .map_err(|error| io::Error::from(error.kind()))?
+                .entries()
+                .into_iter()
+                .filter_map(|entry| match entry.qual {
+                    PosixQualifier::User(uid) => Some((Qualifier::User(uid), entry.perm)),
+                    PosixQualifier::Group(gid) => Some((Qualifier::Group(gid), entry.perm)),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            HashMap::new()
+        };
 
         Ok(Self {
             mode: metadata.mode(),
@@ -103,14 +141,33 @@ impl FileMetadata for UnixMetadata {
             user: metadata.uid(),
             group: metadata.gid(),
             attributes,
+            acl,
         })
     }
 
     fn write_metadata(&self, path: &Path) -> io::Result<()> {
-        for (attr_name, attr_value) in self.attributes.iter() {
-            xattr::set(&path, &attr_name, &attr_value)?;
+        if xattr::SUPPORTED_PLATFORM {
+            for (attr_name, attr_value) in self.attributes.iter() {
+                xattr::set(&path, &attr_name, &attr_value)?;
+            }
         }
+
         set_permissions(path, PermissionsExt::from_mode(self.mode))?;
+
+        // This ACL library only supports Linux.
+        if cfg!(linux) {
+            let mut acl = PosixACL::new(self.mode);
+            for (qualifier, permissions) in self.acl.iter() {
+                let posix_qualifier = match qualifier {
+                    Qualifier::User(uid) => PosixQualifier::User(*uid),
+                    Qualifier::Group(gid) => PosixQualifier::Group(*gid),
+                };
+                acl.set(posix_qualifier, *permissions);
+            }
+            acl.write_acl(path)
+                .map_err(|error| io::Error::from(error.kind()))?;
+        }
+
         match chown(
             path,
             Some(Uid::from_raw(self.user)),
@@ -120,23 +177,10 @@ impl FileMetadata for UnixMetadata {
             Err(error) => return Err(io::Error::new(io::ErrorKind::Other, error)),
             _ => (),
         };
+
         set_file_times(path, self.accessed.into(), self.modified.into())?;
 
         Ok(())
-    }
-}
-
-#[cfg(all(unix, feature = "file-metadata"))]
-impl Default for UnixMetadata {
-    fn default() -> Self {
-        Self {
-            mode: (Mode::S_IRUSR | Mode::S_IWUSR | Mode::S_IRGRP | Mode::S_IROTH).bits(),
-            accessed: SystemTime::now(),
-            modified: SystemTime::now(),
-            user: Uid::current().as_raw(),
-            group: Gid::current().as_raw(),
-            attributes: HashMap::new(),
-        }
     }
 }
 
@@ -165,15 +209,5 @@ impl FileMetadata for CommonMetadata {
 
     fn write_metadata(&self, path: &Path) -> io::Result<()> {
         set_file_times(path, self.accessed.into(), self.modified.into())
-    }
-}
-
-#[cfg(feature = "file-metadata")]
-impl Default for CommonMetadata {
-    fn default() -> Self {
-        Self {
-            modified: SystemTime::now(),
-            accessed: SystemTime::now(),
-        }
     }
 }
