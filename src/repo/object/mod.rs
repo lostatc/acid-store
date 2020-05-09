@@ -21,7 +21,6 @@ pub use self::header::Key;
 pub use self::lock::LockStrategy;
 pub use self::metadata::{RepositoryInfo, RepositoryStats};
 pub use self::object::{ContentId, Object, ReadOnlyObject};
-pub use self::open_repo::OpenRepo;
 pub use self::repository::ObjectRepository;
 
 mod chunk_store;
@@ -33,6 +32,5 @@ mod header;
 mod lock;
 mod metadata;
 mod object;
-mod open_repo;
 mod repository;
 mod state;
