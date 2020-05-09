@@ -26,6 +26,9 @@ use {
 };
 
 /// A data compression method.
+///
+/// The `compression` cargo feature is required to use any compression method other than
+/// `Compression::None`.
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Compression {

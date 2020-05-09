@@ -32,6 +32,8 @@ lazy_static! {
 }
 
 /// A `DataStore` which stores data in a SQLite database.
+///
+/// The `store-sqlite` cargo feature is required to use this.
 #[derive(Debug)]
 pub struct SqliteStore {
     /// The connection to the SQLite database.

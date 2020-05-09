@@ -37,6 +37,8 @@ const BINARY_CONTENT_TYPE: &str = "application/octet-stream";
 const NOT_FOUND_CODE: u16 = 404;
 
 /// A `DataStore` which stores data in an Amazon S3 bucket.
+///
+/// The `store-s3` cargo feature is required to use this.
 #[derive(Debug)]
 pub struct S3Store {
     bucket: Bucket,
