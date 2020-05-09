@@ -58,6 +58,8 @@ impl SpecialType for NoSpecialType {
 
 /// A `SpecialType` which supports special file types on unix systems.
 ///
+/// The `file-metadata` cargo feature is required to use this.
+///
 /// If the current user does not have the necessary permissions to create a block/character device,
 /// `create_file` will silently ignore the error and return `Ok`.
 #[cfg(all(unix, feature = "file-metadata"))]

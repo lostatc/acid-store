@@ -27,6 +27,8 @@ use crate::store::common::{DataStore, OpenOption, OpenStore};
 const CURRENT_VERSION: &str = "b733bd82-4206-11ea-a3dc-7354076bdaf9";
 
 /// A `DataStore` which stores data on a Redis server.
+///
+/// The `store-redis` cargo feature is required to use this.
 pub struct RedisStore {
     connection: Connection,
 }

@@ -56,6 +56,8 @@ impl FileMetadata for NoMetadata {
 
 /// A `FileMetadata` for unix-like operating systems.
 ///
+/// The `file-metadata` cargo feature is required to use this.
+///
 /// If the current user does not have the necessary permissions to set the UID/GID of the file,
 /// `write_metadata` will silently ignore the error and return `Ok`.
 #[cfg(all(unix, feature = "file-metadata"))]
@@ -137,6 +139,8 @@ impl Default for UnixMetadata {
 }
 
 /// A `FileMetadata` for metadata that is common to most platforms.
+///
+/// The `file-metadata` cargo feature is required to use this.
 #[cfg(feature = "file-metadata")]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct CommonMetadata {
