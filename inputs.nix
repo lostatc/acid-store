@@ -4,6 +4,7 @@ let
 in
   with nixpkgs; [
     latest.rustChannels.stable.rust
+    acl
     binutils
     gcc
     gnumake

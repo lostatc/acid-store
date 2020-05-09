@@ -40,37 +40,48 @@ impl<T: SpecialType> From<T> for FileType<T> {
 }
 
 /// An entry in a `FileRepository` which represents a regular file, directory, or special file.
+///
+/// An entry may or may not have metadata associated with it. When an entry is created by archiving
+/// a file in the file system (`FileRepository::archive`), it will have the metadata of that file.
+/// However, entries can also be created that have no metadata. This allows for extracting files to
+/// the file system (`FileRepository::extract`) without copying any metadata.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct Entry<T, M> {
     /// The type of file this entry represents.
     pub file_type: FileType<T>,
 
-    /// The metadata for the file.
-    pub metadata: M,
+    /// The metadata for the file or `None` if the entry has no metadata.
+    pub metadata: Option<M>,
 }
 
 impl<T: SpecialType, M: FileMetadata> Entry<T, M> {
     /// Create an `Entry` for a new regular file.
+    ///
+    /// The created entry will have no metadata.
     pub fn file() -> Self {
         Entry {
             file_type: FileType::File,
-            metadata: M::default(),
+            metadata: None,
         }
     }
 
     /// Create an `Entry` for a new directory.
+    ///
+    /// The created entry will have no metadata.
     pub fn directory() -> Self {
         Entry {
             file_type: FileType::Directory,
-            metadata: M::default(),
+            metadata: None,
         }
     }
 
     /// Create an `Entry` for a new special `file`.
+    ///
+    /// The created entry will have no metadata.
     pub fn special(file: T) -> Self {
         Entry {
             file_type: FileType::Special(file),
-            metadata: M::default(),
+            metadata: None,
         }
     }
 

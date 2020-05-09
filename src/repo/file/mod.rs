@@ -25,7 +25,10 @@ pub use self::metadata::{FileMetadata, NoMetadata};
 pub use self::repository::FileRepository;
 pub use self::special::{NoSpecialType, SpecialType};
 #[cfg(all(unix, feature = "file-metadata"))]
-pub use {self::metadata::UnixMetadata, self::special::UnixSpecialType};
+pub use {
+    self::metadata::{Qualifier, UnixMetadata},
+    self::special::UnixSpecialType,
+};
 
 mod entry;
 mod metadata;

@@ -16,22 +16,24 @@
 
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
+use std::collections::HashMap;
 use std::fs::{create_dir, File};
 use std::io::{Read, Write};
 
+use maplit::hashmap;
 use relative_path::RelativePath;
 use tempfile::tempdir;
 
-use acid_store::repo::file::{Entry, FileRepository, NoMetadata, NoSpecialType, UnixSpecialType};
+use acid_store::repo::file::{Entry, FileRepository, NoMetadata, NoSpecialType};
 use acid_store::repo::{LockStrategy, OpenRepo};
 use acid_store::store::MemoryStore;
 use common::{assert_contains_all, PASSWORD, REPO_CONFIG};
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
-    acid_store::repo::file::{CommonMetadata, FileType, UnixMetadata},
+    acid_store::repo::file::{CommonMetadata, FileType, Qualifier, UnixMetadata, UnixSpecialType},
     nix::sys::stat::{Mode, SFlag},
     nix::unistd::mkfifo,
-    std::collections::HashMap,
+    posix_acl::{PosixACL, Qualifier as PosixQualifier},
     std::fs::read_link,
     std::os::unix::fs::{symlink, MetadataExt},
     std::path::Path,
@@ -170,7 +172,7 @@ fn remove_tree_without_descendants() -> anyhow::Result<()> {
 #[test]
 fn setting_metadata_on_nonexistent_file_errs() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
-    let result = repository.set_metadata("file", NoMetadata);
+    let result = repository.set_metadata("file", None);
 
     assert!(matches!(result, Err(acid_store::Error::NotFound)));
     Ok(())
@@ -190,10 +192,10 @@ fn set_metadata() -> anyhow::Result<()> {
         accessed: SystemTime::UNIX_EPOCH,
     };
     repository.create("file", &Entry::file())?;
-    repository.set_metadata("file", expected_metadata.clone())?;
+    repository.set_metadata("file", Some(expected_metadata.clone()))?;
     let actual_metadata = repository.entry("file")?.metadata;
 
-    assert_eq!(actual_metadata, expected_metadata);
+    assert_eq!(actual_metadata, Some(expected_metadata));
     Ok(())
 }
 
@@ -582,31 +584,38 @@ fn write_unix_metadata() -> anyhow::Result<()> {
         Some(PASSWORD),
     )?;
 
+    // This does not test extended attributes because user extended attributes are not supported
+    // on tmpfs, which is most likely where the temporary directory will be created.
+
+    let entry_metadata = UnixMetadata {
+        mode: 0o666,
+        modified: SystemTime::UNIX_EPOCH,
+        accessed: SystemTime::UNIX_EPOCH,
+        user: 1000,
+        group: 1000,
+        attributes: HashMap::new(),
+        acl: hashmap! { Qualifier::User(1001) => 0o777 },
+    };
     let entry = Entry {
         file_type: FileType::File,
-        metadata: UnixMetadata {
-            mode: 0o666,
-            modified: SystemTime::UNIX_EPOCH,
-            accessed: SystemTime::UNIX_EPOCH,
-            user: 1000,
-            group: 1000,
-            attributes: HashMap::new(),
-        },
+        metadata: Some(entry_metadata.clone()),
     };
 
     repository.create("source", &entry)?;
     repository.extract("source", &dest_path)?;
     let dest_metadata = dest_path.metadata()?;
 
-    // This test currently does not test writing extended attributes because extended attributes are
-    // not supported on tmpfs.
-
     assert_eq!(
-        dest_metadata.mode() & entry.metadata.mode,
-        entry.metadata.mode
+        dest_metadata.mode() & entry_metadata.mode,
+        entry_metadata.mode
     );
-    assert_eq!(dest_metadata.modified()?, entry.metadata.modified);
-    assert_eq!(dest_metadata.accessed()?, entry.metadata.accessed);
+    assert_eq!(dest_metadata.modified()?, entry_metadata.modified);
+    assert_eq!(dest_metadata.accessed()?, entry_metadata.accessed);
+
+    if cfg!(linux) {
+        let dest_acl = PosixACL::new(dest_metadata.mode());
+        assert_eq!(dest_acl.get(PosixQualifier::User(1001)), Some(0o777));
+    }
 
     Ok(())
 }
@@ -618,6 +627,12 @@ fn read_unix_metadata() -> anyhow::Result<()> {
     let source_path = temp_dir.as_ref().join("source");
     File::create(&source_path)?;
 
+    if cfg!(linux) {
+        let mut dest_acl = PosixACL::new(source_path.metadata()?.mode());
+        dest_acl.set(PosixQualifier::User(1001), 0o777);
+        dest_acl.write_acl(&source_path)?;
+    }
+
     let mut repository = FileRepository::<_, NoSpecialType, UnixMetadata>::new_repo(
         MemoryStore::new(),
         REPO_CONFIG.to_owned(),
@@ -626,15 +641,23 @@ fn read_unix_metadata() -> anyhow::Result<()> {
 
     repository.archive(&source_path, "dest")?;
     let entry = repository.entry("dest")?;
+    let entry_metadata = entry.metadata.unwrap();
     let source_metadata = source_path.metadata()?;
 
-    // This test currently does not test reading extended attributes because extended attributes are
-    // not supported on tmpfs.
+    // This does not test extended attributes because user extended attributes are not supported
+    // on tmpfs, which is most likely where the temporary directory will be created.
 
-    assert_eq!(entry.metadata.mode, source_metadata.mode());
-    assert_eq!(entry.metadata.modified, source_metadata.modified()?);
-    assert_eq!(entry.metadata.user, source_metadata.uid());
-    assert_eq!(entry.metadata.group, source_metadata.gid());
+    assert_eq!(entry_metadata.mode, source_metadata.mode());
+    assert_eq!(entry_metadata.modified, source_metadata.modified()?);
+    assert_eq!(entry_metadata.user, source_metadata.uid());
+    assert_eq!(entry_metadata.group, source_metadata.gid());
+
+    if cfg!(linux) {
+        assert_eq!(
+            entry_metadata.acl,
+            hashmap! { Qualifier::User(1001) => 0o777 }
+        );
+    }
 
     Ok(())
 }
@@ -651,20 +674,21 @@ fn write_common_metadata() -> anyhow::Result<()> {
         Some(PASSWORD),
     )?;
 
+    let entry_metadata = CommonMetadata {
+        modified: SystemTime::UNIX_EPOCH,
+        accessed: SystemTime::UNIX_EPOCH,
+    };
     let entry = Entry {
         file_type: FileType::File,
-        metadata: CommonMetadata {
-            modified: SystemTime::UNIX_EPOCH,
-            accessed: SystemTime::UNIX_EPOCH,
-        },
+        metadata: Some(entry_metadata.clone()),
     };
 
     repository.create("source", &entry)?;
     repository.extract("source", &dest_path)?;
     let dest_metadata = dest_path.metadata()?;
 
-    assert_eq!(dest_metadata.modified()?, entry.metadata.modified);
-    assert_eq!(dest_metadata.accessed()?, entry.metadata.accessed);
+    assert_eq!(dest_metadata.modified()?, entry_metadata.modified);
+    assert_eq!(dest_metadata.accessed()?, entry_metadata.accessed);
 
     Ok(())
 }
@@ -684,9 +708,10 @@ fn read_common_metadata() -> anyhow::Result<()> {
 
     repository.archive(&source_path, "dest")?;
     let entry = repository.entry("dest")?;
+    let entry_metadata = entry.metadata.unwrap();
     let source_metadata = source_path.metadata()?;
 
-    assert_eq!(entry.metadata.modified, source_metadata.modified()?);
+    assert_eq!(entry_metadata.modified, source_metadata.modified()?);
 
     Ok(())
 }

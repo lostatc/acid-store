@@ -323,7 +323,7 @@ where
     pub fn set_metadata(
         &mut self,
         path: impl AsRef<RelativePath>,
-        metadata: M,
+        metadata: Option<M>,
     ) -> crate::Result<()> {
         let mut entry = self.entry(&path)?;
         entry.metadata = metadata;
@@ -572,7 +572,7 @@ where
 
         let entry = Entry {
             file_type,
-            metadata: M::from_file(source.as_ref())?,
+            metadata: Some(M::from_file(source.as_ref())?),
         };
 
         self.create(&dest, &entry)?;
@@ -682,7 +682,9 @@ where
         }
 
         // Set the file metadata.
-        entry.metadata.write_metadata(dest.as_ref())?;
+        if let Some(metadata) = entry.metadata {
+            metadata.write_metadata(dest.as_ref())?;
+        }
 
         Ok(())
     }
