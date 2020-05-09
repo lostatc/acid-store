@@ -22,21 +22,25 @@ use std::io::{Read, Write};
 use relative_path::RelativePath;
 use tempfile::tempdir;
 
-use acid_store::repo::file::{Entry, FileRepository, NoMetadata};
+use acid_store::repo::file::{Entry, FileRepository, NoMetadata, NoSpecialType, UnixSpecialType};
 use acid_store::repo::{LockStrategy, OpenRepo};
 use acid_store::store::MemoryStore;
 use common::{assert_contains_all, PASSWORD, REPO_CONFIG};
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
     acid_store::repo::file::{CommonMetadata, FileType, UnixMetadata},
+    nix::sys::stat::{Mode, SFlag},
+    nix::unistd::mkfifo,
     std::collections::HashMap,
-    std::os::unix::fs::MetadataExt,
+    std::fs::read_link,
+    std::os::unix::fs::{symlink, MetadataExt},
+    std::path::Path,
     std::time::SystemTime,
 };
 
 mod common;
 
-fn create_repo() -> acid_store::Result<FileRepository<MemoryStore, NoMetadata>> {
+fn create_repo() -> acid_store::Result<FileRepository<MemoryStore>> {
     FileRepository::new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
 }
 
@@ -45,7 +49,11 @@ fn open_repository() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.commit()?;
     let store = repository.into_store();
-    FileRepository::<_, NoMetadata>::open_repo(store, LockStrategy::Abort, Some(PASSWORD))?;
+    FileRepository::<_, NoSpecialType, NoMetadata>::open_repo(
+        store,
+        LockStrategy::Abort,
+        Some(PASSWORD),
+    )?;
     Ok(())
 }
 
@@ -171,7 +179,7 @@ fn setting_metadata_on_nonexistent_file_errs() -> anyhow::Result<()> {
 #[test]
 #[cfg(feature = "file-metadata")]
 fn set_metadata() -> anyhow::Result<()> {
-    let mut repository = FileRepository::<_, CommonMetadata>::new_repo(
+    let mut repository = FileRepository::<_, NoSpecialType, CommonMetadata>::new_repo(
         MemoryStore::new(),
         REPO_CONFIG.to_owned(),
         Some(PASSWORD),
@@ -371,6 +379,46 @@ fn archive_file() -> anyhow::Result<()> {
 }
 
 #[test]
+#[cfg(all(unix, feature = "file-metadata"))]
+fn archive_unix_special_files() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let fifo_path = temp_dir.as_ref().join("fifo");
+    let symlink_path = temp_dir.as_ref().join("symlink");
+    let device_path = Path::new("/dev/null");
+
+    mkfifo(&fifo_path, Mode::S_IRWXU)?;
+    symlink("/dev/null", &symlink_path)?;
+
+    let mut repository = FileRepository::<_, _, NoMetadata>::new_repo(
+        MemoryStore::new(),
+        REPO_CONFIG.to_owned(),
+        Some(PASSWORD),
+    )?;
+    repository.create("dest", &Entry::directory())?;
+    repository.archive(fifo_path, "dest/fifo")?;
+    repository.archive(symlink_path, "dest/symlink")?;
+    repository.archive(device_path, "dest/device")?;
+
+    let fifo_entry = repository.entry("dest/fifo")?;
+    let symlink_entry = repository.entry("dest/symlink")?;
+    let device_entry = repository.entry("dest/device")?;
+
+    assert_eq!(fifo_entry.file_type, UnixSpecialType::NamedPipe.into());
+    assert_eq!(
+        symlink_entry.file_type,
+        UnixSpecialType::SymbolicLink {
+            target: "/dev/null".into()
+        }
+        .into()
+    );
+    assert_eq!(
+        device_entry.file_type,
+        UnixSpecialType::CharacterDevice { major: 1, minor: 3 }.into()
+    );
+    Ok(())
+}
+
+#[test]
 fn archiving_file_with_existing_dest_errs() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let source_path = temp_dir.as_ref().join("source");
@@ -438,6 +486,53 @@ fn extract_file() -> anyhow::Result<()> {
 }
 
 #[test]
+#[cfg(all(unix, feature = "file-metadata"))]
+fn extract_unix_special_files() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let fifo_path = temp_dir.as_ref().join("fifo");
+    let symlink_path = temp_dir.as_ref().join("symlink");
+    let device_path = temp_dir.as_ref().join("device");
+
+    let mut repository = FileRepository::<_, _, NoMetadata>::new_repo(
+        MemoryStore::new(),
+        REPO_CONFIG.to_owned(),
+        Some(PASSWORD),
+    )?;
+
+    repository.create("fifo", &Entry::special(UnixSpecialType::NamedPipe))?;
+    repository.create(
+        "symlink",
+        &Entry::special(UnixSpecialType::SymbolicLink {
+            target: "/dev/null".into(),
+        }),
+    )?;
+    repository.create(
+        "device",
+        &Entry::special(UnixSpecialType::CharacterDevice { major: 1, minor: 3 }),
+    )?;
+
+    // The device won't be extracted unless the user has sufficient permissions. In this case, the
+    // operation is supposed to silently fail. Assuming the tests are being run without root
+    // permissions, we attempt to extract the device to ensure it doesn't return an error, but we
+    // don't check to see if it was created.
+    repository.extract("fifo", &fifo_path)?;
+    repository.extract("symlink", &symlink_path)?;
+    repository.extract("device", &device_path)?;
+
+    assert!(
+        SFlag::from_bits(fifo_path.metadata()?.mode() & SFlag::S_IFMT.bits())
+            .unwrap()
+            .contains(SFlag::S_IFIFO)
+    );
+    assert_eq!(
+        read_link(&symlink_path)?,
+        Path::new("/dev/null").to_path_buf()
+    );
+
+    Ok(())
+}
+
+#[test]
 fn extracting_file_with_existing_dest_errs() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let dest_path = temp_dir.as_ref().join("dest");
@@ -481,7 +576,7 @@ fn write_unix_metadata() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let dest_path = temp_dir.as_ref().join("dest");
 
-    let mut repository = FileRepository::<_, UnixMetadata>::new_repo(
+    let mut repository = FileRepository::<_, NoSpecialType, UnixMetadata>::new_repo(
         MemoryStore::new(),
         REPO_CONFIG.to_owned(),
         Some(PASSWORD),
@@ -523,7 +618,7 @@ fn read_unix_metadata() -> anyhow::Result<()> {
     let source_path = temp_dir.as_ref().join("source");
     File::create(&source_path)?;
 
-    let mut repository = FileRepository::<_, UnixMetadata>::new_repo(
+    let mut repository = FileRepository::<_, NoSpecialType, UnixMetadata>::new_repo(
         MemoryStore::new(),
         REPO_CONFIG.to_owned(),
         Some(PASSWORD),
@@ -550,7 +645,7 @@ fn write_common_metadata() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let dest_path = temp_dir.as_ref().join("dest");
 
-    let mut repository = FileRepository::<_, CommonMetadata>::new_repo(
+    let mut repository = FileRepository::<_, NoSpecialType, CommonMetadata>::new_repo(
         MemoryStore::new(),
         REPO_CONFIG.to_owned(),
         Some(PASSWORD),
@@ -581,7 +676,7 @@ fn read_common_metadata() -> anyhow::Result<()> {
     let source_path = temp_dir.as_ref().join("source");
     File::create(&source_path)?;
 
-    let mut repository = FileRepository::<_, CommonMetadata>::new_repo(
+    let mut repository = FileRepository::<_, NoSpecialType, CommonMetadata>::new_repo(
         MemoryStore::new(),
         REPO_CONFIG.to_owned(),
         Some(PASSWORD),

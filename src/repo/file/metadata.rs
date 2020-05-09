@@ -57,7 +57,7 @@ impl FileMetadata for NoMetadata {
 /// A `FileMetadata` for unix-like operating systems.
 ///
 /// If the current user does not have the necessary permissions to set the UID/GID of the file,
-/// `write_metadata` will silently ignore the error.
+/// `write_metadata` will silently ignore the error and return `Ok`.
 #[cfg(all(unix, feature = "file-metadata"))]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct UnixMetadata {
