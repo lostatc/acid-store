@@ -68,11 +68,19 @@ lazy_static! {
 /// heavily platform-dependent, the behavior of `FileRepository` can be customized through the
 /// `FileMetadata` and `SpecialType` traits.
 ///
+/// Like `ObjectRepository`, changes made to the repository are not persisted to the data store
+/// until `commit` is called. For details about deduplication, compression, encryption, and locking,
+/// see `ObjectRepository`.
+///
+/// # Metadata
+///
 /// A `FileRepository` accepts a `FileMetadata` type parameter which determines how it handles file
 /// metadata. The default value is `NoMetadata`, which means that it does not store any file
 /// metadata. Other implementations are provided through the `file-metadata` cargo feature. If you
 /// attempt to read an entry using a different `FileMetadata` implementation than it was stored
 /// with, it will fail to deserialize and return an error.
+///
+/// # Special Files
 ///
 /// A `FileRepository` also accepts a `SpecialType` type parameter which determines how it handles
 /// special file types. The default value is `NoSpecialType`, which means that it does not attempt
@@ -80,10 +88,6 @@ lazy_static! {
 /// through the `file-metadata` cargo feature. If you attempt to read an entry using a different
 /// `SpecialType` implementation than it was stored with, it will fail to deserialize and return an
 /// error.
-///
-/// Like `ObjectRepository`, changes made to the repository are not persisted to the data store
-/// until `commit` is called. For details about deduplication, compression, encryption, and locking,
-/// see `ObjectRepository`.
 #[derive(Debug)]
 pub struct FileRepository<S, T = NoSpecialType, M = NoMetadata>
 where

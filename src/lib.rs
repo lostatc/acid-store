@@ -20,8 +20,8 @@
 //!
 //! This library currently provides the following abstractions for data storage:
 //! - `ObjectRepository` is an object store which maps keys to seekable binary blobs.
-//! - `FileRepository` is a virtual file system which can import and export files to the local OS
-//! file system.
+//! - `FileRepository` is a virtual file system which supports file metadata, special files, and
+//! importing and exporting files to the local OS file system.
 //! - `ValueRepository` is a persistent, heterogeneous, map-like collection.
 //! - `VersionRepository` is an object store with support for content versioning.
 //! - `ContentRepository` is a content-addressable storage which allows for accessing data by its

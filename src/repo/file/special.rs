@@ -32,6 +32,8 @@ use {
 };
 
 /// A special file type.
+///
+/// This trait can be implemented to customize how `FileRepository` handles special file types.
 pub trait SpecialType: Serialize + DeserializeOwned {
     /// Create a new instance from the file in the file system at `path`.
     ///
@@ -65,9 +67,16 @@ impl SpecialType for NoSpecialType {
 #[cfg(all(unix, feature = "file-metadata"))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub enum UnixSpecialType {
+    /// A symbolic link which points to `target`.
     SymbolicLink { target: PathBuf },
+
+    /// A named pipe (FIFO).
     NamedPipe,
+
+    /// A block device identified by a `major` and `minor` device number.
     BlockDevice { major: u64, minor: u64 },
+
+    /// A character device identified by a `major` and `minor` device number.
     CharacterDevice { major: u64, minor: u64 },
 }
 

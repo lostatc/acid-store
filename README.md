@@ -36,7 +36,8 @@ All the usual disclaimers apply.
 This library provides the following abstractions for data storage.
 
 - An object store which maps keys to seekable binary blobs
-- A virtual file system which can import and export files to the local OS file system
+- A virtual file system which supports file metadata, special files, and importing and exporting
+files to the local OS file system
 - A persistent, heterogeneous, map-like collection
 - An object store with support for content versioning
 - A content-addressable storage which allows for accessing data by its cryptographic hash
