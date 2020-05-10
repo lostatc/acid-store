@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#[cfg(all(linux, feature = "file-metadata"))]
+use posix_acl::{PosixACL, Qualifier as PosixQualifier};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::io;
@@ -23,7 +25,6 @@ use {filetime::set_file_times, std::time::SystemTime};
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
     nix::unistd::{chown, Gid, Uid},
-    posix_acl::{PosixACL, Qualifier as PosixQualifier},
     std::collections::HashMap,
     std::fs::set_permissions,
     std::os::unix::fs::{MetadataExt, PermissionsExt},
@@ -118,21 +119,21 @@ impl FileMetadata for UnixMetadata {
             }
         }
 
+        #[cfg(not(linux))]
+        let acl = HashMap::new();
+
         // This ACL library only supports Linux.
-        let acl = if cfg!(linux) {
-            PosixACL::read_acl(path)
-                .map_err(|error| io::Error::from(error.kind()))?
-                .entries()
-                .into_iter()
-                .filter_map(|entry| match entry.qual {
-                    PosixQualifier::User(uid) => Some((Qualifier::User(uid), entry.perm)),
-                    PosixQualifier::Group(gid) => Some((Qualifier::Group(gid), entry.perm)),
-                    _ => None,
-                })
-                .collect()
-        } else {
-            HashMap::new()
-        };
+        #[cfg(linux)]
+        let acl = PosixACL::read_acl(path)
+            .map_err(|error| io::Error::from(error.kind()))?
+            .entries()
+            .into_iter()
+            .filter_map(|entry| match entry.qual {
+                PosixQualifier::User(uid) => Some((Qualifier::User(uid), entry.perm)),
+                PosixQualifier::Group(gid) => Some((Qualifier::Group(gid), entry.perm)),
+                _ => None,
+            })
+            .collect();
 
         Ok(Self {
             mode: metadata.mode(),
@@ -155,7 +156,8 @@ impl FileMetadata for UnixMetadata {
         set_permissions(path, PermissionsExt::from_mode(self.mode))?;
 
         // This ACL library only supports Linux.
-        if cfg!(linux) {
+        #[cfg(linux)]
+        {
             let mut acl = PosixACL::new(self.mode);
             for (qualifier, permissions) in self.acl.iter() {
                 let posix_qualifier = match qualifier {

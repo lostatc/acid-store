@@ -21,6 +21,8 @@ use std::fs::{create_dir, File};
 use std::io::{Read, Write};
 
 use maplit::hashmap;
+#[cfg(all(linux, feature = "file-metadata"))]
+use posix_acl::{PosixACL, Qualifier as PosixQualifier};
 use relative_path::RelativePath;
 use tempfile::tempdir;
 
@@ -33,7 +35,6 @@ use {
     acid_store::repo::file::{CommonMetadata, FileType, Qualifier, UnixMetadata, UnixSpecialType},
     nix::sys::stat::{Mode, SFlag},
     nix::unistd::mkfifo,
-    posix_acl::{PosixACL, Qualifier as PosixQualifier},
     std::fs::read_link,
     std::os::unix::fs::{symlink, MetadataExt},
     std::path::Path,
@@ -612,7 +613,8 @@ fn write_unix_metadata() -> anyhow::Result<()> {
     assert_eq!(dest_metadata.modified()?, entry_metadata.modified);
     assert_eq!(dest_metadata.accessed()?, entry_metadata.accessed);
 
-    if cfg!(linux) {
+    #[cfg(linux)]
+    {
         let dest_acl = PosixACL::new(dest_metadata.mode());
         assert_eq!(dest_acl.get(PosixQualifier::User(1001)), Some(0o777));
     }
@@ -627,7 +629,8 @@ fn read_unix_metadata() -> anyhow::Result<()> {
     let source_path = temp_dir.as_ref().join("source");
     File::create(&source_path)?;
 
-    if cfg!(linux) {
+    #[cfg(linux)]
+    {
         let mut dest_acl = PosixACL::new(source_path.metadata()?.mode());
         dest_acl.set(PosixQualifier::User(1001), 0o777);
         dest_acl.write_acl(&source_path)?;
@@ -652,7 +655,8 @@ fn read_unix_metadata() -> anyhow::Result<()> {
     assert_eq!(entry_metadata.user, source_metadata.uid());
     assert_eq!(entry_metadata.group, source_metadata.gid());
 
-    if cfg!(linux) {
+    #[cfg(linux)]
+    {
         assert_eq!(
             entry_metadata.acl,
             hashmap! { Qualifier::User(1001) => 0o777 }
