@@ -9,10 +9,16 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
+        -
       - name: Start Redis
         uses: zhulik/redis-action@1.1.0
+
+      - name: Install ACL library
+        run: sudo apt-get install acl
+
       - name: Build
         run: cargo build --all-features
+
       - name: Run tests
         env:
           REDIS_URL: redis://localhost:6379
