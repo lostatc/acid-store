@@ -18,14 +18,37 @@
 
 use std::io::{Read, Seek, SeekFrom, Write};
 
-use common::{create_repo, random_buffer, random_bytes, MIN_BUFFER_SIZE};
+use acid_store::repo::{Chunking, ObjectRepository, OpenRepo};
+use acid_store::store::MemoryStore;
+use common::{create_repo, random_buffer, random_bytes, MIN_BUFFER_SIZE, PASSWORD, REPO_CONFIG};
 
 mod common;
 
 #[test]
-fn read_written_data() -> anyhow::Result<()> {
+fn read_written_data_with_zpaq_chunking() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     let mut object = repository.insert("Test".into());
+
+    let expected_data = random_buffer();
+    let mut actual_data = vec![0u8; expected_data.len()];
+    object.write_all(expected_data.as_slice())?;
+    object.flush()?;
+    object.seek(SeekFrom::Start(0))?;
+    object.read_exact(&mut actual_data)?;
+
+    assert_eq!(actual_data, expected_data);
+    assert_eq!(object.size(), expected_data.len() as u64);
+
+    Ok(())
+}
+
+#[test]
+fn read_written_data_with_fixed_chunking() -> anyhow::Result<()> {
+    let mut config = REPO_CONFIG.to_owned();
+    config.chunking = Chunking::Fixed { size: 256 };
+    let mut repository = ObjectRepository::new_repo(MemoryStore::new(), config, Some(PASSWORD))?;
+
+    let mut object = repository.insert(String::from("Test"));
 
     let expected_data = random_buffer();
     let mut actual_data = vec![0u8; expected_data.len()];
