@@ -80,11 +80,13 @@ impl FixedChunker {
 
 impl ChunkerImpl for FixedChunker {
     fn find_boundary(&mut self, data: &[u8]) -> Option<usize> {
-        if self.bytes_read + data.len() < self.chunk_size {
+        let result = if self.bytes_read + data.len() < self.chunk_size {
             None
         } else {
-            Some((self.bytes_read + data.len()) - self.chunk_size)
-        }
+            Some(data.len() - ((self.bytes_read + data.len()) - self.chunk_size))
+        };
+        self.bytes_read += data.len();
+        result
     }
 
     fn reset(&mut self) {
