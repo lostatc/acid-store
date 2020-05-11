@@ -19,10 +19,10 @@ use std::path::Path;
 
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use rand::rngs::SmallRng;
-use rand::{Rng, RngCore, SeedableRng};
+use rand::{RngCore, SeedableRng};
 use tempfile::tempdir;
 
-use acid_store::repo::{ObjectRepository, OpenRepo, RepositoryConfig};
+use acid_store::repo::{Chunking, ObjectRepository, OpenRepo, RepositoryConfig};
 use acid_store::store::{DirectoryStore, OpenOption, OpenStore};
 
 /// Return a buffer containing `size` random bytes for testing purposes.
@@ -34,14 +34,17 @@ pub fn random_bytes(size: usize) -> Vec<u8> {
 }
 
 /// Return a new repository in the given `directory` for benchmarking.
-pub fn new_repo(directory: &Path) -> ObjectRepository<String, DirectoryStore> {
+pub fn new_repo(
+    directory: &Path,
+    config: RepositoryConfig,
+) -> ObjectRepository<String, DirectoryStore> {
     ObjectRepository::new_repo(
         DirectoryStore::open(
             directory.join("store"),
             OpenOption::CREATE | OpenOption::TRUNCATE,
         )
         .unwrap(),
-        RepositoryConfig::default(),
+        config,
         None,
     )
     .unwrap()
@@ -56,11 +59,11 @@ pub fn insert_object(criterion: &mut Criterion) {
 
     for num_objects in [100, 1_000, 10_000].iter() {
         // Create a new repository.
-        let mut repo = new_repo(tmp_dir.path());
+        let mut repo = new_repo(tmp_dir.path(), RepositoryConfig::default());
 
         // Insert objects and write to them but don't commit them.
         for i in 0..*num_objects {
-            let mut object = repo.insert(String::from(format!("Uncommitted object {}", i)));
+            let mut object = repo.insert(format!("Uncommitted object {}", i));
             object
                 .write_all(random_bytes(TRIVIAL_DATA_SIZE).as_slice())
                 .unwrap();
@@ -87,11 +90,11 @@ pub fn insert_object_and_write(criterion: &mut Criterion) {
 
     for num_objects in [100, 1_000, 10_000].iter() {
         // Create a new repository.
-        let mut repo = new_repo(tmp_dir.path());
+        let mut repo = new_repo(tmp_dir.path(), RepositoryConfig::default());
 
         // Insert objects and write to them but don't commit them.
         for i in 0..*num_objects {
-            let mut object = repo.insert(String::from(format!("Uncommitted object {}", i)));
+            let mut object = repo.insert(format!("Uncommitted object {}", i));
             object
                 .write_all(random_bytes(TRIVIAL_DATA_SIZE).as_slice())
                 .unwrap();
@@ -123,25 +126,40 @@ pub fn write_object(criterion: &mut Criterion) {
 
     let mut group = criterion.benchmark_group("Write to an object");
 
-    let mut repo = new_repo(tmp_dir.path());
+    let mut fixed_config = RepositoryConfig::default();
+    fixed_config.chunking = Chunking::Fixed {
+        size: bytesize::mib(1u64) as usize,
+    };
+    let mut zpaq_config = RepositoryConfig::default();
+    zpaq_config.chunking = Chunking::Zpaq { bits: 20 };
+
+    let configs = [
+        (fixed_config, "Chunking::Fixed"),
+        (zpaq_config, "Chunking::Zpaq"),
+    ];
+
     let object_size = bytesize::kib(100u64);
 
-    group.throughput(Throughput::Bytes(object_size));
+    for (config, name) in configs.iter() {
+        let mut repo = new_repo(tmp_dir.path(), config.to_owned());
 
-    group.bench_function(
-        format!("{} bytes", bytesize::to_string(object_size, true)),
-        |bencher| {
-            bencher.iter_batched(
-                || random_bytes(object_size as usize),
-                |data| {
-                    let mut object = repo.insert(String::from("Test"));
-                    object.write_all(data.as_slice()).unwrap();
-                    object.flush().unwrap();
-                },
-                BatchSize::SmallInput,
-            );
-        },
-    );
+        group.throughput(Throughput::Bytes(object_size));
+
+        group.bench_function(
+            format!("{}, {}", bytesize::to_string(object_size, true), name),
+            |bencher| {
+                bencher.iter_batched(
+                    || random_bytes(object_size as usize),
+                    |data| {
+                        let mut object = repo.insert(String::from("Test"));
+                        object.write_all(data.as_slice()).unwrap();
+                        object.flush().unwrap();
+                    },
+                    BatchSize::SmallInput,
+                );
+            },
+        );
+    }
 }
 
 pub fn write_read_object(criterion: &mut Criterion) {
@@ -149,33 +167,48 @@ pub fn write_read_object(criterion: &mut Criterion) {
 
     let mut group = criterion.benchmark_group("Write to and then read from an object");
 
-    let mut repo = new_repo(tmp_dir.path());
+    let mut fixed_config = RepositoryConfig::default();
+    fixed_config.chunking = Chunking::Fixed {
+        size: bytesize::mib(1u64) as usize,
+    };
+    let mut zpaq_config = RepositoryConfig::default();
+    zpaq_config.chunking = Chunking::Zpaq { bits: 20 };
+
+    let configs = [
+        (fixed_config, "Chunking::Fixed"),
+        (zpaq_config, "Chunking::Zpaq"),
+    ];
+
     let object_size = bytesize::kib(100u64);
 
-    group.throughput(Throughput::Bytes(object_size));
+    for (config, name) in configs.iter() {
+        let mut repo = new_repo(tmp_dir.path(), config.to_owned());
 
-    group.bench_function(
-        format!("{} bytes", bytesize::to_string(object_size, true)),
-        |bencher| {
-            bencher.iter_batched(
-                || random_bytes(object_size as usize),
-                |data| {
-                    // Write to the object.
-                    let mut object = repo.insert(String::from("Test"));
-                    object.write_all(data.as_slice()).unwrap();
-                    object.flush().unwrap();
-                    drop(object);
+        group.throughput(Throughput::Bytes(object_size));
 
-                    // Read from the object.
-                    let mut buffer = Vec::new();
-                    let mut object = repo.get("Test").unwrap();
-                    object.seek(SeekFrom::Start(0)).unwrap();
-                    object.read_to_end(black_box(&mut buffer)).unwrap();
-                },
-                BatchSize::SmallInput,
-            );
-        },
-    );
+        group.bench_function(
+            format!("{}, {}", bytesize::to_string(object_size, true), name),
+            |bencher| {
+                bencher.iter_batched(
+                    || random_bytes(object_size as usize),
+                    |data| {
+                        // Write to the object.
+                        let mut object = repo.insert(String::from("Test"));
+                        object.write_all(data.as_slice()).unwrap();
+                        object.flush().unwrap();
+                        drop(object);
+
+                        // Read from the object.
+                        let mut buffer = Vec::new();
+                        let mut object = repo.get("Test").unwrap();
+                        object.seek(SeekFrom::Start(0)).unwrap();
+                        object.read_to_end(black_box(&mut buffer)).unwrap();
+                    },
+                    BatchSize::SmallInput,
+                );
+            },
+        );
+    }
 }
 
 criterion_group!(throughput, write_object, write_read_object);
