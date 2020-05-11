@@ -29,7 +29,7 @@ use {
 ///
 /// The `compression` cargo feature is required to use any compression method other than
 /// `Compression::None`.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Compression {
     /// Do not compress data.

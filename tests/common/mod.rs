@@ -31,7 +31,9 @@ use s3::credentials::Credentials;
 #[cfg(feature = "store-s3")]
 use s3::region::Region;
 
-use acid_store::repo::{Compression, Encryption, ObjectRepository, OpenRepo, RepositoryConfig};
+use acid_store::repo::{
+    Chunking, Compression, Encryption, ObjectRepository, OpenRepo, RepositoryConfig,
+};
 use acid_store::store::MemoryStore;
 use lazy_static::lazy_static;
 
@@ -48,7 +50,7 @@ lazy_static! {
     /// The archive config to use for testing.
     pub static ref REPO_CONFIG: RepositoryConfig = {
         let mut config = RepositoryConfig::default();
-        config.chunker_bits = 8;
+        config.chunking = Chunking::Zpaq { bits: 8 };
         config.encryption = Encryption::XChaCha20Poly1305;
         config.compression = Compression::Lz4 { level: 2 };
         config

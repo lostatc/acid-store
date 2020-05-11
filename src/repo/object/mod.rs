@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+pub use self::chunking::Chunking;
 pub use self::compression::Compression;
 pub use self::config::RepositoryConfig;
 pub use self::encryption::{Encryption, ResourceLimit};

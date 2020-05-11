@@ -14,20 +14,94 @@
  * limitations under the License.
  */
 
-use cdchunking::ChunkerImpl;
 use std::io::{self, Write};
 use std::mem::replace;
 
+use cdchunking::{ChunkerImpl, ZPAQ};
+use serde::{Deserialize, Serialize};
+
+/// A method for chunking data in a repository.
+///
+/// Data is deduplicated, read into memory, and written to the data store in chunks. This value
+/// determines how data is split into chunks and how large those chunks are.
+///
+/// The chunk size affects deduplication ratios, memory usage, and I/O performance. Some
+/// experimentation may be required to determine the optimal chunk size for a given workload.
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum Chunking {
+    /// Split data into fixed-size chunks.
+    ///
+    /// This chunking method may provide better performance than `Zpaq`, but does not provide
+    /// content-defined deduplication and will probably result in worse deduplication ratios.
+    Fixed {
+        /// The size of each chunk in bytes.
+        size: usize,
+    },
+
+    /// Split data using the ZPAQ content-defined chunking algorithm.
+    ///
+    /// This chunking method provides content-defined deduplication, which allows for better
+    /// deduplication ratios than `Fixed`. However, performance may be worse.
+    Zpaq {
+        /// The average chunk size, which is 2^`bits` bytes.
+        ///
+        /// For example, a value of `20` will result in an average chunk size of 1MiB
+        /// (2^20 = 1048576).
+        bits: usize,
+    },
+}
+
+impl Chunking {
+    /// Return a chunker for this chunking method.
+    pub(super) fn to_chunker(&self) -> Box<dyn ChunkerImpl> {
+        match self {
+            Chunking::Fixed { size } => Box::new(FixedChunker::new(*size)),
+            Chunking::Zpaq { bits } => Box::new(ZPAQ::new(*bits)),
+        }
+    }
+}
+
+/// A `ChunkerImpl` which chunks data into fixed-size chunks.
+pub struct FixedChunker {
+    chunk_size: usize,
+    bytes_read: usize,
+}
+
+impl FixedChunker {
+    /// Return a new instance which chunks data using the given `chunk_size`.
+    pub fn new(chunk_size: usize) -> Self {
+        FixedChunker {
+            chunk_size,
+            bytes_read: 0,
+        }
+    }
+}
+
+impl ChunkerImpl for FixedChunker {
+    fn find_boundary(&mut self, data: &[u8]) -> Option<usize> {
+        if self.bytes_read + data.len() < self.chunk_size {
+            None
+        } else {
+            Some((self.bytes_read + data.len()) - self.chunk_size)
+        }
+    }
+
+    fn reset(&mut self) {
+        self.bytes_read = 0;
+    }
+}
+
 /// A chunker which partitions data written to it into chunks.
-pub struct IncrementalChunker<T: ChunkerImpl> {
-    chunker: T,
+pub struct IncrementalChunker {
+    chunker: Box<dyn ChunkerImpl>,
     buffer: Vec<u8>,
     chunks: Vec<Vec<u8>>,
 }
 
-impl<T: ChunkerImpl> IncrementalChunker<T> {
-    /// Return a new instance with uses the given `chunker` to determine chunk boundaries.
-    pub fn new(chunker: T) -> Self {
+impl IncrementalChunker {
+    /// Return a new instance which uses the given `chunker` to determine chunk boundaries.
+    pub fn new(chunker: Box<dyn ChunkerImpl>) -> Self {
         Self {
             chunker,
             buffer: Vec::new(),
@@ -57,7 +131,7 @@ impl<T: ChunkerImpl> IncrementalChunker<T> {
     }
 }
 
-impl<T: ChunkerImpl> Write for IncrementalChunker<T> {
+impl Write for IncrementalChunker {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let mut unchunked_data = buf;
 

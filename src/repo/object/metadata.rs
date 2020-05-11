@@ -18,9 +18,10 @@ use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
 use uuid::Uuid;
 
+use super::chunking::Chunking;
+use super::compression::Compression;
 use super::config::RepositoryConfig;
-use super::encryption::{KeySalt, ResourceLimit};
-use super::{Compression, Encryption};
+use super::encryption::{Encryption, KeySalt, ResourceLimit};
 
 /// Metadata for a repository.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,10 +29,8 @@ pub struct RepositoryMetadata {
     /// The unique ID of this repository.
     pub id: Uuid,
 
-    /// The number of bits that define a chunk boundary.
-    ///
-    /// The average size of a chunk will be 2^`chunker_bits` bytes.
-    pub chunker_bits: u32,
+    /// The chunking method being used in this repository.
+    pub chunking: Chunking,
 
     /// The compression method being used in this repository.
     pub compression: Compression,
@@ -64,9 +63,9 @@ impl RepositoryMetadata {
         RepositoryInfo {
             id: self.id,
             config: RepositoryConfig {
-                chunker_bits: self.chunker_bits,
-                compression: self.compression,
-                encryption: self.encryption,
+                chunking: self.chunking.clone(),
+                compression: self.compression.clone(),
+                encryption: self.encryption.clone(),
                 memory_limit: self.memory_limit,
                 operations_limit: self.operations_limit,
             },
