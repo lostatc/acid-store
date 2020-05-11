@@ -64,16 +64,17 @@ lazy_static! {
 /// An `ObjectRepository` maps keys of type `K` to seekable binary blobs called objects and stores
 /// them persistently in a `DataStore`.
 ///
-/// Data in a repository is transparently deduplicated using content-defined block-level
-/// deduplication via the ZPAQ chunking algorithm. The data and metadata in the repository can
+/// Data in a repository is transparently deduplicated using either fixed-size chunking (faster) or
+/// contend-defined chunking (better deduplication). The data and metadata in the repository can
 /// optionally be compressed and encrypted.
 ///
 /// A repository cannot be open more than once simultaneously. Once it is opened, it is locked from
 /// further open attempts until the `ObjectRepository` is dropped. This lock prevents the repository
 /// from being opened from other threads and processes, but not from other machines.
 ///
-/// Changes made to a repository are not persisted to the data store until `commit` is called. When
-/// the `ObjectRepository` is dropped, any uncommitted changes are rolled back automatically.
+/// Changes made to a repository are not persisted to the data store until `commit` is called. If
+/// the `ObjectRepository` is dropped or the thread panics, any uncommitted changes are rolled back
+/// automatically.
 ///
 /// # Encryption
 /// If encryption is enabled, the Argon2id key derivation function is used to derive a key from a
@@ -88,7 +89,8 @@ lazy_static! {
 /// repository does not attempt to hide the size of chunks produced by the chunking algorithm, but
 /// information about which chunks belong to which objects is encrypted.
 ///
-/// The information in `RepositoryInfo` is never encrypted.
+/// The information in `RepositoryInfo` is never encrypted, and can be read without opening the
+/// repository.
 #[derive(Debug)]
 pub struct ObjectRepository<K: Key, S: DataStore> {
     /// The state for this object repository.

@@ -32,8 +32,8 @@ use serde::{Deserialize, Serialize};
 pub enum Chunking {
     /// Split data into fixed-size chunks.
     ///
-    /// This chunking method may provide better performance than `Zpaq`, but does not provide
-    /// content-defined deduplication and will probably result in worse deduplication ratios.
+    /// This chunking method typically provides better performance than `Zpaq`, but does not provide
+    /// content-defined deduplication and will typically result in worse deduplication ratios.
     Fixed {
         /// The size of each chunk in bytes.
         size: usize,
@@ -42,7 +42,7 @@ pub enum Chunking {
     /// Split data using the ZPAQ content-defined chunking algorithm.
     ///
     /// This chunking method provides content-defined deduplication, which allows for better
-    /// deduplication ratios than `Fixed`. However, performance may be worse.
+    /// deduplication ratios than `Fixed`. However, performance is typically worse.
     Zpaq {
         /// The average chunk size, which is 2^`bits` bytes.
         ///
