@@ -5,5 +5,7 @@ let
 in
   mkShell {
     buildInputs = inputs;
+
+    # This directory is not on tmpfs on NixOS. This is important for benchmarking.
     TMPDIR = "/tmp";
   }

@@ -19,10 +19,10 @@ use std::path::Path;
 
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use rand::rngs::SmallRng;
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng};
 use tempfile::tempdir;
 
-use acid_store::repo::{Chunking, ObjectRepository, OpenRepo, RepositoryConfig};
+use acid_store::repo::{Chunking, Encryption, ObjectRepository, OpenRepo, RepositoryConfig};
 use acid_store::store::{DirectoryStore, OpenOption, OpenStore};
 
 /// Return a buffer containing `size` random bytes for testing purposes.
@@ -33,21 +33,72 @@ pub fn random_bytes(size: usize) -> Vec<u8> {
     buffer
 }
 
-/// Return a new repository in the given `directory` for benchmarking.
-pub fn new_repo(
-    directory: &Path,
-    config: RepositoryConfig,
-) -> ObjectRepository<String, DirectoryStore> {
-    ObjectRepository::new_repo(
-        DirectoryStore::open(
-            directory.join("store"),
-            OpenOption::CREATE | OpenOption::TRUNCATE,
-        )
-        .unwrap(),
-        config,
-        None,
+/// Return a new data store at `directory` for benchmarking.
+fn new_store(directory: &Path) -> DirectoryStore {
+    DirectoryStore::open(
+        directory.join("store"),
+        OpenOption::CREATE | OpenOption::TRUNCATE,
     )
     .unwrap()
+}
+
+/// Return an iterator of repositories and test descriptions.
+fn test_configs(directory: &Path) -> Vec<(ObjectRepository<String, DirectoryStore>, String)> {
+    let fixed = {
+        let mut config = RepositoryConfig::default();
+        config.chunking = Chunking::Fixed {
+            size: bytesize::mib(1u64) as usize,
+        };
+        config.encryption = Encryption::None;
+        let repo =
+            ObjectRepository::new_repo(new_store(&directory.join("fixed")), config, None).unwrap();
+        (repo, String::from("Chunking::Fixed, Encryption::None"))
+    };
+
+    let fixed_encryption = {
+        let mut config = RepositoryConfig::default();
+        config.chunking = Chunking::Fixed {
+            size: bytesize::mib(1u64) as usize,
+        };
+        config.encryption = Encryption::XChaCha20Poly1305;
+        let repo = ObjectRepository::new_repo(
+            new_store(&directory.join("fixed_encryption")),
+            config,
+            Some(b""),
+        )
+        .unwrap();
+        (
+            repo,
+            String::from("Chunking::Fixed, Encryption::XChaCha20Poly1305"),
+        )
+    };
+
+    let zpaq = {
+        let mut config = RepositoryConfig::default();
+        config.chunking = Chunking::Zpaq { bits: 20 };
+        config.encryption = Encryption::None;
+        let repo =
+            ObjectRepository::new_repo(new_store(&directory.join("zpaq")), config, None).unwrap();
+        (repo, String::from("Chunking::Zpaq, Encryption::None"))
+    };
+
+    let zpaq_encryption = {
+        let mut config = RepositoryConfig::default();
+        config.chunking = Chunking::Zpaq { bits: 20 };
+        config.encryption = Encryption::XChaCha20Poly1305;
+        let repo = ObjectRepository::new_repo(
+            new_store(&directory.join("zpaq_encryption")),
+            config,
+            Some(b""),
+        )
+        .unwrap();
+        (
+            repo,
+            String::from("Chunking::Zpaq, Encryption::XChaCha20Poly1305"),
+        )
+    };
+
+    vec![fixed, fixed_encryption, zpaq, zpaq_encryption]
 }
 
 /// The number of bytes to write when a trivial amount of data must be written.
@@ -59,7 +110,12 @@ pub fn insert_object(criterion: &mut Criterion) {
 
     for num_objects in [100, 1_000, 10_000].iter() {
         // Create a new repository.
-        let mut repo = new_repo(tmp_dir.path(), RepositoryConfig::default());
+        let mut repo = ObjectRepository::new_repo(
+            new_store(tmp_dir.path()),
+            RepositoryConfig::default(),
+            None,
+        )
+        .unwrap();
 
         // Insert objects and write to them but don't commit them.
         for i in 0..*num_objects {
@@ -89,8 +145,12 @@ pub fn insert_object_and_write(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("Insert an object and write to it");
 
     for num_objects in [100, 1_000, 10_000].iter() {
-        // Create a new repository.
-        let mut repo = new_repo(tmp_dir.path(), RepositoryConfig::default());
+        let mut repo = ObjectRepository::new_repo(
+            new_store(tmp_dir.path()),
+            RepositoryConfig::default(),
+            None,
+        )
+        .unwrap();
 
         // Insert objects and write to them but don't commit them.
         for i in 0..*num_objects {
@@ -126,23 +186,9 @@ pub fn write_object(criterion: &mut Criterion) {
 
     let mut group = criterion.benchmark_group("Write to an object");
 
-    let mut fixed_config = RepositoryConfig::default();
-    fixed_config.chunking = Chunking::Fixed {
-        size: bytesize::mib(1u64) as usize,
-    };
-    let mut zpaq_config = RepositoryConfig::default();
-    zpaq_config.chunking = Chunking::Zpaq { bits: 20 };
-
-    let configs = [
-        (fixed_config, "Chunking::Fixed"),
-        (zpaq_config, "Chunking::Zpaq"),
-    ];
-
     let object_size = bytesize::kib(100u64);
 
-    for (config, name) in configs.iter() {
-        let mut repo = new_repo(tmp_dir.path(), config.to_owned());
-
+    for (mut repo, name) in test_configs(tmp_dir.path()) {
         group.throughput(Throughput::Bytes(object_size));
 
         group.bench_function(
@@ -162,28 +208,57 @@ pub fn write_object(criterion: &mut Criterion) {
     }
 }
 
+pub fn read_object(criterion: &mut Criterion) {
+    let tmp_dir = tempdir().unwrap();
+
+    let mut group = criterion.benchmark_group("Read from an object");
+
+    let object_size = bytesize::kib(100u64);
+    let num_objects = 100;
+
+    for (mut repo, name) in test_configs(tmp_dir.path()) {
+        // Generate a batch of random objects to read during the benchmark.
+        for object_num in 0..num_objects {
+            let mut object = repo.insert(format!("Input {}", object_num));
+            object
+                .write_all(random_bytes(object_size as usize).as_slice())
+                .unwrap();
+            object.flush().unwrap();
+        }
+
+        group.throughput(Throughput::Bytes(object_size));
+
+        group.bench_function(
+            format!("{}, {}", bytesize::to_string(object_size, true), name),
+            |bencher| {
+                bencher.iter_batched(
+                    || {
+                        // Select a random object to read.
+                        let mut rng = SmallRng::from_entropy();
+                        let object_num = rng.gen_range(0, num_objects);
+                        format!("Input {}", object_num)
+                    },
+                    |key| {
+                        let mut buffer = Vec::new();
+                        let mut object = repo.get(&key).unwrap();
+                        object.read_to_end(&mut buffer).unwrap();
+                        buffer
+                    },
+                    BatchSize::SmallInput,
+                );
+            },
+        );
+    }
+}
+
 pub fn write_read_object(criterion: &mut Criterion) {
     let tmp_dir = tempdir().unwrap();
 
     let mut group = criterion.benchmark_group("Write to and then read from an object");
 
-    let mut fixed_config = RepositoryConfig::default();
-    fixed_config.chunking = Chunking::Fixed {
-        size: bytesize::mib(1u64) as usize,
-    };
-    let mut zpaq_config = RepositoryConfig::default();
-    zpaq_config.chunking = Chunking::Zpaq { bits: 20 };
-
-    let configs = [
-        (fixed_config, "Chunking::Fixed"),
-        (zpaq_config, "Chunking::Zpaq"),
-    ];
-
     let object_size = bytesize::kib(100u64);
 
-    for (config, name) in configs.iter() {
-        let mut repo = new_repo(tmp_dir.path(), config.to_owned());
-
+    for (mut repo, name) in test_configs(tmp_dir.path()) {
         group.throughput(Throughput::Bytes(object_size));
 
         group.bench_function(
@@ -211,6 +286,6 @@ pub fn write_read_object(criterion: &mut Criterion) {
     }
 }
 
-criterion_group!(throughput, write_object, write_read_object);
+criterion_group!(throughput, read_object, write_object, write_read_object);
 criterion_group!(insert, insert_object, insert_object_and_write);
-criterion_main!(insert, throughput);
+criterion_main!(throughput);
