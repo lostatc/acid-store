@@ -80,7 +80,7 @@ impl ResourceLimit {
 ///
 /// The `encryption` cargo feature is required to use any encryption method other than
 /// `Encryption::None`.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Encryption {
     /// Do not encrypt data.

@@ -16,6 +16,7 @@
 
 use super::compression::Compression;
 use super::encryption::{Encryption, ResourceLimit};
+use crate::repo::object::Chunking;
 
 /// The configuration for an repository.
 ///
@@ -25,17 +26,10 @@ use super::encryption::{Encryption, ResourceLimit};
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct RepositoryConfig {
-    /// A value which determines the chunk size for the repository.
+    /// The chunking method to use in the repository.
     ///
-    /// Data is deduplicated, read into memory, and written to the data store in chunks. This value
-    /// determines the average size of those chunks which will be 2^`chunker_bits` bytes.
-    ///
-    /// The chunk size affects deduplication ratios, memory usage, and I/O performance. Some
-    /// experimentation may be required to determine the optimal chunk size for a given workload.
-    /// The default chunk size should be fine for most cases.
-    ///
-    /// The default value is `20` (1MiB average chunk size).
-    pub chunker_bits: u32,
+    /// The default value is `Chunking::Zpaq { bits: 20 }`.
+    pub chunking: Chunking,
 
     /// The compression method to use in the repository.
     ///
@@ -61,7 +55,7 @@ pub struct RepositoryConfig {
 impl Default for RepositoryConfig {
     fn default() -> Self {
         RepositoryConfig {
-            chunker_bits: 20,
+            chunking: Chunking::Zpaq { bits: 20 },
             compression: Compression::None,
             encryption: Encryption::None,
             memory_limit: ResourceLimit::Interactive,

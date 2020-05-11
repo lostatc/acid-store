@@ -458,10 +458,9 @@ pub struct ReadOnlyObject<'a, K: Key, S: DataStore> {
 
 impl<'a, K: Key, S: DataStore> ReadOnlyObject<'a, K, S> {
     pub(super) fn new(repo_state: &'a RepositoryState<K, S>, key: K) -> Self {
-        let chunker_bits = repo_state.metadata.chunker_bits;
         Self {
             repo_state,
-            object_state: ObjectState::new(chunker_bits),
+            object_state: ObjectState::new(repo_state.metadata.chunking.to_chunker()),
             key,
         }
     }
@@ -557,10 +556,10 @@ pub struct Object<'a, K: Key, S: DataStore> {
 
 impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     pub(super) fn new(repo_state: &'a mut RepositoryState<K, S>, key: K) -> Self {
-        let chunker_bits = repo_state.metadata.chunker_bits;
+        let chunker = repo_state.metadata.chunking.to_chunker();
         Self {
             repo_state,
-            object_state: ObjectState::new(chunker_bits),
+            object_state: ObjectState::new(chunker),
             key,
         }
     }

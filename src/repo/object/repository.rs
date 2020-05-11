@@ -252,7 +252,7 @@ impl<K: Key, S: DataStore> OpenRepo<S> for ObjectRepository<K, S> {
         // Create the repository metadata with a reference to the newly-written header.
         let metadata = RepositoryMetadata {
             id,
-            chunker_bits: config.chunker_bits,
+            chunking: config.chunking,
             compression: config.compression,
             encryption: config.encryption,
             memory_limit: config.memory_limit,

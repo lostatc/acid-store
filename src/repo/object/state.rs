@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use cdchunking::ZPAQ;
+use cdchunking::ChunkerImpl;
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Mutex;
 
@@ -76,7 +76,7 @@ impl ChunkLocation {
 /// The state associated with an `Object`.
 pub struct ObjectState {
     /// An object responsible for buffering and chunking data which has been written.
-    pub chunker: IncrementalChunker<ZPAQ>,
+    pub chunker: IncrementalChunker,
 
     /// The list of chunks which have been written since `flush` was last called.
     pub new_chunks: Vec<Chunk>,
@@ -100,9 +100,9 @@ pub struct ObjectState {
 
 impl ObjectState {
     /// Create a new empty state for a repository with a given chunk size.
-    pub fn new(chunker_bits: u32) -> Self {
+    pub fn new(chunker: Box<dyn ChunkerImpl>) -> Self {
         Self {
-            chunker: IncrementalChunker::new(ZPAQ::new(chunker_bits as usize)),
+            chunker: IncrementalChunker::new(chunker),
             new_chunks: Vec::new(),
             start_location: None,
             position: 0,
