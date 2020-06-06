@@ -52,3 +52,23 @@ This library provides the following storage backends out of the box.
 - Amazon S3
 - Cloud storage via [rclone](https://rclone.org/)
 - In-Memory
+
+## Performance
+
+### Specs
+
+Spec | Value
+--- | ---
+Processor | Ryzen 5 1600x
+Memory | 16 GB (2133MHz)
+Disk | Crucial MX500 SATA SSD
+OS | Ubuntu 19.10
+
+### Benchmark
+
+Encryption | Chunking | Read | Write
+--- | --- | --- | ---
+None | Fixed | 1555 MiB/s | 290 MiB/s
+XChaCha20-Poly1305 | Fixed | 630 MiB/s | 210 MiB/s
+None | ZPAQ | 1600 MiB/s | 185 MiB/s
+XChaCha20-Poly1305 | ZPAQ | 710 MiB/s | 125 MiB/s
