@@ -86,7 +86,7 @@ impl Default for ObjectHandle {
 /// A `ContentId` can be compared with other `ContentId` values to determine if the contents of two
 /// objects are equal. However, these comparisons are only valid within the same repository;
 /// comparisons between `ContentId`s from different repositories are meaningless. To compare data
-/// between repositories, an actual checksum of the data must be used.
+/// between repositories, you should use a checksum or `Object::compare_contents`.
 ///
 /// `ContentId` is opaque, but it can be serialized and deserialized. The value of a `ContentId` is
 /// valid for the lifetime of a repository, meaning that they can be compared across invocations of
@@ -118,6 +118,38 @@ impl<'a, K: Key, S: DataStore> ObjectInfo<'a, K, S> {
             concatenation.extend_from_slice(&chunk.hash);
         }
         ContentId(chunk_hash(concatenation.as_slice()))
+    }
+
+    /// Return whether this object has the same contents as `other`.
+    fn compare_contents(&self, mut other: impl Read) -> crate::Result<bool> {
+        let handle = self.repo_state.header.objects.get(&self.key).unwrap();
+        let mut buffer = Vec::new();
+
+        for chunk in &handle.chunks {
+            // Grow the buffer so it's large enough.
+            if buffer.len() < chunk.size {
+                buffer.resize(chunk.size, 0u8);
+            }
+
+            if let Err(error) = other.read_exact(&mut buffer[..chunk.size]) {
+                return if error.kind() == io::ErrorKind::UnexpectedEof {
+                    Ok(false)
+                } else {
+                    Err(error.into())
+                };
+            }
+
+            if chunk.hash != chunk_hash(&buffer[..chunk.size]) {
+                return Ok(false);
+            }
+        }
+
+        // Handle the case where `other` is longer than this object.
+        if other.read(&mut buffer)? != 0 {
+            return Ok(false);
+        }
+
+        Ok(true)
     }
 
     /// Verify the integrity of the data in this object.
@@ -495,6 +527,13 @@ impl<'a, K: Key, S: DataStore> ReadOnlyObject<'a, K, S> {
         self.object_info().content_id()
     }
 
+    /// Return whether this object has the same contents as `other`.
+    ///
+    /// See `Object::compare_contents` for details.
+    pub fn compare_contents(&self, other: impl Read) -> crate::Result<bool> {
+        self.object_info().compare_contents(other)
+    }
+
     /// Verify the integrity of the data in this object.
     ///
     /// See `Object::verify` for details.
@@ -605,6 +644,33 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// explicitly flush written data with `flush` before calling this method.
     pub fn content_id(&self) -> ContentId {
         self.object_info().content_id()
+    }
+
+    /// Return whether this object has the same contents as `other`.
+    ///
+    /// This compares the contents of this object with `other` without reading any data from the
+    /// data store. This is much faster than calculating a checksum of the object, especially if
+    /// reading from the data store would be prohibitively slow.
+    ///
+    /// This compares the contents of this object with `other` in chunks, and will fail early if any
+    /// chunk does not match. This means that it may not be necessary to read the entire file to
+    /// determine that the contents are different.
+    ///
+    /// Because `other` only implements `Read`, this cannot compare the contents by size. If you
+    /// need to compare the contents of this object with a file or some other source of data with
+    /// a known size, you should use `size` to query the size of this object so you can handle the
+    /// trivial case of the contents having different sizes.
+    ///
+    /// If you need to compare the contents of two objects from the same repository, using
+    /// `content_id` will be faster.
+    ///
+    /// Unflushed data is not accounted for when comparing contents, so you may want to explicitly
+    /// flush written data with `flush` before calling this method.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn compare_contents(&self, other: impl Read) -> crate::Result<bool> {
+        self.object_info().compare_contents(other)
     }
 
     /// Verify the integrity of the data in this object.

@@ -253,6 +253,69 @@ fn compare_content_ids() -> anyhow::Result<()> {
 }
 
 #[test]
+fn compare_contents_with_are_equal() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    let initial_data = random_buffer();
+
+    // Write data to the object.
+    let mut object = repository.insert("Test1".into());
+    object.write_all(initial_data.as_slice())?;
+    object.flush()?;
+
+    assert!(object.compare_contents(initial_data.as_slice())?);
+
+    Ok(())
+}
+
+#[test]
+fn compare_unequal_contents_with_same_size() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    let initial_data = random_buffer();
+    let modified_data = random_bytes(initial_data.len());
+
+    // Write data to the object.
+    let mut object = repository.insert("Test1".into());
+    object.write_all(initial_data.as_slice())?;
+    object.flush()?;
+
+    assert!(!object.compare_contents(modified_data.as_slice())?);
+
+    Ok(())
+}
+
+#[test]
+fn compare_contents_which_are_smaller() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    let initial_data = random_buffer();
+    let modified_data = &initial_data[..initial_data.len() / 2];
+
+    // Write data to the object.
+    let mut object = repository.insert("Test1".into());
+    object.write_all(initial_data.as_slice())?;
+    object.flush()?;
+
+    assert!(!object.compare_contents(modified_data)?);
+
+    Ok(())
+}
+
+#[test]
+fn compare_contents_which_are_larger() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    let initial_data = random_buffer();
+    let modified_data = [initial_data.clone(), random_buffer()].concat();
+
+    // Write data to the object.
+    let mut object = repository.insert("Test1".into());
+    object.write_all(initial_data.as_slice())?;
+    object.flush()?;
+
+    assert!(!object.compare_contents(modified_data.as_slice())?);
+
+    Ok(())
+}
+
+#[test]
 fn verify_valid_object_is_valid() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     let mut object = repository.insert("Test".into());
