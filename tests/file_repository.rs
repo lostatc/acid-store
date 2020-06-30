@@ -444,26 +444,14 @@ fn archive_tree() -> anyhow::Result<()> {
     File::create(&source_path.join("file1"))?;
     create_dir(&source_path.join("directory"))?;
     File::create(&source_path.join("directory/file2"))?;
-    create_dir(&source_path.join("exclude"))?;
-    File::create(&source_path.join("exclude/file3"))?;
 
     let mut repository = create_repo()?;
-    repository.archive_tree(&source_path, "dest", |path| {
-        !path.starts_with(source_path.join("exclude"))
-    })?;
+    repository.archive_tree(&source_path, "dest")?;
 
     assert!(repository.entry("dest")?.is_directory());
     assert!(repository.entry("dest/file1")?.is_file());
     assert!(repository.entry("dest/directory")?.is_directory());
     assert!(repository.entry("dest/directory/file2")?.is_file());
-    assert!(matches!(
-        repository.entry("dest/exclude"),
-        Err(acid_store::Error::NotFound)
-    ));
-    assert!(matches!(
-        repository.entry("dest/exclude/file3"),
-        Err(acid_store::Error::NotFound)
-    ));
     Ok(())
 }
 
@@ -559,17 +547,12 @@ fn extract_tree() -> anyhow::Result<()> {
     repository.create("source/file1", &Entry::file())?;
     repository.create("source/directory", &Entry::directory())?;
     repository.create("source/directory/file2", &Entry::file())?;
-    repository.create("source/exclude", &Entry::directory())?;
-    repository.create("source/exclude/file3", &Entry::file())?;
 
-    repository.extract_tree("source", &dest_path, |path| {
-        !path.starts_with("source/exclude")
-    })?;
+    repository.extract_tree("source", &dest_path)?;
 
     assert!(dest_path.join("file1").is_file());
     assert!(dest_path.join("directory").is_dir());
     assert!(dest_path.join("directory/file2").is_file());
-    assert!(!dest_path.join("exclude").exists());
     Ok(())
 }
 
