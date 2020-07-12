@@ -43,7 +43,8 @@ impl SqliteStore {
             return Err(crate::Error::AlreadyExists);
         }
 
-        let connection = Connection::open(&path).map_err(anyhow::Error::from)?;
+        let connection = Connection::open(&path)
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         connection
             .execute_batch(
@@ -59,7 +60,7 @@ impl SqliteStore {
                     );
                 "#,
             )
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         connection
             .execute(
@@ -69,7 +70,7 @@ impl SqliteStore {
                 "#,
                 params![&CURRENT_VERSION.as_bytes()[..]],
             )
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         Ok(SqliteStore { connection })
     }
@@ -80,7 +81,8 @@ impl SqliteStore {
             return Err(crate::Error::NotFound);
         }
 
-        let connection = Connection::open(&path).map_err(anyhow::Error::from)?;
+        let connection = Connection::open(&path)
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         let version_bytes: Vec<u8> = connection
             .query_row(
@@ -126,7 +128,7 @@ impl OpenStore for SqliteStore {
                             DROP TABLE Metadata;
                         "#,
                     )
-                    .map_err(anyhow::Error::from)?;
+                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
             }
 
             Ok(store)

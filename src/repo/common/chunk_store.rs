@@ -67,7 +67,7 @@ impl<S: DataStore> ChunkReader for RepositoryState<S> {
             .lock()
             .unwrap()
             .read_block(chunk_info.block_id)
-            .map_err(anyhow::Error::from)?
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
             .ok_or(crate::Error::InvalidData)?;
 
         self.decode_data(chunk.as_slice())
@@ -108,7 +108,7 @@ impl<S: DataStore> ChunkWriter for RepositoryState<S> {
             .lock()
             .unwrap()
             .write_block(block_id, &encoded_data)
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         // Add the chunk to the header.
         let chunk_info = ChunkInfo {

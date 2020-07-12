@@ -89,7 +89,7 @@ pub enum Error {
     ///
     /// This wraps the `DataStore::Error` provided by the data store.
     #[error("{0}")]
-    Store(#[from] anyhow::Error),
+    Store(anyhow::Error),
 }
 
 impl From<Error> for io::Error {
