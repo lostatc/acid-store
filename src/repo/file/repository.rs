@@ -22,6 +22,7 @@ use std::io::{self, copy, Write};
 use std::marker::PhantomData;
 use std::path::Path;
 
+use hex_literal::hex;
 use lazy_static::lazy_static;
 use relative_path::{RelativePath, RelativePathBuf};
 use uuid::Uuid;
@@ -38,18 +39,18 @@ use super::special::{NoSpecialType, SpecialType};
 use crate::repo::file::entry::PathHandles;
 
 lazy_static! {
-    /// The ID of the managed object which stores the table of keys for the repository.
-    static ref TABLE_OBJECT_ID: Uuid = Uuid::parse_str("9c114e82-bd64-11ea-9872-ab55cbe7bb41").unwrap();
-
-    /// The ID of the managed object which stores an empty object handle.
-    static ref EMPTY_HANDLE_OBJECT_ID: Uuid = Uuid::parse_str("baff6bc4-be1f-11ea-a383-0b8ef483668f").unwrap();
-
-    /// The current repository format version ID.
-    static ref VERSION_ID: Uuid = Uuid::parse_str("a61f6a58-bd64-11ea-9b59-73d36807cf1d").unwrap();
-
     /// The parent of a relative path with no parent.
     static ref EMPTY_PARENT: &'static RelativePath = &RelativePath::new("");
 }
+
+/// The ID of the managed object which stores the table of keys for the repository.
+const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("9c114e82 bd64 11ea 9872 ab55cbe7bb41"));
+
+/// The ID of the managed object which stores an empty object handle.
+const EMPTY_HANDLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("baff6bc4 be1f 11ea a383 0b8ef483668f"));
+
+/// The current repository format version ID.
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("a61f6a58 bd64 11ea 9b59 73d36807cf1d"));
 
 /// A virtual file system.
 ///
@@ -121,16 +122,16 @@ where
     M: FileMetadata,
 {
     fn from_repo(mut repository: ObjectRepository<S>) -> crate::Result<Self> {
-        if check_version(&mut repository, *VERSION_ID)? {
+        if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the table of entry paths.
             let mut object = repository
-                .managed_object(*TABLE_OBJECT_ID)
+                .managed_object(TABLE_OBJECT_ID)
                 .ok_or(crate::Error::Corrupt)?;
             let path_table = object.deserialize()?;
 
             // Read and deserialize the empty object.
             let mut object = repository
-                .managed_object(*EMPTY_HANDLE_OBJECT_ID)
+                .managed_object(EMPTY_HANDLE_OBJECT_ID)
                 .ok_or(crate::Error::Corrupt)?;
             let empty_handle = object.deserialize()?;
 
@@ -142,14 +143,14 @@ where
             })
         } else {
             // Create and write the table of entry paths.
-            let mut object = repository.add_managed(*TABLE_OBJECT_ID);
+            let mut object = repository.add_managed(TABLE_OBJECT_ID);
             let path_table = HashMap::new();
             object.serialize(&path_table)?;
             drop(object);
 
             // Create and serialize an empty object handle.
             let empty_handle = repository.add_unmanaged();
-            let mut object = repository.add_managed(*EMPTY_HANDLE_OBJECT_ID);
+            let mut object = repository.add_managed(EMPTY_HANDLE_OBJECT_ID);
             object.serialize(&empty_handle)?;
             drop(object);
 
@@ -766,10 +767,7 @@ where
     /// See `ObjectRepository::commit` for details.
     pub fn commit(&mut self) -> crate::Result<()> {
         // Serialize and write the table of keys.
-        let mut object = self
-            .repository
-            .managed_object_mut(*TABLE_OBJECT_ID)
-            .unwrap();
+        let mut object = self.repository.managed_object_mut(TABLE_OBJECT_ID).unwrap();
         object.serialize(&self.path_table)?;
         drop(object);
 

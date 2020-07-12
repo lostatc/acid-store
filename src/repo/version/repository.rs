@@ -21,9 +21,8 @@ use std::hash::Hash;
 use std::mem;
 use std::time::SystemTime;
 
+use hex_literal::hex;
 use uuid::Uuid;
-
-use lazy_static::lazy_static;
 
 use super::version::{KeyInfo, Version};
 use crate::repo::common::check_version;
@@ -33,13 +32,14 @@ use crate::repo::version::version::VersionInfo;
 use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepositoryInfo};
 use crate::store::DataStore;
 
-lazy_static! {
-    /// The ID of the managed object which stores the table of keys for the repository.
-    static ref TABLE_OBJECT_ID: Uuid = Uuid::parse_str("a2cf16fe-bd51-11ea-9785-4be1828714c1").unwrap();
+/// The ID of the managed object which stores the table of keys for the repository.
+const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("a2cf16fe bd51 11ea 9785 4be1828714c1"));
 
-    /// The current repository format version ID.
-    static ref VERSION_ID: Uuid = Uuid::parse_str("b1671d9c-bd51-11ea-ab79-8bcf24ad6a9a").unwrap();
-}
+/// The current repository format version ID.
+///
+/// This must be changed any time a backwards-incompatible change is made to the repository
+/// format.
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("b1671d9c bd51 11ea ab79 8bcf24ad6a9a"));
 
 /// An object store with support for content versioning.
 ///
@@ -98,10 +98,10 @@ pub struct VersionRepository<K: Key, S: DataStore> {
 
 impl<K: Key, S: DataStore> ConvertRepo<S> for VersionRepository<K, S> {
     fn from_repo(mut repository: ObjectRepository<S>) -> crate::Result<Self> {
-        if check_version(&mut repository, *VERSION_ID)? {
+        if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the key table.
             let mut object = repository
-                .managed_object(*TABLE_OBJECT_ID)
+                .managed_object(TABLE_OBJECT_ID)
                 .ok_or(crate::Error::Corrupt)?;
             let key_table = object.deserialize()?;
 
@@ -111,7 +111,7 @@ impl<K: Key, S: DataStore> ConvertRepo<S> for VersionRepository<K, S> {
             })
         } else {
             // Create and write the table of keys.
-            let mut object = repository.add_managed(*TABLE_OBJECT_ID);
+            let mut object = repository.add_managed(TABLE_OBJECT_ID);
             let key_table = HashMap::new();
             object.serialize(&key_table)?;
             drop(object);
@@ -367,10 +367,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
     /// See `ObjectRepository::commit` for details.
     pub fn commit(&mut self) -> crate::Result<()> {
         // Serialize and write the table of keys.
-        let mut object = self
-            .repository
-            .managed_object_mut(*TABLE_OBJECT_ID)
-            .unwrap();
+        let mut object = self.repository.managed_object_mut(TABLE_OBJECT_ID).unwrap();
         object.serialize(&self.key_table)?;
         drop(object);
 

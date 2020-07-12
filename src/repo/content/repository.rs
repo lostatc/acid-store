@@ -18,9 +18,8 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::mem;
 
+use hex_literal::hex;
 use uuid::Uuid;
-
-use lazy_static::lazy_static;
 
 use crate::repo::common::check_version;
 use crate::repo::content::hash::HashAlgorithm;
@@ -28,16 +27,14 @@ use crate::repo::object::{ObjectHandle, ObjectRepository};
 use crate::repo::{ConvertRepo, ReadOnlyObject, RepositoryInfo};
 use crate::store::DataStore;
 
-lazy_static! {
-    /// The ID of the managed object which stores the table of keys for the repository.
-    static ref TABLE_OBJECT_ID: Uuid = Uuid::parse_str("c5319b76-bd43-11ea-90d4-971a5898591d").unwrap();
+/// The ID of the managed object which stores the table of keys for the repository.
+const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("c5319b76 bd43 11ea 90d4 971a5898591d"));
 
-    /// The ID of the managed object which stores the hash algorithm.
-    static ref ALGORITHM_OBJECT_ID: Uuid = Uuid::parse_str("0e4d5b00-bd45-11ea-9fe3-b3eccafb5a4b").unwrap();
+/// The ID of the managed object which stores the hash algorithm.
+const ALGORITHM_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("0e4d5b00 bd45 11ea 9fe3 b3eccafb5a4b"));
 
-    /// The current repository format version ID.
-    static ref VERSION_ID: Uuid = Uuid::parse_str("e94d5a1e-bd42-11ea-bbec-ebbbc536f7fb").unwrap();
-}
+/// The current repository format version ID.
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("e94d5a1e bd42 11ea bbec ebbbc536f7fb"));
 
 /// The size of the buffer to use when copying bytes.
 const BUFFER_SIZE: usize = 4096;
@@ -64,16 +61,16 @@ pub struct ContentRepository<S: DataStore> {
 
 impl<S: DataStore> ConvertRepo<S> for ContentRepository<S> {
     fn from_repo(mut repository: ObjectRepository<S>) -> crate::Result<Self> {
-        if check_version(&mut repository, *VERSION_ID)? {
+        if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the table of content hashes.
             let mut object = repository
-                .managed_object(*TABLE_OBJECT_ID)
+                .managed_object(TABLE_OBJECT_ID)
                 .ok_or(crate::Error::Corrupt)?;
             let hash_table = object.deserialize()?;
 
             // Read the hash algorithm.
             let mut object = repository
-                .managed_object(*ALGORITHM_OBJECT_ID)
+                .managed_object(ALGORITHM_OBJECT_ID)
                 .ok_or(crate::Error::Corrupt)?;
             let hash_algorithm = object.deserialize()?;
             drop(object);
@@ -85,13 +82,13 @@ impl<S: DataStore> ConvertRepo<S> for ContentRepository<S> {
             })
         } else {
             // Create and write the table of content hashes.
-            let mut object = repository.add_managed(*TABLE_OBJECT_ID);
+            let mut object = repository.add_managed(TABLE_OBJECT_ID);
             let hash_table = HashMap::new();
             object.serialize(&hash_table)?;
             drop(object);
 
             // Write the hash algorithm.
-            let mut object = repository.add_managed(*ALGORITHM_OBJECT_ID);
+            let mut object = repository.add_managed(ALGORITHM_OBJECT_ID);
             object.serialize(&DEFAULT_ALGORITHM)?;
             drop(object);
 
@@ -211,7 +208,7 @@ impl<S: DataStore> ContentRepository<S> {
         self.hash_algorithm = new_algorithm;
 
         // Serialize and write the new hash algorithm.
-        let mut object = self.repository.add_managed(*ALGORITHM_OBJECT_ID);
+        let mut object = self.repository.add_managed(ALGORITHM_OBJECT_ID);
         object.serialize(&new_algorithm)?;
         drop(object);
 
@@ -234,7 +231,7 @@ impl<S: DataStore> ContentRepository<S> {
         // Serialize and write the table of content hashes.
         let mut object = self
             .repository
-            .managed_object_mut(*TABLE_OBJECT_ID)
+            .managed_object_mut(TABLE_OBJECT_ID)
             .expect("Managed object containing table of content hashes not found in repository.");
         object.serialize(&self.hash_table)?;
         drop(object);

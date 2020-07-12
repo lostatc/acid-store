@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::SystemTime;
 
+use hex_literal::hex;
 use lazy_static::lazy_static;
 use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
@@ -34,20 +35,18 @@ use super::state::RepositoryState;
 use crate::repo::{Chunking, Compression, ResourceLimit};
 use crate::store::DataStore;
 
-lazy_static! {
-    /// The instance to use when an instance isn't supplied.
-    static ref GLOBAL_INSTANCE: Uuid =
-        Uuid::parse_str("ea978302-bfd8-11ea-b92b-031a9ad75c07").unwrap();
+/// The instance to use when an instance isn't supplied.
+const GLOBAL_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92b 031a9ad75c07"));
 
+/// The current repository format version ID.
+///
+/// This must be changed any time a backwards-incompatible change is made to the repository
+/// format.
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("17597ef8 bce7 11ea b70b 17210b172c53"));
+
+lazy_static! {
     /// A table of locks on repositories.
     static ref REPO_LOCKS: Mutex<LockTable> = Mutex::new(LockTable::new());
-
-    /// The current repository format version ID.
-    ///
-    /// This must be changed any time a backwards-incompatible change is made to the repository
-    /// format.
-    static ref VERSION_ID: Uuid =
-        Uuid::parse_str("17597ef8-bce7-11ea-b70b-17210b172c53").unwrap();
 }
 
 /// Open or create a repository from a `DataStore`.
@@ -69,7 +68,7 @@ impl<S: DataStore> OpenOptions<S> {
             config: RepositoryConfig::default(),
             locking: LockStrategy::Abort,
             password: None,
-            instance: *GLOBAL_INSTANCE,
+            instance: GLOBAL_INSTANCE,
         }
     }
 
@@ -183,12 +182,12 @@ impl<S: DataStore> OpenOptions<S> {
         // Read the repository version to see if this is a compatible repository.
         let serialized_version = self
             .store
-            .read_block(*VERSION_BLOCK_ID)
+            .read_block(VERSION_BLOCK_ID)
             .map_err(anyhow::Error::from)?
             .ok_or(crate::Error::NotFound)?;
         let version =
             Uuid::from_slice(serialized_version.as_slice()).map_err(|_| crate::Error::Corrupt)?;
-        if version != *VERSION_ID {
+        if version != VERSION_ID {
             return Err(crate::Error::UnsupportedFormat);
         }
 
@@ -196,7 +195,7 @@ impl<S: DataStore> OpenOptions<S> {
         // acquiring the lock.
         let serialized_metadata = self
             .store
-            .read_block(*METADATA_BLOCK_ID)
+            .read_block(METADATA_BLOCK_ID)
             .map_err(anyhow::Error::from)?
             .ok_or(crate::Error::Corrupt)?;
         let metadata: RepositoryMetadata =
@@ -336,7 +335,7 @@ impl<S: DataStore> OpenOptions<S> {
         // Check if the repository already exists.
         if self
             .store
-            .read_block(*VERSION_BLOCK_ID)
+            .read_block(VERSION_BLOCK_ID)
             .map_err(anyhow::Error::from)?
             .is_some()
         {
@@ -434,13 +433,13 @@ impl<S: DataStore> OpenOptions<S> {
         // Write the repository metadata.
         let serialized_metadata = to_vec(&metadata).expect("Could not serialize metadata.");
         self.store
-            .write_block(*METADATA_BLOCK_ID, &serialized_metadata)
+            .write_block(METADATA_BLOCK_ID, &serialized_metadata)
             .map_err(anyhow::Error::from)?;
 
         // Write the repository version. We do this last because this signifies that the repository
         // is done being created.
         self.store
-            .write_block(*VERSION_BLOCK_ID, VERSION_ID.as_bytes())
+            .write_block(VERSION_BLOCK_ID, VERSION_ID.as_bytes())
             .map_err(anyhow::Error::from)?;
 
         let state = RepositoryState {
@@ -480,7 +479,7 @@ impl<S: DataStore> OpenOptions<S> {
     {
         if self
             .store
-            .read_block(*VERSION_BLOCK_ID)
+            .read_block(VERSION_BLOCK_ID)
             .map_err(anyhow::Error::from)?
             .is_some()
         {

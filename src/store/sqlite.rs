@@ -18,18 +18,14 @@
 
 use std::path::{Path, PathBuf};
 
+use hex_literal::hex;
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-use lazy_static::lazy_static;
-
 use crate::store::common::{DataStore, OpenOption, OpenStore};
 
-lazy_static! {
-    /// A UUID which acts as the version ID of the store format.
-    static ref CURRENT_VERSION: Uuid =
-        Uuid::parse_str("08d14eb8-4156-11ea-8ec7-a31cc3dfe2e4").unwrap();
-}
+/// A UUID which acts as the version ID of the store format.
+const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("08d14eb8 4156 11ea 8ec7 a31cc3dfe2e4"));
 
 /// A `DataStore` which stores data in a SQLite database.
 ///
@@ -99,7 +95,7 @@ impl SqliteStore {
         let version = Uuid::from_slice(version_bytes.as_slice())
             .map_err(|_| crate::Error::UnsupportedFormat)?;
 
-        if version != *CURRENT_VERSION {
+        if version != CURRENT_VERSION {
             return Err(crate::Error::UnsupportedFormat);
         }
 
