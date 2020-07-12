@@ -354,7 +354,7 @@ impl<S: DataStore> ObjectRepository<S> {
             .lock()
             .unwrap()
             .list_blocks()
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         Ok(all_blocks
             .iter()
@@ -391,7 +391,7 @@ impl<S: DataStore> ObjectRepository<S> {
             .lock()
             .unwrap()
             .write_block(chunks_id, &encoded_chunks)
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
         self.state.metadata.header.chunks = chunks_id;
 
         let serialized_managed =
@@ -405,7 +405,7 @@ impl<S: DataStore> ObjectRepository<S> {
             .lock()
             .unwrap()
             .write_block(managed_id, &encoded_managed)
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
         self.state.metadata.header.managed = managed_id;
 
         let serialized_handles =
@@ -419,7 +419,7 @@ impl<S: DataStore> ObjectRepository<S> {
             .lock()
             .unwrap()
             .write_block(handles_id, &encoded_handles)
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
         self.state.metadata.header.handles = handles_id;
 
         // Write the repository metadata, atomically completing the commit.
@@ -430,7 +430,7 @@ impl<S: DataStore> ObjectRepository<S> {
             .lock()
             .unwrap()
             .write_block(METADATA_BLOCK_ID, &serialized_metadata)
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         // After changes are committed, remove any unused chunks from the data store.
         let referenced_chunks = self
@@ -450,7 +450,7 @@ impl<S: DataStore> ObjectRepository<S> {
                 if !referenced_chunks.contains(&stored_chunk) {
                     store
                         .remove_block(stored_chunk)
-                        .map_err(anyhow::Error::from)?;
+                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
                 }
             }
         }
@@ -554,7 +554,7 @@ impl<S: DataStore> ObjectRepository<S> {
         // Read and deserialize the metadata.
         let serialized_metadata = match store
             .read_block(METADATA_BLOCK_ID)
-            .map_err(anyhow::Error::from)?
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
         {
             Some(data) => data,
             None => return Err(crate::Error::NotFound),

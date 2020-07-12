@@ -183,7 +183,7 @@ impl<S: DataStore> OpenOptions<S> {
         let serialized_version = self
             .store
             .read_block(VERSION_BLOCK_ID)
-            .map_err(anyhow::Error::from)?
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
             .ok_or(crate::Error::NotFound)?;
         let version =
             Uuid::from_slice(serialized_version.as_slice()).map_err(|_| crate::Error::Corrupt)?;
@@ -196,7 +196,7 @@ impl<S: DataStore> OpenOptions<S> {
         let serialized_metadata = self
             .store
             .read_block(METADATA_BLOCK_ID)
-            .map_err(anyhow::Error::from)?
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
             .ok_or(crate::Error::Corrupt)?;
         let metadata: RepositoryMetadata =
             from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
@@ -235,7 +235,7 @@ impl<S: DataStore> OpenOptions<S> {
         let encrypted_chunks = self
             .store
             .read_block(metadata.header.chunks)
-            .map_err(anyhow::Error::from)?
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
             .ok_or(crate::Error::Corrupt)?;
         let compressed_chunks = metadata
             .encryption
@@ -251,7 +251,7 @@ impl<S: DataStore> OpenOptions<S> {
         let encrypted_managed = self
             .store
             .read_block(metadata.header.managed)
-            .map_err(anyhow::Error::from)?
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
             .ok_or(crate::Error::Corrupt)?;
         let compressed_managed = metadata
             .encryption
@@ -268,7 +268,7 @@ impl<S: DataStore> OpenOptions<S> {
         let encrypted_table = self
             .store
             .read_block(metadata.header.handles)
-            .map_err(anyhow::Error::from)?
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
             .ok_or(crate::Error::Corrupt)?;
         let compressed_table = metadata
             .encryption
@@ -336,7 +336,7 @@ impl<S: DataStore> OpenOptions<S> {
         if self
             .store
             .read_block(VERSION_BLOCK_ID)
-            .map_err(anyhow::Error::from)?
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
             .is_some()
         {
             return Err(crate::Error::AlreadyExists);
@@ -381,7 +381,7 @@ impl<S: DataStore> OpenOptions<S> {
         let chunks_id = Uuid::new_v4();
         self.store
             .write_block(chunks_id, &encrypted_chunks)
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         // Generate and write the managed object map.
         let mut managed = HashMap::new();
@@ -395,7 +395,7 @@ impl<S: DataStore> OpenOptions<S> {
         let managed_id = Uuid::new_v4();
         self.store
             .write_block(managed_id, &encrypted_managed)
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         // Generate and write the handle ID table.
         let handle_table = IdTable::new();
@@ -408,7 +408,7 @@ impl<S: DataStore> OpenOptions<S> {
         let handles_id = Uuid::new_v4();
         self.store
             .write_block(handles_id, &encrypted_handles)
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         let header = Header {
             chunks: chunks_id,
@@ -434,13 +434,13 @@ impl<S: DataStore> OpenOptions<S> {
         let serialized_metadata = to_vec(&metadata).expect("Could not serialize metadata.");
         self.store
             .write_block(METADATA_BLOCK_ID, &serialized_metadata)
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         // Write the repository version. We do this last because this signifies that the repository
         // is done being created.
         self.store
             .write_block(VERSION_BLOCK_ID, VERSION_ID.as_bytes())
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         let state = RepositoryState {
             store: Mutex::new(self.store),
@@ -480,7 +480,7 @@ impl<S: DataStore> OpenOptions<S> {
         if self
             .store
             .read_block(VERSION_BLOCK_ID)
-            .map_err(anyhow::Error::from)?
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
             .is_some()
         {
             self.open()
