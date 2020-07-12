@@ -18,11 +18,10 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
 
+use hex_literal::hex;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use uuid::Uuid;
-
-use lazy_static::lazy_static;
 
 use crate::repo::common::check_version;
 use crate::repo::object::{ObjectHandle, ObjectRepository};
@@ -30,18 +29,14 @@ use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepositoryInfo};
 use crate::store::DataStore;
 use std::borrow::Borrow;
 
-lazy_static! {
-    /// The ID of the managed object which stores the table of keys for the repository.
-    static ref TABLE_OBJECT_ID: Uuid =
-        Uuid::parse_str("9db2a036-bd2a-11ea-872b-c308cda3d138").unwrap();
+/// The ID of the managed object which stores the table of keys for the repository.
+const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("9db2a036 bd2a 11ea 872b c308cda3d138"));
 
-    /// The current repository format version ID.
-    ///
-    /// This must be changed any time a backwards-incompatible change is made to the repository
-    /// format.
-    static ref VERSION_ID: Uuid =
-        Uuid::parse_str("5dca8ec4-bd3a-11ea-bedd-1f70522414fd").unwrap();
-}
+/// The current repository format version ID.
+///
+/// This must be changed any time a backwards-incompatible change is made to the repository
+/// format.
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("5dca8ec4 bd3a 11ea bedd 1f70522414fd"));
 
 /// A type which can be used as a key in a `KeyRepository`.
 pub trait Key: Eq + Hash + Clone + Serialize + DeserializeOwned {}
@@ -64,10 +59,10 @@ pub struct KeyRepository<K: Key, S: DataStore> {
 
 impl<K: Key, S: DataStore> ConvertRepo<S> for KeyRepository<K, S> {
     fn from_repo(mut repository: ObjectRepository<S>) -> crate::Result<Self> {
-        if check_version(&mut repository, *VERSION_ID)? {
+        if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the key table.
             let mut object = repository
-                .managed_object(*TABLE_OBJECT_ID)
+                .managed_object(TABLE_OBJECT_ID)
                 .ok_or(crate::Error::Corrupt)?;
             let table = object.deserialize()?;
 
@@ -77,7 +72,7 @@ impl<K: Key, S: DataStore> ConvertRepo<S> for KeyRepository<K, S> {
             })
         } else {
             // Create and write a key table.
-            let mut object = repository.add_managed(*TABLE_OBJECT_ID);
+            let mut object = repository.add_managed(TABLE_OBJECT_ID);
             let table = HashMap::new();
             object.serialize(&table)?;
             drop(object);
@@ -140,7 +135,7 @@ impl<K: Key, S: DataStore> KeyRepository<K, S> {
     }
 
     /// Return a `ReadOnlyObject` for reading the data associated with `key`.
-    /// 
+    ///
     /// This returns `None` if the given key does not exist in the repository.
     ///
     /// The returned object provides read-only access to the data. To get read-write access, use
@@ -155,7 +150,7 @@ impl<K: Key, S: DataStore> KeyRepository<K, S> {
     }
 
     /// Return an `Object` for reading and writing the data associated with `key`.
-    /// 
+    ///
     /// This returns `None` if the given key does not exist in the repository.
     ///
     /// The returned object provides read-write access to the data. To get read-only access, use
@@ -202,7 +197,7 @@ impl<K: Key, S: DataStore> KeyRepository<K, S> {
     /// See `ObjectRepository::commit` for details.
     pub fn commit(&mut self) -> crate::Result<()> {
         // Serialize and write the key table.
-        let mut object = self.repository.add_managed(*TABLE_OBJECT_ID);
+        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
         object.serialize(&self.key_table)?;
         drop(object);
 

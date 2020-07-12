@@ -17,7 +17,7 @@
 use std::collections::{HashMap, HashSet};
 use std::mem;
 
-use lazy_static::lazy_static;
+use hex_literal::hex;
 use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
 
@@ -31,15 +31,13 @@ use super::state::RepositoryState;
 use crate::repo::ConvertRepo;
 use crate::store::DataStore;
 
-lazy_static! {
-    /// The block ID of the block which stores unencrypted metadata for the repository.
-    pub(super) static ref METADATA_BLOCK_ID: Uuid =
-        Uuid::parse_str("8691d360-29c6-11ea-8bc1-2fc8cfe66f33").unwrap();
+/// The block ID of the block which stores the repository metadata.
+pub(super) const METADATA_BLOCK_ID: Uuid =
+    Uuid::from_bytes(hex!("8691d360 29c6 11ea 8bc1 2fc8cfe66f33"));
 
-    /// The block ID of the block which stores the repository format version.
-    pub(super) static ref VERSION_BLOCK_ID: Uuid =
-        Uuid::parse_str("cbf28b1c-3550-11ea-8cb0-87d7a14efe10").unwrap();
-}
+/// The block ID of the block which stores the repository format version.
+pub(super) const VERSION_BLOCK_ID: Uuid =
+    Uuid::from_bytes(hex!("cbf28b1c 3550 11ea 8cb0 87d7a14efe10"));
 
 /// A low-level repository type which provides more direct access to the underlying storage.
 ///
@@ -362,8 +360,8 @@ impl<S: DataStore> ObjectRepository<S> {
             .iter()
             .copied()
             .filter(|id| {
-                *id != *METADATA_BLOCK_ID
-                    && *id != *VERSION_BLOCK_ID
+                *id != METADATA_BLOCK_ID
+                    && *id != VERSION_BLOCK_ID
                     && *id != self.state.metadata.header.chunks
                     && *id != self.state.metadata.header.managed
                     && *id != self.state.metadata.header.handles
@@ -431,7 +429,7 @@ impl<S: DataStore> ObjectRepository<S> {
             .store
             .lock()
             .unwrap()
-            .write_block(*METADATA_BLOCK_ID, &serialized_metadata)
+            .write_block(METADATA_BLOCK_ID, &serialized_metadata)
             .map_err(anyhow::Error::from)?;
 
         // After changes are committed, remove any unused chunks from the data store.
@@ -555,7 +553,7 @@ impl<S: DataStore> ObjectRepository<S> {
     pub fn peek_info(store: &mut S) -> crate::Result<RepositoryInfo> {
         // Read and deserialize the metadata.
         let serialized_metadata = match store
-            .read_block(*METADATA_BLOCK_ID)
+            .read_block(METADATA_BLOCK_ID)
             .map_err(anyhow::Error::from)?
         {
             Some(data) => data,
