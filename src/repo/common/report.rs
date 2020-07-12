@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use uuid::Uuid;
 
@@ -26,16 +26,18 @@ pub struct IntegrityReport {
     pub(super) corrupt_chunks: HashSet<ChunkHash>,
 
     /// The IDs of managed objects which are corrupt.
-    pub(super) corrupt_managed: HashSet<Uuid>,
+    pub(super) corrupt_managed: HashMap<Uuid, HashSet<Uuid>>,
 }
 
 impl IntegrityReport {
-    /// Returns whether there is any corrupt data in the repository.
+    /// Returns whether there is any corrupt data in any instance of the repository.
     pub fn is_corrupt(&self) -> bool {
         !self.corrupt_chunks.is_empty()
     }
 
     /// Returns whether the object associated with `handle` is valid (not corrupt).
+    ///
+    /// The given `handle` can be from any instance of the repository.
     pub fn check_unmanaged(&self, handle: &ObjectHandle) -> bool {
         if self.corrupt_chunks.is_empty() {
             // If there are no corrupt chunks, the object can't be corrupt.
@@ -50,8 +52,11 @@ impl IntegrityReport {
         true
     }
 
-    /// Returns a list of managed objects which are corrupt.
-    pub fn list_managed(&self) -> &HashSet<Uuid> {
+    /// Return the set of managed objects from each instance which are corrupt.
+    ///
+    /// This returns a map of instance IDs to sets of IDs of managed objects from that instance
+    /// which are corrupt.
+    pub fn list_managed(&self) -> &HashMap<Uuid, HashSet<Uuid>> {
         &self.corrupt_managed
     }
 }
