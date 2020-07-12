@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use super::chunking::Chunking;
 use super::compression::Compression;
-use super::config::RepositoryConfig;
+use super::config::RepoConfig;
 use super::encryption::{Encryption, KeySalt, ResourceLimit};
 
 /// Chunk IDs for accessing persistent repository state.
@@ -38,7 +38,7 @@ pub struct Header {
 
 /// Metadata for a repository.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RepositoryMetadata {
+pub struct RepoMetadata {
     /// The unique ID of this repository.
     pub id: Uuid,
 
@@ -70,12 +70,12 @@ pub struct RepositoryMetadata {
     pub creation_time: SystemTime,
 }
 
-impl RepositoryMetadata {
-    /// Create a `RepositoryInfo` using the metadata in this struct.
-    pub fn to_info(&self) -> RepositoryInfo {
-        RepositoryInfo {
+impl RepoMetadata {
+    /// Create a `RepoInfo` using the metadata in this struct.
+    pub fn to_info(&self) -> RepoInfo {
+        RepoInfo {
             id: self.id,
-            config: RepositoryConfig {
+            config: RepoConfig {
                 chunking: self.chunking.clone(),
                 compression: self.compression.clone(),
                 encryption: self.encryption.clone(),
@@ -89,13 +89,13 @@ impl RepositoryMetadata {
 
 /// Information about a repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RepositoryInfo {
+pub struct RepoInfo {
     id: Uuid,
-    config: RepositoryConfig,
+    config: RepoConfig,
     created: SystemTime,
 }
 
-impl RepositoryInfo {
+impl RepoInfo {
     /// The unique ID for this repository.
     ///
     /// This ID is different from the instance ID; this ID is shared between all instances of a
@@ -105,7 +105,7 @@ impl RepositoryInfo {
     }
 
     /// The configuration used to create this repository.
-    pub fn config(&self) -> &RepositoryConfig {
+    pub fn config(&self) -> &RepoConfig {
         &self.config
     }
 

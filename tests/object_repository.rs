@@ -18,20 +18,20 @@
 
 use std::io::{Read, Write};
 
-use acid_store::repo::object::ObjectRepository;
+use acid_store::repo::object::ObjectRepo;
 use acid_store::repo::{ConvertRepo, Encryption, OpenOptions};
 use acid_store::store::{DataStore, MemoryStore};
 use common::random_buffer;
 
 mod common;
 
-fn create_repo() -> acid_store::Result<ObjectRepository<MemoryStore>> {
+fn create_repo() -> acid_store::Result<ObjectRepo<MemoryStore>> {
     OpenOptions::new(MemoryStore::new()).create_new()
 }
 
 #[test]
 fn change_password() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .encryption(Encryption::XChaCha20Poly1305)
         .password(b"Password")
         .create_new()?;
@@ -40,17 +40,17 @@ fn change_password() -> anyhow::Result<()> {
 
     OpenOptions::new(repo.into_store())
         .password(b"New password")
-        .open::<ObjectRepository<_>>()?;
+        .open::<ObjectRepo<_>>()?;
 
     Ok(())
 }
 
 #[test]
 fn peek_info() -> anyhow::Result<()> {
-    let repository: ObjectRepository<_> = OpenOptions::new(MemoryStore::new()).create_new()?;
+    let repository: ObjectRepo<_> = OpenOptions::new(MemoryStore::new()).create_new()?;
     let expected_info = repository.info();
     let mut store = repository.into_store();
-    let actual_info = ObjectRepository::peek_info(&mut store)?;
+    let actual_info = ObjectRepo::peek_info(&mut store)?;
 
     assert_eq!(actual_info, expected_info);
     Ok(())
@@ -71,7 +71,7 @@ fn committed_changes_are_persisted() -> anyhow::Result<()> {
     repo.commit()?;
 
     // Re-open the repository.
-    let repo: ObjectRepository<_> = OpenOptions::new(repo.into_store()).open()?;
+    let repo: ObjectRepo<_> = OpenOptions::new(repo.into_store()).open()?;
 
     // Read that data from the repository.
     let mut actual_data = Vec::with_capacity(expected_data.len());
@@ -96,7 +96,7 @@ fn uncommitted_changes_are_not_persisted() -> anyhow::Result<()> {
     drop(object);
 
     // Re-open the repository.
-    let repo: ObjectRepository<_> = OpenOptions::new(repo.into_store()).open()?;
+    let repo: ObjectRepo<_> = OpenOptions::new(repo.into_store()).open()?;
 
     assert!(repo.unmanaged_object(&handle).is_none());
 
@@ -117,7 +117,7 @@ fn unused_data_is_reclaimed_on_commit() -> anyhow::Result<()> {
     let mut store = repo.into_repo()?.into_store();
     let original_blocks = store.list_blocks()?.len();
 
-    let mut repo = OpenOptions::new(store).open::<ObjectRepository<_>>()?;
+    let mut repo = OpenOptions::new(store).open::<ObjectRepo<_>>()?;
     repo.remove_unmanaged(&handle);
     repo.commit()?;
 

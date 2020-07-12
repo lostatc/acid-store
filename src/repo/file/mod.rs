@@ -22,7 +22,7 @@ pub use self::entry::{Entry, FileType};
 #[cfg(feature = "file-metadata")]
 pub use self::metadata::CommonMetadata;
 pub use self::metadata::{FileMetadata, NoMetadata};
-pub use self::repository::FileRepository;
+pub use self::repository::FileRepo;
 pub use self::special::{NoSpecialType, SpecialType};
 #[cfg(all(unix, feature = "file-metadata"))]
 pub use {

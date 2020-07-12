@@ -31,7 +31,7 @@ use s3::credentials::Credentials;
 #[cfg(feature = "store-s3")]
 use s3::region::Region;
 
-use acid_store::repo::{Chunking, Compression, Encryption, RepositoryConfig};
+use acid_store::repo::{Chunking, Compression, Encryption, RepoConfig};
 use lazy_static::lazy_static;
 
 /// The minimum size of test data buffers.
@@ -42,8 +42,8 @@ pub const MAX_BUFFER_SIZE: usize = 2048;
 
 lazy_static! {
     /// The repository config to use for testing IO.
-    pub static ref REPO_IO_CONFIG: RepositoryConfig = {
-        let mut config = RepositoryConfig::default();
+    pub static ref REPO_IO_CONFIG: RepoConfig = {
+        let mut config = RepoConfig::default();
         config.chunking = Chunking::Zpaq { bits: 8 };
         config.encryption = Encryption::XChaCha20Poly1305;
         config.compression = Compression::Lz4 { level: 2 };

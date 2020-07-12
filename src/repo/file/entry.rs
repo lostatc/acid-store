@@ -20,7 +20,7 @@ use super::metadata::FileMetadata;
 use crate::repo::file::special::SpecialType;
 use crate::repo::object::ObjectHandle;
 
-/// A type of file in a `FileRepository`.
+/// A type of file in a `FileRepo`.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FileType<T> {
     /// A regular file.
@@ -39,12 +39,12 @@ impl<T: SpecialType> From<T> for FileType<T> {
     }
 }
 
-/// An entry in a `FileRepository` which represents a regular file, directory, or special file.
+/// An entry in a `FileRepo` which represents a regular file, directory, or special file.
 ///
 /// An entry may or may not have metadata associated with it. When an entry is created by archiving
-/// a file in the file system (`FileRepository::archive`), it will have the metadata of that file.
+/// a file in the file system (`FileRepo::archive`), it will have the metadata of that file.
 /// However, entries can also be created that have no metadata. This allows for extracting files to
-/// the file system (`FileRepository::extract`) without copying any metadata.
+/// the file system (`FileRepo::extract`) without copying any metadata.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry<T, M> {
     /// The type of file this entry represents.

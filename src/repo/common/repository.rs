@@ -24,10 +24,10 @@ use uuid::Uuid;
 use super::chunk_store::{ChunkEncoder, ChunkReader};
 use super::encryption::{EncryptionKey, KeySalt};
 use super::id_table::IdTable;
-use super::metadata::{RepositoryInfo, RepositoryMetadata};
+use super::metadata::{RepoInfo, RepoMetadata};
 use super::object::{chunk_hash, Object, ObjectHandle, ReadOnlyObject};
 use super::report::IntegrityReport;
-use super::state::RepositoryState;
+use super::state::RepoState;
 use crate::repo::ConvertRepo;
 use crate::store::DataStore;
 
@@ -51,7 +51,7 @@ pub(super) const VERSION_BLOCK_ID: Uuid =
 /// see the module-level documentation for `acid_store::repo`.
 ///
 /// # Managed and unmanaged objects
-/// An `ObjectRepository` has two modes for storing data, *managed* objects and *unmanaged* objects.
+/// An `ObjectRepo` has two modes for storing data, *managed* objects and *unmanaged* objects.
 ///
 /// Unmanaged objects are accessed via an `ObjectHandle`. Object handles are not stored in the
 /// repository, and it's the user's responsibility to keep track of them. Without an object handle,
@@ -66,14 +66,14 @@ pub(super) const VERSION_BLOCK_ID: Uuid =
 /// managed objects, but not necessarily for unmanaged objects. `ObjectHandle` is serializable, so
 /// it can be stored in other managed or unmanaged objects.
 ///
-/// However, if `ObjectRepository` only had unmanaged objects, and all the object handles were
+/// However, if `ObjectRepo` only had unmanaged objects, and all the object handles were
 /// stored in other unmanaged objects, you would have a chicken-and-egg problem and wouldn't be able
 /// to access any data! This is where managed objects are useful. They can be used to store
 /// object handles (and other data) with a predictable UUID, potentially set at compile time.
 #[derive(Debug)]
-pub struct ObjectRepository<S: DataStore> {
+pub struct ObjectRepo<S: DataStore> {
     /// The state for this repository.
-    pub(super) state: RepositoryState<S>,
+    pub(super) state: RepoState<S>,
 
     /// The instance ID of this repository instance.
     pub(super) instance_id: Uuid,
@@ -90,21 +90,21 @@ pub struct ObjectRepository<S: DataStore> {
     pub(super) handle_table: IdTable,
 }
 
-impl<S: DataStore> ConvertRepo<S> for ObjectRepository<S> {
-    fn from_repo(repository: ObjectRepository<S>) -> crate::Result<Self>
+impl<S: DataStore> ConvertRepo<S> for ObjectRepo<S> {
+    fn from_repo(repository: ObjectRepo<S>) -> crate::Result<Self>
     where
         Self: Sized,
     {
         Ok(repository)
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepository<S>> {
+    fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
         self.commit()?;
         Ok(self)
     }
 }
 
-impl<S: DataStore> ObjectRepository<S> {
+impl<S: DataStore> ObjectRepo<S> {
     /// Return whether there is an unmanaged object associated with `handle` in this repository.
     pub fn contains_unmanaged(&self, handle: &ObjectHandle) -> bool {
         handle.repo_id == self.state.metadata.id
@@ -540,7 +540,7 @@ impl<S: DataStore> ObjectRepository<S> {
     }
 
     /// Return information about the repository.
-    pub fn info(&self) -> RepositoryInfo {
+    pub fn info(&self) -> RepoInfo {
         self.state.metadata.to_info()
     }
 
@@ -550,7 +550,7 @@ impl<S: DataStore> ObjectRepository<S> {
     /// - `Error::NotFound`: There is no repository in the given `store`.
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::Store`: An error occurred with the data store.
-    pub fn peek_info(store: &mut S) -> crate::Result<RepositoryInfo> {
+    pub fn peek_info(store: &mut S) -> crate::Result<RepoInfo> {
         // Read and deserialize the metadata.
         let serialized_metadata = match store
             .read_block(METADATA_BLOCK_ID)
@@ -559,7 +559,7 @@ impl<S: DataStore> ObjectRepository<S> {
             Some(data) => data,
             None => return Err(crate::Error::NotFound),
         };
-        let metadata: RepositoryMetadata =
+        let metadata: RepoMetadata =
             from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
         Ok(metadata.to_info())

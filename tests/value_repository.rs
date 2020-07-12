@@ -16,7 +16,7 @@
 
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
-use acid_store::repo::value::ValueRepository;
+use acid_store::repo::value::ValueRepo;
 use acid_store::repo::{ConvertRepo, OpenOptions};
 use acid_store::store::MemoryStore;
 use common::assert_contains_all;
@@ -26,7 +26,7 @@ mod common;
 /// A serializable value to test with.
 const SERIALIZABLE_VALUE: (bool, i32) = (true, 42);
 
-fn create_repo() -> acid_store::Result<ValueRepository<String, MemoryStore>> {
+fn create_repo() -> acid_store::Result<ValueRepo<String, MemoryStore>> {
     OpenOptions::new(MemoryStore::new()).create_new()
 }
 
@@ -35,7 +35,7 @@ fn open_repository() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.commit()?;
     let store = repository.into_repo()?.into_store();
-    OpenOptions::new(store).open::<ValueRepository<String, _>>()?;
+    OpenOptions::new(store).open::<ValueRepo<String, _>>()?;
     Ok(())
 }
 

@@ -16,6 +16,6 @@
 
 //! A persistent, heterogeneous, map-like collection.
 
-pub use self::repository::ValueRepository;
+pub use self::repository::ValueRepo;
 
 mod repository;

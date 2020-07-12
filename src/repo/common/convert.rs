@@ -16,10 +16,10 @@
 
 use uuid::Uuid;
 
-use super::repository::ObjectRepository;
+use super::repository::ObjectRepo;
 use crate::store::DataStore;
 
-/// A repository which is backed by an `ObjectRepository`.
+/// A repository which is backed by an `ObjectRepo`.
 pub trait ConvertRepo<S: DataStore> {
     /// Convert the given `repository` to a repository of this type.
     ///
@@ -32,11 +32,11 @@ pub trait ConvertRepo<S: DataStore> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    fn from_repo(repository: ObjectRepository<S>) -> crate::Result<Self>
+    fn from_repo(repository: ObjectRepo<S>) -> crate::Result<Self>
     where
         Self: Sized;
 
-    /// Consume this repository and return the backing `ObjectRepository`.
+    /// Consume this repository and return the backing `ObjectRepo`.
     ///
     /// This commits any uncommitted changes before returning.
     ///
@@ -44,7 +44,7 @@ pub trait ConvertRepo<S: DataStore> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    fn into_repo(self) -> crate::Result<ObjectRepository<S>>;
+    fn into_repo(self) -> crate::Result<ObjectRepo<S>>;
 
     /// Switch from one instance of a repository to another.
     ///

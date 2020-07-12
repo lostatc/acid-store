@@ -25,7 +25,7 @@
 //! read data from them and write data to them.
 //!
 //! Each sub-module of this module contains a different repository type. If you're not sure which
-//! one you should use, `KeyRepository` has the most general use-case.
+//! one you should use, `KeyRepo` has the most general use-case.
 //!
 //! You can open or create a repository using `OpenOptions`.
 //!
@@ -57,7 +57,7 @@
 //! repository does not attempt to hide the size of chunks produced by the chunking algorithm, but
 //! information about which chunks belong to which objects is encrypted.
 //!
-//! The information in `RepositoryInfo` is never encrypted, and can be read without opening the
+//! The information in `RepoInfo` is never encrypted, and can be read without opening the
 //! repository.
 //!
 //! # Instances
@@ -74,8 +74,8 @@
 //! between them. This also means that only one instance of a repository can be open at a time.
 //!
 //! This feature allows for using multiple repository types within the same `DataStore`. For
-//! example, you could have a data store which contains both a `FileRepository` and a
-//! `VersionRepository` by giving them different instance IDs.
+//! example, you could have a data store which contains both a `FileRepo` and a
+//! `VersionRepo` by giving them different instance IDs.
 //!
 //! This feature can also be used to manage memory usage. The amount of memory used by a repository
 //! while it's open is typically proportional to the number of objects in the repository. If you
@@ -84,12 +84,12 @@
 
 pub use self::common::{
     Chunking, Compression, ContentId, ConvertRepo, Encryption, LockStrategy, Object, OpenOptions,
-    ReadOnlyObject, RepositoryConfig, RepositoryInfo, ResourceLimit,
+    ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit,
 };
 
 /// A low-level repository type which provides more direct access to the underlying storage.
 pub mod object {
-    pub use super::common::{IntegrityReport, ObjectHandle, ObjectRepository};
+    pub use super::common::{IntegrityReport, ObjectHandle, ObjectRepo};
 }
 
 mod common;

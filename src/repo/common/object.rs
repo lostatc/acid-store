@@ -30,7 +30,7 @@ use uuid::Uuid;
 
 use super::chunk_store::{ChunkReader, ChunkWriter};
 use super::id_table::UniqueId;
-use super::state::RepositoryState;
+use super::state::RepoState;
 use super::state::{ChunkLocation, ObjectState};
 use crate::store::DataStore;
 
@@ -61,8 +61,8 @@ pub struct Chunk {
 
 /// A handle for accessing data in a repository.
 ///
-/// An `ObjectHandle` is like an address for locating data stored in an `ObjectRepository`. It can't
-/// be used to read or write data directly, but it can be used with `ObjectRepository`to get an
+/// An `ObjectHandle` is like an address for locating data stored in an `ObjectRepo`. It can't
+/// be used to read or write data directly, but it can be used with `ObjectRepo`to get an
 /// `Object` or a `ReadOnlyObject`.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ObjectHandle {
@@ -77,7 +77,7 @@ pub struct ObjectHandle {
 
     // We could just give each handle a unique UUID instead of having the repository ID, instance
     // ID, *and* handle ID, but using `UniqueId` instead of `Uuid` uses less memory in the
-    // `ObjectRepository`. If we used UUIDs, the repository would have to store a UUID in memory for
+    // `ObjectRepo`. If we used UUIDs, the repository would have to store a UUID in memory for
     // every object, whereas `IdTable` is much more memory efficient.
     /// The ID of this handle which is unique within its repository.
     ///
@@ -202,7 +202,7 @@ impl ContentId {
 
 /// A wrapper for getting information about an object.
 struct ObjectInfo<'a, S: DataStore> {
-    repo_state: &'a RepositoryState<S>,
+    repo_state: &'a RepoState<S>,
     object_state: &'a ObjectState,
     handle: &'a ObjectHandle,
 }
@@ -253,7 +253,7 @@ impl<'a, S: DataStore> ObjectInfo<'a, S> {
 }
 
 struct ObjectReader<'a, S: DataStore> {
-    repo_state: &'a RepositoryState<S>,
+    repo_state: &'a RepoState<S>,
     object_state: &'a mut ObjectState,
     handle: &'a ObjectHandle,
 }
@@ -346,7 +346,7 @@ impl<'a, S: DataStore> Read for ObjectReader<'a, S> {
 
 /// A wrapper for writing data to an object.
 struct ObjectWriter<'a, S: DataStore> {
-    repo_state: &'a mut RepositoryState<S>,
+    repo_state: &'a mut RepoState<S>,
     object_state: &'a mut ObjectState,
     handle: &'a mut ObjectHandle,
 }
@@ -530,7 +530,7 @@ impl<'a, S: DataStore> Write for ObjectWriter<'a, S> {
 #[derive(Debug)]
 pub struct ReadOnlyObject<'a, S: DataStore> {
     /// The state for the object repository.
-    repo_state: &'a RepositoryState<S>,
+    repo_state: &'a RepoState<S>,
 
     /// The state for the object itself.
     object_state: ObjectState,
@@ -540,7 +540,7 @@ pub struct ReadOnlyObject<'a, S: DataStore> {
 }
 
 impl<'a, S: DataStore> ReadOnlyObject<'a, S> {
-    pub(crate) fn new(repo_state: &'a RepositoryState<S>, handle: &'a ObjectHandle) -> Self {
+    pub(crate) fn new(repo_state: &'a RepoState<S>, handle: &'a ObjectHandle) -> Self {
         Self {
             repo_state,
             object_state: ObjectState::new(repo_state.metadata.chunking.to_chunker()),
@@ -641,7 +641,7 @@ impl<'a, S: DataStore> Seek for ReadOnlyObject<'a, S> {
 #[derive(Debug)]
 pub struct Object<'a, S: DataStore> {
     /// The state for the object repository.
-    repo_state: &'a mut RepositoryState<S>,
+    repo_state: &'a mut RepoState<S>,
 
     /// The state for the object itself.
     object_state: ObjectState,
@@ -651,10 +651,7 @@ pub struct Object<'a, S: DataStore> {
 }
 
 impl<'a, S: DataStore> Object<'a, S> {
-    pub(crate) fn new(
-        repo_state: &'a mut RepositoryState<S>,
-        handle: &'a mut ObjectHandle,
-    ) -> Self {
+    pub(crate) fn new(repo_state: &'a mut RepoState<S>, handle: &'a mut ObjectHandle) -> Self {
         let chunker = repo_state.metadata.chunking.to_chunker();
         Self {
             repo_state,

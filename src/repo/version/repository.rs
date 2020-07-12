@@ -27,9 +27,9 @@ use uuid::Uuid;
 use super::version::{KeyInfo, Version};
 use crate::repo::common::check_version;
 use crate::repo::key::Key;
-use crate::repo::object::ObjectRepository;
+use crate::repo::object::ObjectRepo;
 use crate::repo::version::version::VersionInfo;
-use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepositoryInfo};
+use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepoInfo};
 use crate::store::DataStore;
 
 /// The ID of the managed object which stores the table of keys for the repository.
@@ -43,7 +43,7 @@ const VERSION_ID: Uuid = Uuid::from_bytes(hex!("b1671d9c bd51 11ea ab79 8bcf24ad
 
 /// An object store with support for content versioning.
 ///
-/// This repository is an object store like `KeyRepository`, except it supports storing multiple
+/// This repository is an object store like `KeyRepo`, except it supports storing multiple
 /// versions of each object. The current version of each object is mutable, while past versions are
 /// read-only.
 ///
@@ -56,12 +56,12 @@ const VERSION_ID: Uuid = Uuid::from_bytes(hex!("b1671d9c bd51 11ea ab79 8bcf24ad
 /// ```
 ///     use std::io::{Read, Write};
 ///
-///     use acid_store::repo::{OpenOptions, Object, version::VersionRepository, RepositoryConfig};
+///     use acid_store::repo::{OpenOptions, Object, version::VersionRepo, RepoConfig};
 ///     use acid_store::store::MemoryStore;
 ///
 ///     fn main() -> acid_store::Result<()> {
 ///         let mut repository = OpenOptions::new(MemoryStore::new())
-///             .create_new::<VersionRepository<String, _>>()?;
+///             .create_new::<VersionRepo<String, _>>()?;
 ///
 ///         // Insert a new object and write some data to it.
 ///         let mut object = repository.insert(String::from("Key")).unwrap();
@@ -91,13 +91,13 @@ const VERSION_ID: Uuid = Uuid::from_bytes(hex!("b1671d9c bd51 11ea ab79 8bcf24ad
 ///
 /// ```
 #[derive(Debug)]
-pub struct VersionRepository<K: Key, S: DataStore> {
-    repository: ObjectRepository<S>,
+pub struct VersionRepo<K: Key, S: DataStore> {
+    repository: ObjectRepo<S>,
     key_table: HashMap<K, KeyInfo>,
 }
 
-impl<K: Key, S: DataStore> ConvertRepo<S> for VersionRepository<K, S> {
-    fn from_repo(mut repository: ObjectRepository<S>) -> crate::Result<Self> {
+impl<K: Key, S: DataStore> ConvertRepo<S> for VersionRepo<K, S> {
+    fn from_repo(mut repository: ObjectRepo<S>) -> crate::Result<Self> {
         if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the key table.
             let mut object = repository
@@ -125,13 +125,13 @@ impl<K: Key, S: DataStore> ConvertRepo<S> for VersionRepository<K, S> {
         }
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepository<S>> {
+    fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
         self.commit()?;
         Ok(self.repository)
     }
 }
 
-impl<K: Key, S: DataStore> VersionRepository<K, S> {
+impl<K: Key, S: DataStore> VersionRepo<K, S> {
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
@@ -364,7 +364,7 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
 
     /// Commit changes which have been made to the repository.
     ///
-    /// See `ObjectRepository::commit` for details.
+    /// See `ObjectRepo::commit` for details.
     pub fn commit(&mut self) -> crate::Result<()> {
         // Serialize and write the table of keys.
         let mut object = self.repository.managed_object_mut(TABLE_OBJECT_ID).unwrap();
@@ -377,21 +377,21 @@ impl<K: Key, S: DataStore> VersionRepository<K, S> {
 
     /// Change the password for this repository.
     ///
-    /// See `ObjectRepository::change_password` for details.
+    /// See `ObjectRepo::change_password` for details.
     #[cfg(feature = "encryption")]
     pub fn change_password(&mut self, new_password: &[u8]) {
         self.repository.change_password(new_password);
     }
 
     /// Return information about the repository.
-    pub fn info(&self) -> RepositoryInfo {
+    pub fn info(&self) -> RepoInfo {
         self.repository.info()
     }
 
     /// Return information about the repository in `store` without opening it.
     ///
-    /// See `ObjectRepository::peek_info` for details.
-    pub fn peek_info(store: &mut S) -> crate::Result<RepositoryInfo> {
-        ObjectRepository::peek_info(store)
+    /// See `ObjectRepo::peek_info` for details.
+    pub fn peek_info(store: &mut S) -> crate::Result<RepoInfo> {
+        ObjectRepo::peek_info(store)
     }
 }

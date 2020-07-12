@@ -16,7 +16,7 @@
 
 //! A content-addressable storage.
 pub use hash::HashAlgorithm;
-pub use repository::ContentRepository;
+pub use repository::ContentRepo;
 
 mod hash;
 mod repository;
