@@ -16,7 +16,7 @@
 
 use super::compression::Compression;
 use super::encryption::{Encryption, ResourceLimit};
-use crate::repo::object::Chunking;
+use crate::repo::common::Chunking;
 
 /// The configuration for an repository.
 ///

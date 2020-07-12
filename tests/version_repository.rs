@@ -19,42 +19,42 @@
 use std::io::{Read, Write};
 
 use acid_store::repo::version::VersionRepository;
-use acid_store::repo::{LockStrategy, OpenRepo};
+use acid_store::repo::{ConvertRepo, OpenOptions};
 use acid_store::store::MemoryStore;
-use common::{assert_contains_all, random_buffer, PASSWORD, REPO_CONFIG};
+use common::{assert_contains_all, random_buffer};
 
 mod common;
 
 fn create_repo() -> acid_store::Result<VersionRepository<String, MemoryStore>> {
-    VersionRepository::new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
+    OpenOptions::new(MemoryStore::new()).create_new()
 }
 
 #[test]
 fn open_repository() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.commit()?;
-    let store = repository.into_store();
-    VersionRepository::<String, _>::open_repo(store, LockStrategy::Abort, Some(PASSWORD))?;
+    let store = repository.into_repo()?.into_store();
+    OpenOptions::new(store).open::<VersionRepository<String, _>>()?;
     Ok(())
 }
 
 #[test]
-fn get_version() -> anyhow::Result<()> {
+fn read_version() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
 
     // Add a new object and write data to it.
     let expected_data = random_buffer();
-    let mut object = repository.insert("Key".into())?;
+    let mut object = repository.insert(String::from("Key")).unwrap();
     object.write_all(expected_data.as_slice())?;
     object.flush()?;
     drop(object);
 
     // Create a new version of the object.
-    let version = repository.create_version("Key".into())?;
+    let version = repository.create_version("Key").unwrap();
 
     // Read the new version.
     let mut object = repository
-        .get_version("Key", version.id())
+        .version_object("Key", version.id())
         .ok_or(acid_store::Error::NotFound)?;
     let mut actual_data = Vec::new();
     object.read_to_end(&mut actual_data)?;
@@ -69,13 +69,14 @@ fn get_version() -> anyhow::Result<()> {
 fn list_versions() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
 
-    repository.insert("Key".into())?;
-    let version1 = repository.create_version("Key".into())?;
-    let version2 = repository.create_version("Key".into())?;
-    let version3 = repository.create_version("Key".into())?;
+    repository.insert("Key".into()).unwrap();
+    let version1 = repository.create_version("Key").unwrap();
+    let version2 = repository.create_version("Key").unwrap();
+    let version3 = repository.create_version("Key").unwrap();
 
-    let expected = vec![version1, version2, version3];
-    let actual = repository.list_versions("Key")?;
+    let expected = vec![version1.id(), version2.id(), version3.id()];
+    let versions = repository.versions("Key").unwrap();
+    let actual = versions.map(|version| version.id());
 
     assert_contains_all(actual, expected);
 
@@ -86,11 +87,11 @@ fn list_versions() -> anyhow::Result<()> {
 fn remove_version() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
 
-    repository.insert("Key".into())?;
-    let version = repository.create_version("Key".into())?;
-    repository.remove_version("Key", version.id())?;
+    repository.insert(String::from("Key")).unwrap();
+    let version = repository.create_version("Key").unwrap();
+    repository.remove_version("Key", version.id());
 
-    assert!(repository.get_version("Key", version.id()).is_none());
+    assert!(repository.version_object("Key", version.id()).is_none());
     Ok(())
 }
 
@@ -98,14 +99,15 @@ fn remove_version() -> anyhow::Result<()> {
 fn remove_and_list_versions() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
 
-    repository.insert("Key".into())?;
-    let version1 = repository.create_version("Key".into())?;
-    let version2 = repository.create_version("Key".into())?;
-    let version3 = repository.create_version("Key".into())?;
-    repository.remove_version("Key", version2.id())?;
+    repository.insert("Key".into()).unwrap();
+    let version1 = repository.create_version("Key").unwrap();
+    let version2 = repository.create_version("Key").unwrap();
+    let version3 = repository.create_version("Key").unwrap();
+    repository.remove_version("Key", version2.id());
 
-    let expected = vec![version1, version3];
-    let actual = repository.list_versions("Key")?;
+    let expected = vec![version1.id(), version3.id()];
+    let versions = repository.versions("Key").unwrap();
+    let actual = versions.map(|version| version.id());
 
     assert_contains_all(actual, expected);
 
@@ -113,20 +115,28 @@ fn remove_and_list_versions() -> anyhow::Result<()> {
 }
 
 #[test]
+fn remove_and_get_version() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+
+    repository.insert("Key".into()).unwrap();
+    let version = repository.create_version("Key").unwrap();
+
+    assert_eq!(
+        repository.get_version("Key", version.id()).unwrap(),
+        version
+    );
+    assert!(repository.remove_version("Key", version.id()));
+    assert!(repository.get_version("Key", version.id()).is_none());
+
+    Ok(())
+}
+
+#[test]
 fn versioning_nonexistent_key_errs() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
-    assert!(matches!(
-        repository.create_version("Key".into()),
-        Err(acid_store::Error::NotFound)
-    ));
-    assert!(matches!(
-        repository.remove_version("Key", 1),
-        Err(acid_store::Error::NotFound)
-    ));
-    assert!(matches!(
-        repository.list_versions("Key"),
-        Err(acid_store::Error::NotFound)
-    ));
+    assert!(repository.create_version("Key").is_none());
+    assert!(!repository.remove_version("Key", 1));
+    assert!(repository.versions("Key").is_none());
     Ok(())
 }
 
@@ -134,15 +144,13 @@ fn versioning_nonexistent_key_errs() -> anyhow::Result<()> {
 fn removing_key_removes_versions() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
 
-    repository.insert("Key".into())?;
-    let version = repository.create_version("Key".into())?;
-    repository.remove("Key")?;
+    repository.insert("Key".into()).unwrap();
+    let version = repository.create_version("Key").unwrap();
+    repository.remove("Key");
 
+    assert!(repository.version_object("Key", version.id()).is_none());
+    assert!(repository.versions("Key").is_none());
     assert!(repository.get_version("Key", version.id()).is_none());
-    assert!(matches!(
-        repository.list_versions("Key"),
-        Err(acid_store::Error::NotFound)
-    ));
     Ok(())
 }
 
@@ -153,26 +161,26 @@ fn restore_version() -> anyhow::Result<()> {
     let expected_data = random_buffer();
 
     // Create an object and write data to it.
-    let mut object = repository.insert("Key".into())?;
+    let mut object = repository.insert("Key".into()).unwrap();
     object.write_all(expected_data.as_slice())?;
     object.flush()?;
     drop(object);
 
     // Create a new version.
-    let version = repository.create_version("Key".into())?;
+    let version = repository.create_version("Key").unwrap();
 
     // Modify the contents of the object.
-    let mut object = repository.get_mut("Key").unwrap();
+    let mut object = repository.object_mut("Key").unwrap();
     object.write_all(random_buffer().as_slice())?;
     object.flush()?;
     drop(object);
 
     // Restore the contents from the version.
-    repository.restore_version("Key", version.id())?;
+    assert!(repository.restore_version("Key", version.id()));
 
     // Check the contents.
     let mut actual_data = Vec::new();
-    let mut object = repository.get("Key").unwrap();
+    let mut object = repository.object("Key").unwrap();
     object.read_to_end(&mut actual_data)?;
 
     assert_eq!(actual_data, expected_data);
@@ -183,15 +191,15 @@ fn restore_version() -> anyhow::Result<()> {
 fn modifying_object_doesnt_modify_versions() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
 
-    repository.insert("Key".into())?;
-    let version = repository.create_version("Key".into())?;
+    repository.insert(String::from("Key")).unwrap();
+    let version = repository.create_version("Key").unwrap();
 
-    let mut object = repository.get_mut("Key").unwrap();
+    let mut object = repository.object_mut("Key").unwrap();
     object.write_all(random_buffer().as_slice())?;
     object.flush()?;
     drop(object);
 
-    let object = repository.get_version("Key", version.id()).unwrap();
+    let object = repository.version_object("Key", version.id()).unwrap();
     assert_eq!(object.size(), 0);
 
     Ok(())

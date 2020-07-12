@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-//! A content-addressable storage which allows for accessing data by its cryptographic hash.
-
+//! A content-addressable storage.
 pub use hash::HashAlgorithm;
 pub use repository::ContentRepository;
 

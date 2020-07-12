@@ -15,34 +15,37 @@
  */
 
 use std::cmp::Reverse;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::fs::{create_dir, create_dir_all, metadata, File, OpenOptions};
 use std::io::{self, copy, Write};
 use std::marker::PhantomData;
 use std::path::Path;
 
+use lazy_static::lazy_static;
 use relative_path::{RelativePath, RelativePathBuf};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use lazy_static::lazy_static;
-
-use crate::repo::version_id::{check_version, write_version};
-use crate::repo::{
-    LockStrategy, Object, ObjectRepository, OpenRepo, ReadOnlyObject, RepositoryConfig,
-    RepositoryInfo, RepositoryStats,
-};
+use crate::repo::common::check_version;
+use crate::repo::object::{ObjectHandle, ObjectRepository};
+use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepositoryInfo};
 use crate::store::DataStore;
 
-use super::entry::{Entry, EntryKey, FileType};
+use super::entry::{Entry, FileType};
 use super::metadata::{FileMetadata, NoMetadata};
 use super::special::{NoSpecialType, SpecialType};
+use crate::repo::file::entry::PathHandles;
 
 lazy_static! {
+    /// The ID of the managed object which stores the table of keys for the repository.
+    static ref TABLE_OBJECT_ID: Uuid = Uuid::parse_str("9c114e82-bd64-11ea-9872-ab55cbe7bb41").unwrap();
+
+    /// The ID of the managed object which stores an empty object handle.
+    static ref EMPTY_HANDLE_OBJECT_ID: Uuid = Uuid::parse_str("baff6bc4-be1f-11ea-a383-0b8ef483668f").unwrap();
+
     /// The current repository format version ID.
-    static ref VERSION_ID: Uuid =
-        Uuid::parse_str("f1eea7be-8110-4303-ac50-e548bfb6dab1").unwrap();
+    static ref VERSION_ID: Uuid = Uuid::parse_str("a61f6a58-bd64-11ea-9b59-73d36807cf1d").unwrap();
 
     /// The parent of a relative path with no parent.
     static ref EMPTY_PARENT: &'static RelativePath = &RelativePath::new("");
@@ -50,8 +53,8 @@ lazy_static! {
 
 /// A virtual file system.
 ///
-/// This is a wrapper around `ObjectRepository` which allows it to function as a virtual file
-/// system.
+/// This is a repository type which functions as a virtual file system. It supports file metadata,
+/// special file types, and importing and exporting files from and to the local file system.
 ///
 /// A `FileRepository` is composed of `Entry` values which represent either a regular file, a
 /// directory, or a special file. Files in the file system can be copied into the repository using
@@ -68,9 +71,9 @@ lazy_static! {
 /// heavily platform-dependent, the behavior of `FileRepository` can be customized through the
 /// `FileMetadata` and `SpecialType` traits.
 ///
-/// Like `ObjectRepository`, changes made to the repository are not persisted to the data store
+/// Like other repositories, changes made to the repository are not persisted to the data store
 /// until `commit` is called. For details about deduplication, compression, encryption, and locking,
-/// see `ObjectRepository`.
+/// see the module-level documentation for `acid_store::repo`.
 ///
 /// # Metadata
 ///
@@ -82,7 +85,7 @@ lazy_static! {
 ///
 /// # Special Files
 ///
-/// A `FileRepository` also accepts a `SpecialType` type parameter which determines how it handles
+/// A `FileRepository` accepts a `SpecialType` type parameter which determines how it handles
 /// special file types. The default value is `NoSpecialType`, which means that it does not attempt
 /// to handle file types beyond regular files and directories. Other implementations are provided
 /// through the `file-metadata` cargo feature. If you attempt to read an entry using a different
@@ -95,50 +98,75 @@ where
     T: SpecialType,
     M: FileMetadata,
 {
-    repository: ObjectRepository<EntryKey, S>,
+    /// The backing repository.
+    repository: ObjectRepository<S>,
+
+    /// A map of relative file paths to the handles of the objects containing their entries.
+    path_table: HashMap<RelativePathBuf, PathHandles>,
+
+    /// An object handle that will always be empty.
+    ///
+    /// The purpose of this is so that we can create an empty `ReadOnlyObject` if the user tries to
+    /// call `open` on a `FileHandle` which doesn't have a backing `ObjectHandle`.
+    empty_handle: ObjectHandle,
+
+    /// Phantom data.
     marker: PhantomData<(T, M)>,
 }
 
-impl<S, T, M> OpenRepo<S> for FileRepository<S, T, M>
+impl<S, T, M> ConvertRepo<S> for FileRepository<S, T, M>
 where
     S: DataStore,
     T: SpecialType,
     M: FileMetadata,
 {
-    fn open_repo(store: S, strategy: LockStrategy, password: Option<&[u8]>) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let repository = ObjectRepository::open_repo(store, strategy, password)?;
+    fn from_repo(mut repository: ObjectRepository<S>) -> crate::Result<Self> {
+        if check_version(&mut repository, *VERSION_ID)? {
+            // Read and deserialize the table of entry paths.
+            let mut object = repository
+                .managed_object(*TABLE_OBJECT_ID)
+                .ok_or(crate::Error::Corrupt)?;
+            let path_table = object.deserialize()?;
 
-        // Read the repository version to see if this is a compatible repository.
-        let object = repository
-            .get(&EntryKey::RepositoryVersion)
-            .ok_or(crate::Error::NotFound)?;
-        check_version(object, *VERSION_ID)?;
+            // Read and deserialize the empty object.
+            let mut object = repository
+                .managed_object(*EMPTY_HANDLE_OBJECT_ID)
+                .ok_or(crate::Error::Corrupt)?;
+            let empty_handle = object.deserialize()?;
 
-        Ok(Self {
-            repository,
-            marker: PhantomData,
-        })
+            Ok(Self {
+                repository,
+                path_table,
+                empty_handle,
+                marker: PhantomData,
+            })
+        } else {
+            // Create and write the table of entry paths.
+            let mut object = repository.add_managed(*TABLE_OBJECT_ID);
+            let path_table = HashMap::new();
+            object.serialize(&path_table)?;
+            drop(object);
+
+            // Create and serialize an empty object handle.
+            let empty_handle = repository.add_unmanaged();
+            let mut object = repository.add_managed(*EMPTY_HANDLE_OBJECT_ID);
+            object.serialize(&empty_handle)?;
+            drop(object);
+
+            repository.commit()?;
+
+            Ok(Self {
+                repository,
+                path_table,
+                empty_handle,
+                marker: PhantomData,
+            })
+        }
     }
 
-    fn new_repo(store: S, config: RepositoryConfig, password: Option<&[u8]>) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let mut repository = ObjectRepository::new_repo(store, config, password)?;
-
-        // Write the repository version.
-        let object = repository.insert(EntryKey::RepositoryVersion);
-        write_version(object, *VERSION_ID)?;
-
-        repository.commit()?;
-
-        Ok(Self {
-            repository,
-            marker: PhantomData,
-        })
+    fn into_repo(mut self) -> crate::Result<ObjectRepository<S>> {
+        self.commit()?;
+        Ok(self.repository)
     }
 }
 
@@ -150,8 +178,20 @@ where
 {
     /// Return whether there is an entry at `path`.
     pub fn exists(&self, path: impl AsRef<RelativePath>) -> bool {
-        self.repository
-            .contains(&EntryKey::Entry(path.as_ref().to_owned()))
+        self.path_table.contains_key(path.as_ref())
+    }
+
+    /// Check whether the given `path` has a parent directory in the repository.
+    fn check_parent(&self, path: &RelativePath) -> crate::Result<()> {
+        match path.parent() {
+            Some(parent) if parent != *EMPTY_PARENT => match self.entry(parent) {
+                Ok(parent_entry) if !parent_entry.is_directory() => Err(crate::Error::InvalidPath),
+                Err(crate::Error::NotFound) => Err(crate::Error::InvalidPath),
+                Err(error) => Err(error),
+                _ => Ok(()),
+            },
+            _ => Ok(()),
+        }
     }
 
     /// Add a new empty file or directory entry to the repository at the given `path`.
@@ -173,32 +213,30 @@ where
             return Err(crate::Error::AlreadyExists);
         }
 
-        let data_key = EntryKey::Data(path.as_ref().to_owned());
-        let entry_key = EntryKey::Entry(path.as_ref().to_owned());
+        self.check_parent(path.as_ref())?;
 
-        // Check if the parent directory exists.
-        match path.as_ref().parent() {
-            Some(parent) if parent != *EMPTY_PARENT => match self.entry(parent) {
-                Ok(parent_entry) if !parent_entry.is_directory() => {
-                    return Err(crate::Error::InvalidPath)
-                }
-                Err(crate::Error::NotFound) => return Err(crate::Error::InvalidPath),
-                Err(error) => return Err(error),
-                _ => (),
-            },
-            _ => (),
-        }
-
-        // Remove any existing data object and add a new one if this is a file.
-        if entry.is_file() {
-            self.repository.insert(data_key);
-        } else {
-            self.repository.remove(&data_key);
-        }
-
-        // Write the metadata for the file.
-        let mut object = self.repository.insert(entry_key);
+        // Write the entry for the file.
+        let mut entry_handle = self.repository.add_unmanaged();
+        let mut object = self
+            .repository
+            .unmanaged_object_mut(&mut entry_handle)
+            .unwrap();
         object.serialize(entry)?;
+        drop(object);
+
+        let file_handle = if entry.is_file() {
+            Some(self.repository.add_unmanaged())
+        } else {
+            None
+        };
+
+        let path_handles = PathHandles {
+            entry: entry_handle,
+            file: file_handle,
+        };
+
+        self.path_table
+            .insert(path.as_ref().to_owned(), path_handles);
 
         Ok(())
     }
@@ -260,10 +298,11 @@ where
             Err(error) => return Err(error),
         }
 
-        self.repository
-            .remove(&EntryKey::Data(path.as_ref().to_owned()));
-        self.repository
-            .remove(&EntryKey::Entry(path.as_ref().to_owned()));
+        let path_handles = self.path_table.remove(path.as_ref()).unwrap();
+        if let Some(handle) = path_handles.file {
+            self.repository.remove_unmanaged(&handle);
+        }
+        self.repository.remove_unmanaged(&path_handles.entry);
 
         Ok(())
     }
@@ -303,11 +342,14 @@ where
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn entry(&self, path: impl AsRef<RelativePath>) -> crate::Result<Entry<T, M>> {
+        let path_handles = &self
+            .path_table
+            .get(path.as_ref())
+            .ok_or(crate::Error::NotFound)?;
         let mut object = self
             .repository
-            .get(&EntryKey::Entry(path.as_ref().to_owned()))
-            .ok_or(crate::Error::NotFound)?;
-
+            .unmanaged_object(&path_handles.entry)
+            .unwrap();
         object.deserialize()
     }
 
@@ -325,20 +367,20 @@ where
         path: impl AsRef<RelativePath>,
         metadata: Option<M>,
     ) -> crate::Result<()> {
-        let mut entry = self.entry(&path)?;
-        entry.metadata = metadata;
-
+        let path_handles = &mut self
+            .path_table
+            .get_mut(path.as_ref())
+            .ok_or(crate::Error::NotFound)?;
         let mut object = self
             .repository
-            .get_mut(&EntryKey::Entry(path.as_ref().to_owned()))
-            .ok_or(crate::Error::NotFound)?;
-
-        object.serialize(&entry)?;
-
-        Ok(())
+            .unmanaged_object_mut(&mut path_handles.entry)
+            .unwrap();
+        let mut entry: Entry<T, M> = object.deserialize()?;
+        entry.metadata = metadata;
+        object.serialize(&entry)
     }
 
-    /// Return an `Object` for reading the contents of the file entry at `path`.
+    /// Return a `ReadOnlyObject` for reading the contents of the file at `path`.
     ///
     /// The returned object provides read-only access to the file. To get read-write access, use
     /// `open_mut`.
@@ -346,28 +388,19 @@ where
     /// # Errors
     /// - `Error::NotFound`: There is no entry with the given `path`.
     /// - `Error::NotFile`: The entry does not represent a regular file.
-    /// - `Error::Deserialize`: The file metadata could not be deserialized.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn open(
-        &self,
-        path: impl AsRef<RelativePath>,
-    ) -> crate::Result<ReadOnlyObject<EntryKey, S>> {
-        let entry = self.entry(&path)?;
-        if !entry.is_file() {
-            return Err(crate::Error::NotFile);
+    pub fn open(&self, path: impl AsRef<RelativePath>) -> crate::Result<ReadOnlyObject<S>> {
+        let path_handles = self
+            .path_table
+            .get(path.as_ref())
+            .ok_or(crate::Error::NotFound)?;
+        if let Some(handle) = &path_handles.file {
+            Ok(self.repository.unmanaged_object(&handle).unwrap())
+        } else {
+            Err(crate::Error::NotFile)
         }
-
-        let object = self
-            .repository
-            .get(&EntryKey::Data(path.as_ref().to_owned()))
-            .expect("There is no object associated with this file.");
-
-        Ok(object)
     }
 
-    /// Return an `Object` for reading and writing the contents of the file entry at `path`.
+    /// Return an `Object` for reading and writing the contents of the file at `path`.
     ///
     /// The returned object provides read-write access to the file. To get read-only access, use
     /// `open`.
@@ -375,25 +408,15 @@ where
     /// # Errors
     /// - `Error::NotFound`: There is no entry with the given `path`.
     /// - `Error::NotFile`: The entry does not represent a regular file.
-    /// - `Error::Deserialize`: The file metadata could not be deserialized.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn open_mut(
-        &mut self,
-        path: impl AsRef<RelativePath>,
-    ) -> crate::Result<Object<EntryKey, S>> {
-        let entry = self.entry(&path)?;
-        if !entry.is_file() {
-            return Err(crate::Error::NotFile);
+    pub fn open_mut(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<Object<S>> {
+        let path_handles = self
+            .path_table
+            .get_mut(path.as_ref())
+            .ok_or(crate::Error::NotFound)?;
+        match path_handles.file {
+            Some(ref mut handle) => Ok(self.repository.unmanaged_object_mut(handle).unwrap()),
+            None => Err(crate::Error::NotFile),
         }
-
-        let object = self
-            .repository
-            .get_mut(&EntryKey::Data(path.as_ref().to_owned()))
-            .expect("There is no object associated with this file.");
-
-        Ok(object)
     }
 
     /// Copy the entry at `source` to `dest`.
@@ -419,15 +442,25 @@ where
         source: impl AsRef<RelativePath>,
         dest: impl AsRef<RelativePath>,
     ) -> crate::Result<()> {
-        let source_entry = self.entry(&source)?;
-        self.create(&dest, &source_entry)?;
-
-        if source_entry.is_file() {
-            let data_key = EntryKey::Data(dest.as_ref().to_owned());
-            self.repository.remove(&data_key);
-            self.repository
-                .copy(&EntryKey::Data(source.as_ref().to_owned()), data_key)?;
+        if self.exists(dest.as_ref()) {
+            return Err(crate::Error::AlreadyExists);
         }
+
+        self.check_parent(dest.as_ref())?;
+
+        let PathHandles { entry, file } = self
+            .path_table
+            .get(source.as_ref())
+            .ok_or(crate::Error::NotFound)?;
+        let new_handles = PathHandles {
+            entry: self.repository.copy_unmanaged(&entry),
+            file: match file {
+                Some(handle) => Some(self.repository.copy_unmanaged(&handle)),
+                None => None,
+            },
+        };
+        self.path_table
+            .insert(dest.as_ref().to_owned(), new_handles);
 
         Ok(())
     }
@@ -495,14 +528,11 @@ where
             return Err(crate::Error::NotDirectory);
         }
 
-        let children = self.repository.keys().filter_map(move |entry| match entry {
-            EntryKey::Entry(path) if path.parent() == Some(parent.as_ref()) => {
-                Some(path.as_relative_path())
-            }
-            _ => None,
-        });
-
-        Ok(children)
+        Ok(self
+            .path_table
+            .keys()
+            .filter(move |path| path.parent() == Some(parent.as_ref()))
+            .map(|path| path.as_relative_path()))
     }
 
     /// Return an unsorted iterator of paths which are descendants of `parent`.
@@ -524,23 +554,18 @@ where
             return Err(crate::Error::NotDirectory);
         }
 
-        let descendants = self.repository.keys().filter_map(move |entry| match entry {
-            EntryKey::Entry(path)
-                if path.starts_with(parent.as_ref()) && path != parent.as_ref() =>
-            {
-                Some(path.as_relative_path())
-            }
-            _ => None,
-        });
-
-        Ok(descendants)
+        Ok(self
+            .path_table
+            .keys()
+            .map(|path| path.as_relative_path())
+            .filter(move |path| path.starts_with(parent.as_ref()) && path != &parent.as_ref()))
     }
 
     /// Copy a file from the file system into the repository.
     ///
     /// If `source` is a directory, its descendants are not copied.
     ///
-    /// The `source` file's metadata will be applied to the `dest` entry according to the selected
+    /// The `source` file's metadata will be copied to the `dest` entry according to the selected
     /// `FileMetadata` implementation.
     ///
     /// # Errors
@@ -577,8 +602,10 @@ where
 
         self.create(&dest, &entry)?;
 
-        if entry.is_file() {
-            let mut object = self.open_mut(&dest)?;
+        // Write the contents of the file entry if it's a file.
+        let path_handles = self.path_table.get_mut(dest.as_ref()).unwrap();
+        if let Some(ref mut handle) = path_handles.file {
+            let mut object = self.repository.unmanaged_object_mut(handle).unwrap();
             let mut file = File::open(&source)?;
             copy(&mut file, &mut object)?;
             object.flush()?;
@@ -593,7 +620,7 @@ where
     /// directory, this is the same as calling `archive`. If one of the files in the tree is not a
     /// regular file, directory, or supported special file, it is skipped.
     ///
-    /// The `source` file's metadata will be applied to the `dest` entry according to the selected
+    /// The `source` file's metadata will be copied to the `dest` entry according to the selected
     /// `FileMetadata` implementation.
     ///
     /// # Errors
@@ -630,7 +657,7 @@ where
     ///
     /// If `source` is a directory, its descendants are not copied.
     ///
-    /// The `source` entry's metadata will be applied to the `dest` file according to the selected
+    /// The `source` entry's metadata will be copied to the `dest` file according to the selected
     /// `FileMetadata` implementation.
     ///
     /// # Errors
@@ -659,7 +686,7 @@ where
         // Create the file or directory.
         match entry.file_type {
             FileType::File => {
-                let mut object = self.open(&source)?;
+                let mut object = self.open(source.as_ref()).unwrap();
                 let mut file = OpenOptions::new()
                     .write(true)
                     .create_new(true)
@@ -691,7 +718,7 @@ where
     /// is only copied if `filter` returns `true`. A directory is not descended into unless `filter`
     /// returns `true`. To copy all files in the tree, pass `|_| true`.
     ///
-    /// The `source` entry's metadata will be applied to the `dest` file according to the selected
+    /// The `source` entry's metadata will be copied to the `dest` file according to the selected
     /// `FileMetadata` implementation.
     ///
     /// # Errors
@@ -738,6 +765,15 @@ where
     ///
     /// See `ObjectRepository::commit` for details.
     pub fn commit(&mut self) -> crate::Result<()> {
+        // Serialize and write the table of keys.
+        let mut object = self
+            .repository
+            .managed_object_mut(*TABLE_OBJECT_ID)
+            .unwrap();
+        object.serialize(&self.path_table)?;
+        drop(object);
+
+        // Commit the underlying repository.
         self.repository.commit()
     }
 
@@ -745,23 +781,31 @@ where
     ///
     /// This returns the set of paths of files with corrupt data or metadata.
     ///
+    /// If you just need to verify the integrity of one object, `Object::verify` is faster. If you
+    /// need to verify the integrity of all the data in the repository, however, this can be more
+    /// efficient.
+    ///
     /// # Errors
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn verify(&self) -> crate::Result<HashSet<&RelativePath>> {
-        let paths = self
-            .repository
-            .verify()?
-            .iter()
-            .filter_map(|entry| match entry {
-                EntryKey::Data(path) => Some(path.as_relative_path()),
-                EntryKey::Entry(path) => Some(path.as_relative_path()),
-                _ => None,
-            })
-            .collect();
+        let report = self.repository.verify()?;
 
-        Ok(paths)
+        // Check for corrupt metadata.
+        Ok(self
+            .path_table
+            .iter()
+            .filter(|(_, path_handles)| {
+                let entry_valid = report.check_unmanaged(&path_handles.entry);
+                let file_valid = match &path_handles.file {
+                    Some(handle) => report.check_unmanaged(&handle),
+                    None => true,
+                };
+                !entry_valid || !file_valid
+            })
+            .map(|(path, _)| path.as_relative_path())
+            .collect::<HashSet<_>>())
     }
 
     /// Change the password for this repository.
@@ -781,16 +825,6 @@ where
     ///
     /// See `ObjectRepository::peek_info` for details.
     pub fn peek_info(store: &mut S) -> crate::Result<RepositoryInfo> {
-        ObjectRepository::<EntryKey, S>::peek_info(store)
-    }
-
-    /// Calculate statistics about the repository.
-    pub fn stats(&self) -> RepositoryStats {
-        self.repository.stats()
-    }
-
-    /// Consume this repository and return the wrapped `DataStore`.
-    pub fn into_store(self) -> S {
-        self.repository.into_store()
+        ObjectRepository::peek_info(store)
     }
 }

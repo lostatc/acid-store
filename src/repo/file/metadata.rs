@@ -60,7 +60,7 @@ impl FileMetadata for NoMetadata {
 /// The `file-metadata` cargo feature is required to use this.
 #[cfg(all(unix, feature = "file-metadata"))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
-pub enum Qualifier {
+pub enum AccessQualifier {
     /// The user with a given UID.
     User(u32),
 
@@ -102,7 +102,7 @@ pub struct UnixMetadata {
     /// The access control list for the file.
     ///
     /// This is a map of qualifiers to their associated permissions bits.
-    pub acl: HashMap<Qualifier, u32>,
+    pub acl: HashMap<AccessQualifier, u32>,
 }
 
 #[cfg(all(unix, feature = "file-metadata"))]
@@ -129,8 +129,8 @@ impl FileMetadata for UnixMetadata {
             .entries()
             .into_iter()
             .filter_map(|entry| match entry.qual {
-                PosixQualifier::User(uid) => Some((Qualifier::User(uid), entry.perm)),
-                PosixQualifier::Group(gid) => Some((Qualifier::Group(gid), entry.perm)),
+                PosixQualifier::User(uid) => Some((AccessQualifier::User(uid), entry.perm)),
+                PosixQualifier::Group(gid) => Some((AccessQualifier::Group(gid), entry.perm)),
                 _ => None,
             })
             .collect();
@@ -161,8 +161,8 @@ impl FileMetadata for UnixMetadata {
             let mut acl = PosixACL::new(self.mode);
             for (qualifier, permissions) in self.acl.iter() {
                 let posix_qualifier = match qualifier {
-                    Qualifier::User(uid) => PosixQualifier::User(*uid),
-                    Qualifier::Group(gid) => PosixQualifier::Group(*gid),
+                    AccessQualifier::User(uid) => PosixQualifier::User(*uid),
+                    AccessQualifier::Group(gid) => PosixQualifier::Group(*gid),
                 };
                 acl.set(posix_qualifier, *permissions);
             }

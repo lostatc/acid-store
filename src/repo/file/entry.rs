@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
 
 use super::metadata::FileMetadata;
 use crate::repo::file::special::SpecialType;
+use crate::repo::object::ObjectHandle;
 
 /// A type of file in a `FileRepository`.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FileType<T> {
     /// A regular file.
     File,
@@ -45,7 +45,7 @@ impl<T: SpecialType> From<T> for FileType<T> {
 /// a file in the file system (`FileRepository::archive`), it will have the metadata of that file.
 /// However, entries can also be created that have no metadata. This allows for extracting files to
 /// the file system (`FileRepository::extract`) without copying any metadata.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry<T, M> {
     /// The type of file this entry represents.
     pub file_type: FileType<T>,
@@ -101,15 +101,12 @@ impl<T: SpecialType, M: FileMetadata> Entry<T, M> {
     }
 }
 
-/// The key to use in the `ObjectRepository` which backs a `FileRepository`.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
-pub enum EntryKey {
-    /// The data for a file.
-    Data(RelativePathBuf),
+/// The object handles associated with each file path.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PathHandles {
+    /// The handle of the object which stores the serialized entry.
+    pub entry: ObjectHandle,
 
-    /// The entry representing a file.
-    Entry(RelativePathBuf),
-
-    /// The repository version.
-    RepositoryVersion,
+    /// The handle of the object which stores the contents of the regular file.
+    pub file: Option<ObjectHandle>,
 }
