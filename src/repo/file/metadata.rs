@@ -32,7 +32,7 @@ use {
 
 /// The metadata for a file in the file system.
 ///
-/// This trait can be implemented to customize how `FileRepository` handles file metadata.
+/// This trait can be implemented to customize how `FileRepo` handles file metadata.
 pub trait FileMetadata: Serialize + DeserializeOwned {
     /// Read the metadata from the file at `path` and create a new instance.
     fn from_file(path: &Path) -> io::Result<Self>;

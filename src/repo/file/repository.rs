@@ -29,8 +29,8 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 use crate::repo::common::check_version;
-use crate::repo::object::{ObjectHandle, ObjectRepository};
-use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepositoryInfo};
+use crate::repo::object::{ObjectHandle, ObjectRepo};
+use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepoInfo};
 use crate::store::DataStore;
 
 use super::entry::{Entry, FileType};
@@ -57,7 +57,7 @@ const VERSION_ID: Uuid = Uuid::from_bytes(hex!("a61f6a58 bd64 11ea 9b59 73d36807
 /// This is a repository type which functions as a virtual file system. It supports file metadata,
 /// special file types, and importing and exporting files from and to the local file system.
 ///
-/// A `FileRepository` is composed of `Entry` values which represent either a regular file, a
+/// A `FileRepo` is composed of `Entry` values which represent either a regular file, a
 /// directory, or a special file. Files in the file system can be copied into the repository using
 /// `archive` and `archive_tree`, and entries in the repository can be copied to the file system
 /// using `extract` and `extract_tree`. It is also possible to manually add, remove, query, and
@@ -69,7 +69,7 @@ const VERSION_ID: Uuid = Uuid::from_bytes(hex!("a61f6a58 bd64 11ea 9b59 73d36807
 ///
 /// This repository is designed so that files archived on one platform can be extracted on another
 /// platform. Because many aspects of file systems—such as file metadata and special file types—are
-/// heavily platform-dependent, the behavior of `FileRepository` can be customized through the
+/// heavily platform-dependent, the behavior of `FileRepo` can be customized through the
 /// `FileMetadata` and `SpecialType` traits.
 ///
 /// Like other repositories, changes made to the repository are not persisted to the data store
@@ -78,7 +78,7 @@ const VERSION_ID: Uuid = Uuid::from_bytes(hex!("a61f6a58 bd64 11ea 9b59 73d36807
 ///
 /// # Metadata
 ///
-/// A `FileRepository` accepts a `FileMetadata` type parameter which determines how it handles file
+/// A `FileRepo` accepts a `FileMetadata` type parameter which determines how it handles file
 /// metadata. The default value is `NoMetadata`, which means that it does not store any file
 /// metadata. Other implementations are provided through the `file-metadata` cargo feature. If you
 /// attempt to read an entry using a different `FileMetadata` implementation than it was stored
@@ -86,21 +86,21 @@ const VERSION_ID: Uuid = Uuid::from_bytes(hex!("a61f6a58 bd64 11ea 9b59 73d36807
 ///
 /// # Special Files
 ///
-/// A `FileRepository` accepts a `SpecialType` type parameter which determines how it handles
+/// A `FileRepo` accepts a `SpecialType` type parameter which determines how it handles
 /// special file types. The default value is `NoSpecialType`, which means that it does not attempt
 /// to handle file types beyond regular files and directories. Other implementations are provided
 /// through the `file-metadata` cargo feature. If you attempt to read an entry using a different
 /// `SpecialType` implementation than it was stored with, it will fail to deserialize and return an
 /// error.
 #[derive(Debug)]
-pub struct FileRepository<S, T = NoSpecialType, M = NoMetadata>
+pub struct FileRepo<S, T = NoSpecialType, M = NoMetadata>
 where
     S: DataStore,
     T: SpecialType,
     M: FileMetadata,
 {
     /// The backing repository.
-    repository: ObjectRepository<S>,
+    repository: ObjectRepo<S>,
 
     /// A map of relative file paths to the handles of the objects containing their entries.
     path_table: HashMap<RelativePathBuf, PathHandles>,
@@ -115,13 +115,13 @@ where
     marker: PhantomData<(T, M)>,
 }
 
-impl<S, T, M> ConvertRepo<S> for FileRepository<S, T, M>
+impl<S, T, M> ConvertRepo<S> for FileRepo<S, T, M>
 where
     S: DataStore,
     T: SpecialType,
     M: FileMetadata,
 {
-    fn from_repo(mut repository: ObjectRepository<S>) -> crate::Result<Self> {
+    fn from_repo(mut repository: ObjectRepo<S>) -> crate::Result<Self> {
         if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the table of entry paths.
             let mut object = repository
@@ -165,13 +165,13 @@ where
         }
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepository<S>> {
+    fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
         self.commit()?;
         Ok(self.repository)
     }
 }
 
-impl<S, T, M> FileRepository<S, T, M>
+impl<S, T, M> FileRepo<S, T, M>
 where
     S: DataStore,
     T: SpecialType,
@@ -764,7 +764,7 @@ where
 
     /// Commit changes which have been made to the repository.
     ///
-    /// See `ObjectRepository::commit` for details.
+    /// See `ObjectRepo::commit` for details.
     pub fn commit(&mut self) -> crate::Result<()> {
         // Serialize and write the table of keys.
         let mut object = self.repository.managed_object_mut(TABLE_OBJECT_ID).unwrap();
@@ -808,21 +808,21 @@ where
 
     /// Change the password for this repository.
     ///
-    /// See `ObjectRepository::change_password` for details.
+    /// See `ObjectRepo::change_password` for details.
     #[cfg(feature = "encryption")]
     pub fn change_password(&mut self, new_password: &[u8]) {
         self.repository.change_password(new_password);
     }
 
     /// Return information about the repository.
-    pub fn info(&self) -> RepositoryInfo {
+    pub fn info(&self) -> RepoInfo {
         self.repository.info()
     }
 
     /// Return information about the repository in `store` without opening it.
     ///
-    /// See `ObjectRepository::peek_info` for details.
-    pub fn peek_info(store: &mut S) -> crate::Result<RepositoryInfo> {
-        ObjectRepository::peek_info(store)
+    /// See `ObjectRepo::peek_info` for details.
+    pub fn peek_info(store: &mut S) -> crate::Result<RepoInfo> {
+        ObjectRepo::peek_info(store)
     }
 }

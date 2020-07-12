@@ -19,14 +19,14 @@
 use std::collections::HashSet;
 use std::io::Read;
 
-use acid_store::repo::content::{ContentRepository, HashAlgorithm};
+use acid_store::repo::content::{ContentRepo, HashAlgorithm};
 use acid_store::repo::{ConvertRepo, OpenOptions};
 use acid_store::store::MemoryStore;
 use common::random_buffer;
 
 mod common;
 
-fn create_repo() -> acid_store::Result<ContentRepository<MemoryStore>> {
+fn create_repo() -> acid_store::Result<ContentRepo<MemoryStore>> {
     OpenOptions::new(MemoryStore::new()).create_new()
 }
 
@@ -35,7 +35,7 @@ fn open_repository() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.commit()?;
     let store = repository.into_repo()?.into_store();
-    OpenOptions::new(store).open::<ContentRepository<_>>()?;
+    OpenOptions::new(store).open::<ContentRepo<_>>()?;
     Ok(())
 }
 

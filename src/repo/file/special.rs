@@ -33,7 +33,7 @@ use {
 
 /// A special file type.
 ///
-/// This trait can be implemented to customize how `FileRepository` handles special file types.
+/// This trait can be implemented to customize how `FileRepo` handles special file types.
 pub trait SpecialType: Serialize + DeserializeOwned {
     /// Create a new instance from the file in the file system at `path`.
     ///

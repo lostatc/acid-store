@@ -18,14 +18,14 @@
 
 use std::io::Write;
 
-use acid_store::repo::key::KeyRepository;
+use acid_store::repo::key::KeyRepo;
 use acid_store::repo::{ConvertRepo, OpenOptions};
 use acid_store::store::MemoryStore;
 use common::random_buffer;
 
 mod common;
 
-fn create_repo() -> acid_store::Result<KeyRepository<String, MemoryStore>> {
+fn create_repo() -> acid_store::Result<KeyRepo<String, MemoryStore>> {
     OpenOptions::new(MemoryStore::new()).create_new()
 }
 
@@ -34,7 +34,7 @@ fn open_repository() -> anyhow::Result<()> {
     let mut repo = create_repo()?;
     repo.commit()?;
     let store = repo.into_repo()?.into_store();
-    OpenOptions::new(store).open::<KeyRepository<String, _>>()?;
+    OpenOptions::new(store).open::<KeyRepo<String, _>>()?;
     Ok(())
 }
 
@@ -45,7 +45,7 @@ fn opening_with_wrong_key_type_errs() -> anyhow::Result<()> {
     repo.commit()?;
 
     let store = repo.into_repo()?.into_store();
-    let repo: Result<KeyRepository<isize, _>, _> = OpenOptions::new(store).open();
+    let repo: Result<KeyRepo<isize, _>, _> = OpenOptions::new(store).open();
 
     assert!(matches!(repo, Err(acid_store::Error::Deserialize)));
     Ok(())

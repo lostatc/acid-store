@@ -18,14 +18,14 @@
 
 use std::io::{Read, Write};
 
-use acid_store::repo::version::VersionRepository;
+use acid_store::repo::version::VersionRepo;
 use acid_store::repo::{ConvertRepo, OpenOptions};
 use acid_store::store::MemoryStore;
 use common::{assert_contains_all, random_buffer};
 
 mod common;
 
-fn create_repo() -> acid_store::Result<VersionRepository<String, MemoryStore>> {
+fn create_repo() -> acid_store::Result<VersionRepo<String, MemoryStore>> {
     OpenOptions::new(MemoryStore::new()).create_new()
 }
 
@@ -34,7 +34,7 @@ fn open_repository() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.commit()?;
     let store = repository.into_repo()?.into_store();
-    OpenOptions::new(store).open::<VersionRepository<String, _>>()?;
+    OpenOptions::new(store).open::<VersionRepo<String, _>>()?;
     Ok(())
 }
 

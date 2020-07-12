@@ -19,7 +19,7 @@ use std::io::{Read, Write};
 use lazy_static::lazy_static;
 use uuid::Uuid;
 
-use crate::repo::object::ObjectRepository;
+use crate::repo::object::ObjectRepo;
 use crate::store::DataStore;
 
 lazy_static! {
@@ -40,7 +40,7 @@ lazy_static! {
 /// - `Error::Store`: An error occurred with the data store.
 /// - `Error::Io`: An I/O error occurred.
 pub fn check_version<S: DataStore>(
-    repository: &mut ObjectRepository<S>,
+    repository: &mut ObjectRepo<S>,
     version_id: Uuid,
 ) -> crate::Result<bool> {
     match repository.managed_object(*VERSION_OBJECT_ID) {

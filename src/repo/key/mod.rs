@@ -16,6 +16,6 @@
 
 //! An object store which maps keys to seekable binary blobs.
 
-pub use self::repository::{Key, KeyRepository};
+pub use self::repository::{Key, KeyRepo};
 
 mod repository;

@@ -24,8 +24,8 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::repo::common::check_version;
-use crate::repo::object::{ObjectHandle, ObjectRepository};
-use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepositoryInfo};
+use crate::repo::object::{ObjectHandle, ObjectRepo};
+use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepoInfo};
 use crate::store::DataStore;
 use std::borrow::Borrow;
 
@@ -38,27 +38,27 @@ const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("9db2a036 bd2a 11ea 872b c30
 /// format.
 const VERSION_ID: Uuid = Uuid::from_bytes(hex!("5dca8ec4 bd3a 11ea bedd 1f70522414fd"));
 
-/// A type which can be used as a key in a `KeyRepository`.
+/// A type which can be used as a key in a `KeyRepo`.
 pub trait Key: Eq + Hash + Clone + Serialize + DeserializeOwned {}
 
 impl<T> Key for T where T: Eq + Hash + Clone + Serialize + DeserializeOwned {}
 
 /// An object store which maps keys to seekable binary blobs.
 ///
-/// A `KeyRepository` maps keys of type `K` to seekable binary blobs called objects and stores
+/// A `KeyRepo` maps keys of type `K` to seekable binary blobs called objects and stores
 /// them persistently in a `DataStore`.
 ///
 /// Like other repositories, changes made to the repository are not persisted to the data store
 /// until `commit` is called. For details about deduplication, compression, encryption, and locking,
 /// see the module-level documentation for `acid_store::repo`.
 #[derive(Debug)]
-pub struct KeyRepository<K: Key, S: DataStore> {
-    repository: ObjectRepository<S>,
+pub struct KeyRepo<K: Key, S: DataStore> {
+    repository: ObjectRepo<S>,
     key_table: HashMap<K, ObjectHandle>,
 }
 
-impl<K: Key, S: DataStore> ConvertRepo<S> for KeyRepository<K, S> {
-    fn from_repo(mut repository: ObjectRepository<S>) -> crate::Result<Self> {
+impl<K: Key, S: DataStore> ConvertRepo<S> for KeyRepo<K, S> {
+    fn from_repo(mut repository: ObjectRepo<S>) -> crate::Result<Self> {
         if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the key table.
             let mut object = repository
@@ -86,13 +86,13 @@ impl<K: Key, S: DataStore> ConvertRepo<S> for KeyRepository<K, S> {
         }
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepository<S>> {
+    fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
         self.commit()?;
         Ok(self.repository)
     }
 }
 
-impl<K: Key, S: DataStore> KeyRepository<K, S> {
+impl<K: Key, S: DataStore> KeyRepo<K, S> {
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
@@ -194,7 +194,7 @@ impl<K: Key, S: DataStore> KeyRepository<K, S> {
 
     /// Commit changes which have been made to the repository.
     ///
-    /// See `ObjectRepository::commit` for details.
+    /// See `ObjectRepo::commit` for details.
     pub fn commit(&mut self) -> crate::Result<()> {
         // Serialize and write the key table.
         let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
@@ -225,21 +225,21 @@ impl<K: Key, S: DataStore> KeyRepository<K, S> {
 
     /// Change the password for this repository.
     ///
-    /// See `ObjectRepository::change_password` for details.
+    /// See `ObjectRepo::change_password` for details.
     #[cfg(feature = "encryption")]
     pub fn change_password(&mut self, new_password: &[u8]) {
         self.repository.change_password(new_password)
     }
 
     /// Return information about the repository.
-    pub fn info(&self) -> RepositoryInfo {
+    pub fn info(&self) -> RepoInfo {
         self.repository.info()
     }
 
     /// Return information about the repository in `store` without opening it.
     ///
-    /// See `ObjectRepository::peek_info` for details.
-    pub fn peek_info(store: &mut S) -> crate::Result<RepositoryInfo> {
-        ObjectRepository::peek_info(store)
+    /// See `ObjectRepo::peek_info` for details.
+    pub fn peek_info(store: &mut S) -> crate::Result<RepoInfo> {
+        ObjectRepo::peek_info(store)
     }
 }

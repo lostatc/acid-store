@@ -23,7 +23,7 @@ use crate::repo::ContentId;
 use std::collections::BTreeMap;
 use std::io::Read;
 
-/// Information about a version in a `VersionRepository`.
+/// Information about a version in a `VersionRepo`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct Version {
     pub(super) id: u32,

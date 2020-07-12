@@ -28,7 +28,7 @@ use super::chunking::IncrementalChunker;
 use super::encryption::EncryptionKey;
 use super::id_table::UniqueId;
 use super::lock::Lock;
-use super::metadata::RepositoryMetadata;
+use super::metadata::RepoMetadata;
 use super::object::Chunk;
 
 /// Information about a chunk in a repository.
@@ -41,14 +41,14 @@ pub struct ChunkInfo {
     pub references: HashSet<UniqueId>,
 }
 
-/// The state associated with an `ObjectRepository`.
+/// The state associated with an `ObjectRepo`.
 #[derive(Debug)]
-pub struct RepositoryState<S: DataStore> {
+pub struct RepoState<S: DataStore> {
     /// The data store which backs this repository.
     pub store: Mutex<S>,
 
     /// The metadata for the repository.
-    pub metadata: RepositoryMetadata,
+    pub metadata: RepoMetadata,
 
     /// A map of chunk hashes to information about them.
     pub chunks: HashMap<Chunk, ChunkInfo>,

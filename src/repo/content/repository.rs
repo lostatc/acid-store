@@ -23,8 +23,8 @@ use uuid::Uuid;
 
 use crate::repo::common::check_version;
 use crate::repo::content::hash::HashAlgorithm;
-use crate::repo::object::{ObjectHandle, ObjectRepository};
-use crate::repo::{ConvertRepo, ReadOnlyObject, RepositoryInfo};
+use crate::repo::object::{ObjectHandle, ObjectRepo};
+use crate::repo::{ConvertRepo, ReadOnlyObject, RepoInfo};
 use crate::store::DataStore;
 
 /// The ID of the managed object which stores the table of keys for the repository.
@@ -39,7 +39,7 @@ const VERSION_ID: Uuid = Uuid::from_bytes(hex!("e94d5a1e bd42 11ea bbec ebbbc536
 /// The size of the buffer to use when copying bytes.
 const BUFFER_SIZE: usize = 4096;
 
-/// The default hash algorithm to use for `ContentRepository`.
+/// The default hash algorithm to use for `ContentRepo`.
 const DEFAULT_ALGORITHM: HashAlgorithm = HashAlgorithm::Blake2b(32);
 
 /// A content-addressable storage.
@@ -53,14 +53,14 @@ const DEFAULT_ALGORITHM: HashAlgorithm = HashAlgorithm::Blake2b(32);
 /// until `commit` is called. For details about deduplication, compression, encryption, and locking,
 /// see the module-level documentation for `acid_store::repo`.
 #[derive(Debug)]
-pub struct ContentRepository<S: DataStore> {
-    repository: ObjectRepository<S>,
+pub struct ContentRepo<S: DataStore> {
+    repository: ObjectRepo<S>,
     hash_table: HashMap<Vec<u8>, ObjectHandle>,
     hash_algorithm: HashAlgorithm,
 }
 
-impl<S: DataStore> ConvertRepo<S> for ContentRepository<S> {
-    fn from_repo(mut repository: ObjectRepository<S>) -> crate::Result<Self> {
+impl<S: DataStore> ConvertRepo<S> for ContentRepo<S> {
+    fn from_repo(mut repository: ObjectRepo<S>) -> crate::Result<Self> {
         if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the table of content hashes.
             let mut object = repository
@@ -102,13 +102,13 @@ impl<S: DataStore> ConvertRepo<S> for ContentRepository<S> {
         }
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepository<S>> {
+    fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
         self.commit()?;
         Ok(self.repository)
     }
 }
 
-impl<S: DataStore> ContentRepository<S> {
+impl<S: DataStore> ContentRepo<S> {
     /// Return whether the repository contains an object with the given `hash`.
     pub fn contains(&self, hash: &[u8]) -> bool {
         self.hash_table.contains_key(hash)
@@ -226,7 +226,7 @@ impl<S: DataStore> ContentRepository<S> {
 
     /// Commit changes which have been made to the repository.
     ///
-    /// See `ObjectRepository::commit` for details.
+    /// See `ObjectRepo::commit` for details.
     pub fn commit(&mut self) -> crate::Result<()> {
         // Serialize and write the table of content hashes.
         let mut object = self
@@ -264,21 +264,21 @@ impl<S: DataStore> ContentRepository<S> {
 
     /// Change the password for this repository.
     ///
-    /// See `ObjectRepository::change_password` for details.
+    /// See `ObjectRepo::change_password` for details.
     #[cfg(feature = "encryption")]
     pub fn change_password(&mut self, new_password: &[u8]) {
         self.repository.change_password(new_password)
     }
 
     /// Return information about the repository.
-    pub fn info(&self) -> RepositoryInfo {
+    pub fn info(&self) -> RepoInfo {
         self.repository.info()
     }
 
     /// Return information about the repository in `store` without opening it.
     ///
-    /// See `ObjectRepository::peek_info` for details.
-    pub fn peek_info(store: &mut S) -> crate::Result<RepositoryInfo> {
-        ObjectRepository::peek_info(store)
+    /// See `ObjectRepo::peek_info` for details.
+    pub fn peek_info(store: &mut S) -> crate::Result<RepoInfo> {
+        ObjectRepo::peek_info(store)
     }
 }

@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use super::object::{ChunkHash, ObjectHandle};
 
-/// A report of the integrity of the data in an `ObjectRepository`.
+/// A report of the integrity of the data in an `ObjectRepo`.
 pub struct IntegrityReport {
     /// The hashes of chunks which are corrupt.
     pub(super) corrupt_chunks: HashSet<ChunkHash>,

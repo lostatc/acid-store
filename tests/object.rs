@@ -18,7 +18,7 @@
 
 use std::io::{Read, Seek, SeekFrom, Write};
 
-use acid_store::repo::object::ObjectRepository;
+use acid_store::repo::object::ObjectRepo;
 use acid_store::repo::{Chunking, OpenOptions};
 use acid_store::store::MemoryStore;
 use common::{random_buffer, random_bytes, MIN_BUFFER_SIZE, REPO_IO_CONFIG};
@@ -27,7 +27,7 @@ mod common;
 
 #[test]
 fn read_written_data_with_zpaq_chunking() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .config(REPO_IO_CONFIG.to_owned())
         .password(b"Password")
         .create_new()?;
@@ -49,7 +49,7 @@ fn read_written_data_with_zpaq_chunking() -> anyhow::Result<()> {
 
 #[test]
 fn read_written_data_with_fixed_chunking() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .config(REPO_IO_CONFIG.to_owned())
         .chunking(Chunking::Fixed { size: 256 })
         .password(b"Password")
@@ -73,7 +73,7 @@ fn read_written_data_with_fixed_chunking() -> anyhow::Result<()> {
 
 #[test]
 fn seek_and_read_data() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .config(REPO_IO_CONFIG.to_owned())
         .password(b"Password")
         .create_new()?;
@@ -110,7 +110,7 @@ fn seek_and_read_data() -> anyhow::Result<()> {
 
 #[test]
 fn seek_to_negative_offset() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .config(REPO_IO_CONFIG.to_owned())
         .password(b"Password")
         .create_new()?;
@@ -128,7 +128,7 @@ fn seek_to_negative_offset() -> anyhow::Result<()> {
 
 #[test]
 fn overwrite_written_data() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .config(REPO_IO_CONFIG.to_owned())
         .password(b"Password")
         .create_new()?;
@@ -157,7 +157,7 @@ fn overwrite_written_data() -> anyhow::Result<()> {
 
 #[test]
 fn partially_overwrite_written_data() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .config(REPO_IO_CONFIG.to_owned())
         .password(b"Password")
         .create_new()?;
@@ -189,7 +189,7 @@ fn partially_overwrite_written_data() -> anyhow::Result<()> {
 
 #[test]
 fn partially_overwrite_and_grow_data() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .config(REPO_IO_CONFIG.to_owned())
         .password(b"Password")
         .create_new()?;
@@ -223,7 +223,7 @@ fn partially_overwrite_and_grow_data() -> anyhow::Result<()> {
 
 #[test]
 fn truncate_object() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .config(REPO_IO_CONFIG.to_owned())
         .password(b"Password")
         .create_new()?;
@@ -255,7 +255,7 @@ fn truncate_object() -> anyhow::Result<()> {
 
 #[test]
 fn compare_content_ids() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .config(REPO_IO_CONFIG.to_owned())
         .password(b"Password")
         .create_new()?;
@@ -293,7 +293,7 @@ fn compare_content_ids() -> anyhow::Result<()> {
 
 #[test]
 fn compare_contents_with_are_equal() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .config(REPO_IO_CONFIG.to_owned())
         .password(b"Password")
         .create_new()?;
@@ -313,7 +313,7 @@ fn compare_contents_with_are_equal() -> anyhow::Result<()> {
 
 #[test]
 fn compare_unequal_contents_with_same_size() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .config(REPO_IO_CONFIG.to_owned())
         .password(b"Password")
         .create_new()?;
@@ -334,7 +334,7 @@ fn compare_unequal_contents_with_same_size() -> anyhow::Result<()> {
 
 #[test]
 fn compare_contents_which_are_smaller() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .config(REPO_IO_CONFIG.to_owned())
         .password(b"Password")
         .create_new()?;
@@ -355,7 +355,7 @@ fn compare_contents_which_are_smaller() -> anyhow::Result<()> {
 
 #[test]
 fn compare_contents_which_are_larger() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .config(REPO_IO_CONFIG.to_owned())
         .password(b"Password")
         .create_new()?;
@@ -376,7 +376,7 @@ fn compare_contents_which_are_larger() -> anyhow::Result<()> {
 
 #[test]
 fn verify_valid_object_is_valid() -> anyhow::Result<()> {
-    let mut repo: ObjectRepository<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
         .config(REPO_IO_CONFIG.to_owned())
         .password(b"Password")
         .create_new()?;

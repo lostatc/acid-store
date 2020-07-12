@@ -23,15 +23,15 @@ use lazy_static::lazy_static;
 use rmp_serde::{from_read, to_vec};
 use uuid::Uuid;
 
-use super::config::RepositoryConfig;
+use super::config::RepoConfig;
 use super::convert::ConvertRepo;
 use super::encryption::{Encryption, EncryptionKey, KeySalt};
 use super::id_table::IdTable;
 use super::lock::{LockStrategy, LockTable};
-use super::metadata::{Header, RepositoryMetadata};
+use super::metadata::{Header, RepoMetadata};
 use super::object::ObjectHandle;
-use super::repository::{ObjectRepository, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
-use super::state::RepositoryState;
+use super::repository::{ObjectRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
+use super::state::RepoState;
 use crate::repo::{Chunking, Compression, ResourceLimit};
 use crate::store::DataStore;
 
@@ -54,7 +54,7 @@ lazy_static! {
 /// `OpenOptions` can be used to open any repository type which implements `ConvertRepo`.
 pub struct OpenOptions<S: DataStore> {
     store: S,
-    config: RepositoryConfig,
+    config: RepoConfig,
     locking: LockStrategy,
     password: Option<Vec<u8>>,
     instance: Uuid,
@@ -65,23 +65,23 @@ impl<S: DataStore> OpenOptions<S> {
     pub fn new(store: S) -> Self {
         Self {
             store,
-            config: RepositoryConfig::default(),
+            config: RepoConfig::default(),
             locking: LockStrategy::Abort,
             password: None,
             instance: GLOBAL_INSTANCE,
         }
     }
 
-    /// Use the given `config` instead of the default `RepositoryConfig`.
+    /// Use the given `config` instead of the default `RepoConfig`.
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
-    pub fn config(mut self, config: RepositoryConfig) -> Self {
+    pub fn config(mut self, config: RepoConfig) -> Self {
         self.config = config;
         self
     }
 
-    /// Overwrite the chunking method specified in `RepositoryConfig::chunking`.
+    /// Overwrite the chunking method specified in `RepoConfig::chunking`.
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
@@ -90,7 +90,7 @@ impl<S: DataStore> OpenOptions<S> {
         self
     }
 
-    /// Overwrite the compression method specified in `RepositoryConfig::compression`.
+    /// Overwrite the compression method specified in `RepoConfig::compression`.
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
@@ -99,7 +99,7 @@ impl<S: DataStore> OpenOptions<S> {
         self
     }
 
-    /// Overwrite the encryption method specified in `RepositoryConfig::encryption`.
+    /// Overwrite the encryption method specified in `RepoConfig::encryption`.
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
@@ -108,7 +108,7 @@ impl<S: DataStore> OpenOptions<S> {
         self
     }
 
-    /// Overwrite the memory limit method specified in `RepositoryConfig::memory_limit`.
+    /// Overwrite the memory limit method specified in `RepoConfig::memory_limit`.
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
@@ -117,7 +117,7 @@ impl<S: DataStore> OpenOptions<S> {
         self
     }
 
-    /// Overwrite the operations limit method specified in `RepositoryConfig::operations_limit`.
+    /// Overwrite the operations limit method specified in `RepoConfig::operations_limit`.
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
@@ -148,7 +148,7 @@ impl<S: DataStore> OpenOptions<S> {
     /// Opening a repository without specifying an instance ID will always open the same global
     /// instance.
     ///
-    /// See `ObjectRepository` for details.
+    /// See `ObjectRepo` for details.
     pub fn instance(mut self, id: Uuid) -> Self {
         self.instance = id;
         self
@@ -173,7 +173,7 @@ impl<S: DataStore> OpenOptions<S> {
         R: ConvertRepo<S>,
     {
         // Acquire a lock on the repository.
-        let repository_id = ObjectRepository::peek_info(&mut self.store)?.id();
+        let repository_id = ObjectRepo::peek_info(&mut self.store)?.id();
         let lock = REPO_LOCKS
             .lock()
             .unwrap()
@@ -198,7 +198,7 @@ impl<S: DataStore> OpenOptions<S> {
             .read_block(METADATA_BLOCK_ID)
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
             .ok_or(crate::Error::Corrupt)?;
-        let metadata: RepositoryMetadata =
+        let metadata: RepoMetadata =
             from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
         // Return an error if a password was required but not provided.
@@ -284,7 +284,7 @@ impl<S: DataStore> OpenOptions<S> {
         // If the given instance ID is not in the managed object map, add it.
         managed.entry(self.instance).or_insert_with(HashMap::new);
 
-        let state = RepositoryState {
+        let state = RepoState {
             store: Mutex::new(self.store),
             metadata,
             chunks,
@@ -292,7 +292,7 @@ impl<S: DataStore> OpenOptions<S> {
             lock,
         };
 
-        let repository = ObjectRepository {
+        let repository = ObjectRepo {
             state,
             instance_id: self.instance,
             managed,
@@ -417,7 +417,7 @@ impl<S: DataStore> OpenOptions<S> {
         };
 
         // Create the repository metadata with the header block references.
-        let metadata = RepositoryMetadata {
+        let metadata = RepoMetadata {
             id,
             chunking: self.config.chunking,
             compression: self.config.compression,
@@ -442,7 +442,7 @@ impl<S: DataStore> OpenOptions<S> {
             .write_block(VERSION_BLOCK_ID, VERSION_ID.as_bytes())
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
-        let state = RepositoryState {
+        let state = RepoState {
             store: Mutex::new(self.store),
             metadata,
             chunks,
@@ -450,7 +450,7 @@ impl<S: DataStore> OpenOptions<S> {
             lock,
         };
 
-        let repository = ObjectRepository {
+        let repository = ObjectRepo {
             state,
             instance_id: self.instance,
             managed,
