@@ -20,24 +20,81 @@
 //! backed by a `DataStore`, and provides features like encryption, compression, deduplication,
 //! integrity checking, locking, and atomic transactions.
 //!
-//! Repositories implement `OpenRepo`, which can be used to create a new repository or open an
-//! existing one.
+//! This module contains types which are common to most repositories. The most important of these
+//! are `Object` and `ReadOnlyObject`, which provide views of data in a repository and are used to
+//! read data from them and write data to them.
 //!
-//! `ObjectRepository` is the main repository type provided by this module. It's meant to be easily
-//! extensible to fit most use-cases, and all other repository types are implemented on top of it.
-//! The other repository types provided by this module can be found in sub-modules.
+//! Each sub-module of this module contains a different repository type. If you're not sure which
+//! one you should use, `KeyRepository` has the most general use-case.
+//!
+//! You can open or create a repository using `OpenOptions`.
+//!
+//! # Deduplication
+//! Data in a repository is transparently deduplicated using either fixed-size chunking (faster) or
+//! contend-defined chunking (better deduplication). The chunk size and chunking method are
+//! configured when you create a repository. See `Chunking` for details.
+//!
+//! # Locking
+//! A repository cannot be open more than once simultaneously. Once it is opened, it is locked from
+//! further open attempts until the repository is dropped. This lock prevents the repository from
+//! being opened from other threads and processes on the same machine, but not from other machines.
+//!
+//! # Atomicity
+//! Changes made to a repository are not persisted to the data store until `commit` is called. If
+//! the repository is dropped or the thread panics, any uncommitted changes are rolled back
+//! automatically.
+//!
+//! # Encryption
+//! If encryption is enabled, the Argon2id key derivation function is used to derive a key from a
+//! user-supplied password. This key is used to encrypt the repository's randomly generated master
+//! key, which is used to encrypt all data in the repository. This setup means that the repository's
+//! password can be changed without re-encrypting any data.
+//!
+//! The master key is generated using the operating system's secure random number generator. Both
+//! the master key and the derived key are zeroed in memory once they go out of scope.
+//!
+//! Data in a data store is identified by UUIDs and not hashes, so data hashes are not leaked. The
+//! repository does not attempt to hide the size of chunks produced by the chunking algorithm, but
+//! information about which chunks belong to which objects is encrypted.
+//!
+//! The information in `RepositoryInfo` is never encrypted, and can be read without opening the
+//! repository.
+//!
+//! # Instances
+//! A repository can consist of multiple instances, each identified by a UUID. Each repository
+//! instance has completely separate contents, meaning that data in one instance won't appear in
+//! others.
+//!
+//! You can specify the ID of the instance you want to access when you open or create a repository
+//! using `OpenOptions`. You can also switch from one instance to another using
+//! `ConvertRepo::switch_instance`.
+//!
+//! Different repository instances share the same underlying storage, meaning that they share
+//! the same configuration, they are encrypted using the same password, and data is deduplicated
+//! between them. This also means that only one instance of a repository can be open at a time.
+//!
+//! This feature allows for using multiple repository types within the same `DataStore`. For
+//! example, you could have a data store which contains both a `FileRepository` and a
+//! `VersionRepository` by giving them different instance IDs.
+//!
+//! This feature can also be used to manage memory usage. The amount of memory used by a repository
+//! while it's open is typically proportional to the number of objects in the repository. If you
+//! split your data between multiple repository instances, only the currently open instance will
+//! need to store data in memory.
 
-pub use object::{
-    Chunking, Compression, ContentId, Encryption, Key, LockStrategy, Object, ObjectRepository,
-    ReadOnlyObject, RepositoryConfig, RepositoryInfo, RepositoryStats, ResourceLimit,
+pub use self::common::{
+    Chunking, Compression, ContentId, ConvertRepo, Encryption, LockStrategy, Object, OpenOptions,
+    ReadOnlyObject, RepositoryConfig, RepositoryInfo, ResourceLimit,
 };
-pub use open_repo::OpenRepo;
 
+/// A low-level repository type which provides more direct access to the underlying storage.
+pub mod object {
+    pub use super::common::{IntegrityReport, ObjectHandle, ObjectRepository};
+}
+
+mod common;
 pub mod content;
 pub mod file;
-mod key_id;
-mod object;
-mod open_repo;
+pub mod key;
 pub mod value;
 pub mod version;
-mod version_id;

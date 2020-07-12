@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
+use std::collections::HashSet;
+
 use uuid::Uuid;
 
-use crate::repo::Key;
 use crate::store::DataStore;
 
+use super::id_table::UniqueId;
 use super::object::{chunk_hash, Chunk};
-use super::state::RepositoryState;
+use super::state::{ChunkInfo, RepositoryState};
 
 /// Encode and decode chunks of data.
 pub trait ChunkEncoder {
@@ -31,7 +33,7 @@ pub trait ChunkEncoder {
     fn decode_data(&self, data: &[u8]) -> crate::Result<Vec<u8>>;
 }
 
-impl<K: Key, S: DataStore> ChunkEncoder for RepositoryState<K, S> {
+impl<S: DataStore> ChunkEncoder for RepositoryState<S> {
     fn encode_data(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
         let compressed_data = self.metadata.compression.compress(data)?;
 
@@ -57,18 +59,14 @@ pub trait ChunkReader {
     fn read_chunk(&self, chunk: Chunk) -> crate::Result<Vec<u8>>;
 }
 
-impl<K: Key, S: DataStore> ChunkReader for RepositoryState<K, S> {
+impl<S: DataStore> ChunkReader for RepositoryState<S> {
     fn read_chunk(&self, chunk: Chunk) -> crate::Result<Vec<u8>> {
-        let chunk_id = *self
-            .header
-            .chunks
-            .get(&chunk)
-            .ok_or(crate::Error::InvalidData)?;
+        let chunk_info = self.chunks.get(&chunk).ok_or(crate::Error::InvalidData)?;
         let chunk = self
             .store
             .lock()
             .unwrap()
-            .read_block(chunk_id)
+            .read_block(chunk_info.block_id)
             .map_err(anyhow::Error::from)?
             .ok_or(crate::Error::InvalidData)?;
 
@@ -82,11 +80,13 @@ pub trait ChunkWriter {
     ///
     /// If a chunk with the given `data` already exists, its checksum may be returned without
     /// writing any new data.
-    fn write_chunk(&mut self, data: &[u8]) -> crate::Result<Chunk>;
+    ///
+    /// This requires a unique `id` which is used for reference counting.
+    fn write_chunk(&mut self, data: &[u8], id: UniqueId) -> crate::Result<Chunk>;
 }
 
-impl<K: Key, S: DataStore> ChunkWriter for RepositoryState<K, S> {
-    fn write_chunk(&mut self, data: &[u8]) -> crate::Result<Chunk> {
+impl<S: DataStore> ChunkWriter for RepositoryState<S> {
+    fn write_chunk(&mut self, data: &[u8], id: UniqueId) -> crate::Result<Chunk> {
         // Get a checksum of the unencoded data.
         let chunk = Chunk {
             hash: chunk_hash(data),
@@ -94,7 +94,8 @@ impl<K: Key, S: DataStore> ChunkWriter for RepositoryState<K, S> {
         };
 
         // Check if the chunk already exists.
-        if self.header.chunks.contains_key(&chunk) {
+        if let Some(chunk_info) = self.chunks.get_mut(&chunk) {
+            chunk_info.references.insert(id);
             return Ok(chunk);
         }
 
@@ -110,7 +111,15 @@ impl<K: Key, S: DataStore> ChunkWriter for RepositoryState<K, S> {
             .map_err(anyhow::Error::from)?;
 
         // Add the chunk to the header.
-        self.header.chunks.insert(chunk, block_id);
+        let chunk_info = ChunkInfo {
+            block_id,
+            references: {
+                let mut id_set = HashSet::new();
+                id_set.insert(id);
+                id_set
+            },
+        };
+        self.chunks.insert(chunk, chunk_info);
 
         Ok(chunk)
     }

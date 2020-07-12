@@ -19,7 +19,7 @@
 //! This crate provides high-level abstractions for data storage over a number of storage backends.
 //!
 //! This library currently provides the following abstractions for data storage:
-//! - `ObjectRepository` is an object store which maps keys to seekable binary blobs.
+//! - `KeyRepository` is an object store which maps keys to seekable binary blobs.
 //! - `FileRepository` is a virtual file system which supports file metadata, special files, and
 //! importing and exporting files to the local OS file system.
 //! - `ValueRepository` is a persistent, heterogeneous, map-like collection.
@@ -41,15 +41,12 @@
 //! ```
 //! use std::io::{Read, Seek, Write, SeekFrom};
 //! use acid_store::store::{MemoryStore, OpenStore, OpenOption};
-//! use acid_store::repo::{OpenRepo, ObjectRepository, RepositoryConfig};
+//! use acid_store::repo::{OpenOptions, key::KeyRepository};
 //!
 //! fn main() -> acid_store::Result<()> {
-//!     // Create a repository with the default configuration that stores data in memory.
-//!     let mut repository = ObjectRepository::new_repo(
-//!         MemoryStore::new(),
-//!         RepositoryConfig::default(),
-//!         None
-//!     )?;
+//!     // Create a `KeyRepository` with the default configuration that stores data in memory.
+//!     let mut repository = OpenOptions::new(MemoryStore::new())
+//!         .create_new::<KeyRepository<String, _>>()?;
 //!
 //!     // Insert a key into the repository and get an object which can be used to read/write data.
 //!     let mut object = repository.insert(String::from("Key"));
@@ -57,19 +54,19 @@
 //!     // Write data to the repository via `std::io::Write`.
 //!     object.write_all(b"Data")?;
 //!     object.flush();
+//!     drop(object);
 //!
 //!     // Get the object associated with a key.
-//!     drop(object);
-//!     let mut object = repository.get("Key").unwrap();
+//!     let mut object = repository.object("Key").unwrap();
 //!
 //!     // Read data from the repository via `std::io::Read`.
 //!     let mut data = Vec::new();
 //!     object.read_to_end(&mut data)?;
+//!     drop(object);
 //!
 //!     assert_eq!(data, b"Data");
 //!
 //!     // Commit changes to the repository.
-//!     drop(object);
 //!     repository.commit()?;
 //!
 //!     Ok(())

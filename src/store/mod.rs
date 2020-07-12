@@ -25,11 +25,8 @@
 //! All data stores implement the `DataStore` trait. The `OpenStore` trait is meant to provide a
 //! common interface for opening data stores, but implementing it is optional.
 //!
-//! See the crate-level documentation for a summary of the different data stores provided in this
-//! module.
-//!
-//! This module additionally provides `MultiStore` which allows for storing multiple repositories in
-//! a single data store.
+//! Many of the data stores in this module are gated behind cargo features. See the crate-level
+//! documetnation for more details.
 //!
 //! # Examples
 //! Open a data store which stores data in a directory of the local file system. Create the data
@@ -42,8 +39,6 @@
 //!     OpenOption::CREATE | OpenOption::TRUNCATE
 //! ).unwrap();
 //! ```
-
-pub use multi::{MultiStore, ProxyStore};
 
 pub use self::common::{DataStore, OpenOption, OpenStore};
 #[cfg(feature = "store-directory")]
@@ -61,7 +56,6 @@ pub use self::sqlite::SqliteStore;
 mod common;
 mod directory;
 mod memory;
-mod multi;
 mod rclone;
 mod redis;
 mod s3;

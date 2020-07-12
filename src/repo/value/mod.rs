@@ -18,5 +18,4 @@
 
 pub use self::repository::ValueRepository;
 
-mod key;
 mod repository;

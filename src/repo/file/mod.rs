@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-//! A virtual file system which can import and export files to the local OS file system.
+//! A virtual file system.
 
 pub use relative_path::{RelativePath, RelativePathBuf};
 
@@ -26,7 +26,7 @@ pub use self::repository::FileRepository;
 pub use self::special::{NoSpecialType, SpecialType};
 #[cfg(all(unix, feature = "file-metadata"))]
 pub use {
-    self::metadata::{Qualifier, UnixMetadata},
+    self::metadata::{AccessQualifier, UnixMetadata},
     self::special::UnixSpecialType,
 };
 
