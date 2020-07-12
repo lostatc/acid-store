@@ -593,10 +593,6 @@ where
     /// directory, this is the same as calling `archive`. If one of the files in the tree is not a
     /// regular file, directory, or supported special file, it is skipped.
     ///
-    /// This accepts a `filter` which is passed the path of each file in the tree. A file is only
-    /// copied if `filter` returns `true`. A directory is not descended into unless `filter` returns
-    /// `true`. To copy all files in the tree, pass `|_| true`.
-    ///
     /// The `source` file's metadata will be applied to the `dest` entry according to the selected
     /// `FileMetadata` implementation.
     ///
@@ -610,13 +606,10 @@ where
         &mut self,
         source: impl AsRef<Path>,
         dest: impl AsRef<RelativePath>,
-        filter: impl Fn(&Path) -> bool,
     ) -> crate::Result<()> {
         // `WalkDir` includes `source` in the paths it iterates over.
         // It does not error if `source` is not a directory.
-        let all_paths = WalkDir::new(&source)
-            .into_iter()
-            .filter_entry(|entry| filter(entry.path()));
+        let all_paths = WalkDir::new(&source).into_iter();
 
         for result in all_paths {
             let dir_entry = result.map_err(io::Error::from)?;
@@ -712,12 +705,10 @@ where
         &mut self,
         source: impl AsRef<RelativePath>,
         dest: impl AsRef<Path>,
-        filter: impl Fn(&RelativePath) -> bool,
     ) -> crate::Result<()> {
         let relative_descendants = match self.walk(&source) {
             Ok(descendants) => {
                 let mut relative_descendants = descendants
-                    .filter(|path| filter(path))
                     .map(|path| path.strip_prefix(&source).unwrap().to_owned())
                     .collect::<Vec<_>>();
 
