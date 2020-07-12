@@ -250,7 +250,7 @@ impl<S: DataStore> ObjectRepo<S> {
 
     /// Return whether there is a managed object with the given `id` in the repository.
     pub fn contains_managed(&self, id: Uuid) -> bool {
-        self.managed.contains_key(&id)
+        self.managed_map().contains_key(&id)
     }
 
     /// Add a new managed object with a given `id` to the repository and return it.
@@ -375,6 +375,8 @@ impl<S: DataStore> ObjectRepo<S> {
     /// atomic and consistent operation; changes cannot be partially committed and interrupting a
     /// commit will never leave the repository in an inconsistent state.
     ///
+    /// This commits changes from all instances of the repository.
+    ///
     /// # Errors
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
@@ -458,7 +460,7 @@ impl<S: DataStore> ObjectRepo<S> {
         Ok(())
     }
 
-    /// Verify the integrity of all the data in the repository.
+    /// Verify the integrity of all the data in every instance the repository.
     ///
     /// This verifies the integrity of all the data in the repository and returns an
     /// `IntegrityReport` containing the results.
@@ -474,7 +476,7 @@ impl<S: DataStore> ObjectRepo<S> {
     pub fn verify(&self) -> crate::Result<IntegrityReport> {
         let mut report = IntegrityReport {
             corrupt_chunks: HashSet::new(),
-            corrupt_managed: HashSet::new(),
+            corrupt_managed: HashMap::new(),
         };
 
         let expected_chunks = self.state.chunks.keys().copied().collect::<Vec<_>>();
@@ -500,13 +502,18 @@ impl<S: DataStore> ObjectRepo<S> {
             return Ok(report);
         }
 
-        let managed = &self.managed[&self.instance_id];
-        for (id, handle) in managed {
-            for chunk in &handle.chunks {
-                // If any one of the object's chunks is corrupt, the object is corrupt.
-                if report.corrupt_chunks.contains(&chunk.hash) {
-                    report.corrupt_managed.insert(*id);
-                    break;
+        for (instance_id, managed) in &self.managed {
+            for (object_id, handle) in managed {
+                for chunk in &handle.chunks {
+                    // If any one of the object's chunks is corrupt, the object is corrupt.
+                    if report.corrupt_chunks.contains(&chunk.hash) {
+                        report
+                            .corrupt_managed
+                            .entry(*instance_id)
+                            .or_default()
+                            .insert(*object_id);
+                        break;
+                    }
                 }
             }
         }
