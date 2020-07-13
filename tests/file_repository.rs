@@ -23,7 +23,7 @@ use std::io::{Read, Write};
 use maplit::hashmap;
 #[cfg(all(linux, feature = "file-metadata"))]
 use posix_acl::{PosixACL, Qualifier as PosixQualifier};
-use relative_path::RelativePath;
+use relative_path::RelativePathBuf;
 use tempfile::tempdir;
 
 use acid_store::repo::file::{Entry, FileRepo, NoMetadata, NoSpecialType};
@@ -289,10 +289,10 @@ fn list_children() -> anyhow::Result<()> {
     repository.create_parents("root/child1", &Entry::file())?;
     repository.create_parents("root/child2/descendant", &Entry::file())?;
 
-    let actual = repository.list("root")?;
+    let actual = repository.list("root").unwrap();
     let expected = vec![
-        RelativePath::new("root/child1"),
-        RelativePath::new("root/child2"),
+        RelativePathBuf::from("root/child1"),
+        RelativePathBuf::from("root/child2"),
     ];
 
     assert_contains_all(actual, expected);
@@ -300,13 +300,14 @@ fn list_children() -> anyhow::Result<()> {
 }
 
 #[test]
-fn listing_children_of_file_errs() -> anyhow::Result<()> {
+fn list_children_of_a_file() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.create("file", &Entry::file())?;
 
-    let result = repository.list("file").map(|iter| iter.collect::<Vec<_>>());
+    let result = repository.list("file").unwrap();
 
-    assert!(matches!(result, Err(acid_store::Error::NotDirectory)));
+    assert_contains_all(result, Vec::new());
+
     Ok(())
 }
 
@@ -316,11 +317,11 @@ fn walk_descendants() -> anyhow::Result<()> {
     repository.create_parents("root/child1", &Entry::file())?;
     repository.create_parents("root/child2/descendant", &Entry::file())?;
 
-    let actual = repository.walk("root")?;
+    let actual = repository.walk("root").unwrap();
     let expected = vec![
-        RelativePath::new("root/child1"),
-        RelativePath::new("root/child2"),
-        RelativePath::new("root/child2/descendant"),
+        RelativePathBuf::from("root/child1"),
+        RelativePathBuf::from("root/child2"),
+        RelativePathBuf::from("root/child2/descendant"),
     ];
 
     assert_contains_all(actual, expected);
@@ -328,13 +329,14 @@ fn walk_descendants() -> anyhow::Result<()> {
 }
 
 #[test]
-fn walking_descendants_of_file_errs() -> anyhow::Result<()> {
+fn walk_descendants_of_a_file() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.create("file", &Entry::file())?;
 
-    let result = repository.walk("file").map(|iter| iter.collect::<Vec<_>>());
+    let result = repository.walk("file").unwrap();
 
-    assert!(matches!(result, Err(acid_store::Error::NotDirectory)));
+    assert_contains_all(result, Vec::new());
+
     Ok(())
 }
 

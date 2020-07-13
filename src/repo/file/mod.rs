@@ -32,5 +32,6 @@ pub use {
 
 mod entry;
 mod metadata;
+mod path_tree;
 mod repository;
 mod special;
