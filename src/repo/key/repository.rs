@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -25,59 +24,64 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::repo::common::check_version;
-use crate::repo::key::Key;
 use crate::repo::object::{ObjectHandle, ObjectRepo};
-use crate::repo::{ConvertRepo, RepoInfo};
+use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepoInfo};
 use crate::store::DataStore;
+use std::borrow::Borrow;
 
 /// The ID of the managed object which stores the table of keys for the repository.
-const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("69f329d6 bd4e 11ea 980a 3f2f192c2e86"));
+const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("9db2a036 bd2a 11ea 872b c308cda3d138"));
 
 /// The current repository format version ID.
 ///
 /// This must be changed any time a backwards-incompatible change is made to the repository
 /// format.
-const VERSION_ID: Uuid = Uuid::from_bytes(hex!("7457459c bd4e 11ea 8dad 67ac9eea7160"));
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("5dca8ec4 bd3a 11ea bedd 1f70522414fd"));
 
-/// A persistent, heterogeneous, map-like collection.
+/// A type which can be used as a key in a `KeyRepo`.
+pub trait Key: Eq + Hash + Clone + Serialize + DeserializeOwned {}
+
+impl<T> Key for T where T: Eq + Hash + Clone + Serialize + DeserializeOwned {}
+
+/// An object store which maps keys to seekable binary blobs.
 ///
-/// This is a repository which maps keys to concrete values instead of binary blobs. Values are
-/// serialized and deserialized automatically using a space-efficient binary format.
+/// A `KeyRepo` maps keys of type `K` to seekable binary blobs called objects and stores
+/// them persistently in a `DataStore`.
 ///
 /// Like other repositories, changes made to the repository are not persisted to the data store
 /// until `commit` is called. For details about deduplication, compression, encryption, and locking,
 /// see the module-level documentation for `acid_store::repo`.
 #[derive(Debug)]
-pub struct ValueRepo<K: Key, S: DataStore> {
+pub struct KeyRepo<K: Key, S: DataStore> {
     repository: ObjectRepo<S>,
     key_table: HashMap<K, ObjectHandle>,
 }
 
-impl<K: Key, S: DataStore> ConvertRepo<S> for ValueRepo<K, S> {
+impl<K: Key, S: DataStore> ConvertRepo<S> for KeyRepo<K, S> {
     fn from_repo(mut repository: ObjectRepo<S>) -> crate::Result<Self> {
         if check_version(&mut repository, VERSION_ID)? {
-            // Read and deserialize the table of keys.
+            // Read and deserialize the key table.
             let mut object = repository
                 .managed_object(TABLE_OBJECT_ID)
                 .ok_or(crate::Error::Corrupt)?;
-            let key_table = object.deserialize()?;
+            let table = object.deserialize()?;
 
             Ok(Self {
                 repository,
-                key_table,
+                key_table: table,
             })
         } else {
-            // Create and write the table of keys.
+            // Create and write a key table.
             let mut object = repository.add_managed(TABLE_OBJECT_ID);
-            let key_table = HashMap::new();
-            object.serialize(&key_table)?;
+            let table = HashMap::new();
+            object.serialize(&table)?;
             drop(object);
 
             repository.commit()?;
 
             Ok(Self {
                 repository,
-                key_table,
+                key_table: table,
             })
         }
     }
@@ -88,45 +92,38 @@ impl<K: Key, S: DataStore> ConvertRepo<S> for ValueRepo<K, S> {
     }
 }
 
-impl<K: Key, S: DataStore> ValueRepo<K, S> {
+impl<K: Key, S: DataStore> KeyRepo<K, S> {
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
+        Q: Eq + Hash + ?Sized,
     {
         self.key_table.contains_key(key)
     }
 
-    /// Insert a new key-value pair.
+    /// Insert the given `key` into the repository and return a new object.
     ///
-    /// If `key` is already in the repository, its value is replaced.
-    ///
-    /// # Errors
-    /// - `Error::Serialize`: The `value` could not be serialized.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn insert<V: Serialize>(&mut self, key: K, value: &V) -> crate::Result<()> {
-        let mut handle = self
+    /// If the given `key` already exists in the repository, its object is replaced.
+    pub fn insert(&mut self, key: K) -> Object<S> {
+        self.key_table.remove(&key);
+        let handle = self
             .key_table
             .entry(key)
             .or_insert(self.repository.add_unmanaged());
-        let mut object = self.repository.unmanaged_object_mut(&mut handle).unwrap();
-        object.serialize(value)?;
-        Ok(())
+        self.repository.unmanaged_object_mut(handle).unwrap()
     }
 
-    /// Remove the value associated with `key` from the repository.
+    /// Remove the object associated with `key` from the repository.
     ///
-    /// This returns `true` if the value was removed or `false` if it didn't exist.
+    /// This returns `true` if the object was removed or `false` if it didn't exist.
     ///
-    /// The space used by the given value isn't freed and made available for new values until
+    /// The space used by the given object isn't freed and made available for new objects until
     /// `commit` is called.
     pub fn remove<Q>(&mut self, key: &Q) -> bool
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
+        Q: Eq + Hash + ?Sized,
     {
         match self.key_table.remove(key) {
             Some(handle) => {
@@ -137,48 +134,61 @@ impl<K: Key, S: DataStore> ValueRepo<K, S> {
         }
     }
 
-    /// Return the value associated with `key`.
+    /// Return a `ReadOnlyObject` for reading the data associated with `key`.
     ///
-    /// # Errors
-    /// - `Error::NotFound`: There is no value associated with `key`.
-    /// - `Error::Deserialize`: The value could not be deserialized.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn get<Q, V>(&self, key: &Q) -> crate::Result<V>
+    /// This returns `None` if the given key does not exist in the repository.
+    ///
+    /// The returned object provides read-only access to the data. To get read-write access, use
+    /// `object_mut`.
+    pub fn object<Q>(&self, key: &Q) -> Option<ReadOnlyObject<S>>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
-        V: DeserializeOwned,
+        Q: Eq + Hash + ?Sized,
     {
-        let handle = self.key_table.get(key).ok_or(crate::Error::NotFound)?;
-        let mut object = self.repository.unmanaged_object(&handle).unwrap();
-        object.deserialize()
+        let handle = self.key_table.get(key)?;
+        self.repository.unmanaged_object(handle)
     }
 
-    /// Return an iterator of all the keys in this repository.
-    pub fn keys(&self) -> impl Iterator<Item = &K> {
+    /// Return an `Object` for reading and writing the data associated with `key`.
+    ///
+    /// This returns `None` if the given key does not exist in the repository.
+    ///
+    /// The returned object provides read-write access to the data. To get read-only access, use
+    /// `object`.
+    pub fn object_mut<Q>(&mut self, key: &Q) -> Option<Object<S>>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash + ?Sized,
+    {
+        let handle = self.key_table.get_mut(key)?;
+        self.repository.unmanaged_object_mut(handle)
+    }
+
+    /// Return an iterator over all the keys in this repository.
+    pub fn keys<'a>(&'a self) -> impl Iterator<Item = &'a K> + 'a {
         self.key_table.keys()
     }
 
-    /// Copy the value at `source` to `dest`.
+    /// Copy the object at `source` to `dest`.
     ///
-    /// This is a cheap operation which does not require copying the object itself.
+    /// This is a cheap operation which does not require copying the bytes in the object.
     ///
     /// # Errors
-    /// - `Error::NotFound`: There is no value at `source`.
-    /// - `Error::AlreadyExists`: There is already a value at `dest`.
+    /// - `Error::NotFound`: There is no object at `source`.
+    /// - `Error::AlreadyExists`: There is already an object at `dest`.
     pub fn copy<Q>(&mut self, source: &Q, dest: K) -> crate::Result<()>
     where
         K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
+        Q: Eq + Hash + ?Sized,
     {
         if self.key_table.contains_key(dest.borrow()) {
             return Err(crate::Error::AlreadyExists);
         }
+
         let handle = self.key_table.get(source).ok_or(crate::Error::NotFound)?;
-        let new_handle = self.repository.copy_unmanaged(&handle);
+        let new_handle = self.repository.copy_unmanaged(handle);
         self.key_table.insert(dest, new_handle);
+
         Ok(())
     }
 
@@ -186,8 +196,8 @@ impl<K: Key, S: DataStore> ValueRepo<K, S> {
     ///
     /// See `ObjectRepo::commit` for details.
     pub fn commit(&mut self) -> crate::Result<()> {
-        // Serialize and write the table of keys.
-        let mut object = self.repository.managed_object_mut(TABLE_OBJECT_ID).unwrap();
+        // Serialize and write the key table.
+        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
         object.serialize(&self.key_table)?;
         drop(object);
 
@@ -197,14 +207,14 @@ impl<K: Key, S: DataStore> ValueRepo<K, S> {
 
     /// Verify the integrity of all the data in the repository.
     ///
-    /// This returns the set of keys of values which are corrupt.
+    /// This returns the set of keys of objects which are corrupt.
     ///
-    /// # Errors
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
+    /// If you just need to verify the integrity of one object, `Object::verify` is faster. If you
+    /// need to verify the integrity of all the data in the repository, however, this can be more
+    /// efficient.
     pub fn verify(&self) -> crate::Result<HashSet<&K>> {
         let report = self.repository.verify()?;
+
         Ok(self
             .key_table
             .iter()
@@ -218,7 +228,7 @@ impl<K: Key, S: DataStore> ValueRepo<K, S> {
     /// See `ObjectRepo::change_password` for details.
     #[cfg(feature = "encryption")]
     pub fn change_password(&mut self, new_password: &[u8]) {
-        self.repository.change_password(new_password);
+        self.repository.change_password(new_password)
     }
 
     /// Return information about the repository.

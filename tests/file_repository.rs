@@ -23,16 +23,18 @@ use std::io::{Read, Write};
 use maplit::hashmap;
 #[cfg(all(linux, feature = "file-metadata"))]
 use posix_acl::{PosixACL, Qualifier as PosixQualifier};
-use relative_path::RelativePath;
+use relative_path::RelativePathBuf;
 use tempfile::tempdir;
 
-use acid_store::repo::file::{Entry, FileRepository, NoMetadata, NoSpecialType};
-use acid_store::repo::{LockStrategy, OpenRepo};
+use acid_store::repo::file::{Entry, FileRepo, NoMetadata, NoSpecialType};
+use acid_store::repo::{ConvertRepo, OpenOptions};
 use acid_store::store::MemoryStore;
-use common::{assert_contains_all, PASSWORD, REPO_CONFIG};
+use common::assert_contains_all;
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
-    acid_store::repo::file::{CommonMetadata, FileType, Qualifier, UnixMetadata, UnixSpecialType},
+    acid_store::repo::file::{
+        AccessQualifier, CommonMetadata, FileType, UnixMetadata, UnixSpecialType,
+    },
     nix::sys::stat::{Mode, SFlag},
     nix::unistd::mkfifo,
     std::fs::read_link,
@@ -43,20 +45,16 @@ use {
 
 mod common;
 
-fn create_repo() -> acid_store::Result<FileRepository<MemoryStore>> {
-    FileRepository::new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
+fn create_repo() -> acid_store::Result<FileRepo<MemoryStore>> {
+    OpenOptions::new(MemoryStore::new()).create_new()
 }
 
 #[test]
 fn open_repository() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    repository.commit()?;
-    let store = repository.into_store();
-    FileRepository::<_, NoSpecialType, NoMetadata>::open_repo(
-        store,
-        LockStrategy::Abort,
-        Some(PASSWORD),
-    )?;
+    let mut repo = create_repo()?;
+    repo.commit()?;
+    let store = repo.into_repo()?.into_store();
+    OpenOptions::new(store).open::<FileRepo<_>>()?;
     Ok(())
 }
 
@@ -182,11 +180,8 @@ fn setting_metadata_on_nonexistent_file_errs() -> anyhow::Result<()> {
 #[test]
 #[cfg(feature = "file-metadata")]
 fn set_metadata() -> anyhow::Result<()> {
-    let mut repository = FileRepository::<_, NoSpecialType, CommonMetadata>::new_repo(
-        MemoryStore::new(),
-        REPO_CONFIG.to_owned(),
-        Some(PASSWORD),
-    )?;
+    let mut repository: FileRepo<_, NoSpecialType, CommonMetadata> =
+        OpenOptions::new(MemoryStore::new()).create_new()?;
 
     let expected_metadata = CommonMetadata {
         modified: SystemTime::UNIX_EPOCH,
@@ -197,25 +192,6 @@ fn set_metadata() -> anyhow::Result<()> {
     let actual_metadata = repository.entry("file")?.metadata;
 
     assert_eq!(actual_metadata, Some(expected_metadata));
-    Ok(())
-}
-
-#[test]
-fn opening_non_regular_file_errs() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    repository.create("directory", &Entry::directory())?;
-    let result = repository.open("directory");
-
-    assert!(matches!(result, Err(acid_store::Error::NotFile)));
-    Ok(())
-}
-
-#[test]
-fn opening_nonexistent_file_errs() -> anyhow::Result<()> {
-    let repository = create_repo()?;
-    let result = repository.open("nonexistent");
-
-    assert!(matches!(result, Err(acid_store::Error::NotFound)));
     Ok(())
 }
 
@@ -313,10 +289,10 @@ fn list_children() -> anyhow::Result<()> {
     repository.create_parents("root/child1", &Entry::file())?;
     repository.create_parents("root/child2/descendant", &Entry::file())?;
 
-    let actual = repository.list("root")?;
+    let actual = repository.list("root").unwrap();
     let expected = vec![
-        RelativePath::new("root/child1"),
-        RelativePath::new("root/child2"),
+        RelativePathBuf::from("root/child1"),
+        RelativePathBuf::from("root/child2"),
     ];
 
     assert_contains_all(actual, expected);
@@ -324,13 +300,14 @@ fn list_children() -> anyhow::Result<()> {
 }
 
 #[test]
-fn listing_children_of_file_errs() -> anyhow::Result<()> {
+fn list_children_of_a_file() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.create("file", &Entry::file())?;
 
-    let result = repository.list("file").map(|iter| iter.collect::<Vec<_>>());
+    let result = repository.list("file").unwrap();
 
-    assert!(matches!(result, Err(acid_store::Error::NotDirectory)));
+    assert_contains_all(result, Vec::new());
+
     Ok(())
 }
 
@@ -340,11 +317,11 @@ fn walk_descendants() -> anyhow::Result<()> {
     repository.create_parents("root/child1", &Entry::file())?;
     repository.create_parents("root/child2/descendant", &Entry::file())?;
 
-    let actual = repository.walk("root")?;
+    let actual = repository.walk("root").unwrap();
     let expected = vec![
-        RelativePath::new("root/child1"),
-        RelativePath::new("root/child2"),
-        RelativePath::new("root/child2/descendant"),
+        RelativePathBuf::from("root/child1"),
+        RelativePathBuf::from("root/child2"),
+        RelativePathBuf::from("root/child2/descendant"),
     ];
 
     assert_contains_all(actual, expected);
@@ -352,13 +329,14 @@ fn walk_descendants() -> anyhow::Result<()> {
 }
 
 #[test]
-fn walking_descendants_of_file_errs() -> anyhow::Result<()> {
+fn walk_descendants_of_a_file() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.create("file", &Entry::file())?;
 
-    let result = repository.walk("file").map(|iter| iter.collect::<Vec<_>>());
+    let result = repository.walk("file").unwrap();
 
-    assert!(matches!(result, Err(acid_store::Error::NotDirectory)));
+    assert_contains_all(result, Vec::new());
+
     Ok(())
 }
 
@@ -392,11 +370,9 @@ fn archive_unix_special_files() -> anyhow::Result<()> {
     mkfifo(&fifo_path, Mode::S_IRWXU)?;
     symlink("/dev/null", &symlink_path)?;
 
-    let mut repository = FileRepository::<_, _, NoMetadata>::new_repo(
-        MemoryStore::new(),
-        REPO_CONFIG.to_owned(),
-        Some(PASSWORD),
-    )?;
+    let mut repository: FileRepo<_, _, NoMetadata> =
+        OpenOptions::new(MemoryStore::new()).create_new()?;
+
     repository.create("dest", &Entry::directory())?;
     repository.archive(fifo_path, "dest/fifo")?;
     repository.archive(symlink_path, "dest/symlink")?;
@@ -484,11 +460,8 @@ fn extract_unix_special_files() -> anyhow::Result<()> {
     let symlink_path = temp_dir.as_ref().join("symlink");
     let device_path = temp_dir.as_ref().join("device");
 
-    let mut repository = FileRepository::<_, _, NoMetadata>::new_repo(
-        MemoryStore::new(),
-        REPO_CONFIG.to_owned(),
-        Some(PASSWORD),
-    )?;
+    let mut repository: FileRepo<_, _, NoMetadata> =
+        OpenOptions::new(MemoryStore::new()).create_new()?;
 
     repository.create("fifo", &Entry::special(UnixSpecialType::NamedPipe))?;
     repository.create(
@@ -562,11 +535,8 @@ fn write_unix_metadata() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let dest_path = temp_dir.as_ref().join("dest");
 
-    let mut repository = FileRepository::<_, NoSpecialType, UnixMetadata>::new_repo(
-        MemoryStore::new(),
-        REPO_CONFIG.to_owned(),
-        Some(PASSWORD),
-    )?;
+    let mut repository: FileRepo<_, NoSpecialType, UnixMetadata> =
+        OpenOptions::new(MemoryStore::new()).create_new()?;
 
     // This does not test extended attributes because user extended attributes are not supported
     // on tmpfs, which is most likely where the temporary directory will be created.
@@ -578,7 +548,7 @@ fn write_unix_metadata() -> anyhow::Result<()> {
         user: 1000,
         group: 1000,
         attributes: HashMap::new(),
-        acl: hashmap! { Qualifier::User(1001) => 0o777 },
+        acl: hashmap! { AccessQualifier::User(1001) => 0o777 },
     };
     let entry = Entry {
         file_type: FileType::File,
@@ -619,11 +589,8 @@ fn read_unix_metadata() -> anyhow::Result<()> {
         dest_acl.write_acl(&source_path)?;
     }
 
-    let mut repository = FileRepository::<_, NoSpecialType, UnixMetadata>::new_repo(
-        MemoryStore::new(),
-        REPO_CONFIG.to_owned(),
-        Some(PASSWORD),
-    )?;
+    let mut repository: FileRepo<_, NoSpecialType, UnixMetadata> =
+        OpenOptions::new(MemoryStore::new()).create_new()?;
 
     repository.archive(&source_path, "dest")?;
     let entry = repository.entry("dest")?;
@@ -642,7 +609,7 @@ fn read_unix_metadata() -> anyhow::Result<()> {
     {
         assert_eq!(
             entry_metadata.acl,
-            hashmap! { Qualifier::User(1001) => 0o777 }
+            hashmap! { AccessQualifier::User(1001) => 0o777 }
         );
     }
 
@@ -655,11 +622,8 @@ fn write_common_metadata() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let dest_path = temp_dir.as_ref().join("dest");
 
-    let mut repository = FileRepository::<_, NoSpecialType, CommonMetadata>::new_repo(
-        MemoryStore::new(),
-        REPO_CONFIG.to_owned(),
-        Some(PASSWORD),
-    )?;
+    let mut repository: FileRepo<_, NoSpecialType, CommonMetadata> =
+        OpenOptions::new(MemoryStore::new()).create_new()?;
 
     let entry_metadata = CommonMetadata {
         modified: SystemTime::UNIX_EPOCH,
@@ -687,11 +651,8 @@ fn read_common_metadata() -> anyhow::Result<()> {
     let source_path = temp_dir.as_ref().join("source");
     File::create(&source_path)?;
 
-    let mut repository = FileRepository::<_, NoSpecialType, CommonMetadata>::new_repo(
-        MemoryStore::new(),
-        REPO_CONFIG.to_owned(),
-        Some(PASSWORD),
-    )?;
+    let mut repository: FileRepo<_, NoSpecialType, CommonMetadata> =
+        OpenOptions::new(MemoryStore::new()).create_new()?;
 
     repository.archive(&source_path, "dest")?;
     let entry = repository.entry("dest")?;

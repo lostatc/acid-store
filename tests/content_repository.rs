@@ -19,23 +19,23 @@
 use std::collections::HashSet;
 use std::io::Read;
 
-use acid_store::repo::content::{ContentRepository, HashAlgorithm};
-use acid_store::repo::{LockStrategy, OpenRepo};
+use acid_store::repo::content::{ContentRepo, HashAlgorithm};
+use acid_store::repo::{ConvertRepo, OpenOptions};
 use acid_store::store::MemoryStore;
-use common::{random_buffer, PASSWORD, REPO_CONFIG};
+use common::random_buffer;
 
 mod common;
 
-fn create_repo() -> acid_store::Result<ContentRepository<MemoryStore>> {
-    ContentRepository::new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
+fn create_repo() -> acid_store::Result<ContentRepo<MemoryStore>> {
+    OpenOptions::new(MemoryStore::new()).create_new()
 }
 
 #[test]
 fn open_repository() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.commit()?;
-    let store = repository.into_store();
-    ContentRepository::open_repo(store, LockStrategy::Abort, Some(PASSWORD))?;
+    let store = repository.into_repo()?.into_store();
+    OpenOptions::new(store).open::<ContentRepo<_>>()?;
     Ok(())
 }
 
@@ -66,7 +66,7 @@ fn get_object() -> anyhow::Result<()> {
     let expected_data = random_buffer();
     let hash = repository.put(expected_data.as_slice())?;
 
-    let mut object = repository.get(&hash).unwrap();
+    let mut object = repository.object(&hash).unwrap();
     let mut actual_data = Vec::new();
     object.read_to_end(&mut actual_data)?;
     drop(object);
@@ -99,7 +99,7 @@ fn change_algorithm() -> anyhow::Result<()> {
     repository.change_algorithm(HashAlgorithm::Blake2b(4))?;
     let expected_hash: &[u8] = &[228, 220, 4, 124];
 
-    let mut object = repository.get(&expected_hash).unwrap();
+    let mut object = repository.object(&expected_hash).unwrap();
     let mut actual_data = Vec::new();
     object.read_to_end(&mut actual_data)?;
     drop(object);

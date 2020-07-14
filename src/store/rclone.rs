@@ -60,7 +60,7 @@ fn is_mountpoint(path: &Path) -> io::Result<bool> {
     Ok(device_id != parent_device_id)
 }
 
-/// A `DataStore` which stores data using rclone.
+/// A `DataStore` which stores data in cloud storage using rclone.
 ///
 /// The `store-rclone` cargo feature is required to use this.
 ///

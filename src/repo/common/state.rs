@@ -14,31 +14,44 @@
  * limitations under the License.
  */
 
-use cdchunking::ChunkerImpl;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Formatter};
 use std::sync::Mutex;
 
-use crate::repo::object::chunking::IncrementalChunker;
-use crate::repo::object::object::Chunk;
-use crate::repo::Key;
+use cdchunking::ChunkerImpl;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
 use crate::store::DataStore;
 
+use super::chunking::IncrementalChunker;
 use super::encryption::EncryptionKey;
-use super::header::Header;
+use super::id_table::UniqueId;
 use super::lock::Lock;
-use super::metadata::RepositoryMetadata;
+use super::metadata::RepoMetadata;
+use super::object::Chunk;
 
-/// The state associated with an `ObjectRepository`.
+/// Information about a chunk in a repository.
+#[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
+pub struct ChunkInfo {
+    /// The ID of the block in the data store which stores this chunk.
+    pub block_id: Uuid,
+
+    /// The IDs of objects which reference this chunk.
+    pub references: HashSet<UniqueId>,
+}
+
+/// The state associated with an `ObjectRepo`.
 #[derive(Debug)]
-pub struct RepositoryState<K: Key, S: DataStore> {
+pub struct RepoState<S: DataStore> {
     /// The data store which backs this repository.
     pub store: Mutex<S>,
 
     /// The metadata for the repository.
-    pub metadata: RepositoryMetadata,
+    pub metadata: RepoMetadata,
 
-    /// The repository's header.
-    pub header: Header<K>,
+    /// A map of chunk hashes to information about them.
+    pub chunks: HashMap<Chunk, ChunkInfo>,
 
     /// The master encryption key for the repository.
     pub master_key: EncryptionKey,

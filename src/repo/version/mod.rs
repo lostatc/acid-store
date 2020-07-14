@@ -16,7 +16,7 @@
 
 //! An object store with support for content versioning.
 
-pub use self::repository::VersionRepository;
+pub use self::repository::VersionRepo;
 pub use self::version::Version;
 
 mod repository;

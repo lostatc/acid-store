@@ -31,10 +31,7 @@ use s3::credentials::Credentials;
 #[cfg(feature = "store-s3")]
 use s3::region::Region;
 
-use acid_store::repo::{
-    Chunking, Compression, Encryption, ObjectRepository, OpenRepo, RepositoryConfig,
-};
-use acid_store::store::MemoryStore;
+use acid_store::repo::{Chunking, Compression, Encryption, RepoConfig};
 use lazy_static::lazy_static;
 
 /// The minimum size of test data buffers.
@@ -43,13 +40,10 @@ pub const MIN_BUFFER_SIZE: usize = 1024;
 /// The maximum size of test data buffers.
 pub const MAX_BUFFER_SIZE: usize = 2048;
 
-/// The password to use for testing encrypted repositories.
-pub const PASSWORD: &[u8] = b"password";
-
 lazy_static! {
-    /// The archive config to use for testing.
-    pub static ref REPO_CONFIG: RepositoryConfig = {
-        let mut config = RepositoryConfig::default();
+    /// The repository config to use for testing IO.
+    pub static ref REPO_IO_CONFIG: RepoConfig = {
+        let mut config = RepoConfig::default();
         config.chunking = Chunking::Zpaq { bits: 8 };
         config.encryption = Encryption::XChaCha20Poly1305;
         config.compression = Compression::Lz4 { level: 2 };
@@ -110,9 +104,4 @@ pub fn random_bytes(size: usize) -> Vec<u8> {
 pub fn random_buffer() -> Vec<u8> {
     let mut rng = SmallRng::from_entropy();
     random_bytes(rng.gen_range(MIN_BUFFER_SIZE, MAX_BUFFER_SIZE))
-}
-
-/// Create a new `ObjectRepository` that stores data in memory.
-pub fn create_repo() -> acid_store::Result<ObjectRepository<String, MemoryStore>> {
-    ObjectRepository::new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), Some(PASSWORD))
 }

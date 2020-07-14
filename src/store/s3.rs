@@ -16,19 +16,15 @@
 
 #![cfg(feature = "store-s3")]
 
+use hex_literal::hex;
 use s3::bucket::Bucket;
 use s3::error::S3Error;
 use uuid::Uuid;
 
-use lazy_static::lazy_static;
-
 use super::common::{DataStore, OpenOption, OpenStore};
 
-lazy_static! {
-    /// A UUID which acts as the version ID of the store format.
-    static ref CURRENT_VERSION: Uuid =
-        Uuid::parse_str("a2b7bda8-45ea-11ea-ad75-afa592f123ef").unwrap();
-}
+/// A UUID which acts as the version ID of the store format.
+const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("a2b7bda8 45ea 11ea ad75 afa592f123ef"));
 
 /// The MIME content type to use for binary data.
 const BINARY_CONTENT_TYPE: &str = "application/octet-stream";
@@ -51,11 +47,13 @@ impl OpenStore for S3Store {
     where
         Self: Sized,
     {
-        let (version_bytes, _) = config.get_object("version").map_err(anyhow::Error::from)?;
+        let (version_bytes, _) = config
+            .get_object("version")
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
         let version = Uuid::from_slice(version_bytes.as_slice()).ok();
 
         match version {
-            Some(version) if version == *CURRENT_VERSION => {
+            Some(version) if version == CURRENT_VERSION => {
                 if options.contains(OpenOption::CREATE_NEW) {
                     return Err(crate::Error::AlreadyExists);
                 }
@@ -64,7 +62,7 @@ impl OpenStore for S3Store {
                 if options.intersects(OpenOption::CREATE | OpenOption::CREATE_NEW) {
                     config
                         .put_object("version", CURRENT_VERSION.as_bytes(), BINARY_CONTENT_TYPE)
-                        .map_err(anyhow::Error::from)?;
+                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
                 } else {
                     return Err(crate::Error::UnsupportedFormat);
                 }
@@ -74,14 +72,14 @@ impl OpenStore for S3Store {
         if options.contains(OpenOption::TRUNCATE) {
             let block_paths = config
                 .list_all(String::from("block/"), None)
-                .map_err(anyhow::Error::from)?
+                .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
                 .into_iter()
                 .flat_map(|(list, _)| list.contents)
                 .map(|object| object.key);
             for block_path in block_paths {
                 config
                     .delete_object(&block_path)
-                    .map_err(anyhow::Error::from)?;
+                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
             }
         }
 

@@ -14,19 +14,8 @@
  * limitations under the License.
  */
 
-use serde::{Deserialize, Serialize};
+//! An object store which maps keys to seekable binary blobs.
 
-use crate::repo::key_id::KeyId;
+pub use self::repository::{Key, KeyRepo};
 
-/// A type of data stored in the `ObjectRepository` which backs a `ValueRepository`.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
-pub enum ValueKey {
-    /// A serialized value.
-    Data(KeyId),
-
-    /// The serialized mapping of keys to key IDs.
-    KeyTable,
-
-    /// The current repository version.
-    RepositoryVersion,
-}
+mod repository;

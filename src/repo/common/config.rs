@@ -16,7 +16,7 @@
 
 use super::compression::Compression;
 use super::encryption::{Encryption, ResourceLimit};
-use crate::repo::object::Chunking;
+use crate::repo::common::Chunking;
 
 /// The configuration for an repository.
 ///
@@ -25,7 +25,7 @@ use crate::repo::object::Chunking;
 /// reasonable default configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
-pub struct RepositoryConfig {
+pub struct RepoConfig {
     /// The chunking method to use in the repository.
     ///
     /// The default value is `Chunking::Zpaq { bits: 20 }`.
@@ -52,9 +52,9 @@ pub struct RepositoryConfig {
     pub operations_limit: ResourceLimit,
 }
 
-impl Default for RepositoryConfig {
+impl Default for RepoConfig {
     fn default() -> Self {
-        RepositoryConfig {
+        RepoConfig {
             chunking: Chunking::Zpaq { bits: 20 },
             compression: Compression::None,
             encryption: Encryption::None,
