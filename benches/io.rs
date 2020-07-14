@@ -22,7 +22,7 @@ use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 use tempfile::tempdir;
 
-use acid_store::repo::{Chunking, Encryption, ObjectRepository, OpenRepo, RepositoryConfig};
+use acid_store::repo::{Chunking, Encryption, ObjectRepository, OpenRepo, RepoConfig};
 use acid_store::store::{DirectoryStore, OpenOption, OpenStore};
 
 /// Return a buffer containing `size` random bytes for testing purposes.
@@ -45,7 +45,7 @@ fn new_store(directory: &Path) -> DirectoryStore {
 /// Return an iterator of repositories and test descriptions.
 fn test_configs(directory: &Path) -> Vec<(ObjectRepository<String, DirectoryStore>, String)> {
     let fixed = {
-        let mut config = RepositoryConfig::default();
+        let mut config = RepoConfig::default();
         config.chunking = Chunking::Fixed {
             size: bytesize::mib(1u64) as usize,
         };
@@ -56,7 +56,7 @@ fn test_configs(directory: &Path) -> Vec<(ObjectRepository<String, DirectoryStor
     };
 
     let fixed_encryption = {
-        let mut config = RepositoryConfig::default();
+        let mut config = RepoConfig::default();
         config.chunking = Chunking::Fixed {
             size: bytesize::mib(1u64) as usize,
         };
@@ -74,7 +74,7 @@ fn test_configs(directory: &Path) -> Vec<(ObjectRepository<String, DirectoryStor
     };
 
     let zpaq = {
-        let mut config = RepositoryConfig::default();
+        let mut config = RepoConfig::default();
         config.chunking = Chunking::Zpaq { bits: 20 };
         config.encryption = Encryption::None;
         let repo =
@@ -83,7 +83,7 @@ fn test_configs(directory: &Path) -> Vec<(ObjectRepository<String, DirectoryStor
     };
 
     let zpaq_encryption = {
-        let mut config = RepositoryConfig::default();
+        let mut config = RepoConfig::default();
         config.chunking = Chunking::Zpaq { bits: 20 };
         config.encryption = Encryption::XChaCha20Poly1305;
         let repo = ObjectRepository::new_repo(
@@ -110,12 +110,9 @@ pub fn insert_object(criterion: &mut Criterion) {
 
     for num_objects in [100, 1_000, 10_000].iter() {
         // Create a new repository.
-        let mut repo = ObjectRepository::new_repo(
-            new_store(tmp_dir.path()),
-            RepositoryConfig::default(),
-            None,
-        )
-        .unwrap();
+        let mut repo =
+            ObjectRepository::new_repo(new_store(tmp_dir.path()), RepoConfig::default(), None)
+                .unwrap();
 
         // Insert objects and write to them but don't commit them.
         for i in 0..*num_objects {
@@ -145,12 +142,9 @@ pub fn insert_object_and_write(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("Insert an object and write to it");
 
     for num_objects in [100, 1_000, 10_000].iter() {
-        let mut repo = ObjectRepository::new_repo(
-            new_store(tmp_dir.path()),
-            RepositoryConfig::default(),
-            None,
-        )
-        .unwrap();
+        let mut repo =
+            ObjectRepository::new_repo(new_store(tmp_dir.path()), RepoConfig::default(), None)
+                .unwrap();
 
         // Insert objects and write to them but don't commit them.
         for i in 0..*num_objects {

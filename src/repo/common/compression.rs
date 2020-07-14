@@ -65,7 +65,7 @@ pub enum Compression {
 
 impl Compression {
     /// Compresses the given `data` and returns it.
-    pub(super) fn compress(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
+    pub(crate) fn compress(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
         match self {
             Compression::None => Ok(data.to_vec()),
             #[cfg(feature = "compression")]
@@ -93,7 +93,7 @@ impl Compression {
     }
 
     /// Wraps the given `reader` to decompress its bytes using this compression method.
-    pub(super) fn decompress<'a>(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
+    pub(crate) fn decompress<'a>(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
         match self {
             Compression::None => Ok(data.to_vec()),
             #[cfg(feature = "compression")]

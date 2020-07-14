@@ -18,18 +18,14 @@
 
 use std::path::{Path, PathBuf};
 
+use hex_literal::hex;
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-use lazy_static::lazy_static;
-
 use crate::store::common::{DataStore, OpenOption, OpenStore};
 
-lazy_static! {
-    /// A UUID which acts as the version ID of the store format.
-    static ref CURRENT_VERSION: Uuid =
-        Uuid::parse_str("08d14eb8-4156-11ea-8ec7-a31cc3dfe2e4").unwrap();
-}
+/// A UUID which acts as the version ID of the store format.
+const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("08d14eb8 4156 11ea 8ec7 a31cc3dfe2e4"));
 
 /// A `DataStore` which stores data in a SQLite database.
 ///
@@ -47,7 +43,8 @@ impl SqliteStore {
             return Err(crate::Error::AlreadyExists);
         }
 
-        let connection = Connection::open(&path).map_err(anyhow::Error::from)?;
+        let connection = Connection::open(&path)
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         connection
             .execute_batch(
@@ -63,7 +60,7 @@ impl SqliteStore {
                     );
                 "#,
             )
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         connection
             .execute(
@@ -73,7 +70,7 @@ impl SqliteStore {
                 "#,
                 params![&CURRENT_VERSION.as_bytes()[..]],
             )
-            .map_err(anyhow::Error::from)?;
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         Ok(SqliteStore { connection })
     }
@@ -84,7 +81,8 @@ impl SqliteStore {
             return Err(crate::Error::NotFound);
         }
 
-        let connection = Connection::open(&path).map_err(anyhow::Error::from)?;
+        let connection = Connection::open(&path)
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         let version_bytes: Vec<u8> = connection
             .query_row(
@@ -99,7 +97,7 @@ impl SqliteStore {
         let version = Uuid::from_slice(version_bytes.as_slice())
             .map_err(|_| crate::Error::UnsupportedFormat)?;
 
-        if version != *CURRENT_VERSION {
+        if version != CURRENT_VERSION {
             return Err(crate::Error::UnsupportedFormat);
         }
 
@@ -130,7 +128,7 @@ impl OpenStore for SqliteStore {
                             DROP TABLE Metadata;
                         "#,
                     )
-                    .map_err(anyhow::Error::from)?;
+                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
             }
 
             Ok(store)

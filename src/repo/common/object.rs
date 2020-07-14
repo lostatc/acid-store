@@ -26,13 +26,13 @@ use blake2::VarBlake2b;
 use rmp_serde::{from_read, to_vec};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-use crate::repo::object::chunk_store::{ChunkReader, ChunkWriter};
-use crate::repo::object::state::{ChunkLocation, ObjectState};
+use super::chunk_store::{ChunkReader, ChunkWriter};
+use super::id_table::UniqueId;
+use super::state::RepoState;
+use super::state::{ChunkLocation, ObjectState};
 use crate::store::DataStore;
-
-use super::header::Key;
-use super::state::RepositoryState;
 
 /// The size of the checksums used for uniquely identifying chunks.
 pub const CHUNK_HASH_SIZE: usize = 32;
@@ -61,22 +61,59 @@ pub struct Chunk {
 
 /// A handle for accessing data in a repository.
 ///
-/// An `Object` doesn't own or store data itself, but references data stored in a repository.
-#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+/// An `ObjectHandle` is like an address for locating data stored in an `ObjectRepo`. It can't
+/// be used to read or write data directly, but it can be used with `ObjectRepo`to get an
+/// `Object` or a `ReadOnlyObject`.
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ObjectHandle {
+    // We need both the `repo_id` and the `instance_id` to uniquely identify the instance an object
+    // handle is associated with because a user could give two instances from different repositories
+    // the same instance ID.
+    /// The UUID of the repository this handle is associated with.
+    pub(super) repo_id: Uuid,
+
+    /// The UUID of the repository instance this handle is associated with.
+    pub(super) instance_id: Uuid,
+
+    // We could just give each handle a unique UUID instead of having the repository ID, instance
+    // ID, *and* handle ID, but using `UniqueId` instead of `Uuid` uses less memory in the
+    // `ObjectRepo`. If we used UUIDs, the repository would have to store a UUID in memory for
+    // every object, whereas `IdTable` is much more memory efficient.
+    /// The ID of this handle which is unique within its repository.
+    ///
+    /// Handle IDs are only guaranteed to be unique within the same repository.
+    pub(super) handle_id: UniqueId,
+
     /// The original size of the data in bytes.
-    pub size: u64,
+    pub(super) size: u64,
 
     /// The checksums of the chunks which make up the data.
-    pub chunks: Vec<Chunk>,
+    pub(super) chunks: Vec<Chunk>,
 }
 
-impl Default for ObjectHandle {
-    fn default() -> Self {
-        Self {
-            size: 0,
-            chunks: Vec::new(),
+impl ObjectHandle {
+    /// Return a `ContentId` representing the contents of the object.
+    ///
+    /// The returned `ContentId` represents the contents of the object at the time this method was
+    /// called. It is not updated when the object is modified.
+    pub fn content_id(&self) -> ContentId {
+        ContentId {
+            repo_id: self.repo_id,
+            size: self.size,
+            chunks: self.chunks.clone(),
         }
+    }
+
+    /// The size of the object in bytes.
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+
+    /// Return whether this object has the same contents as `other`.
+    ///
+    /// See `ContentId::compare_contents` for details.
+    pub fn compare_contents(&self, other: impl Read) -> crate::Result<bool> {
+        self.content_id().compare_contents(other)
     }
 }
 
@@ -85,47 +122,57 @@ impl Default for ObjectHandle {
 /// A `ContentId` is like a checksum of the data in an object except it is cheap to compute.
 /// A `ContentId` can be compared with other `ContentId` values to determine if the contents of two
 /// objects are equal. However, these comparisons are only valid within the same repository;
-/// comparisons between `ContentId`s from different repositories are meaningless. To compare data
-/// between repositories, you should use a checksum or `Object::compare_contents`.
+/// content IDs from different repositories are never equal. To compare data between repositories,
+/// you should use `compare_contents`.
 ///
 /// `ContentId` is opaque, but it can be serialized and deserialized. The value of a `ContentId` is
 /// valid for the lifetime of a repository, meaning that they can be compared across invocations of
 /// the library.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
-pub struct ContentId([u8; 32]);
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+pub struct ContentId {
+    // We can't compare content IDs from different repositories because those repositories may have
+    // different a chunking configuration. To ensure consistent behavior, we include the
+    // repository's UUID to ensure that content IDs from different repositories are never equal.
+    /// The ID of the repository the object is associated with.
+    pub(super) repo_id: Uuid,
 
-/// A wrapper for getting information about an object.
-struct ObjectInfo<'a, K: Key, S: DataStore> {
-    repo_state: &'a RepositoryState<K, S>,
-    object_state: &'a ObjectState,
-    key: &'a K,
+    /// The original size of the data in bytes.
+    pub(super) size: u64,
+
+    /// The checksums of the chunks which make up the data.
+    pub(super) chunks: Vec<Chunk>,
 }
 
-impl<'a, K: Key, S: DataStore> ObjectInfo<'a, K, S> {
-    /// Return the size of the object in bytes.
-    fn size(&self) -> u64 {
-        let handle = self.repo_state.header.objects.get(&self.key).unwrap();
-        handle.size
-    }
-
-    /// Return a `ContentId` representing the contents of this object.
-    fn content_id(&self) -> ContentId {
-        let handle = self.repo_state.header.objects.get(&self.key).unwrap();
-
-        // The content ID is just a hash of all the chunk hashes, which is cheap to compute.
-        let mut concatenation = Vec::new();
-        for chunk in &handle.chunks {
-            concatenation.extend_from_slice(&chunk.hash);
-        }
-        ContentId(chunk_hash(concatenation.as_slice()))
+impl ContentId {
+    /// The size of the object in bytes.
+    pub fn size(&self) -> u64 {
+        self.size
     }
 
     /// Return whether this object has the same contents as `other`.
-    fn compare_contents(&self, mut other: impl Read) -> crate::Result<bool> {
-        let handle = self.repo_state.header.objects.get(&self.key).unwrap();
+    ///
+    /// This compares the contents of this object with `other` without reading any data from the
+    /// data store. This is much faster than calculating a checksum of the object, especially if
+    /// reading from the data store would be prohibitively slow.
+    ///
+    /// This compares the contents of this object with `other` in chunks, and will fail early if any
+    /// chunk does not match. This means that it may not be necessary to read the entire file to
+    /// determine that the contents are different.
+    ///
+    /// Because `other` only implements `Read`, this cannot compare the contents by size. If you
+    /// need to compare the contents of this object with a file or some other source of data with
+    /// a known size, you should use `size` to query the size of this object so you can handle the
+    /// trivial case of the contents having different sizes.
+    ///
+    /// If you need to compare the contents of two objects from the same repository, it's cheaper to
+    /// check if their `ContentId` values are equal instead.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn compare_contents(&self, mut other: impl Read) -> crate::Result<bool> {
         let mut buffer = Vec::new();
 
-        for chunk in &handle.chunks {
+        for chunk in &self.chunks {
             // Grow the buffer so it's large enough.
             if buffer.len() < chunk.size {
                 buffer.resize(chunk.size, 0u8);
@@ -151,11 +198,19 @@ impl<'a, K: Key, S: DataStore> ObjectInfo<'a, K, S> {
 
         Ok(true)
     }
+}
 
+/// A wrapper for getting information about an object.
+struct ObjectInfo<'a, S: DataStore> {
+    repo_state: &'a RepoState<S>,
+    object_state: &'a ObjectState,
+    handle: &'a ObjectHandle,
+}
+
+impl<'a, S: DataStore> ObjectInfo<'a, S> {
     /// Verify the integrity of the data in this object.
     fn verify(&self) -> crate::Result<bool> {
-        let handle = self.repo_state.header.objects.get(&self.key).unwrap();
-        let expected_chunks = handle.chunks.iter().copied().collect::<Vec<_>>();
+        let expected_chunks = self.handle.chunks.iter().copied().collect::<Vec<_>>();
 
         for chunk in expected_chunks {
             match self.repo_state.read_chunk(chunk) {
@@ -175,12 +230,10 @@ impl<'a, K: Key, S: DataStore> ObjectInfo<'a, K, S> {
 
     /// Return the chunk at the current seek position or `None` if there is none.
     fn current_chunk(&self) -> Option<ChunkLocation> {
-        let handle = self.repo_state.header.objects.get(&self.key).unwrap();
-
         let mut chunk_start = 0u64;
         let mut chunk_end = 0u64;
 
-        for (index, chunk) in handle.chunks.iter().enumerate() {
+        for (index, chunk) in self.handle.chunks.iter().enumerate() {
             chunk_end += chunk.size as u64;
             if self.object_state.position >= chunk_start && self.object_state.position < chunk_end {
                 return Some(ChunkLocation {
@@ -199,19 +252,19 @@ impl<'a, K: Key, S: DataStore> ObjectInfo<'a, K, S> {
     }
 }
 
-struct ObjectReader<'a, K: Key, S: DataStore> {
-    repo_state: &'a RepositoryState<K, S>,
+struct ObjectReader<'a, S: DataStore> {
+    repo_state: &'a RepoState<S>,
     object_state: &'a mut ObjectState,
-    key: &'a K,
+    handle: &'a ObjectHandle,
 }
 
 /// A wrapper for reading data from an object.
-impl<'a, K: Key, S: DataStore> ObjectReader<'a, K, S> {
-    fn object_info(&'a self) -> ObjectInfo<'a, K, S> {
+impl<'a, S: DataStore> ObjectReader<'a, S> {
+    fn object_info(&'a self) -> ObjectInfo<'a, S> {
         ObjectInfo {
             repo_state: self.repo_state,
             object_state: self.object_state,
-            key: self.key,
+            handle: self.handle,
         }
     }
 
@@ -243,12 +296,9 @@ impl<'a, K: Key, S: DataStore> ObjectReader<'a, K, S> {
     }
 }
 
-impl<'a, K: Key, S: DataStore> Seek for ObjectReader<'a, K, S> {
+impl<'a, S: DataStore> Seek for ObjectReader<'a, S> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        let object_size = {
-            let handle = self.repo_state.header.objects.get(&self.key).unwrap();
-            handle.size
-        };
+        let object_size = self.handle.size;
 
         let new_position = match pos {
             SeekFrom::Start(offset) => min(object_size, offset),
@@ -284,7 +334,7 @@ impl<'a, K: Key, S: DataStore> Seek for ObjectReader<'a, K, S> {
 
 // To avoid reading the same chunk from the repository multiple times, the chunk which was most
 // recently read from is cached in a buffer.
-impl<'a, K: Key, S: DataStore> Read for ObjectReader<'a, K, S> {
+impl<'a, S: DataStore> Read for ObjectReader<'a, S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let next_chunk = self.read_chunk(buf.len())?;
         let bytes_read = next_chunk.len();
@@ -295,34 +345,32 @@ impl<'a, K: Key, S: DataStore> Read for ObjectReader<'a, K, S> {
 }
 
 /// A wrapper for writing data to an object.
-struct ObjectWriter<'a, K: Key, S: DataStore> {
-    repo_state: &'a mut RepositoryState<K, S>,
+struct ObjectWriter<'a, S: DataStore> {
+    repo_state: &'a mut RepoState<S>,
     object_state: &'a mut ObjectState,
-    key: &'a K,
+    handle: &'a mut ObjectHandle,
 }
 
-impl<'a, K: Key, S: DataStore> ObjectWriter<'a, K, S> {
-    fn object_info(&'a self) -> ObjectInfo<'a, K, S> {
+impl<'a, S: DataStore> ObjectWriter<'a, S> {
+    fn object_info(&'a self) -> ObjectInfo<'a, S> {
         ObjectInfo {
             repo_state: self.repo_state,
             object_state: self.object_state,
-            key: self.key,
+            handle: self.handle,
         }
     }
 
-    fn object_reader(&mut self) -> ObjectReader<K, S> {
+    fn object_reader(&mut self) -> ObjectReader<S> {
         ObjectReader {
             repo_state: self.repo_state,
             object_state: self.object_state,
-            key: self.key,
+            handle: self.handle,
         }
     }
 
     fn truncate(&mut self, length: u64) -> crate::Result<()> {
         self.flush()?;
-        let handle = self.repo_state.header.objects.get(&self.key).unwrap();
-
-        if length >= handle.size {
+        if length >= self.handle.size {
             return Ok(());
         }
 
@@ -337,20 +385,19 @@ impl<'a, K: Key, S: DataStore> ObjectWriter<'a, K, S> {
         };
         let last_chunk = self.repo_state.read_chunk(end_location.chunk)?;
         let new_last_chunk = &last_chunk[..end_location.relative_position()];
-        let new_last_chunk = self.repo_state.write_chunk(&new_last_chunk)?;
-
-        let key = self.key.clone();
-        let mut handle = self.repo_state.header.objects.get_mut(&key).unwrap();
+        let new_last_chunk = self
+            .repo_state
+            .write_chunk(&new_last_chunk, self.handle.handle_id)?;
 
         // Remove all chunks including and after the final chunk.
-        handle.chunks.drain(end_location.index..);
+        self.handle.chunks.drain(end_location.index..);
 
         // Append the new final chunk which has been sliced.
-        handle.chunks.push(new_last_chunk);
+        self.handle.chunks.push(new_last_chunk);
 
         // Update the object size.
-        let current_size = handle.size;
-        handle.size = min(length, current_size);
+        let current_size = self.handle.size;
+        self.handle.size = min(length, current_size);
 
         // Restore the seek position.
         self.object_state.position = min(original_position, length);
@@ -371,7 +418,9 @@ impl<'a, K: Key, S: DataStore> ObjectWriter<'a, K, S> {
     /// Write chunks stored in the chunker to the repository.
     fn write_chunks(&mut self) -> crate::Result<()> {
         for chunk_data in self.object_state.chunker.chunks() {
-            let chunk = self.repo_state.write_chunk(&chunk_data)?;
+            let chunk = self
+                .repo_state
+                .write_chunk(&chunk_data, self.handle.handle_id)?;
             self.object_state.new_chunks.push(chunk);
         }
         Ok(())
@@ -382,7 +431,7 @@ impl<'a, K: Key, S: DataStore> ObjectWriter<'a, K, S> {
 // in-place; they can only be read or written in their entirety. This means we need to do a lot of
 // buffering to wait for a chunk boundary before writing a chunk to the repository. It also means
 // the user needs to explicitly call `flush` when they're done writing data.
-impl<'a, K: Key, S: DataStore> Write for ObjectWriter<'a, K, S> {
+impl<'a, S: DataStore> Write for ObjectWriter<'a, S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         // Check if this is the first time `write` is being called after calling `flush`.
         if self.object_state.chunker.is_empty() {
@@ -442,26 +491,28 @@ impl<'a, K: Key, S: DataStore> Write for ObjectWriter<'a, K, S> {
             .unwrap_or(0);
 
         let end_index = {
-            let handle = self.repo_state.header.objects.get(&self.key).unwrap();
-
             // Find the index of the last chunk which is being overwritten.
             match &current_chunk {
                 Some(location) => location.index + 1,
-                None => handle.chunks.len(),
+                None => self.handle.chunks.len(),
             }
         };
 
         let new_chunks = replace(&mut self.object_state.new_chunks, Vec::new());
 
         {
-            let key = self.key.clone();
-            let mut handle = self.repo_state.header.objects.get_mut(&key).unwrap();
-
             // Update chunk references in the object handle to reflect changes.
-            handle.chunks.splice(start_index..end_index, new_chunks);
+            self.handle
+                .chunks
+                .splice(start_index..end_index, new_chunks);
 
             // Update the size of the object in the object handle to reflect changes.
-            handle.size = handle.chunks.iter().map(|chunk| chunk.size as u64).sum();
+            self.handle.size = self
+                .handle
+                .chunks
+                .iter()
+                .map(|chunk| chunk.size as u64)
+                .sum();
         }
 
         self.object_state.start_location = None;
@@ -470,68 +521,75 @@ impl<'a, K: Key, S: DataStore> Write for ObjectWriter<'a, K, S> {
     }
 }
 
-/// A handle for accessing data in a repository.
+/// An read-only view of data in a repository.
 ///
-/// This is a read-only version of `Object` which provides read-only access to data in the
-/// repository.
+/// A `ReadOnlyObject` is a view of data in a repository. It implements `Read` and `Seek` for
+/// reading data from the repository. You can think of this as a read-only counterpart to `Object`.
 ///
 /// See `Object` for details.
 #[derive(Debug)]
-pub struct ReadOnlyObject<'a, K: Key, S: DataStore> {
+pub struct ReadOnlyObject<'a, S: DataStore> {
     /// The state for the object repository.
-    repo_state: &'a RepositoryState<K, S>,
+    repo_state: &'a RepoState<S>,
 
     /// The state for the object itself.
     object_state: ObjectState,
 
-    /// The key associated with this object.
-    key: K,
+    /// The object handle which stores the hashes of the chunks which make up the object.
+    handle: &'a ObjectHandle,
 }
 
-impl<'a, K: Key, S: DataStore> ReadOnlyObject<'a, K, S> {
-    pub(super) fn new(repo_state: &'a RepositoryState<K, S>, key: K) -> Self {
+impl<'a, S: DataStore> ReadOnlyObject<'a, S> {
+    pub(crate) fn new(repo_state: &'a RepoState<S>, handle: &'a ObjectHandle) -> Self {
         Self {
             repo_state,
             object_state: ObjectState::new(repo_state.metadata.chunking.to_chunker()),
-            key,
+            handle,
         }
     }
 
-    fn object_info(&self) -> ObjectInfo<K, S> {
+    fn object_info(&self) -> ObjectInfo<S> {
         ObjectInfo {
             repo_state: self.repo_state,
             object_state: &self.object_state,
-            key: &self.key,
+            handle: self.handle,
         }
     }
 
-    fn object_reader(&mut self) -> ObjectReader<K, S> {
+    fn object_reader(&mut self) -> ObjectReader<S> {
         ObjectReader {
             repo_state: self.repo_state,
             object_state: &mut self.object_state,
-            key: &self.key,
+            handle: self.handle,
         }
     }
 
     /// Return the size of the object in bytes.
     ///
-    /// See `Object::size` for details.
+    /// Unflushed data is not accounted for when calculating the size, so you may want to explicitly
+    /// flush written data with `flush` before calling this method.
     pub fn size(&self) -> u64 {
-        self.object_info().size()
+        self.handle.size()
     }
 
     /// Return a `ContentId` representing the contents of this object.
     ///
-    /// See `Object::content_id` for details.
+    /// Unflushed data is not accounted for when generating a content ID, so you may want to
+    /// explicitly flush written data with `flush` before calling this method.
+    ///
+    /// See `ObjectHandle::content_id` for details.
     pub fn content_id(&self) -> ContentId {
-        self.object_info().content_id()
+        self.handle.content_id()
     }
 
     /// Return whether this object has the same contents as `other`.
     ///
-    /// See `Object::compare_contents` for details.
+    /// Unflushed data is not accounted for when comparing contents, so you may want to explicitly
+    /// flush written data with `flush` before calling this method.
+    ///
+    /// See `ContentId::compare_contents` for details.
     pub fn compare_contents(&self, other: impl Read) -> crate::Result<bool> {
-        self.object_info().compare_contents(other)
+        self.handle.compare_contents(other)
     }
 
     /// Verify the integrity of the data in this object.
@@ -549,23 +607,22 @@ impl<'a, K: Key, S: DataStore> ReadOnlyObject<'a, K, S> {
     }
 }
 
-impl<'a, K: Key, S: DataStore> Read for ReadOnlyObject<'a, K, S> {
+impl<'a, S: DataStore> Read for ReadOnlyObject<'a, S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.object_reader().read(buf)
     }
 }
 
-impl<'a, K: Key, S: DataStore> Seek for ReadOnlyObject<'a, K, S> {
+impl<'a, S: DataStore> Seek for ReadOnlyObject<'a, S> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         self.object_reader().seek(pos)
     }
 }
 
-/// A handle for accessing data in a repository.
+/// A read-write view of data in a repository.
 ///
-/// An `Object` represents the data associated with a key in an `ObjectRepository`. It implements
-/// `Read`, `Write`, and `Seek` for reading data from the repository and writing data to the
-/// repository.
+/// An `Object` is a view of data in a repository. It implements `Read`, `Write`, and `Seek` for
+/// reading data from the repository and writing data to the repository.
 ///
 /// Because `Object` internally buffers data when reading, there's no need to use a buffered reader
 /// like `BufReader`.
@@ -582,48 +639,48 @@ impl<'a, K: Key, S: DataStore> Seek for ReadOnlyObject<'a, K, S> {
 /// be converted `Into` an `acid_store::Error` to be consistent with the rest of the library. The
 /// implementations document which `acid_store::Error` values they can be converted into.
 #[derive(Debug)]
-pub struct Object<'a, K: Key, S: DataStore> {
+pub struct Object<'a, S: DataStore> {
     /// The state for the object repository.
-    repo_state: &'a mut RepositoryState<K, S>,
+    repo_state: &'a mut RepoState<S>,
 
     /// The state for the object itself.
     object_state: ObjectState,
 
-    /// The key associated with this object.
-    key: K,
+    /// The object handle which stores the hashes of the chunks which make up the object.
+    handle: &'a mut ObjectHandle,
 }
 
-impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
-    pub(super) fn new(repo_state: &'a mut RepositoryState<K, S>, key: K) -> Self {
+impl<'a, S: DataStore> Object<'a, S> {
+    pub(crate) fn new(repo_state: &'a mut RepoState<S>, handle: &'a mut ObjectHandle) -> Self {
         let chunker = repo_state.metadata.chunking.to_chunker();
         Self {
             repo_state,
             object_state: ObjectState::new(chunker),
-            key,
+            handle,
         }
     }
 
-    fn object_info(&self) -> ObjectInfo<K, S> {
+    fn object_info(&self) -> ObjectInfo<S> {
         ObjectInfo {
             repo_state: self.repo_state,
             object_state: &self.object_state,
-            key: &self.key,
+            handle: self.handle,
         }
     }
 
-    fn object_reader(&mut self) -> ObjectReader<K, S> {
+    fn object_reader(&mut self) -> ObjectReader<S> {
         ObjectReader {
             repo_state: self.repo_state,
             object_state: &mut self.object_state,
-            key: &self.key,
+            handle: self.handle,
         }
     }
 
-    fn object_writer(&mut self) -> ObjectWriter<K, S> {
+    fn object_writer(&mut self) -> ObjectWriter<S> {
         ObjectWriter {
             repo_state: self.repo_state,
             object_state: &mut self.object_state,
-            key: &self.key,
+            handle: self.handle,
         }
     }
 
@@ -632,45 +689,27 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     /// Unflushed data is not accounted for when calculating the size, so you may want to explicitly
     /// flush written data with `flush` before calling this method.
     pub fn size(&self) -> u64 {
-        self.object_info().size()
+        self.handle.size()
     }
 
     /// Return a `ContentId` representing the contents of this object.
     ///
-    /// The returned `ContentId` represents the contents of the object at the time this method was
-    /// called.
-    ///
-    /// Unflushed data is not accounted for when calculating the `ContentId`, so you may want to
+    /// Unflushed data is not accounted for when generating a content ID, so you may want to
     /// explicitly flush written data with `flush` before calling this method.
+    ///
+    /// See `ObjectHandle::content_id` for details.
     pub fn content_id(&self) -> ContentId {
-        self.object_info().content_id()
+        self.handle.content_id()
     }
 
     /// Return whether this object has the same contents as `other`.
     ///
-    /// This compares the contents of this object with `other` without reading any data from the
-    /// data store. This is much faster than calculating a checksum of the object, especially if
-    /// reading from the data store would be prohibitively slow.
-    ///
-    /// This compares the contents of this object with `other` in chunks, and will fail early if any
-    /// chunk does not match. This means that it may not be necessary to read the entire file to
-    /// determine that the contents are different.
-    ///
-    /// Because `other` only implements `Read`, this cannot compare the contents by size. If you
-    /// need to compare the contents of this object with a file or some other source of data with
-    /// a known size, you should use `size` to query the size of this object so you can handle the
-    /// trivial case of the contents having different sizes.
-    ///
-    /// If you need to compare the contents of two objects from the same repository, using
-    /// `content_id` will be faster.
-    ///
     /// Unflushed data is not accounted for when comparing contents, so you may want to explicitly
     /// flush written data with `flush` before calling this method.
     ///
-    /// # Errors
-    /// - `Error::Io`: An I/O error occurred.
+    /// See `ContentId::compare_contents` for details.
     pub fn compare_contents(&self, other: impl Read) -> crate::Result<bool> {
-        self.object_info().compare_contents(other)
+        self.handle.compare_contents(other)
     }
 
     /// Verify the integrity of the data in this object.
@@ -732,7 +771,7 @@ impl<'a, K: Key, S: DataStore> Object<'a, K, S> {
     }
 }
 
-impl<'a, K: Key, S: DataStore> Read for Object<'a, K, S> {
+impl<'a, S: DataStore> Read for Object<'a, S> {
     /// The `io::Error` returned by this method can be converted into an `acid_store::Error`.
     ///
     /// # Errors
@@ -745,14 +784,14 @@ impl<'a, K: Key, S: DataStore> Read for Object<'a, K, S> {
     }
 }
 
-impl<'a, K: Key, S: DataStore> Seek for Object<'a, K, S> {
+impl<'a, S: DataStore> Seek for Object<'a, S> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         self.object_writer().flush()?;
         self.object_reader().seek(pos)
     }
 }
 
-impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
+impl<'a, S: DataStore> Write for Object<'a, S> {
     /// The `io::Error` returned by this method can be converted into an `acid_store::Error`.
     ///
     /// # Errors
@@ -774,7 +813,7 @@ impl<'a, K: Key, S: DataStore> Write for Object<'a, K, S> {
     }
 }
 
-impl<'a, K: Key, S: DataStore> Drop for Object<'a, K, S> {
+impl<'a, S: DataStore> Drop for Object<'a, S> {
     fn drop(&mut self) {
         self.flush().ok();
     }

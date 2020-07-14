@@ -53,7 +53,9 @@ This library provides the following storage backends out of the box.
 - Cloud storage via [rclone](https://rclone.org/)
 - In-Memory
 
-## Performance
+## Benchmarks
+
+You can run the benchmarks yourself by running `cargo bench --all-features`.
 
 ### Specs
 
@@ -64,7 +66,7 @@ Memory | 16 GB (2133MHz)
 Disk | Crucial MX500 SATA SSD
 OS | Ubuntu 19.10
 
-### Benchmark
+### Results
 
 Encryption | Chunking | Read | Write
 --- | --- | --- | ---

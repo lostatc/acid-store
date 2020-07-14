@@ -14,290 +14,359 @@
  * limitations under the License.
  */
 
-#![cfg(all(feature = "encryption", feature = "compression"))]
+#![cfg(feature = "encryption")]
 
-use std::io::Write;
+use std::io::{Read, Write};
 
-use tempfile::tempdir;
+use uuid::Uuid;
 
-use acid_store::repo::{LockStrategy, ObjectRepository, OpenRepo, RepositoryConfig};
-use acid_store::store::{DataStore, DirectoryStore, MemoryStore, OpenOption, OpenStore};
-use common::{create_repo, random_buffer, PASSWORD, REPO_CONFIG};
+use acid_store::repo::object::ObjectRepo;
+use acid_store::repo::{ConvertRepo, Encryption, OpenOptions};
+use acid_store::store::{DataStore, MemoryStore};
+use common::{assert_contains_all, random_buffer};
 
 mod common;
 
-#[test]
-fn creating_existing_repo_errs() -> anyhow::Result<()> {
-    let initial_repo = create_repo()?;
-    let new_repo = ObjectRepository::<String, _>::new_repo(
-        initial_repo.into_store(),
-        REPO_CONFIG.to_owned(),
-        Some(PASSWORD),
-    );
+fn create_repo() -> acid_store::Result<ObjectRepo<MemoryStore>> {
+    OpenOptions::new(MemoryStore::new()).create_new()
+}
 
-    assert!(matches!(
-        new_repo.unwrap_err(),
-        acid_store::Error::AlreadyExists
-    ));
+#[test]
+fn contains_unmanaged_object() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let handle = repo.add_unmanaged();
+
+    assert!(repo.contains_unmanaged(&handle));
+
     Ok(())
 }
 
 #[test]
-fn opening_nonexistent_repo_errs() {
-    let repository = ObjectRepository::<String, _>::open_repo(
-        MemoryStore::new(),
-        LockStrategy::Abort,
-        Some(PASSWORD),
-    );
+fn remove_unmanaged_object() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let handle = repo.add_unmanaged();
 
-    assert!(matches!(
-        repository.unwrap_err(),
-        acid_store::Error::NotFound
-    ));
-}
+    assert!(repo.remove_unmanaged(&handle));
+    assert!(!repo.contains_unmanaged(&handle));
+    assert!(!repo.remove_unmanaged(&handle));
 
-#[test]
-fn opening_with_invalid_password_errs() -> anyhow::Result<()> {
-    let repository = create_repo()?;
-    let repository = ObjectRepository::<String, _>::open_repo(
-        repository.into_store(),
-        LockStrategy::Abort,
-        Some(b"not the password"),
-    );
-
-    assert!(matches!(
-        repository.unwrap_err(),
-        acid_store::Error::Password
-    ));
     Ok(())
 }
 
 #[test]
-fn opening_without_password_errs() -> anyhow::Result<()> {
-    let repository =
-        ObjectRepository::<String, _>::new_repo(MemoryStore::new(), REPO_CONFIG.to_owned(), None);
-    assert!(matches!(
-        repository.unwrap_err(),
-        acid_store::Error::Password
-    ));
+fn can_not_get_object_from_removed_handle() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let mut handle = repo.add_unmanaged();
+    repo.remove_unmanaged(&handle);
+
+    assert!(repo.unmanaged_object(&handle).is_none());
+    assert!(repo.unmanaged_object_mut(&mut handle).is_none());
+
     Ok(())
 }
 
 #[test]
-fn opening_with_unnecessary_password_errs() -> anyhow::Result<()> {
-    let repository = ObjectRepository::<String, _>::new_repo(
-        MemoryStore::new(),
-        Default::default(),
-        Some(b"unnecessary password"),
-    );
-    assert!(matches!(
-        repository.unwrap_err(),
-        acid_store::Error::Password
-    ));
+fn removing_unmanaged_copy_does_not_affect_original() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let handle = repo.add_unmanaged();
+    let copy = repo.copy_unmanaged(&handle);
+
+    assert!(repo.remove_unmanaged(&copy));
+    assert!(repo.contains_unmanaged(&handle));
+
     Ok(())
 }
 
 #[test]
-fn opening_locked_repo_errs() -> anyhow::Result<()> {
-    let temp_dir = tempdir()?;
+fn unmanaged_copy_has_same_contents() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let mut handle = repo.add_unmanaged();
 
-    let store = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::CREATE_NEW)?;
-    let store_copy = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::empty())?;
-
-    let mut repository =
-        ObjectRepository::<String, _>::new_repo(store, REPO_CONFIG.to_owned(), Some(PASSWORD))?;
-    repository.commit()?;
-
-    let open_attempt =
-        ObjectRepository::<String, _>::open_repo(store_copy, LockStrategy::Abort, Some(PASSWORD));
-
-    assert!(matches!(
-        open_attempt.unwrap_err(),
-        acid_store::Error::Locked
-    ));
-    Ok(())
-}
-
-#[test]
-fn creating_locked_repo_errs() -> anyhow::Result<()> {
-    let temp_dir = tempdir()?;
-
-    let store = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::CREATE_NEW)?;
-    let store_copy = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::empty())?;
-
-    let mut repository =
-        ObjectRepository::<String, _>::new_repo(store, REPO_CONFIG.to_owned(), Some(PASSWORD))?;
-    repository.commit()?;
-
-    let open_attempt =
-        ObjectRepository::<String, _>::new_repo(store_copy, REPO_CONFIG.to_owned(), Some(PASSWORD));
-
-    assert!(matches!(
-        open_attempt.unwrap_err(),
-        acid_store::Error::AlreadyExists
-    ));
-    Ok(())
-}
-
-#[test]
-fn opening_with_wrong_key_type_errs() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    repository.insert("Test".into());
-    repository.commit()?;
-
-    let repository = ObjectRepository::<isize, _>::open_repo(
-        repository.into_store(),
-        LockStrategy::Abort,
-        Some(PASSWORD),
-    );
-
-    assert!(matches!(
-        repository.unwrap_err(),
-        acid_store::Error::KeyType
-    ));
-    Ok(())
-}
-
-#[test]
-fn inserted_key_replaces_existing_key() -> anyhow::Result<()> {
-    // Insert an object and write data to it.
-    let mut repository = create_repo()?;
-    let mut object = repository.insert("Test".into());
-    object.write_all(random_buffer().as_slice())?;
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    object.write_all(b"Data")?;
     object.flush()?;
-
-    assert_ne!(object.size(), 0);
-
-    // Replace the object with an empty one.
     drop(object);
-    let object = repository.insert("Test".into());
 
+    let copy = repo.copy_unmanaged(&handle);
+
+    let mut object = repo.unmanaged_object(&copy).unwrap();
+    let mut contents = Vec::new();
+    object.read_to_end(&mut contents)?;
+    drop(object);
+
+    assert_eq!(contents, b"Data");
+
+    Ok(())
+}
+
+#[test]
+fn contains_managed_object() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let id = Uuid::new_v4();
+    repo.add_managed(id);
+
+    assert!(repo.contains_managed(id));
+
+    Ok(())
+}
+
+#[test]
+fn remove_managed_object() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let id = Uuid::new_v4();
+    repo.add_managed(id);
+
+    assert!(repo.remove_managed(id));
+    assert!(!repo.contains_managed(id));
+    assert!(!repo.remove_managed(id));
+
+    Ok(())
+}
+
+#[test]
+fn managed_object_is_replaced() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let id = Uuid::new_v4();
+
+    let mut object = repo.add_managed(id);
+    object.write_all(b"Data")?;
+    object.flush()?;
+    drop(object);
+
+    let object = repo.add_managed(id);
     assert_eq!(object.size(), 0);
 
     Ok(())
 }
 
 #[test]
-fn remove_object() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    repository.insert("Test".into());
-
-    assert!(repository.remove("Test"));
-    assert!(!repository.remove("Test"));
-
+fn copy_nonexistent_managed_object() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    assert!(!repo.copy_managed(Uuid::new_v4(), Uuid::new_v4()));
     Ok(())
 }
 
 #[test]
-fn copied_object_has_same_contents() -> anyhow::Result<()> {
-    // Write data to an object.
-    let mut repository = create_repo()?;
-    let mut object = repository.insert("Source".into());
-    object.write_all(random_buffer().as_slice())?;
+fn managed_copy_has_same_contents() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let source_id = Uuid::new_v4();
+    let dest_id = Uuid::new_v4();
+
+    let mut object = repo.add_managed(source_id);
+    object.write_all(b"Data")?;
     object.flush()?;
-    let source_id = object.content_id();
     drop(object);
 
-    // Copy the object.
-    repository.copy("Source", "Dest".into())?;
-    let object = repository.get("Dest").unwrap();
-    let dest_id = object.content_id();
+    assert!(repo.copy_managed(source_id, dest_id));
 
-    assert_eq!(source_id, dest_id);
+    let mut object = repo.managed_object(dest_id).unwrap();
+    let mut contents = Vec::new();
+    object.read_to_end(&mut contents)?;
+    drop(object);
+
+    assert_eq!(contents, b"Data");
 
     Ok(())
 }
 
 #[test]
-fn copied_object_must_exist() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    assert!(matches!(
-        repository.copy("Nonexistent", "Dest".into()).unwrap_err(),
-        acid_store::Error::NotFound
-    ));
+fn list_managed_objects() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+
+    let id_1 = Uuid::new_v4();
+    let id_2 = Uuid::new_v4();
+    let id_3 = Uuid::new_v4();
+
+    repo.add_managed(id_1);
+    repo.add_managed(id_2);
+    repo.add_managed(id_3);
+
+    let expected = vec![id_1, id_2, id_3];
+    let actual = repo.list_managed();
+
+    assert_contains_all(actual, expected);
+
     Ok(())
 }
 
 #[test]
-fn copying_does_not_overwrite() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    repository.insert("Source".into());
-    repository.insert("Dest".into());
+fn unmanaged_object_is_not_accessible_from_another_instance() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let handle = repo.add_unmanaged();
 
-    assert!(matches!(
-        repository.copy("Source", "Dest".into()).unwrap_err(),
-        acid_store::Error::AlreadyExists
-    ));
+    assert!(repo.unmanaged_object(&handle).is_some());
 
+    repo.set_instance(Uuid::new_v4());
+
+    assert!(repo.unmanaged_object(&handle).is_none());
+
+    Ok(())
+}
+
+#[test]
+fn managed_object_is_not_accessible_from_another_instance() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let id = Uuid::new_v4();
+
+    repo.add_managed(id);
+
+    assert!(repo.managed_object(id).is_some());
+
+    repo.set_instance(Uuid::new_v4());
+
+    assert!(repo.managed_object(id).is_none());
+
+    Ok(())
+}
+
+#[test]
+fn list_managed_objects_in_different_instance() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let instance_id = repo.instance();
+
+    let id_1 = Uuid::new_v4();
+    let id_2 = Uuid::new_v4();
+    repo.add_managed(id_1);
+    repo.add_managed(id_2);
+
+    repo.set_instance(Uuid::new_v4());
+
+    let id_3 = Uuid::new_v4();
+    repo.add_managed(id_3);
+
+    let expected = vec![id_3];
+    let actual = repo.list_managed();
+    assert_contains_all(actual, expected);
+
+    repo.set_instance(instance_id);
+
+    let expected = vec![id_1, id_2];
+    let actual = repo.list_managed();
+    assert_contains_all(actual, expected);
+
+    Ok(())
+}
+
+#[test]
+fn committing_commits_all_instances() -> anyhow::Result<()> {
+    let instance_1 = Uuid::new_v4();
+    let instance_2 = Uuid::new_v4();
+    let id_1 = Uuid::new_v4();
+    let id_2 = Uuid::new_v4();
+
+    let mut repo = create_repo()?;
+
+    repo.set_instance(instance_1);
+    repo.add_managed(id_1);
+
+    repo.set_instance(instance_2);
+    repo.add_managed(id_2);
+
+    repo.commit()?;
+    let mut repo = OpenOptions::new(repo.into_store()).open::<ObjectRepo<_>>()?;
+
+    repo.set_instance(instance_1);
+    assert!(repo.contains_managed(id_1));
+
+    repo.set_instance(instance_2);
+    assert!(repo.contains_managed(id_2));
+
+    Ok(())
+}
+
+#[test]
+fn change_password() -> anyhow::Result<()> {
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .encryption(Encryption::XChaCha20Poly1305)
+        .password(b"Password")
+        .create_new()?;
+    repo.change_password(b"New password");
+    repo.commit()?;
+
+    OpenOptions::new(repo.into_store())
+        .password(b"New password")
+        .open::<ObjectRepo<_>>()?;
+
+    Ok(())
+}
+
+#[test]
+fn peek_info() -> anyhow::Result<()> {
+    let repository: ObjectRepo<_> = OpenOptions::new(MemoryStore::new()).create_new()?;
+    let expected_info = repository.info();
+    let mut store = repository.into_store();
+    let actual_info = ObjectRepo::peek_info(&mut store)?;
+
+    assert_eq!(actual_info, expected_info);
     Ok(())
 }
 
 #[test]
 fn committed_changes_are_persisted() -> anyhow::Result<()> {
-    // Write data to the repository.
-    let mut repository = create_repo()?;
-    let mut object = repository.insert("Test".into());
-    object.write_all(random_buffer().as_slice())?;
+    let mut repo = create_repo()?;
+    let mut handle = repo.add_unmanaged();
+
+    // Write some data to the repository.
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let expected_data = random_buffer();
+    object.write_all(expected_data.as_slice())?;
     object.flush()?;
-    let expected_id = object.content_id();
 
     drop(object);
-    repository.commit()?;
+    repo.commit()?;
 
     // Re-open the repository.
-    let repository = ObjectRepository::<String, _>::open_repo(
-        repository.into_store(),
-        LockStrategy::Abort,
-        Some(PASSWORD),
-    )?;
-    let object = repository.get("Test".into()).unwrap();
-    let actual_id = object.content_id();
+    let repo: ObjectRepo<_> = OpenOptions::new(repo.into_store()).open()?;
 
-    assert_eq!(actual_id, expected_id);
+    // Read that data from the repository.
+    let mut actual_data = Vec::with_capacity(expected_data.len());
+    let mut object = repo.unmanaged_object(&handle).unwrap();
+    object.read_to_end(&mut actual_data)?;
+
+    assert_eq!(actual_data, expected_data);
 
     Ok(())
 }
 
 #[test]
 fn uncommitted_changes_are_not_persisted() -> anyhow::Result<()> {
-    // Write data to the repository.
-    let mut repository = create_repo()?;
-    let mut object = repository.insert("Test".into());
-    object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    let mut repo = create_repo()?;
+    let mut handle = repo.add_unmanaged();
 
+    // Write some data to the repository.
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let expected_data = random_buffer();
+    object.write_all(expected_data.as_slice())?;
+    object.flush()?;
     drop(object);
 
     // Re-open the repository.
-    let repository = ObjectRepository::<String, _>::open_repo(
-        repository.into_store(),
-        LockStrategy::Abort,
-        Some(PASSWORD),
-    )?;
+    let repo: ObjectRepo<_> = OpenOptions::new(repo.into_store()).open()?;
 
-    assert!(repository.get("Test".into()).is_none());
+    assert!(repo.unmanaged_object(&handle).is_none());
 
     Ok(())
 }
 
 #[test]
 fn unused_data_is_reclaimed_on_commit() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    let mut object = repository.insert("Test".into());
+    let mut repo = create_repo()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+
     object.write_all(random_buffer().as_slice())?;
     object.flush()?;
     drop(object);
-    repository.commit()?;
+    repo.commit()?;
 
-    let mut store = repository.into_store();
+    let mut store = repo.into_repo()?.into_store();
     let original_blocks = store.list_blocks()?.len();
 
-    let mut repository =
-        ObjectRepository::<String, _>::open_repo(store, LockStrategy::Abort, Some(PASSWORD))?;
-    repository.remove("Test");
-    repository.commit()?;
+    let mut repo = OpenOptions::new(store).open::<ObjectRepo<_>>()?;
+    repo.remove_unmanaged(&handle);
+    repo.commit()?;
 
-    let mut store = repository.into_store();
+    let mut store = repo.into_store();
     let new_blocks = store.list_blocks()?.len();
 
     assert!(new_blocks < original_blocks);
@@ -306,64 +375,16 @@ fn unused_data_is_reclaimed_on_commit() -> anyhow::Result<()> {
 
 #[test]
 fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    let mut object = repository.insert("Test".into());
+    let mut repo = create_repo()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+
     object.write_all(random_buffer().as_slice())?;
     object.flush()?;
     drop(object);
 
-    let corrupt_keys = repository.verify()?;
+    let report = repo.verify()?;
 
-    assert!(corrupt_keys.is_empty());
-    Ok(())
-}
-
-#[test]
-fn change_password() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    repository.change_password(b"new password");
-    repository.commit()?;
-
-    ObjectRepository::<String, _>::open_repo(
-        repository.into_store(),
-        LockStrategy::Abort,
-        Some(b"new password"),
-    )?;
-
-    Ok(())
-}
-
-#[test]
-fn calculate_apparent_and_actual_size() -> anyhow::Result<()> {
-    // Create a repository with compression and encryption disabled.
-    let mut repository =
-        ObjectRepository::new_repo(MemoryStore::new(), RepositoryConfig::default(), None)?;
-    let data = random_buffer();
-
-    let mut object = repository.insert("Test1".to_string());
-    object.write_all(data.as_slice())?;
-    object.flush()?;
-    drop(object);
-
-    let mut object = repository.insert("Test2".to_string());
-    object.write_all(data.as_slice())?;
-    object.flush()?;
-    drop(object);
-
-    let stats = repository.stats();
-    assert_eq!(stats.apparent_size(), data.len() as u64 * 2);
-    assert_eq!(stats.actual_size(), data.len() as u64);
-
-    Ok(())
-}
-
-#[test]
-fn peek_info() -> anyhow::Result<()> {
-    let repository = create_repo()?;
-    let expected_info = repository.info();
-    let mut store = repository.into_store();
-    let actual_info = ObjectRepository::<String, _>::peek_info(&mut store)?;
-
-    assert_eq!(actual_info, expected_info);
+    assert!(!report.is_corrupt());
     Ok(())
 }

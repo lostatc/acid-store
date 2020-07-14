@@ -29,7 +29,7 @@ use uuid::Uuid;
 use acid_store::store::DirectoryStore;
 #[cfg(feature = "store-sqlite")]
 use acid_store::store::SqliteStore;
-use acid_store::store::{DataStore, MemoryStore, MultiStore, OpenOption, OpenStore};
+use acid_store::store::{DataStore, MemoryStore, OpenOption, OpenStore};
 use common::{assert_contains_all, random_buffer};
 #[cfg(feature = "store-rclone")]
 use {acid_store::store::RcloneStore, common::RCLONE_REMOTE};
@@ -107,13 +107,6 @@ fn s3_read_block() {
 }
 
 #[test]
-fn multi_read_block() -> anyhow::Result<()> {
-    let mut multi_store = MultiStore::new(MemoryStore::new())?;
-    let store = multi_store.insert(String::from("Test"))?;
-    read_block(store)
-}
-
-#[test]
 #[serial(rclone)]
 #[cfg(feature = "store-rclone")]
 fn rclone_read_block() {
@@ -187,13 +180,6 @@ fn s3_overwrite_block() {
 }
 
 #[test]
-fn multi_overwrite_block() -> anyhow::Result<()> {
-    let mut multi_store = MultiStore::new(MemoryStore::new())?;
-    let store = multi_store.insert(String::from("Test"))?;
-    overwrite_block(store)
-}
-
-#[test]
 #[serial(rclone)]
 #[cfg(feature = "store-rclone")]
 fn rclone_overwrite_block() {
@@ -264,13 +250,6 @@ fn s3_remove_block() {
     )
     .unwrap();
     remove_block(store).unwrap();
-}
-
-#[test]
-fn multi_remove_block() -> anyhow::Result<()> {
-    let mut multi_store = MultiStore::new(MemoryStore::new())?;
-    let store = multi_store.insert(String::from("Test"))?;
-    remove_block(store)
 }
 
 #[test]
@@ -351,13 +330,6 @@ fn s3_list_blocks() {
     )
     .unwrap();
     list_blocks(store).unwrap();
-}
-
-#[test]
-fn multi_list_block() -> anyhow::Result<()> {
-    let mut multi_store = MultiStore::new(MemoryStore::new())?;
-    let store = multi_store.insert(String::from("Test"))?;
-    list_blocks(store)
 }
 
 #[test]

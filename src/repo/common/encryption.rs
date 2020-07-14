@@ -93,7 +93,7 @@ pub enum Encryption {
 
 impl Encryption {
     /// Encrypt the given `cleartext` with the given `key`.
-    pub(super) fn encrypt(&self, cleartext: &[u8], key: &EncryptionKey) -> Vec<u8> {
+    pub(crate) fn encrypt(&self, cleartext: &[u8], key: &EncryptionKey) -> Vec<u8> {
         init();
         match self {
             Encryption::None => cleartext.to_vec(),
@@ -110,7 +110,7 @@ impl Encryption {
     }
 
     /// Decrypt the given `ciphertext` with the given `key`.
-    pub(super) fn decrypt(&self, ciphertext: &[u8], key: &EncryptionKey) -> crate::Result<Vec<u8>> {
+    pub(crate) fn decrypt(&self, ciphertext: &[u8], key: &EncryptionKey) -> crate::Result<Vec<u8>> {
         init();
         match self {
             Encryption::None => Ok(ciphertext.to_vec()),
@@ -127,7 +127,7 @@ impl Encryption {
 
 impl Encryption {
     /// The key size for this encryption method.
-    pub(super) fn key_size(&self) -> usize {
+    pub(crate) fn key_size(&self) -> usize {
         match self {
             Encryption::None => 0,
             #[cfg(feature = "encryption")]

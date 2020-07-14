@@ -20,12 +20,25 @@ use uuid::Uuid;
 
 use super::chunking::Chunking;
 use super::compression::Compression;
-use super::config::RepositoryConfig;
+use super::config::RepoConfig;
 use super::encryption::{Encryption, KeySalt, ResourceLimit};
+
+/// Chunk IDs for accessing persistent repository state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Header {
+    /// The ID of the chunk which stores the map of chunks.
+    pub chunks: Uuid,
+
+    /// The ID of the chunk which stores the map of managed objects.
+    pub managed: Uuid,
+
+    /// The ID of the chunk which stores the table of ID handles.
+    pub handles: Uuid,
+}
 
 /// Metadata for a repository.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RepositoryMetadata {
+pub struct RepoMetadata {
     /// The unique ID of this repository.
     pub id: Uuid,
 
@@ -50,19 +63,19 @@ pub struct RepositoryMetadata {
     /// The salt used to derive a key from the user's password.
     pub salt: KeySalt,
 
-    /// The ID of the chunk which stores the repository's header.
-    pub header: Uuid,
+    /// The IDs of chunks which store repository state.
+    pub header: Header,
 
     /// The time this repository was created.
     pub creation_time: SystemTime,
 }
 
-impl RepositoryMetadata {
-    /// Create a `RepositoryInfo` using the metadata in this struct.
-    pub fn to_info(&self) -> RepositoryInfo {
-        RepositoryInfo {
+impl RepoMetadata {
+    /// Create a `RepoInfo` using the metadata in this struct.
+    pub fn to_info(&self) -> RepoInfo {
+        RepoInfo {
             id: self.id,
-            config: RepositoryConfig {
+            config: RepoConfig {
                 chunking: self.chunking.clone(),
                 compression: self.compression.clone(),
                 encryption: self.encryption.clone(),
@@ -76,48 +89,28 @@ impl RepositoryMetadata {
 
 /// Information about a repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RepositoryInfo {
+pub struct RepoInfo {
     id: Uuid,
-    config: RepositoryConfig,
+    config: RepoConfig,
     created: SystemTime,
 }
 
-impl RepositoryInfo {
+impl RepoInfo {
     /// The unique ID for this repository.
+    ///
+    /// This ID is different from the instance ID; this ID is shared between all instances of a
+    /// repository.
     pub fn id(&self) -> Uuid {
         self.id
     }
 
     /// The configuration used to create this repository.
-    pub fn config(&self) -> &RepositoryConfig {
+    pub fn config(&self) -> &RepoConfig {
         &self.config
     }
 
     /// The time this repository was created.
     pub fn created(&self) -> SystemTime {
         self.created
-    }
-}
-
-/// Statistics about a repository.
-pub struct RepositoryStats {
-    pub(super) apparent_size: u64,
-    pub(super) actual_size: u64,
-}
-
-impl RepositoryStats {
-    /// The combined size of all the objects in the repository.
-    ///
-    /// This may be larger than the `actual_size` due to deduplication and compression.
-    pub fn apparent_size(&self) -> u64 {
-        self.apparent_size
-    }
-
-    /// The total amount of space used by all the objects in the repository.
-    ///
-    /// This is an approximation of how much storage space is being used on the underlying data
-    /// store.
-    pub fn actual_size(&self) -> u64 {
-        self.actual_size
     }
 }

@@ -18,16 +18,21 @@
 
 use std::io::{Read, Seek, SeekFrom, Write};
 
-use acid_store::repo::{Chunking, ObjectRepository, OpenRepo};
+use acid_store::repo::object::ObjectRepo;
+use acid_store::repo::{Chunking, OpenOptions};
 use acid_store::store::MemoryStore;
-use common::{create_repo, random_buffer, random_bytes, MIN_BUFFER_SIZE, PASSWORD, REPO_CONFIG};
+use common::{random_buffer, random_bytes, MIN_BUFFER_SIZE, REPO_IO_CONFIG};
 
 mod common;
 
 #[test]
 fn read_written_data_with_zpaq_chunking() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    let mut object = repository.insert("Test".into());
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .config(REPO_IO_CONFIG.to_owned())
+        .password(b"Password")
+        .create_new()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
 
     let expected_data = random_buffer();
     let mut actual_data = vec![0u8; expected_data.len()];
@@ -44,11 +49,14 @@ fn read_written_data_with_zpaq_chunking() -> anyhow::Result<()> {
 
 #[test]
 fn read_written_data_with_fixed_chunking() -> anyhow::Result<()> {
-    let mut config = REPO_CONFIG.to_owned();
-    config.chunking = Chunking::Fixed { size: 256 };
-    let mut repository = ObjectRepository::new_repo(MemoryStore::new(), config, Some(PASSWORD))?;
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .config(REPO_IO_CONFIG.to_owned())
+        .chunking(Chunking::Fixed { size: 256 })
+        .password(b"Password")
+        .create_new()?;
 
-    let mut object = repository.insert(String::from("Test"));
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
 
     let expected_data = random_buffer();
     let mut actual_data = vec![0u8; expected_data.len()];
@@ -65,8 +73,12 @@ fn read_written_data_with_fixed_chunking() -> anyhow::Result<()> {
 
 #[test]
 fn seek_and_read_data() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    let mut object = repository.insert("Test".to_string());
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .config(REPO_IO_CONFIG.to_owned())
+        .password(b"Password")
+        .create_new()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
 
     let original_data = random_buffer();
     let mut actual_data = Vec::new();
@@ -98,8 +110,12 @@ fn seek_and_read_data() -> anyhow::Result<()> {
 
 #[test]
 fn seek_to_negative_offset() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    let mut object = repository.insert("Test".into());
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .config(REPO_IO_CONFIG.to_owned())
+        .password(b"Password")
+        .create_new()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
 
     // Write initial data to the object.
     object.write_all(random_buffer().as_slice())?;
@@ -112,8 +128,12 @@ fn seek_to_negative_offset() -> anyhow::Result<()> {
 
 #[test]
 fn overwrite_written_data() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    let mut object = repository.insert("Test".into());
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .config(REPO_IO_CONFIG.to_owned())
+        .password(b"Password")
+        .create_new()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
 
     // Write initial data to the object.
     object.write_all(random_buffer().as_slice())?;
@@ -137,8 +157,12 @@ fn overwrite_written_data() -> anyhow::Result<()> {
 
 #[test]
 fn partially_overwrite_written_data() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    let mut object = repository.insert("Test".into());
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .config(REPO_IO_CONFIG.to_owned())
+        .password(b"Password")
+        .create_new()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
 
     // Write initial data to the object.
     let initial_data = random_buffer();
@@ -165,8 +189,13 @@ fn partially_overwrite_written_data() -> anyhow::Result<()> {
 
 #[test]
 fn partially_overwrite_and_grow_data() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    let mut object = repository.insert("Test".into());
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .config(REPO_IO_CONFIG.to_owned())
+        .password(b"Password")
+        .create_new()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+
     let new_start_position = MIN_BUFFER_SIZE / 2;
 
     // Write initial data to the object.
@@ -194,8 +223,12 @@ fn partially_overwrite_and_grow_data() -> anyhow::Result<()> {
 
 #[test]
 fn truncate_object() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    let mut object = repository.insert("Test".into());
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .config(REPO_IO_CONFIG.to_owned())
+        .password(b"Password")
+        .create_new()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
 
     // Write data to the object.
     let initial_data = random_buffer();
@@ -222,18 +255,24 @@ fn truncate_object() -> anyhow::Result<()> {
 
 #[test]
 fn compare_content_ids() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .config(REPO_IO_CONFIG.to_owned())
+        .password(b"Password")
+        .create_new()?;
+    let mut handle1 = repo.add_unmanaged();
+    let mut handle2 = repo.add_unmanaged();
+
     let initial_data = random_buffer();
 
     // Write data to the first object.
-    let mut object = repository.insert("Test1".into());
+    let mut object = repo.unmanaged_object_mut(&mut handle1).unwrap();
     object.write_all(initial_data.as_slice())?;
     object.flush()?;
     let content_id1 = object.content_id();
     drop(object);
 
     // Write the same data to the second object.
-    let mut object = repository.insert("Test2".into());
+    let mut object = repo.unmanaged_object_mut(&mut handle2).unwrap();
     object.write_all(initial_data.as_slice())?;
     object.flush()?;
     let content_id2 = object.content_id();
@@ -242,7 +281,7 @@ fn compare_content_ids() -> anyhow::Result<()> {
     assert_eq!(content_id1, content_id2);
 
     // Write new data to the second object.
-    let mut object = repository.get_mut("Test2").unwrap();
+    let mut object = repo.unmanaged_object_mut(&mut handle2).unwrap();
     object.write_all(random_buffer().as_slice())?;
     object.flush()?;
     let content_id2 = object.content_id();
@@ -254,11 +293,16 @@ fn compare_content_ids() -> anyhow::Result<()> {
 
 #[test]
 fn compare_contents_with_are_equal() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .config(REPO_IO_CONFIG.to_owned())
+        .password(b"Password")
+        .create_new()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+
     let initial_data = random_buffer();
 
     // Write data to the object.
-    let mut object = repository.insert("Test1".into());
     object.write_all(initial_data.as_slice())?;
     object.flush()?;
 
@@ -269,12 +313,17 @@ fn compare_contents_with_are_equal() -> anyhow::Result<()> {
 
 #[test]
 fn compare_unequal_contents_with_same_size() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .config(REPO_IO_CONFIG.to_owned())
+        .password(b"Password")
+        .create_new()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+
     let initial_data = random_buffer();
     let modified_data = random_bytes(initial_data.len());
 
     // Write data to the object.
-    let mut object = repository.insert("Test1".into());
     object.write_all(initial_data.as_slice())?;
     object.flush()?;
 
@@ -285,12 +334,17 @@ fn compare_unequal_contents_with_same_size() -> anyhow::Result<()> {
 
 #[test]
 fn compare_contents_which_are_smaller() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .config(REPO_IO_CONFIG.to_owned())
+        .password(b"Password")
+        .create_new()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+
     let initial_data = random_buffer();
     let modified_data = &initial_data[..initial_data.len() / 2];
 
     // Write data to the object.
-    let mut object = repository.insert("Test1".into());
     object.write_all(initial_data.as_slice())?;
     object.flush()?;
 
@@ -301,12 +355,17 @@ fn compare_contents_which_are_smaller() -> anyhow::Result<()> {
 
 #[test]
 fn compare_contents_which_are_larger() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .config(REPO_IO_CONFIG.to_owned())
+        .password(b"Password")
+        .create_new()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+
     let initial_data = random_buffer();
     let modified_data = [initial_data.clone(), random_buffer()].concat();
 
     // Write data to the object.
-    let mut object = repository.insert("Test1".into());
     object.write_all(initial_data.as_slice())?;
     object.flush()?;
 
@@ -317,8 +376,13 @@ fn compare_contents_which_are_larger() -> anyhow::Result<()> {
 
 #[test]
 fn verify_valid_object_is_valid() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
-    let mut object = repository.insert("Test".into());
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .config(REPO_IO_CONFIG.to_owned())
+        .password(b"Password")
+        .create_new()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+
     object.write_all(random_buffer().as_slice())?;
     object.flush()?;
 
