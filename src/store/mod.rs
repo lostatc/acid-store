@@ -42,24 +42,27 @@
 
 pub use self::common::{DataStore, OpenOption, OpenStore};
 #[cfg(feature = "store-directory")]
-pub use self::directory::DirectoryStore;
-pub use self::memory::MemoryStore;
+pub use self::directory_store::DirectoryStore;
+pub use self::memory_store::MemoryStore;
 #[cfg(all(unix, feature = "store-rclone"))]
-pub use self::rclone::RcloneStore;
-#[cfg(feature = "store-redis")]
-pub use self::redis::RedisStore;
-#[cfg(feature = "store-s3")]
-pub use self::s3::S3Store;
-#[cfg(feature = "store-sftp")]
-pub use self::sftp::{SftpConfig, SftpStore};
+pub use self::rclone_store::RcloneStore;
 #[cfg(feature = "store-sqlite")]
-pub use self::sqlite::SqliteStore;
+pub use self::sqlite_store::SqliteStore;
+#[cfg(feature = "store-redis")]
+pub use {self::redis_store::RedisStore, redis};
+#[cfg(feature = "store-s3")]
+pub use {self::s3_store::S3Store, s3};
+#[cfg(feature = "store-sftp")]
+pub use {
+    self::sftp_store::{SftpConfig, SftpStore},
+    ssh2,
+};
 
 mod common;
-mod directory;
-mod memory;
-mod rclone;
-mod redis;
-mod s3;
-mod sftp;
-mod sqlite;
+mod directory_store;
+mod memory_store;
+mod rclone_store;
+mod redis_store;
+mod s3_store;
+mod sftp_store;
+mod sqlite_store;
