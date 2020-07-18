@@ -19,10 +19,13 @@ use std::path::Path;
 
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use rand::rngs::SmallRng;
-use rand::{Rng, RngCore, SeedableRng};
+use rand::seq::SliceRandom;
+use rand::{RngCore, SeedableRng};
 use tempfile::tempdir;
 
-use acid_store::repo::{Chunking, Encryption, ObjectRepository, OpenRepo, RepoConfig};
+use acid_store::repo::key::KeyRepo;
+use acid_store::repo::object::ObjectRepo;
+use acid_store::repo::{Chunking, Encryption, OpenOptions};
 use acid_store::store::{DirectoryStore, OpenOption, OpenStore};
 
 /// Return a buffer containing `size` random bytes for testing purposes.
@@ -43,30 +46,28 @@ fn new_store(directory: &Path) -> DirectoryStore {
 }
 
 /// Return an iterator of repositories and test descriptions.
-fn test_configs(directory: &Path) -> Vec<(ObjectRepository<String, DirectoryStore>, String)> {
+fn test_configs(directory: &Path) -> Vec<(ObjectRepo<DirectoryStore>, String)> {
     let fixed = {
-        let mut config = RepoConfig::default();
-        config.chunking = Chunking::Fixed {
-            size: bytesize::mib(1u64) as usize,
-        };
-        config.encryption = Encryption::None;
-        let repo =
-            ObjectRepository::new_repo(new_store(&directory.join("fixed")), config, None).unwrap();
+        let store = new_store(&directory.join("fixed"));
+        let repo = OpenOptions::new(store)
+            .chunking(Chunking::Fixed {
+                size: bytesize::mib(1u64) as usize,
+            })
+            .create_new()
+            .unwrap();
         (repo, String::from("Chunking::Fixed, Encryption::None"))
     };
 
     let fixed_encryption = {
-        let mut config = RepoConfig::default();
-        config.chunking = Chunking::Fixed {
-            size: bytesize::mib(1u64) as usize,
-        };
-        config.encryption = Encryption::XChaCha20Poly1305;
-        let repo = ObjectRepository::new_repo(
-            new_store(&directory.join("fixed_encryption")),
-            config,
-            Some(b""),
-        )
-        .unwrap();
+        let store = new_store(&directory.join("fixed"));
+        let repo = OpenOptions::new(store)
+            .chunking(Chunking::Fixed {
+                size: bytesize::mib(1u64) as usize,
+            })
+            .encryption(Encryption::XChaCha20Poly1305)
+            .password(b"password")
+            .create_new()
+            .unwrap();
         (
             repo,
             String::from("Chunking::Fixed, Encryption::XChaCha20Poly1305"),
@@ -74,24 +75,22 @@ fn test_configs(directory: &Path) -> Vec<(ObjectRepository<String, DirectoryStor
     };
 
     let zpaq = {
-        let mut config = RepoConfig::default();
-        config.chunking = Chunking::Zpaq { bits: 20 };
-        config.encryption = Encryption::None;
-        let repo =
-            ObjectRepository::new_repo(new_store(&directory.join("zpaq")), config, None).unwrap();
+        let store = new_store(&directory.join("fixed"));
+        let repo = OpenOptions::new(store)
+            .chunking(Chunking::Zpaq { bits: 20 })
+            .create_new()
+            .unwrap();
         (repo, String::from("Chunking::Zpaq, Encryption::None"))
     };
 
     let zpaq_encryption = {
-        let mut config = RepoConfig::default();
-        config.chunking = Chunking::Zpaq { bits: 20 };
-        config.encryption = Encryption::XChaCha20Poly1305;
-        let repo = ObjectRepository::new_repo(
-            new_store(&directory.join("zpaq_encryption")),
-            config,
-            Some(b""),
-        )
-        .unwrap();
+        let store = new_store(&directory.join("fixed"));
+        let repo = OpenOptions::new(store)
+            .chunking(Chunking::Zpaq { bits: 20 })
+            .encryption(Encryption::XChaCha20Poly1305)
+            .password(b"password")
+            .create_new()
+            .unwrap();
         (
             repo,
             String::from("Chunking::Zpaq, Encryption::XChaCha20Poly1305"),
@@ -110,9 +109,9 @@ pub fn insert_object(criterion: &mut Criterion) {
 
     for num_objects in [100, 1_000, 10_000].iter() {
         // Create a new repository.
-        let mut repo =
-            ObjectRepository::new_repo(new_store(tmp_dir.path()), RepoConfig::default(), None)
-                .unwrap();
+        let mut repo = OpenOptions::new(new_store(tmp_dir.path()))
+            .create_new::<KeyRepo<String, _>>()
+            .unwrap();
 
         // Insert objects and write to them but don't commit them.
         for i in 0..*num_objects {
@@ -142,9 +141,10 @@ pub fn insert_object_and_write(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("Insert an object and write to it");
 
     for num_objects in [100, 1_000, 10_000].iter() {
-        let mut repo =
-            ObjectRepository::new_repo(new_store(tmp_dir.path()), RepoConfig::default(), None)
-                .unwrap();
+        // Create a new repository.
+        let mut repo = OpenOptions::new(new_store(tmp_dir.path()))
+            .create_new::<KeyRepo<String, _>>()
+            .unwrap();
 
         // Insert objects and write to them but don't commit them.
         for i in 0..*num_objects {
@@ -191,7 +191,8 @@ pub fn write_object(criterion: &mut Criterion) {
                 bencher.iter_batched(
                     || random_bytes(object_size as usize),
                     |data| {
-                        let mut object = repo.insert(String::from("Test"));
+                        let mut handle = repo.add_unmanaged();
+                        let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
                         object.write_all(data.as_slice()).unwrap();
                         object.flush().unwrap();
                     },
@@ -211,13 +212,17 @@ pub fn read_object(criterion: &mut Criterion) {
     let num_objects = 100;
 
     for (mut repo, name) in test_configs(tmp_dir.path()) {
+        let mut handles = Vec::new();
         // Generate a batch of random objects to read during the benchmark.
-        for object_num in 0..num_objects {
-            let mut object = repo.insert(format!("Input {}", object_num));
+        for _ in 0..num_objects {
+            let mut handle = repo.add_unmanaged();
+            let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
             object
                 .write_all(random_bytes(object_size as usize).as_slice())
                 .unwrap();
             object.flush().unwrap();
+            drop(object);
+            handles.push(handle);
         }
 
         group.throughput(Throughput::Bytes(object_size));
@@ -229,12 +234,11 @@ pub fn read_object(criterion: &mut Criterion) {
                     || {
                         // Select a random object to read.
                         let mut rng = SmallRng::from_entropy();
-                        let object_num = rng.gen_range(0, num_objects);
-                        format!("Input {}", object_num)
+                        handles.choose(&mut rng).unwrap()
                     },
-                    |key| {
+                    |handle| {
                         let mut buffer = Vec::new();
-                        let mut object = repo.get(&key).unwrap();
+                        let mut object = repo.unmanaged_object(&handle).unwrap();
                         object.read_to_end(&mut buffer).unwrap();
                         buffer
                     },
@@ -262,14 +266,15 @@ pub fn write_read_object(criterion: &mut Criterion) {
                     || random_bytes(object_size as usize),
                     |data| {
                         // Write to the object.
-                        let mut object = repo.insert(String::from("Test"));
+                        let mut handle = repo.add_unmanaged();
+                        let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
                         object.write_all(data.as_slice()).unwrap();
                         object.flush().unwrap();
                         drop(object);
 
                         // Read from the object.
                         let mut buffer = Vec::new();
-                        let mut object = repo.get("Test").unwrap();
+                        let mut object = repo.unmanaged_object(&handle).unwrap();
                         object.seek(SeekFrom::Start(0)).unwrap();
                         object.read_to_end(black_box(&mut buffer)).unwrap();
                     },
