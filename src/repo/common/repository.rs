@@ -30,6 +30,7 @@ use super::report::IntegrityReport;
 use super::state::RepoState;
 use crate::repo::ConvertRepo;
 use crate::store::DataStore;
+use secrecy::ExposeSecret;
 
 /// The block ID of the block which stores the repository metadata.
 pub(super) const METADATA_BLOCK_ID: Uuid =
@@ -540,7 +541,7 @@ impl<S: DataStore> ObjectRepo<S> {
             .state
             .metadata
             .encryption
-            .encrypt(self.state.master_key.as_ref(), &user_key);
+            .encrypt(self.state.master_key.expose_secret(), &user_key);
 
         self.state.metadata.salt = salt;
         self.state.metadata.master_key = encrypted_master_key;

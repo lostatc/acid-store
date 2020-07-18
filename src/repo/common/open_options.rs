@@ -34,6 +34,7 @@ use super::repository::{ObjectRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
 use super::state::RepoState;
 use crate::repo::{Chunking, Compression, ResourceLimit};
 use crate::store::DataStore;
+use secrecy::ExposeSecret;
 
 /// The instance to use when an instance isn't supplied.
 const GLOBAL_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92b 031a9ad75c07"));
@@ -365,7 +366,7 @@ impl<S: DataStore> OpenOptions<S> {
                 );
                 self.config
                     .encryption
-                    .encrypt(master_key.as_ref(), &user_key)
+                    .encrypt(master_key.expose_secret(), &user_key)
             }
             None => Vec::new(),
         };

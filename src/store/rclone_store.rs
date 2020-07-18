@@ -25,17 +25,20 @@ use std::time::Duration;
 
 use rand::distributions::Alphanumeric;
 use rand::Rng;
+use secrecy::{ExposeSecret, Secret, SecretString};
 use ssh2::Session;
 use uuid::Uuid;
 
 use crate::store::{DataStore, OpenOption, OpenStore, SftpConfig, SftpStore};
 
 /// Generate a random secure password for the SFTP server.
-fn generate_password(length: u32) -> String {
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(length as usize)
-        .collect()
+fn generate_password(length: u32) -> SecretString {
+    Secret::new(
+        rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(length as usize)
+            .collect(),
+    )
 }
 
 /// Return an unused ephemeral port number.
@@ -56,7 +59,7 @@ const SSH_USERNAME: &str = "rclone";
 const CONNECT_WAIT_TIME: Duration = Duration::from_millis(100);
 
 /// Serve the rclone remote over SFTP and return the server process.
-fn serve(port: u16, password: &str, config: &str) -> io::Result<Child> {
+fn serve(port: u16, password: &SecretString, config: &str) -> io::Result<Child> {
     Command::new("rclone")
         .args(&[
             "serve",
@@ -66,7 +69,7 @@ fn serve(port: u16, password: &str, config: &str) -> io::Result<Child> {
             "--user",
             SSH_USERNAME,
             "--pass",
-            password,
+            password.expose_secret(),
             config,
         ])
         .stdin(Stdio::null())
@@ -107,7 +110,7 @@ impl OpenStore for RcloneStore {
         let server_process = serve(port, &password, &config)?;
 
         // Attempt to connect to the SFTP server while we wait for it to start up.
-        let mut tcp_stream: TcpStream;
+        let tcp_stream: TcpStream;
         loop {
             match TcpStream::connect(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)) {
                 Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => {
@@ -130,7 +133,7 @@ impl OpenStore for RcloneStore {
             .handshake()
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
         session
-            .userauth_password(SSH_USERNAME, &password)
+            .userauth_password(SSH_USERNAME, password.expose_secret())
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
         let sftp = session
             .sftp()
