@@ -13,10 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use std::fmt::{self, Debug, Formatter};
 use std::sync::Once;
 
+use secrecy::{DebugSecret, ExposeSecret, Secret, SecretVec};
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroize;
 
 #[cfg(feature = "encryption")]
 use {
@@ -93,14 +94,14 @@ pub enum Encryption {
 
 impl Encryption {
     /// Encrypt the given `cleartext` with the given `key`.
+    #[cfg(feature = "encryption")]
     pub(crate) fn encrypt(&self, cleartext: &[u8], key: &EncryptionKey) -> Vec<u8> {
         init();
         match self {
             Encryption::None => cleartext.to_vec(),
-            #[cfg(feature = "encryption")]
             Encryption::XChaCha20Poly1305 => {
                 let nonce = gen_nonce();
-                let chacha_key = ChaChaKey::from_slice(key.0.as_ref()).unwrap();
+                let chacha_key = ChaChaKey::from_slice(key.expose_secret()).unwrap();
                 let mut ciphertext = seal(&cleartext, None, &nonce, &chacha_key);
                 let mut output = nonce.as_ref().to_vec();
                 output.append(&mut ciphertext);
@@ -109,19 +110,35 @@ impl Encryption {
         }
     }
 
+    /// Encrypt the given `cleartext` with the given `key`.
+    #[cfg(not(feature = "encryption"))]
+    pub(crate) fn encrypt(&self, cleartext: &[u8], _key: &EncryptionKey) -> Vec<u8> {
+        cleartext.to_vec()
+    }
+
     /// Decrypt the given `ciphertext` with the given `key`.
+    #[cfg(feature = "encryption")]
     pub(crate) fn decrypt(&self, ciphertext: &[u8], key: &EncryptionKey) -> crate::Result<Vec<u8>> {
         init();
         match self {
             Encryption::None => Ok(ciphertext.to_vec()),
-            #[cfg(feature = "encryption")]
             Encryption::XChaCha20Poly1305 => {
                 let nonce = Nonce::from_slice(&ciphertext[..NONCEBYTES]).unwrap();
-                let chacha_key = ChaChaKey::from_slice(key.0.as_ref()).unwrap();
+                let chacha_key = ChaChaKey::from_slice(key.expose_secret()).unwrap();
                 open(&ciphertext[NONCEBYTES..], None, &nonce, &chacha_key)
                     .map_err(|_| crate::Error::InvalidData)
             }
         }
+    }
+
+    /// Decrypt the given `ciphertext` with the given `key`.
+    #[cfg(not(feature = "encryption"))]
+    pub(crate) fn decrypt(
+        &self,
+        ciphertext: &[u8],
+        _key: &EncryptionKey,
+    ) -> crate::Result<Vec<u8>> {
+        Ok(ciphertext.to_vec())
     }
 }
 
@@ -139,7 +156,7 @@ impl Encryption {
 /// Salt for deriving an encryption `Key`.
 ///
 /// This type can be serialized to persistently store the salt.
-#[derive(Debug, PartialEq, Eq, Clone, Zeroize, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct KeySalt(Vec<u8>);
 
@@ -162,25 +179,29 @@ impl KeySalt {
     }
 }
 
-/// An encryption key.
-///
-/// This type can be serialized to persistently store the key.
+/// An secret encryption key.
 ///
 /// The bytes of the key are zeroed in memory when this value is dropped.
-#[derive(Debug, PartialEq, Eq, Clone, Zeroize, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct EncryptionKey(Vec<u8>);
+pub struct EncryptionKey(SecretVec<u8>);
 
-impl AsRef<[u8]> for EncryptionKey {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_slice()
+impl DebugSecret for EncryptionKey {}
+
+impl Debug for EncryptionKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Self::debug_secret(f)
+    }
+}
+
+impl ExposeSecret<Vec<u8>> for EncryptionKey {
+    fn expose_secret(&self) -> &Vec<u8> {
+        self.0.expose_secret().as_ref()
     }
 }
 
 impl EncryptionKey {
     /// Create an encryption key containing the given `bytes`.
     pub fn new(bytes: Vec<u8>) -> Self {
-        EncryptionKey(bytes)
+        EncryptionKey(Secret::new(bytes))
     }
 
     /// Generate a new random encryption key of the given `size`.
