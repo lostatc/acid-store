@@ -16,13 +16,16 @@
 
 #![cfg(feature = "store-sftp")]
 
+use std::fmt::{self, Debug};
+use std::io::{self, Read, Write};
+use std::path::{Path, PathBuf};
+
+use bitflags::_core::fmt::Formatter;
 use ssh2::{self, RenameFlags, Sftp};
+use uuid::Uuid;
 
 use super::common::{DataStore, OpenStore};
 use crate::store::OpenOption;
-use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
-use uuid::Uuid;
 
 // A UUID which acts as the version ID of the directory store format.
 const CURRENT_VERSION: &str = "fc299876-c5ff-11ea-ada1-8b0ec1509cde";
@@ -237,5 +240,11 @@ impl DataStore for SftpStore {
         }
 
         Ok(block_ids)
+    }
+}
+
+impl Debug for SftpStore {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "SftpStore {{ path: {:?} }}", self.path)
     }
 }
