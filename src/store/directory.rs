@@ -16,12 +16,11 @@
 
 #![cfg(feature = "store-directory")]
 
-use std::fs::{create_dir, create_dir_all, remove_dir_all, remove_file, rename, File};
+use std::fs::{create_dir, create_dir_all, read_dir, remove_dir_all, remove_file, rename, File};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
 use uuid::Uuid;
-use walkdir::WalkDir;
 
 use super::common::{DataStore, OpenOption, OpenStore};
 
@@ -45,9 +44,10 @@ pub struct DirectoryStore {
 impl DirectoryStore {
     /// Create a new `DirectoryStore` at the given `path`.
     fn create_new(path: PathBuf) -> crate::Result<Self> {
-        // Create the directories in the data store.
+        // Create the blocks directory in the data store.
         create_dir_all(&path)?;
         create_dir(&path.join(BLOCKS_DIRECTORY))?;
+        create_dir(&path.join(STAGING_DIRECTORY))?;
 
         // Write the version ID file.
         let mut version_file = File::create(&path.join(VERSION_FILE))?;
@@ -126,8 +126,9 @@ impl DataStore for DirectoryStore {
     fn write_block(&mut self, id: Uuid, data: &[u8]) -> Result<(), Self::Error> {
         let staging_path = self.staging_path(id);
         let block_path = self.block_path(id);
-        create_dir_all(staging_path.parent().unwrap())?;
-        create_dir_all(block_path.parent().unwrap())?;
+
+        // If this is the first block its sub-directory, the directory needs to be created.
+        create_dir_all(&block_path.parent().unwrap())?;
 
         // Write to a staging file and then atomically move it to its final destination.
         let mut staging_file = File::create(&staging_path)?;
@@ -135,7 +136,9 @@ impl DataStore for DirectoryStore {
         rename(&staging_path, &block_path)?;
 
         // Remove any unused staging files.
-        remove_dir_all(&self.path.join(STAGING_DIRECTORY))?;
+        for entry in read_dir(self.path.join(STAGING_DIRECTORY))? {
+            remove_file(entry?.path())?;
+        }
 
         Ok(())
     }
@@ -164,20 +167,17 @@ impl DataStore for DirectoryStore {
     }
 
     fn list_blocks(&mut self) -> Result<Vec<Uuid>, Self::Error> {
-        // Collect the results into a vector so that we can release the lock on the data store.
-        WalkDir::new(&self.path.join(BLOCKS_DIRECTORY))
-            .min_depth(2)
-            .into_iter()
-            .map(|result| match result {
-                Ok(entry) => Ok(Uuid::parse_str(
-                    entry
-                        .file_name()
-                        .to_str()
-                        .expect("Block file name is invalid."),
-                )
-                .expect("Block file name is invalid.")),
-                Err(error) => Err(io::Error::from(error)),
-            })
-            .collect::<io::Result<Vec<_>>>()
+        let mut block_ids = Vec::new();
+
+        for directory_entry in read_dir(self.path.join(BLOCKS_DIRECTORY))? {
+            for block_entry in read_dir(directory_entry?.path())? {
+                let file_name = block_entry?.file_name();
+                let id = Uuid::parse_str(file_name.to_str().expect("Block file name is invalid."))
+                    .expect("Block file name is invalid.");
+                block_ids.push(id);
+            }
+        }
+
+        Ok(block_ids)
     }
 }

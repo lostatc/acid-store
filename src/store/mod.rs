@@ -50,6 +50,8 @@ pub use self::rclone::RcloneStore;
 pub use self::redis::RedisStore;
 #[cfg(feature = "store-s3")]
 pub use self::s3::S3Store;
+#[cfg(feature = "store-sftp")]
+pub use self::sftp::{SftpConfig, SftpStore};
 #[cfg(feature = "store-sqlite")]
 pub use self::sqlite::SqliteStore;
 
@@ -59,4 +61,5 @@ mod memory;
 mod rclone;
 mod redis;
 mod s3;
+mod sftp;
 mod sqlite;

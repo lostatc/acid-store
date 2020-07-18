@@ -46,11 +46,15 @@ impl OpenStore for RedisStore {
     where
         Self: Sized,
     {
-        let client = Client::open(config).map_err(anyhow::Error::from)?;
-        let mut connection = client.get_connection().map_err(anyhow::Error::from)?;
+        let client = Client::open(config)
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+        let mut connection = client
+            .get_connection()
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
-        let version_response: Option<String> =
-            connection.get("version").map_err(anyhow::Error::from)?;
+        let version_response: Option<String> = connection
+            .get("version")
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         match version_response {
             Some(version) if version == *CURRENT_VERSION => {
@@ -62,7 +66,7 @@ impl OpenStore for RedisStore {
                 if options.intersects(OpenOption::CREATE | OpenOption::CREATE_NEW) {
                     connection
                         .set("version", CURRENT_VERSION)
-                        .map_err(anyhow::Error::from)?;
+                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
                 } else {
                     return Err(crate::Error::UnsupportedFormat);
                 }
@@ -72,9 +76,11 @@ impl OpenStore for RedisStore {
         if options.contains(OpenOption::TRUNCATE) {
             let keys = connection
                 .keys::<_, Vec<String>>("block:*")
-                .map_err(anyhow::Error::from)?;
+                .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
             for key in keys {
-                connection.del(key).map_err(anyhow::Error::from)?;
+                connection
+                    .del(key)
+                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
             }
         }
 

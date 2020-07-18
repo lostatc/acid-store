@@ -30,6 +30,8 @@ use s3::bucket::Bucket;
 use s3::credentials::Credentials;
 #[cfg(feature = "store-s3")]
 use s3::region::Region;
+#[cfg(feature = "store-sftp")]
+use {acid_store::store::SftpConfig, ssh2::Session, std::net::TcpStream, std::path::PathBuf};
 
 use acid_store::repo::{Chunking, Compression, Encryption, RepoConfig};
 use lazy_static::lazy_static;
@@ -52,31 +54,48 @@ lazy_static! {
 }
 
 #[cfg(feature = "store-redis")]
-lazy_static! {
-    pub static ref REDIS_INFO: ConnectionInfo = dotenv::var("REDIS_URL")
-        .unwrap()
-        .into_connection_info()
-        .unwrap();
+pub fn redis_config() -> anyhow::Result<ConnectionInfo> {
+    Ok(dotenv::var("REDIS_URL").unwrap().into_connection_info()?)
 }
 
 #[cfg(feature = "store-s3")]
-lazy_static! {
-    pub static ref S3_BUCKET: Bucket = Bucket::new(
+pub fn s3_config() -> anyhow::Result<Bucket> {
+    Ok(Bucket::new(
         &dotenv::var("S3_BUCKET").unwrap(),
         Region::UsEast1,
         Credentials::new(
             Some(dotenv::var("S3_ACCESS_KEY").unwrap()),
             Some(dotenv::var("S3_SECRET_KEY").unwrap()),
             None,
-            None
-        )
-    )
-    .unwrap();
+            None,
+        ),
+    )?)
+}
+
+#[cfg(feature = "store-sftp")]
+pub fn sftp_config() -> anyhow::Result<SftpConfig> {
+    let sftp_server: String = dotenv::var("SFTP_SERVER").unwrap();
+    let sftp_path: String = dotenv::var("SFTP_PATH").unwrap();
+    let sftp_username: String = dotenv::var("SFTP_USERNAME").unwrap();
+    let sftp_password: String = dotenv::var("SFTP_PASSWORD").unwrap();
+
+    let tcp = TcpStream::connect(sftp_server)?;
+    let mut session = Session::new()?;
+    session.set_tcp_stream(tcp);
+    session.handshake()?;
+
+    session.userauth_password(&sftp_username, &sftp_password)?;
+    assert!(session.authenticated());
+
+    Ok(SftpConfig {
+        sftp: session.sftp()?,
+        path: PathBuf::from(sftp_path),
+    })
 }
 
 #[cfg(feature = "store-rclone")]
-lazy_static! {
-    pub static ref RCLONE_REMOTE: String = dotenv::var("RCLONE_REMOTE").unwrap();
+pub fn rclone_config() -> String {
+    dotenv::var("RCLONE_REMOTE").unwrap()
 }
 
 /// Assert that two collections contain all the same elements, regardless of order.

@@ -35,6 +35,9 @@ redis = { version = "0.15.1", optional = true }
 # Amazon S3
 rust-s3 =  { version = "0.18.11", optional = true }
 
+# Sftp
+ssh2 = { version = "0.8.2", features = ["vendored-openssl"], optional = true }
+
 # Hashing
 digest = "0.8.1"
 blake2 = "0.8.1"
@@ -95,7 +98,8 @@ store-directory = []
 store-sqlite = ["rusqlite"]
 store-redis = ["redis"]
 store-s3 = ["rust-s3"]
-store-rclone = ["tempfile", "nix"]
+store-sftp = ["ssh2"]
+store-rclone = ["tempfile", "store-directory", "nix"]
 file-metadata = ["nix", "filetime", "xattr", "posix-acl"]
 compression = ["flate2", "xz2", "lz4"]
 encryption = ["sodiumoxide", "rand"]
