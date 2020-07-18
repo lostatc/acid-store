@@ -17,7 +17,7 @@
 use dirs::{data_dir, runtime_dir};
 use fs2::FileExt;
 use lazy_static::lazy_static;
-use std::fs::{create_dir_all, File, OpenOptions};
+use std::fs::{create_dir_all, remove_file, File, OpenOptions};
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use uuid::Uuid;
@@ -42,6 +42,16 @@ pub struct Lock {
 
     /// The file lock that is held to lock the resource between processes.
     file: File,
+
+    /// The path of the lock file.
+    path: PathBuf,
+}
+
+impl Drop for Lock {
+    fn drop(&mut self) {
+        // Attempt to delete the lock file.
+        remove_file(&self.path).ok();
+    }
 }
 
 /// A strategy for handling a repository which is already locked.
@@ -75,10 +85,11 @@ impl LockTable {
         create_dir_all(LOCKS_DIR.as_path())?;
         let mut buffer = Uuid::encode_buffer();
         let file_name = format!("{}.lock", id.to_hyphenated().encode_lower(&mut buffer));
+        let lock_path = LOCKS_DIR.join(file_name);
         let lock_file = OpenOptions::new()
             .write(true)
             .create(true)
-            .open(LOCKS_DIR.join(file_name))?;
+            .open(&lock_path)?;
 
         // Check if this repository is already locked within this process.
         if self.0.contains(&id) {
@@ -97,6 +108,7 @@ impl LockTable {
             Ok(Lock {
                 id: id_arc,
                 file: lock_file,
+                path: lock_path,
             })
         }
     }
