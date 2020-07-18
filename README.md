@@ -11,7 +11,7 @@ This library provides high-level abstractions for data storage over a number of 
 The goal is to decouple how you access your data from where you store it. You can access your data
 as an object store, a virtual file system, a persistent collection, or a content-addressable
 storage, regardless of where the data is stored. Out of the box, this library supports the local
-file system, SQLite, Redis, Amazon S3, and many cloud providers as storage backends. Storage
+file system, SQLite, Redis, Amazon S3, SFTP, and many cloud providers as storage backends. Storage
 backends are easy to implement, and this library builds on top of them to provide features like
 encryption, compression, deduplication, locking, and atomic transactions.
 
@@ -50,6 +50,7 @@ This library provides the following storage backends out of the box.
 - SQLite
 - Redis
 - Amazon S3
+- SFTP
 - Cloud storage via [rclone](https://rclone.org/)
 - In-Memory
 
