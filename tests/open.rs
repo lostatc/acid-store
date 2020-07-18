@@ -25,9 +25,9 @@ use acid_store::store::DirectoryStore;
 use acid_store::store::SqliteStore;
 use acid_store::store::{OpenOption, OpenStore};
 #[cfg(feature = "store-redis")]
-use {acid_store::store::RedisStore, common::REDIS_INFO};
+use {acid_store::store::RedisStore, common::redis_config};
 #[cfg(feature = "store-s3")]
-use {acid_store::store::S3Store, common::S3_BUCKET};
+use {acid_store::store::S3Store, common::s3_config};
 
 mod common;
 
@@ -62,11 +62,11 @@ fn sqlite_create_new_with_existing_store_errs() -> anyhow::Result<()> {
 #[cfg(feature = "store-redis")]
 fn redis_create_new_with_existing_store_errs() {
     RedisStore::open(
-        REDIS_INFO.to_owned(),
+        redis_config().unwrap(),
         OpenOption::CREATE | OpenOption::TRUNCATE,
     )
     .unwrap();
-    let result = RedisStore::open(REDIS_INFO.to_owned(), OpenOption::CREATE_NEW);
+    let result = RedisStore::open(redis_config().unwrap(), OpenOption::CREATE_NEW);
 
     assert!(matches!(result, Err(acid_store::Error::AlreadyExists)));
 }
@@ -76,11 +76,11 @@ fn redis_create_new_with_existing_store_errs() {
 #[cfg(feature = "store-s3")]
 fn s3_create_new_with_existing_store_errs() {
     S3Store::open(
-        S3_BUCKET.to_owned(),
+        s3_config().unwrap(),
         OpenOption::CREATE | OpenOption::TRUNCATE,
     )
     .unwrap();
-    let result = S3Store::open(S3_BUCKET.to_owned(), OpenOption::CREATE_NEW);
+    let result = S3Store::open(s3_config().unwrap(), OpenOption::CREATE_NEW);
 
     assert!(matches!(result, Err(acid_store::Error::AlreadyExists)));
 }

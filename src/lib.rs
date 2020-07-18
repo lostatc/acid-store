@@ -33,6 +33,7 @@
 //! - `SqliteStore` stores data in a SQLite database.
 //! - `RedisStore` stores data on a Redis server.
 //! - `S3Store` stores data in an Amazon S3 bucket.
+//! - `SftpStore` stores data on an SFTP server.
 //! - `RcloneStore` stores data in a varity of cloud storage backends using
 //! [rclone](https://rclone.org/).
 //! - `MemoryStore` stores data in memory.
@@ -85,6 +86,7 @@
 //! `SqliteStore` | `store-sqlite` | No
 //! `RedisStore` | `store-redis` | No
 //! `S3Store` | `store-s3` | No
+//! `SftpStore` | `store-sftp`| No
 //! `RcloneStore` | `store-rclone` | No
 //!
 //! To use a feature which is not enabled by default, you must enable it in your `Cargo.toml`.
