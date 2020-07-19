@@ -124,8 +124,9 @@ impl OpenStore for SqliteStore {
                     .connection
                     .execute_batch(
                         r#"
-                            DROP TABLE Blocks;
-                            DROP TABLE Metadata;
+                            DELETE FROM Blocks;
+                            DELETE FROM Metadata;
+                            VACUUM;
                         "#,
                     )
                     .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
