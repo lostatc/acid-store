@@ -18,16 +18,22 @@
 
 use serial_test::serial;
 use tempfile::tempdir;
+use uuid::Uuid;
 
 #[cfg(feature = "store-directory")]
 use acid_store::store::DirectoryStore;
 #[cfg(feature = "store-sqlite")]
 use acid_store::store::SqliteStore;
-use acid_store::store::{OpenOption, OpenStore};
+use acid_store::store::{DataStore, OpenOption, OpenStore};
+use common::random_buffer;
+#[cfg(feature = "store-rclone")]
+use {acid_store::store::RcloneStore, common::rclone_config};
 #[cfg(feature = "store-redis")]
 use {acid_store::store::RedisStore, common::redis_config};
 #[cfg(feature = "store-s3")]
 use {acid_store::store::S3Store, common::s3_config};
+#[cfg(feature = "store-sftp")]
+use {acid_store::store::SftpStore, common::sftp_config};
 
 mod common;
 
@@ -83,4 +89,83 @@ fn s3_create_new_with_existing_store_errs() {
     let result = S3Store::open(s3_config().unwrap(), OpenOption::CREATE_NEW);
 
     assert!(matches!(result, Err(acid_store::Error::AlreadyExists)));
+}
+
+#[test]
+#[serial(sftp)]
+#[cfg(feature = "store-sftp")]
+fn sftp_create_new_with_existing_store_errs() {
+    SftpStore::open(
+        sftp_config().unwrap(),
+        OpenOption::CREATE | OpenOption::TRUNCATE,
+    )
+    .unwrap();
+    let result = SftpStore::open(sftp_config().unwrap(), OpenOption::CREATE_NEW);
+
+    assert!(matches!(result, Err(acid_store::Error::AlreadyExists)));
+}
+
+#[test]
+#[serial(rclone)]
+#[cfg(feature = "store-rclone")]
+fn rclone_create_new_with_existing_store_errs() {
+    RcloneStore::open(rclone_config(), OpenOption::CREATE | OpenOption::TRUNCATE).unwrap();
+    let result = RcloneStore::open(rclone_config(), OpenOption::CREATE_NEW);
+
+    assert!(matches!(result, Err(acid_store::Error::AlreadyExists)));
+}
+
+fn truncate_store<S: OpenStore + DataStore, F: Fn() -> S::Config>(config: F) -> anyhow::Result<()> {
+    let mut store = S::open(config(), OpenOption::CREATE | OpenOption::TRUNCATE)?;
+    store.write_block(Uuid::new_v4(), &random_buffer())?;
+
+    assert!(!store.list_blocks()?.is_empty());
+
+    let mut store = S::open(config(), OpenOption::TRUNCATE)?;
+
+    assert!(store.list_blocks()?.is_empty());
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "store-directory")]
+fn directory_truncate_store() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    truncate_store::<DirectoryStore, _>(|| temp_dir.as_ref().join("store"))
+}
+
+#[test]
+#[cfg(feature = "store-sqlite")]
+fn sqlite_truncate_store() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    truncate_store::<SqliteStore, _>(|| temp_dir.as_ref().join("store.db"))
+}
+
+#[test]
+#[serial(redis)]
+#[cfg(feature = "store-redis")]
+fn redis_truncate_store() {
+    truncate_store::<RedisStore, _>(|| redis_config().unwrap()).unwrap();
+}
+
+#[test]
+#[serial(s3)]
+#[cfg(feature = "store-s3")]
+fn s3_truncate_store() {
+    truncate_store::<S3Store, _>(|| s3_config().unwrap()).unwrap();
+}
+
+#[test]
+#[serial(sftp)]
+#[cfg(feature = "store-sftp")]
+fn sftp_truncate_store() {
+    truncate_store::<SftpStore, _>(|| sftp_config().unwrap()).unwrap();
+}
+
+#[test]
+#[serial(rclone)]
+#[cfg(feature = "store-rclone")]
+fn rclone_truncate_store() {
+    truncate_store::<RcloneStore, _>(|| rclone_config()).unwrap();
 }

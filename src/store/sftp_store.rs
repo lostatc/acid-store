@@ -117,16 +117,18 @@ impl OpenStore for SftpStore {
         Self: Sized,
     {
         let SftpConfig { sftp, path } = config;
-        let stats = sftp
-            .stat(&path)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
-        let exists = stats.is_file()
-            || (stats.is_dir()
-                && !sftp
-                    .readdir(&path)
-                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
-                    .is_empty());
+        let exists = match sftp.stat(&path) {
+            Err(_) => false,
+            Ok(stats) => {
+                stats.is_file()
+                    || (stats.is_dir()
+                        && !sftp
+                            .readdir(&path)
+                            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
+                            .is_empty())
+            }
+        };
 
         if options.contains(OpenOption::CREATE_NEW) {
             if exists {
