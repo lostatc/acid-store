@@ -18,19 +18,37 @@
 
 use tempfile::tempdir;
 
+use acid_store::repo::content::ContentRepo;
+use acid_store::repo::file::FileRepo;
+use acid_store::repo::key::KeyRepo;
 use acid_store::repo::object::ObjectRepo;
-use acid_store::repo::{Encryption, OpenOptions};
+use acid_store::repo::value::ValueRepo;
+use acid_store::repo::version::VersionRepo;
+use acid_store::repo::{ConvertRepo, Encryption, OpenOptions};
 use acid_store::store::{DirectoryStore, MemoryStore, OpenOption, OpenStore};
 
 mod common;
 
 #[test]
-fn creating_existing_repo_errs() -> anyhow::Result<()> {
+fn creating_new_existing_repo_errs() -> anyhow::Result<()> {
     let initial_repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new()).create_new()?;
     let new_repo: Result<ObjectRepo<_>, _> =
         OpenOptions::new(initial_repo.into_store()).create_new();
 
     assert!(matches!(new_repo, Err(acid_store::Error::AlreadyExists)));
+    Ok(())
+}
+
+#[test]
+fn opening_or_creating_nonexistent_repo_succeeds() -> anyhow::Result<()> {
+    OpenOptions::new(MemoryStore::new()).create::<ObjectRepo<_>>()?;
+    Ok(())
+}
+
+#[test]
+fn opening_or_creating_existing_repo_succeeds() -> anyhow::Result<()> {
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<ObjectRepo<_>>()?;
+    OpenOptions::new(initial_repo.into_store()).create::<ObjectRepo<_>>()?;
     Ok(())
 }
 
@@ -107,5 +125,77 @@ fn opening_locked_repo_errs() -> anyhow::Result<()> {
     let new_repo: Result<ObjectRepo<_>, _> = OpenOptions::new(store_copy).open();
 
     assert!(matches!(new_repo, Err(acid_store::Error::Locked)));
+    Ok(())
+}
+
+#[test]
+fn opening_existing_repo_of_different_type_errs() -> anyhow::Result<()> {
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let new_repo =
+        OpenOptions::new(initial_repo.into_repo()?.into_store()).open::<ContentRepo<_>>();
+    assert!(matches!(
+        new_repo,
+        Err(acid_store::Error::UnsupportedFormat)
+    ));
+
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let new_repo =
+        OpenOptions::new(initial_repo.into_repo()?.into_store()).open::<VersionRepo<String, _>>();
+    assert!(matches!(
+        new_repo,
+        Err(acid_store::Error::UnsupportedFormat)
+    ));
+
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let new_repo = OpenOptions::new(initial_repo.into_repo()?.into_store()).open::<FileRepo<_>>();
+    assert!(matches!(
+        new_repo,
+        Err(acid_store::Error::UnsupportedFormat)
+    ));
+
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let new_repo =
+        OpenOptions::new(initial_repo.into_repo()?.into_store()).open::<ValueRepo<String, _>>();
+    assert!(matches!(
+        new_repo,
+        Err(acid_store::Error::UnsupportedFormat)
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn opening_or_creatingexisting_repo_of_different_type_errs() -> anyhow::Result<()> {
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let new_repo =
+        OpenOptions::new(initial_repo.into_repo()?.into_store()).create::<ContentRepo<_>>();
+    assert!(matches!(
+        new_repo,
+        Err(acid_store::Error::UnsupportedFormat)
+    ));
+
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let new_repo =
+        OpenOptions::new(initial_repo.into_repo()?.into_store()).create::<VersionRepo<String, _>>();
+    assert!(matches!(
+        new_repo,
+        Err(acid_store::Error::UnsupportedFormat)
+    ));
+
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let new_repo = OpenOptions::new(initial_repo.into_repo()?.into_store()).create::<FileRepo<_>>();
+    assert!(matches!(
+        new_repo,
+        Err(acid_store::Error::UnsupportedFormat)
+    ));
+
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let new_repo =
+        OpenOptions::new(initial_repo.into_repo()?.into_store()).create::<ValueRepo<String, _>>();
+    assert!(matches!(
+        new_repo,
+        Err(acid_store::Error::UnsupportedFormat)
+    ));
+
     Ok(())
 }
