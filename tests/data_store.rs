@@ -26,20 +26,20 @@ use serial_test::serial;
 use tempfile::tempdir;
 use uuid::Uuid;
 
+use acid_store::store::{DataStore, MemoryStore};
 #[cfg(feature = "store-directory")]
-use acid_store::store::DirectoryStore;
-#[cfg(feature = "store-sqlite")]
-use acid_store::store::SqliteStore;
-use acid_store::store::{DataStore, MemoryStore, OpenOption, OpenStore};
-use common::{assert_contains_all, random_buffer};
+use common::directory_store;
 #[cfg(feature = "store-rclone")]
-use {acid_store::store::RcloneStore, common::rclone_config};
+use common::rclone_store;
 #[cfg(feature = "store-redis")]
-use {acid_store::store::RedisStore, common::redis_config};
+use common::redis_store;
 #[cfg(feature = "store-s3")]
-use {acid_store::store::S3Store, common::s3_config};
+use common::s3_store;
 #[cfg(feature = "store-sftp")]
-use {acid_store::store::SftpStore, common::sftp_config};
+use common::sftp_store;
+#[cfg(feature = "store-sqlite")]
+use common::sqlite_store;
+use common::{assert_contains_all, random_buffer};
 
 mod common;
 
@@ -69,31 +69,23 @@ fn memory_read_block() -> anyhow::Result<()> {
 #[cfg(feature = "store-directory")]
 fn directory_read_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    read_block(DirectoryStore::open(
-        temp_dir.as_ref().join("store"),
-        OpenOption::CREATE_NEW,
-    )?)
+    let store = directory_store(temp_dir.as_ref())?;
+    read_block(store)
 }
 
 #[test]
 #[cfg(feature = "store-sqlite")]
 fn sqlite_read_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    read_block(SqliteStore::open(
-        temp_dir.as_ref().join("store.db"),
-        OpenOption::CREATE_NEW,
-    )?)
+    let store = sqlite_store(temp_dir.as_ref())?;
+    read_block(store)
 }
 
 #[test]
 #[serial(redis)]
 #[cfg(feature = "store-redis")]
 fn redis_read_block() {
-    let store = RedisStore::open(
-        redis_config().unwrap(),
-        OpenOption::CREATE | OpenOption::TRUNCATE,
-    )
-    .unwrap();
+    let store = redis_store().unwrap();
     read_block(store).unwrap();
 }
 
@@ -101,11 +93,7 @@ fn redis_read_block() {
 #[serial(s3)]
 #[cfg(feature = "store-s3")]
 fn s3_read_block() {
-    let store = S3Store::open(
-        s3_config().unwrap(),
-        OpenOption::CREATE | OpenOption::TRUNCATE,
-    )
-    .unwrap();
+    let store = s3_store().unwrap();
     read_block(store).unwrap();
 }
 
@@ -113,11 +101,7 @@ fn s3_read_block() {
 #[serial(sftp)]
 #[cfg(feature = "store-sftp")]
 fn sftp_read_block() {
-    let store = SftpStore::open(
-        sftp_config().unwrap(),
-        OpenOption::CREATE | OpenOption::TRUNCATE,
-    )
-    .unwrap();
+    let store = sftp_store().unwrap();
     read_block(store).unwrap();
 }
 
@@ -125,8 +109,7 @@ fn sftp_read_block() {
 #[serial(rclone)]
 #[cfg(feature = "store-rclone")]
 fn rclone_read_block() {
-    let store =
-        RcloneStore::open(rclone_config(), OpenOption::CREATE | OpenOption::TRUNCATE).unwrap();
+    let store = rclone_store().unwrap();
     read_block(store).unwrap();
 }
 
@@ -151,31 +134,23 @@ fn memory_overwrite_block() -> anyhow::Result<()> {
 #[cfg(feature = "store-directory")]
 fn directory_overwrite_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    overwrite_block(DirectoryStore::open(
-        temp_dir.as_ref().join("store"),
-        OpenOption::CREATE_NEW,
-    )?)
+    let store = directory_store(temp_dir.as_ref())?;
+    overwrite_block(store)
 }
 
 #[test]
 #[cfg(feature = "store-sqlite")]
 fn sqlite_overwrite_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    overwrite_block(SqliteStore::open(
-        temp_dir.as_ref().join("store.db"),
-        OpenOption::CREATE_NEW,
-    )?)
+    let store = sqlite_store(temp_dir.as_ref())?;
+    overwrite_block(store)
 }
 
 #[test]
 #[serial(redis)]
 #[cfg(feature = "store-redis")]
 fn redis_overwrite_block() {
-    let store = RedisStore::open(
-        redis_config().unwrap(),
-        OpenOption::CREATE | OpenOption::TRUNCATE,
-    )
-    .unwrap();
+    let store = redis_store().unwrap();
     overwrite_block(store).unwrap();
 }
 
@@ -183,11 +158,7 @@ fn redis_overwrite_block() {
 #[serial(s3)]
 #[cfg(feature = "store-s3")]
 fn s3_overwrite_block() {
-    let store = S3Store::open(
-        s3_config().unwrap(),
-        OpenOption::CREATE | OpenOption::TRUNCATE,
-    )
-    .unwrap();
+    let store = s3_store().unwrap();
     overwrite_block(store).unwrap();
 }
 
@@ -195,11 +166,7 @@ fn s3_overwrite_block() {
 #[serial(sftp)]
 #[cfg(feature = "store-sftp")]
 fn sftp_overwrite_block() {
-    let store = SftpStore::open(
-        sftp_config().unwrap(),
-        OpenOption::CREATE | OpenOption::TRUNCATE,
-    )
-    .unwrap();
+    let store = sftp_store().unwrap();
     overwrite_block(store).unwrap();
 }
 
@@ -207,8 +174,7 @@ fn sftp_overwrite_block() {
 #[serial(rclone)]
 #[cfg(feature = "store-rclone")]
 fn rclone_overwrite_block() {
-    let store =
-        RcloneStore::open(rclone_config(), OpenOption::CREATE | OpenOption::TRUNCATE).unwrap();
+    let store = rclone_store().unwrap();
     overwrite_block(store).unwrap();
 }
 
@@ -233,31 +199,23 @@ fn memory_remove_block() -> anyhow::Result<()> {
 #[cfg(feature = "store-directory")]
 fn directory_remove_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    remove_block(DirectoryStore::open(
-        temp_dir.as_ref().join("store"),
-        OpenOption::CREATE_NEW,
-    )?)
+    let store = directory_store(temp_dir.as_ref())?;
+    remove_block(store)
 }
 
 #[test]
 #[cfg(feature = "store-sqlite")]
 fn sqlite_remove_block() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    remove_block(SqliteStore::open(
-        temp_dir.as_ref().join("store.db"),
-        OpenOption::CREATE_NEW,
-    )?)
+    let store = sqlite_store(temp_dir.as_ref())?;
+    remove_block(store)
 }
 
 #[test]
 #[serial(redis)]
 #[cfg(feature = "store-redis")]
 fn redis_remove_block() {
-    let store = RedisStore::open(
-        redis_config().unwrap(),
-        OpenOption::CREATE | OpenOption::TRUNCATE,
-    )
-    .unwrap();
+    let store = redis_store().unwrap();
     remove_block(store).unwrap();
 }
 
@@ -265,11 +223,7 @@ fn redis_remove_block() {
 #[serial(s3)]
 #[cfg(feature = "store-s3")]
 fn s3_remove_block() {
-    let store = S3Store::open(
-        s3_config().unwrap(),
-        OpenOption::CREATE | OpenOption::TRUNCATE,
-    )
-    .unwrap();
+    let store = s3_store().unwrap();
     remove_block(store).unwrap();
 }
 
@@ -277,11 +231,7 @@ fn s3_remove_block() {
 #[serial(sftp)]
 #[cfg(feature = "store-sftp")]
 fn sftp_remove_block() {
-    let store = SftpStore::open(
-        sftp_config().unwrap(),
-        OpenOption::CREATE | OpenOption::TRUNCATE,
-    )
-    .unwrap();
+    let store = sftp_store().unwrap();
     remove_block(store).unwrap();
 }
 
@@ -289,8 +239,7 @@ fn sftp_remove_block() {
 #[serial(rclone)]
 #[cfg(feature = "store-rclone")]
 fn rclone_remove_block() {
-    let store =
-        RcloneStore::open(rclone_config(), OpenOption::CREATE | OpenOption::TRUNCATE).unwrap();
+    let store = rclone_store().unwrap();
     remove_block(store).unwrap();
 }
 
@@ -322,31 +271,23 @@ fn memory_list_blocks() -> anyhow::Result<()> {
 #[cfg(feature = "store-directory")]
 fn directory_list_blocks() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    list_blocks(DirectoryStore::open(
-        temp_dir.as_ref().join("store"),
-        OpenOption::CREATE_NEW,
-    )?)
+    let store = directory_store(temp_dir.as_ref())?;
+    list_blocks(store)
 }
 
 #[test]
 #[cfg(feature = "store-sqlite")]
 fn sqlite_list_blocks() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
-    list_blocks(SqliteStore::open(
-        temp_dir.as_ref().join("store.db"),
-        OpenOption::CREATE_NEW,
-    )?)
+    let store = sqlite_store(temp_dir.as_ref())?;
+    list_blocks(store)
 }
 
 #[test]
 #[serial(redis)]
 #[cfg(feature = "store-redis")]
 fn redis_list_blocks() {
-    let store = RedisStore::open(
-        redis_config().unwrap(),
-        OpenOption::CREATE | OpenOption::TRUNCATE,
-    )
-    .unwrap();
+    let store = redis_store().unwrap();
     list_blocks(store).unwrap();
 }
 
@@ -354,11 +295,7 @@ fn redis_list_blocks() {
 #[serial(s3)]
 #[cfg(feature = "store-s3")]
 fn s3_list_blocks() {
-    let store = S3Store::open(
-        s3_config().unwrap(),
-        OpenOption::CREATE | OpenOption::TRUNCATE,
-    )
-    .unwrap();
+    let store = s3_store().unwrap();
     list_blocks(store).unwrap();
 }
 
@@ -366,11 +303,7 @@ fn s3_list_blocks() {
 #[serial(sftp)]
 #[cfg(feature = "store-sftp")]
 fn sftp_list_blocks() {
-    let store = SftpStore::open(
-        sftp_config().unwrap(),
-        OpenOption::CREATE | OpenOption::TRUNCATE,
-    )
-    .unwrap();
+    let store = sftp_store().unwrap();
     list_blocks(store).unwrap();
 }
 
@@ -378,7 +311,6 @@ fn sftp_list_blocks() {
 #[serial(rclone)]
 #[cfg(feature = "store-rclone")]
 fn rclone_list_block() {
-    let store =
-        RcloneStore::open(rclone_config(), OpenOption::CREATE | OpenOption::TRUNCATE).unwrap();
+    let store = rclone_store().unwrap();
     list_blocks(store).unwrap();
 }

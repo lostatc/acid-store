@@ -16,16 +16,14 @@
 
 #![cfg(feature = "store-sftp")]
 
-use std::fmt::{self, Debug};
+use std::fmt::{self, Debug, Formatter};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
-use bitflags::_core::fmt::Formatter;
 use ssh2::{self, RenameFlags, Sftp};
 use uuid::Uuid;
 
-use super::common::{DataStore, OpenStore};
-use crate::store::OpenOption;
+use super::common::DataStore;
 
 // A UUID which acts as the version ID of the directory store format.
 const CURRENT_VERSION: &str = "fc299876-c5ff-11ea-ada1-8b0ec1509cde";
@@ -34,15 +32,6 @@ const CURRENT_VERSION: &str = "fc299876-c5ff-11ea-ada1-8b0ec1509cde";
 const BLOCKS_DIRECTORY: &str = "blocks";
 const STAGING_DIRECTORY: &str = "stage";
 const VERSION_FILE: &str = "version";
-
-/// The configuration for an `SftpStore`.
-pub struct SftpConfig {
-    /// The `Sftp` object representing an open connection to the SSH server.
-    pub sftp: Sftp,
-
-    /// The path relative to the SFTP root to connect to.
-    pub path: PathBuf,
-}
 
 /// A `DataStore` which stores data on an SFTP server.
 ///
@@ -53,37 +42,51 @@ pub struct SftpStore {
 }
 
 impl SftpStore {
-    /// Create a new `SftpStore`.
-    fn create_new(sftp: Sftp, path: PathBuf) -> crate::Result<Self> {
-        // Create the directories in the data store.
-        sftp.mkdir(&path, 0o755)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        sftp.mkdir(&path.join(BLOCKS_DIRECTORY), 0o755)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        sftp.mkdir(&path.join(STAGING_DIRECTORY), 0o755)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+    /// Create or open an `SftpStore`.
+    ///
+    /// This accepts an `sftp` value representing a connection to the server and the `path` of the
+    /// store on the server.
+    ///
+    /// # Errors
+    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
+    /// this is not a valid `SftpStore` or this repository format is no longer supported by the
+    /// library.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn new(sftp: Sftp, path: PathBuf) -> crate::Result<Self> {
+        // Create the directories if they don't exist.
+        let directories = &[
+            &path,
+            &path.join(BLOCKS_DIRECTORY),
+            &path.join(STAGING_DIRECTORY),
+        ];
+        for directory in directories {
+            if sftp.stat(&directory).is_err() {
+                sftp.mkdir(&directory, 0o755)
+                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            }
+        }
 
-        // Write the version ID file.
-        let mut version_file = sftp
-            .create(&path.join(VERSION_FILE))
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        version_file.write_all(CURRENT_VERSION.as_bytes())?;
+        let version_path = path.join(VERSION_FILE);
 
-        Ok(SftpStore { sftp, path })
-    }
+        if sftp.stat(&version_path).is_ok() {
+            // Read the version ID file.
+            let mut version_file = sftp
+                .open(&version_path)
+                .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            let mut version_id = String::new();
+            version_file.read_to_string(&mut version_id)?;
 
-    /// Open an existing `SftpStore`.
-    fn open_existing(sftp: Sftp, path: PathBuf) -> crate::Result<Self> {
-        // Read the version ID file.
-        let mut version_file = sftp
-            .open(&path.join(VERSION_FILE))
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        let mut version_id = String::new();
-        version_file.read_to_string(&mut version_id)?;
-
-        // Verify the version ID.
-        if version_id != CURRENT_VERSION {
-            return Err(crate::Error::UnsupportedFormat);
+            // Verify the version ID.
+            if version_id != CURRENT_VERSION {
+                return Err(crate::Error::UnsupportedFormat);
+            }
+        } else {
+            // Write the version ID file.
+            let mut version_file = sftp
+                .create(&version_path)
+                .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            version_file.write_all(CURRENT_VERSION.as_bytes())?;
         }
 
         Ok(SftpStore { sftp, path })
@@ -106,66 +109,6 @@ impl SftpStore {
     /// Return whether the given remote `path` exists.
     fn exists(&self, path: &Path) -> bool {
         self.sftp.stat(path).is_ok()
-    }
-}
-
-impl OpenStore for SftpStore {
-    type Config = SftpConfig;
-
-    fn open(config: Self::Config, options: OpenOption) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let SftpConfig { sftp, path } = config;
-
-        let exists = match sftp.stat(&path) {
-            Err(_) => false,
-            Ok(stats) => {
-                stats.is_file()
-                    || (stats.is_dir()
-                        && !sftp
-                            .readdir(&path)
-                            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
-                            .is_empty())
-            }
-        };
-
-        if options.contains(OpenOption::CREATE_NEW) {
-            if exists {
-                Err(crate::Error::AlreadyExists)
-            } else {
-                Self::create_new(sftp, path)
-            }
-        } else if options.contains(OpenOption::CREATE) && !exists {
-            Self::create_new(sftp, path)
-        } else {
-            if !exists {
-                return Err(crate::Error::NotFound);
-            }
-
-            let store = Self::open_existing(sftp, path)?;
-
-            if options.contains(OpenOption::TRUNCATE) {
-                let block_directories = store
-                    .sftp
-                    .readdir(&store.path.join(BLOCKS_DIRECTORY))
-                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-                for (block_directory, _) in block_directories {
-                    let blocks = store
-                        .sftp
-                        .readdir(&block_directory)
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-                    for (block_path, _) in blocks {
-                        store
-                            .sftp
-                            .unlink(&block_path)
-                            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-                    }
-                }
-            }
-
-            Ok(store)
-        }
     }
 }
 

@@ -25,7 +25,8 @@ use acid_store::repo::object::ObjectRepo;
 use acid_store::repo::value::ValueRepo;
 use acid_store::repo::version::VersionRepo;
 use acid_store::repo::{ConvertRepo, Encryption, OpenOptions};
-use acid_store::store::{DirectoryStore, MemoryStore, OpenOption, OpenStore};
+use acid_store::store::MemoryStore;
+use common::directory_store;
 
 mod common;
 
@@ -116,8 +117,8 @@ fn opening_with_unnecessary_password_errs() -> anyhow::Result<()> {
 fn opening_locked_repo_errs() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
 
-    let store = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::CREATE_NEW)?;
-    let store_copy = DirectoryStore::open(temp_dir.as_ref().join("store"), OpenOption::empty())?;
+    let store = directory_store(temp_dir.as_ref())?;
+    let store_copy = directory_store(temp_dir.as_ref())?;
 
     let mut repo: ObjectRepo<_> = OpenOptions::new(store).create_new()?;
     repo.commit()?;

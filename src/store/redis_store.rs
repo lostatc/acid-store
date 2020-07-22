@@ -18,10 +18,10 @@
 
 use std::fmt::{self, Debug, Formatter};
 
-use redis::{Client, Commands, Connection, ConnectionInfo, RedisError};
+use redis::{Commands, Connection, RedisError};
 use uuid::Uuid;
 
-use crate::store::common::{DataStore, OpenOption, OpenStore};
+use crate::store::common::DataStore;
 
 /// A UUID which acts as the version ID of the store format.
 const CURRENT_VERSION: &str = "b733bd82-4206-11ea-a3dc-7354076bdaf9";
@@ -39,52 +39,32 @@ impl Debug for RedisStore {
     }
 }
 
-impl OpenStore for RedisStore {
-    type Config = ConnectionInfo;
-
-    fn open(config: Self::Config, options: OpenOption) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let client = Client::open(config)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        let mut connection = client
-            .get_connection()
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-
+impl RedisStore {
+    /// Open or create a `RedisStore` using the given `connection`.
+    ///
+    /// # Errors
+    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
+    /// this is not a valid `RedisStore` or this repository format is no longer supported by the
+    /// library.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn new(mut connection: Connection) -> crate::Result<Self> {
         let version_response: Option<String> = connection
             .get("version")
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         match version_response {
-            Some(version) if version == *CURRENT_VERSION => {
-                if options.contains(OpenOption::CREATE_NEW) {
-                    return Err(crate::Error::AlreadyExists);
-                }
-            }
-            _ => {
-                if options.intersects(OpenOption::CREATE | OpenOption::CREATE_NEW) {
-                    connection
-                        .set("version", CURRENT_VERSION)
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-                } else {
+            Some(version) => {
+                if version != CURRENT_VERSION {
                     return Err(crate::Error::UnsupportedFormat);
                 }
             }
+            None => connection
+                .set("version", CURRENT_VERSION)
+                .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?,
         }
 
-        if options.contains(OpenOption::TRUNCATE) {
-            let keys = connection
-                .keys::<_, Vec<String>>("block:*")
-                .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-            for key in keys {
-                connection
-                    .del(key)
-                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-            }
-        }
-
-        Ok(Self { connection })
+        Ok(RedisStore { connection })
     }
 }
 

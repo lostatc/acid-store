@@ -32,7 +32,7 @@ pub struct MemoryStore {
 }
 
 impl MemoryStore {
-    /// Create a new memory store.
+    /// Create a new empty `MemoryStore`.
     pub fn new() -> Self {
         MemoryStore {
             blocks: HashMap::new(),

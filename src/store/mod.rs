@@ -26,37 +26,22 @@
 //! common interface for opening data stores, but implementing it is optional.
 //!
 //! Many of the data stores in this module are gated behind cargo features. See the crate-level
-//! documetnation for more details.
-//!
-//! # Examples
-//! Open a data store which stores data in a directory of the local file system. Create the data
-//! store if it doesn't already exist, and truncate it if it does.
-//! ```no_run
-//! use acid_store::store::{DirectoryStore, OpenStore, OpenOption};
-//!
-//! let store = DirectoryStore::open(
-//!     "/home/lostatc/store".into(),
-//!     OpenOption::CREATE | OpenOption::TRUNCATE
-//! ).unwrap();
-//! ```
+//! documentation for more details.
 
-pub use self::common::{DataStore, OpenOption, OpenStore};
+pub use self::common::DataStore;
 #[cfg(feature = "store-directory")]
 pub use self::directory_store::DirectoryStore;
 pub use self::memory_store::MemoryStore;
 #[cfg(all(unix, feature = "store-rclone"))]
 pub use self::rclone_store::RcloneStore;
-#[cfg(feature = "store-sqlite")]
-pub use self::sqlite_store::SqliteStore;
 #[cfg(feature = "store-redis")]
 pub use {self::redis_store::RedisStore, redis};
 #[cfg(feature = "store-s3")]
 pub use {self::s3_store::S3Store, s3};
 #[cfg(feature = "store-sftp")]
-pub use {
-    self::sftp_store::{SftpConfig, SftpStore},
-    ssh2,
-};
+pub use {self::sftp_store::SftpStore, ssh2};
+#[cfg(feature = "store-sqlite")]
+pub use {self::sqlite_store::SqliteStore, rusqlite};
 
 mod common;
 mod directory_store;

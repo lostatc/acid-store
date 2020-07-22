@@ -20,20 +20,29 @@
 use std::fmt::Debug;
 use std::hash::Hash;
 
+#[cfg(feature = "store-directory")]
+use acid_store::store::DirectoryStore;
+#[cfg(feature = "store-sftp")]
+use acid_store::store::RcloneStore;
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 #[cfg(feature = "store-redis")]
-use redis::{ConnectionInfo, IntoConnectionInfo};
+use {
+    acid_store::store::RedisStore,
+    redis::{Client as RedisClient, IntoConnectionInfo},
+};
 #[cfg(feature = "store-s3")]
-use s3::bucket::Bucket;
-#[cfg(feature = "store-s3")]
-use s3::credentials::Credentials;
-#[cfg(feature = "store-s3")]
-use s3::region::Region;
+use {
+    acid_store::store::S3Store, s3::bucket::Bucket, s3::credentials::Credentials,
+    s3::region::Region,
+};
 #[cfg(feature = "store-sftp")]
-use {acid_store::store::SftpConfig, ssh2::Session, std::net::TcpStream, std::path::PathBuf};
+use {acid_store::store::SftpStore, ssh2::Session, std::net::TcpStream, std::path::PathBuf};
+#[cfg(feature = "store-sqlite")]
+use {acid_store::store::SqliteStore, rusqlite::Connection as SqliteConnection, std::path::Path};
 
 use acid_store::repo::{Chunking, Compression, Encryption, RepoConfig};
+use acid_store::store::DataStore;
 use lazy_static::lazy_static;
 
 /// The minimum size of test data buffers.
@@ -53,14 +62,42 @@ lazy_static! {
     };
 }
 
+/// Remove all blocks in the given `store`.
+pub fn truncate_store(store: &mut impl DataStore) -> anyhow::Result<()> {
+    for block_id in store.list_blocks()? {
+        store.remove_block(block_id)?;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "store-directory")]
+pub fn directory_store(directory: &Path) -> anyhow::Result<DirectoryStore> {
+    let mut store = DirectoryStore::new(directory.join("store"))?;
+    truncate_store(&mut store)?;
+    Ok(store)
+}
+
+#[cfg(feature = "store-sqlite")]
+pub fn sqlite_store(directory: &Path) -> anyhow::Result<SqliteStore> {
+    let connection = SqliteConnection::open(directory.join("store.db"))?;
+    let mut store = SqliteStore::new(connection)?;
+    truncate_store(&mut store)?;
+    Ok(store)
+}
+
 #[cfg(feature = "store-redis")]
-pub fn redis_config() -> anyhow::Result<ConnectionInfo> {
-    Ok(dotenv::var("REDIS_URL").unwrap().into_connection_info()?)
+pub fn redis_store() -> anyhow::Result<RedisStore> {
+    let info = dotenv::var("REDIS_URL").unwrap().into_connection_info()?;
+    let client = RedisClient::open(info)?;
+    let connection = client.get_connection()?;
+    let mut store = RedisStore::new(connection)?;
+    truncate_store(&mut store)?;
+    Ok(store)
 }
 
 #[cfg(feature = "store-s3")]
-pub fn s3_config() -> anyhow::Result<Bucket> {
-    Ok(Bucket::new(
+pub fn s3_store() -> anyhow::Result<S3Store> {
+    let bucket = Bucket::new(
         &dotenv::var("S3_BUCKET").unwrap(),
         Region::UsEast1,
         Credentials::new(
@@ -69,11 +106,14 @@ pub fn s3_config() -> anyhow::Result<Bucket> {
             None,
             None,
         ),
-    )?)
+    )?;
+    let mut store = S3Store::new(bucket, "test")?;
+    truncate_store(&mut store)?;
+    Ok(store)
 }
 
 #[cfg(feature = "store-sftp")]
-pub fn sftp_config() -> anyhow::Result<SftpConfig> {
+pub fn sftp_store() -> anyhow::Result<SftpStore> {
     let sftp_server: String = dotenv::var("SFTP_SERVER").unwrap();
     let sftp_path: String = dotenv::var("SFTP_PATH").unwrap();
     let sftp_username: String = dotenv::var("SFTP_USERNAME").unwrap();
@@ -87,15 +127,16 @@ pub fn sftp_config() -> anyhow::Result<SftpConfig> {
     session.userauth_password(&sftp_username, &sftp_password)?;
     assert!(session.authenticated());
 
-    Ok(SftpConfig {
-        sftp: session.sftp()?,
-        path: PathBuf::from(sftp_path),
-    })
+    let mut store = SftpStore::new(session.sftp()?, PathBuf::from(sftp_path))?;
+    truncate_store(&mut store)?;
+    Ok(store)
 }
 
 #[cfg(feature = "store-rclone")]
-pub fn rclone_config() -> String {
-    dotenv::var("RCLONE_REMOTE").unwrap()
+pub fn rclone_store() -> anyhow::Result<RcloneStore> {
+    let mut store = RcloneStore::new(dotenv::var("RCLONE_REMOTE").unwrap())?;
+    truncate_store(&mut store)?;
+    Ok(store)
 }
 
 /// Assert that two collections contain all the same elements, regardless of order.
