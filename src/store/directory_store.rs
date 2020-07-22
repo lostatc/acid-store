@@ -16,13 +16,13 @@
 
 #![cfg(feature = "store-directory")]
 
-use std::fs::{create_dir, create_dir_all, read_dir, remove_dir_all, remove_file, rename, File};
+use std::fs::{create_dir_all, read_dir, remove_file, rename, File};
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 
 use uuid::Uuid;
 
-use super::common::{DataStore, OpenOption, OpenStore};
+use super::common::DataStore;
 
 /// A UUID which acts as the version ID of the directory store format.
 const CURRENT_VERSION: &str = "2891c3da-297e-11ea-a7c9-1b8f8be4fc9b";
@@ -42,30 +42,40 @@ pub struct DirectoryStore {
 }
 
 impl DirectoryStore {
-    /// Create a new `DirectoryStore` at the given `path`.
-    fn create_new(path: PathBuf) -> crate::Result<Self> {
+    /// Open or create a `DirectoryStore` in the given `path`.
+    ///
+    /// # Errors
+    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
+    /// this is not a valid `DirectoryStore` or this repository format is no longer supported by the
+    /// library.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn new(path: PathBuf) -> crate::Result<Self> {
         // Create the blocks directory in the data store.
-        create_dir_all(&path)?;
-        create_dir(&path.join(BLOCKS_DIRECTORY))?;
-        create_dir(&path.join(STAGING_DIRECTORY))?;
+        create_dir_all(&path).map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+        create_dir_all(&path.join(BLOCKS_DIRECTORY))
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+        create_dir_all(&path.join(STAGING_DIRECTORY))
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
-        // Write the version ID file.
-        let mut version_file = File::create(&path.join(VERSION_FILE))?;
-        version_file.write_all(CURRENT_VERSION.as_bytes())?;
+        let version_path = path.join(VERSION_FILE);
 
-        Ok(DirectoryStore { path })
-    }
+        if version_path.exists() {
+            // Read the version ID file.
+            let mut version_file = File::open(&version_path)
+                .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            let mut version_id = String::new();
+            version_file.read_to_string(&mut version_id)?;
 
-    /// Open an existing `DirectoryStore` at the given `path`.
-    fn open_existing(path: PathBuf) -> crate::Result<Self> {
-        // Read the version ID file.
-        let mut version_file = File::open(path.join(VERSION_FILE))?;
-        let mut version_id = String::new();
-        version_file.read_to_string(&mut version_id)?;
-
-        // Verify the version ID.
-        if version_id != CURRENT_VERSION {
-            return Err(crate::Error::UnsupportedFormat);
+            // Verify the version ID.
+            if version_id != CURRENT_VERSION {
+                return Err(crate::Error::UnsupportedFormat);
+            }
+        } else {
+            // Write the version ID file.
+            let mut version_file = File::create(&version_path)
+                .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            version_file.write_all(CURRENT_VERSION.as_bytes())?;
         }
 
         Ok(DirectoryStore { path })
@@ -83,40 +93,6 @@ impl DirectoryStore {
         let mut buffer = Uuid::encode_buffer();
         let hex = id.to_simple().encode_lower(&mut buffer);
         self.path.join(STAGING_DIRECTORY).join(hex)
-    }
-}
-
-impl OpenStore for DirectoryStore {
-    type Config = PathBuf;
-
-    fn open(config: Self::Config, options: OpenOption) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let exists = config.is_file() || (config.is_dir() && config.read_dir()?.next().is_some());
-
-        if options.contains(OpenOption::CREATE_NEW) {
-            if exists {
-                Err(crate::Error::AlreadyExists)
-            } else {
-                Self::create_new(config)
-            }
-        } else if options.contains(OpenOption::CREATE) && !exists {
-            Self::create_new(config)
-        } else {
-            if !exists {
-                return Err(crate::Error::NotFound);
-            }
-
-            let store = Self::open_existing(config)?;
-
-            if options.contains(OpenOption::TRUNCATE) {
-                remove_dir_all(store.path.join(BLOCKS_DIRECTORY))?;
-                create_dir(store.path.join(BLOCKS_DIRECTORY))?;
-            }
-
-            Ok(store)
-        }
     }
 }
 

@@ -16,13 +16,11 @@
 
 #![cfg(feature = "store-sqlite")]
 
-use std::path::{Path, PathBuf};
-
 use hex_literal::hex;
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-use crate::store::common::{DataStore, OpenOption, OpenStore};
+use crate::store::common::DataStore;
 
 /// A UUID which acts as the version ID of the store format.
 const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("08d14eb8 4156 11ea 8ec7 a31cc3dfe2e4"));
@@ -37,24 +35,24 @@ pub struct SqliteStore {
 }
 
 impl SqliteStore {
-    /// Create a new `SqliteStore` at the given `path`.
-    fn create_new(path: impl AsRef<Path>) -> crate::Result<Self> {
-        if path.as_ref().exists() {
-            return Err(crate::Error::AlreadyExists);
-        }
-
-        let connection = Connection::open(&path)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-
+    /// Open or create a `SqliteStore` with the given database `connection`.
+    ///
+    /// # Errors
+    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
+    /// this is not a valid `SqliteStore` or this repository format is no longer supported by the
+    /// library.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn new(connection: Connection) -> crate::Result<Self> {
         connection
             .execute_batch(
                 r#"
-                    CREATE TABLE Blocks (
+                    CREATE TABLE IF NOT EXISTS Blocks (
                         uuid BLOB PRIMARY KEY,
                         data BLOB NOT NULL
                     );
-                    
-                    CREATE TABLE Metadata (
+
+                    CREATE TABLE IF NOT EXISTS Metadata (
                         key TEXT PRIMARY KEY,
                         value BLOB NOT NULL
                     );
@@ -62,29 +60,7 @@ impl SqliteStore {
             )
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
-        connection
-            .execute(
-                r#"
-                    INSERT INTO Metadata (key, value)
-                    VALUES ('version', ?1);
-                "#,
-                params![&CURRENT_VERSION.as_bytes()[..]],
-            )
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-
-        Ok(SqliteStore { connection })
-    }
-
-    /// Open an existing `SqliteStore` at the given `path`.
-    fn open_existing(path: impl AsRef<Path>) -> crate::Result<Self> {
-        if !path.as_ref().is_file() {
-            return Err(crate::Error::NotFound);
-        }
-
-        let connection = Connection::open(&path)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-
-        let version_bytes: Vec<u8> = connection
+        let version_bytes: Option<Vec<u8>> = connection
             .query_row(
                 r#"
                     SELECT value FROM Metadata
@@ -93,47 +69,31 @@ impl SqliteStore {
                 params![],
                 |row| row.get(0),
             )
-            .map_err(|_| crate::Error::UnsupportedFormat)?;
-        let version = Uuid::from_slice(version_bytes.as_slice())
-            .map_err(|_| crate::Error::UnsupportedFormat)?;
+            .optional()
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
-        if version != CURRENT_VERSION {
-            return Err(crate::Error::UnsupportedFormat);
-        }
-
-        Ok(SqliteStore { connection })
-    }
-}
-
-impl OpenStore for SqliteStore {
-    type Config = PathBuf;
-
-    fn open(config: Self::Config, options: OpenOption) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        if options.contains(OpenOption::CREATE_NEW) {
-            Self::create_new(config)
-        } else if options.contains(OpenOption::CREATE) && !config.exists() {
-            Self::create_new(config)
-        } else {
-            let store = Self::open_existing(config)?;
-
-            if options.contains(OpenOption::TRUNCATE) {
-                store
-                    .connection
-                    .execute_batch(
+        match version_bytes {
+            Some(bytes) => {
+                let version = Uuid::from_slice(bytes.as_slice())
+                    .map_err(|_| crate::Error::UnsupportedFormat)?;
+                if version != CURRENT_VERSION {
+                    return Err(crate::Error::UnsupportedFormat);
+                }
+            }
+            None => {
+                connection
+                    .execute(
                         r#"
-                            DELETE FROM Blocks;
-                            DELETE FROM Metadata;
-                            VACUUM;
-                        "#,
+                        INSERT INTO Metadata (key, value)
+                        VALUES ('version', ?1);
+                    "#,
+                        params![&CURRENT_VERSION.as_bytes()[..]],
                     )
                     .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
             }
-
-            Ok(store)
         }
+
+        Ok(SqliteStore { connection })
     }
 }
 

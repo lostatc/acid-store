@@ -29,7 +29,7 @@ use secrecy::{ExposeSecret, Secret, SecretString};
 use ssh2::Session;
 use uuid::Uuid;
 
-use crate::store::{DataStore, OpenOption, OpenStore, SftpConfig, SftpStore};
+use crate::store::{DataStore, SftpStore};
 
 /// Generate a random secure password for the SFTP server.
 fn generate_password(length: u32) -> SecretString {
@@ -64,6 +64,8 @@ fn serve(port: u16, password: &SecretString, config: &str) -> io::Result<Child> 
         .args(&[
             "serve",
             "sftp",
+            "--vfs-cache-mode",
+            "writes",
             "--addr",
             &format!("localhost:{}", port),
             "--user",
@@ -87,23 +89,26 @@ fn serve(port: u16, password: &SecretString, config: &str) -> io::Result<Child> 
 ///
 /// To use this data store, rclone must be installed and available on the `PATH`. Rclone version
 /// 1.48.0 or higher is required.
-///
-/// The `OpenStore::Config` value for this data store is a string with the format `<remote>:<path>`,
-/// where `<remote>` is the name of the remote as configured using `rclone config` and `<path>` is
-/// the path of the directory on the remote to use.
 #[derive(Debug)]
 pub struct RcloneStore {
     sftp_store: SftpStore,
     server_process: Child,
 }
 
-impl OpenStore for RcloneStore {
-    type Config = String;
-
-    fn open(config: Self::Config, options: OpenOption) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
+impl RcloneStore {
+    /// Open or create an `RcloneStore`.
+    ///
+    /// This accepts a `config` value, which is a string with the format `<remote>:<path>`, where
+    /// `<remote>` is the name of the remote as configured using `rclone config` and `<path>` is
+    /// the path of the directory on the remote to use.
+    ///
+    /// # Errors
+    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
+    /// this is not a valid `RcloneStore` or this repository format is no longer supported by the
+    /// library.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn new(config: String) -> crate::Result<Self> {
         // Serve the rclone remote over SFTP.
         let port = ephemeral_port()?;
         let password = generate_password(PASSWORD_LENGTH);
@@ -139,11 +144,7 @@ impl OpenStore for RcloneStore {
             .sftp()
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
-        let sftp_config = SftpConfig {
-            sftp,
-            path: PathBuf::from(""),
-        };
-        let sftp_store = SftpStore::open(sftp_config, options)?;
+        let sftp_store = SftpStore::new(sftp, PathBuf::from(""))?;
 
         Ok(Self {
             sftp_store,

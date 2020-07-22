@@ -41,7 +41,7 @@
 //! # Examples
 //! ```
 //! use std::io::{Read, Seek, Write, SeekFrom};
-//! use acid_store::store::{MemoryStore, OpenStore, OpenOption};
+//! use acid_store::store::MemoryStore;
 //! use acid_store::repo::{OpenOptions, key::KeyRepo};
 //!
 //! fn main() -> acid_store::Result<()> {
