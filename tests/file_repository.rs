@@ -300,13 +300,23 @@ fn list_children() -> anyhow::Result<()> {
 }
 
 #[test]
+fn list_children_of_nonexistent_directory() -> anyhow::Result<()> {
+    let repository = create_repo()?;
+    let result = repository.list("nonexistent");
+
+    assert!(matches!(result, Err(acid_store::Error::NotFound)));
+
+    Ok(())
+}
+
+#[test]
 fn list_children_of_a_file() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.create("file", &Entry::file())?;
 
-    let result = repository.list("file").unwrap();
+    let result = repository.list("file");
 
-    assert_contains_all(result, Vec::new());
+    assert!(matches!(result, Err(acid_store::Error::NotDirectory)));
 
     Ok(())
 }
@@ -329,13 +339,23 @@ fn walk_descendants() -> anyhow::Result<()> {
 }
 
 #[test]
+fn walk_descendants_of_nonexistent_directory() -> anyhow::Result<()> {
+    let repository = create_repo()?;
+    let result = repository.walk("nonexistent");
+
+    assert!(matches!(result, Err(acid_store::Error::NotFound)));
+
+    Ok(())
+}
+
+#[test]
 fn walk_descendants_of_a_file() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.create("file", &Entry::file())?;
 
-    let result = repository.walk("file").unwrap();
+    let result = repository.walk("file");
 
-    assert_contains_all(result, Vec::new());
+    assert!(matches!(result, Err(acid_store::Error::NotDirectory)));
 
     Ok(())
 }
