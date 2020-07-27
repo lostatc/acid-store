@@ -20,12 +20,12 @@
 use std::fmt::Debug;
 use std::hash::Hash;
 
-#[cfg(feature = "store-directory")]
-use acid_store::store::DirectoryStore;
 #[cfg(feature = "store-sftp")]
 use acid_store::store::RcloneStore;
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
+#[cfg(feature = "store-directory")]
+use {acid_store::store::DirectoryStore, std::path::Path};
 #[cfg(feature = "store-redis")]
 use {
     acid_store::store::RedisStore,
