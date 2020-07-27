@@ -21,12 +21,19 @@ jobs:
       - name: Install ACL library
         run: sudo apt-get install acl
 
+      - name: Install rclone
+        run: sudo apt-get install rclone
+
+      - name: Create an rclone remote
+        run: rclone config create 'Local' 'local'
+
       - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
         with:
-          args: --features 'store-directory store-sqlite store-redis file-metadata encryption compression' --ignore-tests
+          args: --features 'store-directory store-sqlite store-redis store-rclone file-metadata encryption compression' --ignore-tests
         env:
           REDIS_URL: redis://localhost:6379
+          RCLONE_REMOTE: "Local:/"
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1.0.2

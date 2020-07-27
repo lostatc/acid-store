@@ -16,10 +16,17 @@ jobs:
       - name: Install ACL library
         run: sudo apt-get install acl
 
+      - name: Install rclone
+        run: sudo apt-get install rclone
+
+      - name: Create an rclone remote
+        run: rclone config create 'Local' 'local'
+
       - name: Build
         run: cargo build --all-features
 
       - name: Run tests
         env:
           REDIS_URL: redis://localhost:6379
-        run: cargo test --verbose --features 'store-directory store-sqlite store-redis file-metadata encryption compression'
+          RCLONE_REMOTE: "Local:/"
+        run: cargo test --verbose --features 'store-directory store-sqlite store-redis store-rclone file-metadata encryption compression'
