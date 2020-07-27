@@ -22,7 +22,7 @@ jobs:
         run: sudo apt-get install acl
 
       - name: Install rclone
-        run: sudo apt-get install rclone
+        run: curl https://rclone.org/install.sh | sudo bash
 
       - name: Create an rclone remote
         run: rclone config create 'Local' 'local'
