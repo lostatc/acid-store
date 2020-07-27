@@ -32,11 +32,10 @@ use crate::repo::object::{ObjectHandle, ObjectRepo};
 use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepoInfo};
 use crate::store::DataStore;
 
-use super::entry::{Entry, FileType};
+use super::entry::{Entry, EntryHandle, EntryType, FileType};
 use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
 use super::special::{NoSpecialType, SpecialType};
-use crate::repo::file::entry::PathHandles;
 
 lazy_static! {
     /// The parent of a relative path with no parent.
@@ -50,7 +49,7 @@ const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("9c114e82 bd64 11ea 9872 ab5
 const EMPTY_HANDLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("baff6bc4 be1f 11ea a383 0b8ef483668f"));
 
 /// The current repository format version ID.
-const VERSION_ID: Uuid = Uuid::from_bytes(hex!("a61f6a58 bd64 11ea 9b59 73d36807cf1d"));
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("36f6c626 d029 11ea 91e5 4f0aba7bed31"));
 
 /// A virtual file system.
 ///
@@ -103,7 +102,7 @@ where
     repository: ObjectRepo<S>,
 
     /// A map of relative file paths to the handles of the objects containing their entries.
-    path_table: PathTree<PathHandles>,
+    path_table: PathTree<EntryHandle>,
 
     /// An object handle that will always be empty.
     ///
@@ -182,16 +181,14 @@ where
         self.path_table.contains(path.as_ref())
     }
 
-    /// Check whether the given `path` has a parent directory in the repository.
-    fn check_parent(&self, path: &RelativePath) -> crate::Result<()> {
+    /// Return `true` if the given `path` has a parent directory in the repository.
+    fn has_parent(&self, path: &RelativePath) -> bool {
         match path.parent() {
-            Some(parent) if parent != *EMPTY_PARENT => match self.entry(parent) {
-                Ok(parent_entry) if !parent_entry.is_directory() => Err(crate::Error::InvalidPath),
-                Err(crate::Error::NotFound) => Err(crate::Error::InvalidPath),
-                Err(error) => Err(error),
-                _ => Ok(()),
+            Some(parent) if parent != *EMPTY_PARENT => match self.path_table.get(parent) {
+                Some(handle) => matches!(handle.entry_type, EntryType::Directory),
+                None => false,
             },
-            _ => Ok(()),
+            _ => true,
         }
     }
 
@@ -214,7 +211,9 @@ where
             return Err(crate::Error::AlreadyExists);
         }
 
-        self.check_parent(path.as_ref())?;
+        if !self.has_parent(path.as_ref()) {
+            return Err(crate::Error::InvalidPath);
+        }
 
         // Write the entry for the file.
         let mut entry_handle = self.repository.add_unmanaged();
@@ -225,18 +224,18 @@ where
         object.serialize(entry)?;
         drop(object);
 
-        let file_handle = if entry.is_file() {
-            Some(self.repository.add_unmanaged())
-        } else {
-            None
+        let file_handle = match entry.file_type {
+            FileType::File => EntryType::File(self.repository.add_unmanaged()),
+            FileType::Directory => EntryType::Directory,
+            FileType::Special(_) => EntryType::Special,
         };
 
-        let path_handles = PathHandles {
+        let handle = EntryHandle {
             entry: entry_handle,
-            file: file_handle,
+            entry_type: file_handle,
         };
 
-        self.path_table.insert(path.as_ref(), path_handles);
+        self.path_table.insert(path.as_ref(), handle);
 
         Ok(())
     }
@@ -293,11 +292,11 @@ where
             None => return Err(crate::Error::NotFound),
         }
 
-        let path_handles = self.path_table.remove(path.as_ref()).unwrap();
-        if let Some(handle) = path_handles.file {
+        let entry_handle = self.path_table.remove(path.as_ref()).unwrap();
+        if let EntryType::File(handle) = entry_handle.entry_type {
             self.repository.remove_unmanaged(&handle);
         }
-        self.repository.remove_unmanaged(&path_handles.entry);
+        self.repository.remove_unmanaged(&entry_handle.entry);
 
         Ok(())
     }
@@ -315,7 +314,7 @@ where
             .drain(path.as_ref())
             .ok_or(crate::Error::NotFound)?
         {
-            if let Some(handle) = &handles.file {
+            if let EntryType::File(handle) = &handles.entry_type {
                 self.repository.remove_unmanaged(&handle);
             }
             self.repository.remove_unmanaged(&handles.entry);
@@ -333,13 +332,13 @@ where
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn entry(&self, path: impl AsRef<RelativePath>) -> crate::Result<Entry<T, M>> {
-        let path_handles = &self
+        let entry_handle = &self
             .path_table
             .get(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
         let mut object = self
             .repository
-            .unmanaged_object(&path_handles.entry)
+            .unmanaged_object(&entry_handle.entry)
             .unwrap();
         object.deserialize()
     }
@@ -358,13 +357,13 @@ where
         path: impl AsRef<RelativePath>,
         metadata: Option<M>,
     ) -> crate::Result<()> {
-        let path_handles = &mut self
+        let entry_handle = &mut self
             .path_table
             .get_mut(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
         let mut object = self
             .repository
-            .unmanaged_object_mut(&mut path_handles.entry)
+            .unmanaged_object_mut(&mut entry_handle.entry)
             .unwrap();
         let mut entry: Entry<T, M> = object.deserialize()?;
         entry.metadata = metadata;
@@ -380,11 +379,11 @@ where
     /// - `Error::NotFound`: There is no entry with the given `path`.
     /// - `Error::NotFile`: The entry does not represent a regular file.
     pub fn open(&self, path: impl AsRef<RelativePath>) -> crate::Result<ReadOnlyObject<S>> {
-        let path_handles = self
+        let entry_handle = self
             .path_table
             .get(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
-        if let Some(handle) = &path_handles.file {
+        if let EntryType::File(handle) = &entry_handle.entry_type {
             Ok(self.repository.unmanaged_object(&handle).unwrap())
         } else {
             Err(crate::Error::NotFile)
@@ -400,13 +399,15 @@ where
     /// - `Error::NotFound`: There is no entry with the given `path`.
     /// - `Error::NotFile`: The entry does not represent a regular file.
     pub fn open_mut(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<Object<S>> {
-        let path_handles = self
+        let entry_handle = self
             .path_table
             .get_mut(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
-        match path_handles.file {
-            Some(ref mut handle) => Ok(self.repository.unmanaged_object_mut(handle).unwrap()),
-            None => Err(crate::Error::NotFile),
+        match entry_handle.entry_type {
+            EntryType::File(ref mut handle) => {
+                Ok(self.repository.unmanaged_object_mut(handle).unwrap())
+            }
+            _ => Err(crate::Error::NotFile),
         }
     }
 
@@ -424,10 +425,6 @@ where
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
     /// - `Error::NotFound`: There is no entry at `source`.
     /// - `Error::AlreadyExists`: There is already an entry at `dest`.
-    /// - `Error::Deserialize`: The file metadata could not be deserialized.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
     pub fn copy(
         &mut self,
         source: impl AsRef<RelativePath>,
@@ -437,20 +434,23 @@ where
             return Err(crate::Error::AlreadyExists);
         }
 
-        self.check_parent(dest.as_ref())?;
+        if !self.has_parent(dest.as_ref()) {
+            return Err(crate::Error::InvalidPath);
+        }
 
-        let handles = self
+        let entry_handle = self
             .path_table
             .get(source.as_ref())
             .ok_or(crate::Error::NotFound)?;
-        let new_handles = PathHandles {
-            entry: self.repository.copy_unmanaged(&handles.entry),
-            file: match &handles.file {
-                Some(handle) => Some(self.repository.copy_unmanaged(&handle)),
-                None => None,
+        let new_handle = EntryHandle {
+            entry: self.repository.copy_unmanaged(&entry_handle.entry),
+            entry_type: match &entry_handle.entry_type {
+                EntryType::File(handle) => EntryType::File(self.repository.copy_unmanaged(&handle)),
+                EntryType::Directory => EntryType::Directory,
+                EntryType::Special => EntryType::Special,
             },
         };
-        self.path_table.insert(dest.as_ref(), new_handles);
+        self.path_table.insert(dest.as_ref(), new_handle);
 
         Ok(())
     }
@@ -469,9 +469,6 @@ where
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
     /// - `Error::NotFound`: There is no entry at `source`.
     /// - `Error::AlreadyExists`: There is already an entry at `dest`.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
     pub fn copy_tree(
         &mut self,
         source: impl AsRef<RelativePath>,
@@ -480,18 +477,22 @@ where
         if self.exists(dest.as_ref()) {
             return Err(crate::Error::AlreadyExists);
         }
-        self.check_parent(dest.as_ref())?;
+
+        if !self.has_parent(dest.as_ref()) {
+            return Err(crate::Error::InvalidPath);
+        }
 
         // Copy the root directory.
-        let root_handles = self
+        let root_handle = self
             .path_table
             .get(source.as_ref())
             .ok_or(crate::Error::NotFound)?;
-        let new_root_handles = PathHandles {
-            entry: self.repository.copy_unmanaged(&root_handles.entry),
-            file: match &root_handles.file {
-                Some(handle) => Some(self.repository.copy_unmanaged(&handle)),
-                None => None,
+        let new_root_handles = EntryHandle {
+            entry: self.repository.copy_unmanaged(&root_handle.entry),
+            entry_type: match &root_handle.entry_type {
+                EntryType::File(handle) => EntryType::File(self.repository.copy_unmanaged(&handle)),
+                EntryType::Directory => EntryType::Directory,
+                EntryType::Special => EntryType::Special,
             },
         };
         let mut tree = PathTree::new();
@@ -499,19 +500,22 @@ where
 
         // Because we can't walk the path tree and insert into it at the same time, we need to copy
         // the paths to a new `PathTree` first and then insert them back into the original.
-        for (path, handles) in self.path_table.walk(source.as_ref()).unwrap() {
+        for (path, entry_handle) in self.path_table.walk(source.as_ref()).unwrap() {
             let relative_path = path.strip_prefix(&source).unwrap();
             let dest_path = dest.as_ref().join(relative_path);
 
-            let new_handles = PathHandles {
-                entry: self.repository.copy_unmanaged(&handles.entry),
-                file: match &handles.file {
-                    Some(handle) => Some(self.repository.copy_unmanaged(&handle)),
-                    None => None,
+            let new_handle = EntryHandle {
+                entry: self.repository.copy_unmanaged(&entry_handle.entry),
+                entry_type: match &entry_handle.entry_type {
+                    EntryType::File(handle) => {
+                        EntryType::File(self.repository.copy_unmanaged(&handle))
+                    }
+                    EntryType::Directory => EntryType::Directory,
+                    EntryType::Special => EntryType::Special,
                 },
             };
 
-            tree.insert(dest_path, new_handles);
+            tree.insert(dest_path, new_handle);
         }
 
         for (path, handles) in tree.drain(&dest).unwrap() {
@@ -523,35 +527,45 @@ where
 
     /// Return an iterator of paths which are children of `parent`.
     ///
-    /// This returns `None` if there is no entry at `parent`.
-    ///
-    /// If the given `parent` path is not the path of a directory entry, this returns an empty
-    /// iterator. Not checking whether the path is a directory first allows this method to operate
-    /// without having to read data from the data store. If you need to check whether the `parent`
-    /// path is a directory, use `Entry::is_directory`.
+    /// # Errors
+    /// - `Error::NotFound`: The given `parent` does not exist.
+    /// - `Error::NotDirectory`: The given `parent` is not a directory.
     pub fn list<'a>(
         &'a self,
         parent: impl AsRef<RelativePath> + 'a,
-    ) -> Option<impl Iterator<Item = RelativePathBuf> + 'a> {
-        Some(self.path_table.list(parent)?.map(|(path, _)| path))
+    ) -> crate::Result<impl Iterator<Item = RelativePathBuf> + 'a> {
+        let entry_handle = self
+            .path_table
+            .get(parent.as_ref())
+            .ok_or(crate::Error::NotFound)?;
+        if !matches!(entry_handle.entry_type, EntryType::Directory) {
+            return Err(crate::Error::NotDirectory);
+        }
+
+        Ok(self.path_table.list(parent).unwrap().map(|(path, _)| path))
     }
 
     /// Return an iterator of paths which are descendants of `parent`.
     ///
-    /// This returns `None` if there is no entry at `parent`.
-    ///
     /// The returned iterator yields paths in depth-first order, meaning that a path will always
     /// come before its children.
     ///
-    /// If the given `parent` path is not the path of a directory entry, this returns an empty
-    /// iterator. Not checking whether the path is a directory first allows this method to operate
-    /// without having to read data from the data store. If you need to check whether the `parent`
-    /// path is a directory, use `Entry::is_directory`.
+    /// # Errors
+    /// - `Error::NotFound`: The given `parent` does not exist.
+    /// - `Error::NotDirectory`: The given `parent` is not a directory.
     pub fn walk<'a>(
         &'a self,
         parent: impl AsRef<RelativePath> + 'a,
-    ) -> Option<impl Iterator<Item = RelativePathBuf> + 'a> {
-        Some(self.path_table.walk(parent)?.map(|(path, _)| path))
+    ) -> crate::Result<impl Iterator<Item = RelativePathBuf> + 'a> {
+        let entry_handle = self
+            .path_table
+            .get(parent.as_ref())
+            .ok_or(crate::Error::NotFound)?;
+        if !matches!(entry_handle.entry_type, EntryType::Directory) {
+            return Err(crate::Error::NotDirectory);
+        }
+
+        Ok(self.path_table.walk(parent).unwrap().map(|(path, _)| path))
     }
 
     /// Copy a file from the file system into the repository.
@@ -596,8 +610,8 @@ where
         self.create(&dest, &entry)?;
 
         // Write the contents of the file entry if it's a file.
-        let path_handles = self.path_table.get_mut(dest.as_ref()).unwrap();
-        if let Some(ref mut handle) = path_handles.file {
+        let entry_handle = self.path_table.get_mut(dest.as_ref()).unwrap();
+        if let EntryType::File(ref mut handle) = entry_handle.entry_type {
             let mut object = self.repository.unmanaged_object_mut(handle).unwrap();
             let mut file = File::open(&source)?;
             copy(&mut file, &mut object)?;
@@ -779,11 +793,11 @@ where
             .path_table
             .walk(RelativePathBuf::new())
             .unwrap()
-            .filter(|(_, path_handles)| {
-                let entry_valid = report.check_unmanaged(&path_handles.entry);
-                let file_valid = match &path_handles.file {
-                    Some(handle) => report.check_unmanaged(&handle),
-                    None => true,
+            .filter(|(_, entry_handle)| {
+                let entry_valid = report.check_unmanaged(&entry_handle.entry);
+                let file_valid = match &entry_handle.entry_type {
+                    EntryType::File(handle) => report.check_unmanaged(&handle),
+                    _ => true,
                 };
                 !entry_valid || !file_valid
             })

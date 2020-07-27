@@ -101,12 +101,17 @@ impl<T: SpecialType, M: FileMetadata> Entry<T, M> {
     }
 }
 
-/// The object handles associated with each file path.
+/// A type of entry handle.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct PathHandles {
-    /// The handle of the object which stores the serialized entry.
-    pub entry: ObjectHandle,
+pub enum EntryType {
+    File(ObjectHandle),
+    Directory,
+    Special,
+}
 
-    /// The handle of the object which stores the contents of the regular file.
-    pub file: Option<ObjectHandle>,
+/// A handle for accessing the data assocaited with each entry.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EntryHandle {
+    pub entry: ObjectHandle,
+    pub entry_type: EntryType,
 }
