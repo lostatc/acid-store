@@ -73,9 +73,10 @@
 //! the same configuration, they are encrypted using the same password, and data is deduplicated
 //! between them. This also means that only one instance of a repository can be open at a time.
 //!
-//! This feature allows for using multiple repository types within the same `DataStore`. For
-//! example, you could have a data store which contains both a `FileRepo` and a
-//! `VersionRepo` by giving them different instance IDs.
+//! Instances of the same repository can be different repository types. This feature allows for
+//! having multiple repositories of different types which are backed by the same `DataStore`. For
+//! example, you could have a data store which contains both a `FileRepo` and a `VersionRepo` by
+//! giving them different instance IDs, and data will still be deduplicated between them.
 //!
 //! This feature can also be used to manage memory usage. The amount of memory used by a repository
 //! while it's open is typically proportional to the number of objects in the repository. If you
@@ -111,9 +112,9 @@ pub use self::common::{
 /// repository, and it's the user's responsibility to keep track of them. Without an object handle,
 /// you cannot access or remove the data associated with it.
 ///
-/// Managed objects are also accessed via object handles, but these object handles are stored in the
-/// repository and the user doesn't have to worry about keeping track of them. Each managed object
-/// is associated with a UUID which can be used to access or remove the data.
+/// Under the hood, managed objects are also accessed via object handles, but these object handles
+/// are stored in the repository and the user doesn't have to worry about keeping track of them.
+/// Each managed object is associated with a UUID which can be used to access or remove the data.
 ///
 /// If your repository has many objects, you may not want to store all the object handles in memory,
 /// since they take up a non-trivial amount of space. Object handles are always stored in memory for
