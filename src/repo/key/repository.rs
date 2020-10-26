@@ -44,13 +44,6 @@ pub trait Key: Eq + Hash + Clone + Serialize + DeserializeOwned {}
 impl<T> Key for T where T: Eq + Hash + Clone + Serialize + DeserializeOwned {}
 
 /// An object store which maps keys to seekable binary blobs.
-///
-/// A `KeyRepo` maps keys of type `K` to seekable binary blobs called objects and stores
-/// them persistently in a `DataStore`.
-///
-/// Like other repositories, changes made to the repository are not persisted to the data store
-/// until `commit` is called. For details about deduplication, compression, encryption, and locking,
-/// see the module-level documentation for `acid_store::repo`.
 #[derive(Debug)]
 pub struct KeyRepo<K: Key, S: DataStore> {
     repository: ObjectRepo<S>,

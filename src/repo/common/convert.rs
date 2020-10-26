@@ -20,6 +20,8 @@ use super::repository::ObjectRepo;
 use crate::store::DataStore;
 
 /// A repository which is backed by an `ObjectRepo`.
+///
+/// Repository types which implement this trait can be opened or created using `OpenOptions`.
 pub trait ConvertRepo<S: DataStore> {
     /// Convert the given `repository` to a repository of this type.
     ///

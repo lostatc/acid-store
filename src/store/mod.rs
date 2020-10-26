@@ -22,8 +22,7 @@
 //! Those features are implemented at a higher level. Data stores are meant to be easy to implement
 //! so that providing support for new storage backends is relatively painless.
 //!
-//! All data stores implement the `DataStore` trait. The `OpenStore` trait is meant to provide a
-//! common interface for opening data stores, but implementing it is optional.
+//! All data stores implement the `DataStore` trait.
 //!
 //! Many of the data stores in this module are gated behind cargo features. See the crate-level
 //! documentation for more details.

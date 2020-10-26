@@ -42,54 +42,6 @@ const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("a2cf16fe bd51 11ea 9785 4be
 const VERSION_ID: Uuid = Uuid::from_bytes(hex!("b1671d9c bd51 11ea ab79 8bcf24ad6a9a"));
 
 /// An object store with support for content versioning.
-///
-/// This repository is an object store like `KeyRepo`, except it supports storing multiple
-/// versions of each object. The current version of each object is mutable, while past versions are
-/// read-only.
-///
-/// Like other repositories, changes made to the repository are not persisted to the data store
-/// until `commit` is called. For details about deduplication, compression, encryption, and locking,
-/// see the module-level documentation for `acid_store::repo`.
-///
-/// # Examples
-/// Create a version of an object, delete the object's contents, and then restore from the version.
-/// ```
-///     use std::io::{Read, Write};
-///
-///     use acid_store::repo::{OpenOptions, Object, version::VersionRepo, RepoConfig};
-///     use acid_store::store::MemoryStore;
-///
-///     fn main() -> acid_store::Result<()> {
-///         let mut repository = OpenOptions::new(MemoryStore::new())
-///             .create_new::<VersionRepo<String, _>>()?;
-///
-///         // Insert a new object and write some data to it.
-///         let mut object = repository.insert(String::from("Key")).unwrap();
-///         object.write_all(b"Original data")?;
-///         object.flush()?;
-///         drop(object);
-///         
-///         // Create a new, read-only version of this object.
-///         let version = repository.create_version("Key").unwrap();
-///
-///         // Modify the current version of the object.
-///         let mut object = repository.object_mut("Key").unwrap();
-///         object.truncate(0)?;
-///         drop(object);
-///
-///         // Restore from the version we created earlier.
-///         repository.restore_version("Key", version.id());
-///
-///         // Check the contents.
-///         let mut object = repository.object("Key").unwrap();
-///         let mut contents = Vec::new();
-///         object.read_to_end(&mut contents)?;
-///
-///         assert_eq!(contents, b"Original data");
-///         Ok(())
-///     }
-///
-/// ```
 #[derive(Debug)]
 pub struct VersionRepo<K: Key, S: DataStore> {
     repository: ObjectRepo<S>,

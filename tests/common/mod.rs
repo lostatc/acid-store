@@ -20,12 +20,14 @@
 use std::fmt::Debug;
 use std::hash::Hash;
 
+#[cfg(feature = "store-directory")]
+use acid_store::store::DirectoryStore;
 #[cfg(feature = "store-sftp")]
 use acid_store::store::RcloneStore;
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
-#[cfg(feature = "store-directory")]
-use {acid_store::store::DirectoryStore, std::path::Path};
+#[cfg(any(feature = "store-directory", feature = "store-sqlite"))]
+use std::path::Path;
 #[cfg(feature = "store-redis")]
 use {
     acid_store::store::RedisStore,
@@ -39,7 +41,7 @@ use {
 #[cfg(feature = "store-sftp")]
 use {acid_store::store::SftpStore, ssh2::Session, std::net::TcpStream, std::path::PathBuf};
 #[cfg(feature = "store-sqlite")]
-use {acid_store::store::SqliteStore, rusqlite::Connection as SqliteConnection, std::path::Path};
+use {acid_store::store::SqliteStore, rusqlite::Connection as SqliteConnection};
 
 use acid_store::repo::{Chunking, Compression, Encryption, RepoConfig};
 use acid_store::store::DataStore;
