@@ -41,36 +41,6 @@ pub(super) const VERSION_BLOCK_ID: Uuid =
     Uuid::from_bytes(hex!("cbf28b1c 3550 11ea 8cb0 87d7a14efe10"));
 
 /// A low-level repository type which provides more direct access to the underlying storage.
-///
-/// This repository type is mostly intended to be used to create other, higher-level repository
-/// types. All the other repository types in `acid_store::repo` are implemented on top of it. Its
-/// API is more complicated than the other repository types, but it provides more control over how
-/// data is stored and how memory is managed.
-///
-/// Like other repositories, changes made to the repository are not persisted to the data store
-/// until `commit` is called. For details about deduplication, compression, encryption, and locking,
-/// see the module-level documentation for `acid_store::repo`.
-///
-/// # Managed and unmanaged objects
-/// An `ObjectRepo` has two modes for storing data, *managed* objects and *unmanaged* objects.
-///
-/// Unmanaged objects are accessed via an `ObjectHandle`. Object handles are not stored in the
-/// repository, and it's the user's responsibility to keep track of them. Without an object handle,
-/// you cannot access or remove the data associated with it.
-///
-/// Managed objects are also accessed via object handles, but these object handles are stored in the
-/// repository and the user doesn't have to worry about keeping track of them. Each managed object
-/// is associated with a UUID which can be used to access or remove the data.
-///
-/// If your repository has many objects, you may not want to store all the object handles in memory,
-/// since they take up a non-trivial amount of space. Object handles are always stored in memory for
-/// managed objects, but not necessarily for unmanaged objects. `ObjectHandle` is serializable, so
-/// it can be stored in other managed or unmanaged objects.
-///
-/// However, if `ObjectRepo` only had unmanaged objects, and all the object handles were
-/// stored in other unmanaged objects, you would have a chicken-and-egg problem and wouldn't be able
-/// to access any data! This is where managed objects are useful. They can be used to store
-/// object handles (and other data) with a predictable UUID, potentially set at compile time.
 #[derive(Debug)]
 pub struct ObjectRepo<S: DataStore> {
     /// The state for this repository.

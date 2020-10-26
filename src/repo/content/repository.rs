@@ -43,15 +43,6 @@ const BUFFER_SIZE: usize = 4096;
 const DEFAULT_ALGORITHM: HashAlgorithm = HashAlgorithm::Blake2b(32);
 
 /// A content-addressable storage.
-///
-/// This is repository which allows for accessing data by its cryptographic hash. See
-/// `HashAlgorithm` for a list of supported hash algorithms. The default hash algorithm is
-/// 256-bit BLAKE2b, but this can be changed using `change_algorithm` once the repository is
-/// created.
-///
-/// Like other repositories, changes made to the repository are not persisted to the data store
-/// until `commit` is called. For details about deduplication, compression, encryption, and locking,
-/// see the module-level documentation for `acid_store::repo`.
 #[derive(Debug)]
 pub struct ContentRepo<S: DataStore> {
     repository: ObjectRepo<S>,

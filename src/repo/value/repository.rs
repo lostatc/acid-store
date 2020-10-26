@@ -40,13 +40,6 @@ const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("69f329d6 bd4e 11ea 980a 3f2
 const VERSION_ID: Uuid = Uuid::from_bytes(hex!("7457459c bd4e 11ea 8dad 67ac9eea7160"));
 
 /// A persistent, heterogeneous, map-like collection.
-///
-/// This is a repository which maps keys to concrete values instead of binary blobs. Values are
-/// serialized and deserialized automatically using a space-efficient binary format.
-///
-/// Like other repositories, changes made to the repository are not persisted to the data store
-/// until `commit` is called. For details about deduplication, compression, encryption, and locking,
-/// see the module-level documentation for `acid_store::repo`.
 #[derive(Debug)]
 pub struct ValueRepo<K: Key, S: DataStore> {
     repository: ObjectRepo<S>,
