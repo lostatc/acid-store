@@ -56,25 +56,26 @@ This library provides the following storage backends out of the box.
 
 ## Benchmarks
 
-You can run the benchmarks yourself by running `cargo bench --all-features`.
+The following results are from reading and writing data to the local file system.
+You can run the benchmarks yourself by running `cargo bench --all-features`. 
 
 ### Specs
 
 Spec | Value
 --- | ---
 Processor | Ryzen 5 1600x
-Memory | 16 GB (2133MHz)
-Disk | Crucial MX500 SATA SSD
-OS | Ubuntu 19.10
+Memory | 32 GB (3200MHz)
+Disk | SATA SSD
+OS | Linux 5.8
 
 ### Results
 
 Encryption | Chunking | Read | Write
 --- | --- | --- | ---
-None | Fixed | 1555 MiB/s | 290 MiB/s
-XChaCha20-Poly1305 | Fixed | 630 MiB/s | 210 MiB/s
-None | ZPAQ | 1600 MiB/s | 185 MiB/s
-XChaCha20-Poly1305 | ZPAQ | 710 MiB/s | 125 MiB/s
+None | Fixed | 1880 MiB/s | 340 MiB/s
+XChaCha20-Poly1305 | Fixed | 685 MiB/s | 175 MiB/s
+None | ZPAQ | 1840 MiB/s | 190 MiB/s
+XChaCha20-Poly1305 | ZPAQ | 725 MiB/s | 170 MiB/s
 
 ## Contributing
 

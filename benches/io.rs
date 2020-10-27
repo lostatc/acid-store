@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use std::fs::remove_dir_all;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
@@ -26,7 +27,7 @@ use tempfile::tempdir;
 use acid_store::repo::key::KeyRepo;
 use acid_store::repo::object::ObjectRepo;
 use acid_store::repo::{Chunking, Encryption, OpenOptions};
-use acid_store::store::{DirectoryStore, OpenOption, OpenStore};
+use acid_store::store::DirectoryStore;
 
 /// Return a buffer containing `size` random bytes for testing purposes.
 pub fn random_bytes(size: usize) -> Vec<u8> {
@@ -38,11 +39,9 @@ pub fn random_bytes(size: usize) -> Vec<u8> {
 
 /// Return a new data store at `directory` for benchmarking.
 fn new_store(directory: &Path) -> DirectoryStore {
-    DirectoryStore::open(
-        directory.join("store"),
-        OpenOption::CREATE | OpenOption::TRUNCATE,
-    )
-    .unwrap()
+    let store_path = directory.join("store");
+    remove_dir_all(&store_path).ok();
+    DirectoryStore::new(store_path).unwrap()
 }
 
 /// Return an iterator of repositories and test descriptions.
