@@ -24,11 +24,45 @@ use acid_store::repo::key::KeyRepo;
 use acid_store::repo::object::ObjectRepo;
 use acid_store::repo::value::ValueRepo;
 use acid_store::repo::version::VersionRepo;
-use acid_store::repo::{ConvertRepo, Encryption, OpenOptions};
+use acid_store::repo::{
+    Chunking, Compression, ConvertRepo, Encryption, OpenOptions, RepoConfig, ResourceLimit,
+};
 use acid_store::store::MemoryStore;
 use common::directory_store;
 
 mod common;
+
+#[test]
+fn set_existing_config_and_create_new_repo() -> anyhow::Result<()> {
+    // These are just random values for testing. This is not a good example config.
+    let config = RepoConfig {
+        chunking: Chunking::Fixed { size: 200 },
+        compression: Compression::Deflate { level: 6 },
+        encryption: Encryption::XChaCha20Poly1305,
+        memory_limit: ResourceLimit::Sensitive,
+        operations_limit: ResourceLimit::Sensitive,
+    };
+    let repo = OpenOptions::new(MemoryStore::new())
+        .config(config)
+        .create_new::<ObjectRepo<_>>()?;
+
+    assert_eq!(repo.info().config(), config);
+    Ok(())
+}
+
+#[test]
+fn configure_and_create_new_repo() -> anyhow::Result<()> {
+    let repo = OpenOptions::new(MemoryStore::new())
+        .chunking(Chunking::Fixed { size: 200 })
+        .compression(Compression::Deflate { level: 6 })
+        .encryption(Encryption::XChaCha20Poly1305)
+        .memory_limit(ResourceLimit::Sensitive)
+        .operations_limit(ResourceLimit::Sensitive)
+        .create_new::<ObjectRepo<_>>()?;
+
+    assert_eq!(repo.info().config(), config);
+    Ok(())
+}
 
 #[test]
 fn creating_new_existing_repo_errs() -> anyhow::Result<()> {
@@ -166,7 +200,7 @@ fn opening_existing_repo_of_different_type_errs() -> anyhow::Result<()> {
 }
 
 #[test]
-fn opening_or_creatingexisting_repo_of_different_type_errs() -> anyhow::Result<()> {
+fn opening_or_creating_existing_repo_of_different_type_errs() -> anyhow::Result<()> {
     let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
     let new_repo =
         OpenOptions::new(initial_repo.into_repo()?.into_store()).create::<ContentRepo<_>>();
@@ -198,5 +232,19 @@ fn opening_or_creatingexisting_repo_of_different_type_errs() -> anyhow::Result<(
         Err(acid_store::Error::UnsupportedFormat)
     ));
 
+    Ok(())
+}
+
+#[test]
+fn open_or_create_existing_repo() -> anyhow::Result<()> {
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<ObjectRepo<_>>()?;
+    let store = initial_repo.into_store();
+    OpenOptions::new(store).create::<ObjectRepo<_>>()?;
+    Ok(())
+}
+
+#[test]
+fn open_or_create_nonexistent_repo() -> anyhow::Result<()> {
+    OpenOptions::new(MemoryStore::new()).create::<ObjectRepo<_>>()?;
     Ok(())
 }
