@@ -34,13 +34,13 @@ mod common;
 
 #[test]
 fn set_existing_config_and_create_new_repo() -> anyhow::Result<()> {
-    // These are just random values for testing. This is not a good example config.
+    // These are random config values for testing. This should not be used as an example config.
     let mut config = RepoConfig::default();
-    config.chunking = Chunking::Fixed { size: 200 };
-    config.compression = Compression::Deflate { level: 6 };
+    config.chunking = Chunking::Fixed { size: 1024 * 16 };
+    config.compression = Compression::Deflate { level: 3 };
     config.encryption = Encryption::XChaCha20Poly1305;
-    config.memory_limit = ResourceLimit::Sensitive;
-    config.operations_limit = ResourceLimit::Sensitive;
+    config.memory_limit = ResourceLimit::Moderate;
+    config.operations_limit = ResourceLimit::Moderate;
 
     let repo = OpenOptions::new(MemoryStore::new())
         .config(config.clone())
@@ -53,19 +53,20 @@ fn set_existing_config_and_create_new_repo() -> anyhow::Result<()> {
 
 #[test]
 fn configure_and_create_new_repo() -> anyhow::Result<()> {
+    // These are random config values for testing. This should not be used as an example config.
     let mut config = RepoConfig::default();
-    config.chunking = Chunking::Fixed { size: 200 };
-    config.compression = Compression::Deflate { level: 6 };
+    config.chunking = Chunking::Fixed { size: 1024 * 16 };
+    config.compression = Compression::Deflate { level: 3 };
     config.encryption = Encryption::XChaCha20Poly1305;
-    config.memory_limit = ResourceLimit::Sensitive;
-    config.operations_limit = ResourceLimit::Sensitive;
+    config.memory_limit = ResourceLimit::Moderate;
+    config.operations_limit = ResourceLimit::Moderate;
 
     let repo = OpenOptions::new(MemoryStore::new())
-        .chunking(Chunking::Fixed { size: 200 })
-        .compression(Compression::Deflate { level: 6 })
+        .chunking(Chunking::Fixed { size: 1024 * 16 })
+        .compression(Compression::Deflate { level: 3 })
         .encryption(Encryption::XChaCha20Poly1305)
-        .memory_limit(ResourceLimit::Sensitive)
-        .operations_limit(ResourceLimit::Sensitive)
+        .memory_limit(ResourceLimit::Moderate)
+        .operations_limit(ResourceLimit::Moderate)
         .password(b"password")
         .create_new::<ObjectRepo<_>>()?;
 
