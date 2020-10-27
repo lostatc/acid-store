@@ -44,6 +44,7 @@ fn set_existing_config_and_create_new_repo() -> anyhow::Result<()> {
 
     let repo = OpenOptions::new(MemoryStore::new())
         .config(config.clone())
+        .password(b"password")
         .create_new::<ObjectRepo<_>>()?;
 
     assert_eq!(repo.info().config(), &config);
@@ -65,6 +66,7 @@ fn configure_and_create_new_repo() -> anyhow::Result<()> {
         .encryption(Encryption::XChaCha20Poly1305)
         .memory_limit(ResourceLimit::Sensitive)
         .operations_limit(ResourceLimit::Sensitive)
+        .password(b"password")
         .create_new::<ObjectRepo<_>>()?;
 
     assert_eq!(repo.info().config(), &config);
