@@ -35,23 +35,30 @@ mod common;
 #[test]
 fn set_existing_config_and_create_new_repo() -> anyhow::Result<()> {
     // These are just random values for testing. This is not a good example config.
-    let config = RepoConfig {
-        chunking: Chunking::Fixed { size: 200 },
-        compression: Compression::Deflate { level: 6 },
-        encryption: Encryption::XChaCha20Poly1305,
-        memory_limit: ResourceLimit::Sensitive,
-        operations_limit: ResourceLimit::Sensitive,
-    };
+    let mut config = RepoConfig::default();
+    config.chunking = Chunking::Fixed { size: 200 };
+    config.compression = Compression::Deflate { level: 6 };
+    config.encryption = Encryption::XChaCha20Poly1305;
+    config.memory_limit = ResourceLimit::Sensitive;
+    config.operations_limit = ResourceLimit::Sensitive;
+
     let repo = OpenOptions::new(MemoryStore::new())
-        .config(config)
+        .config(config.clone())
         .create_new::<ObjectRepo<_>>()?;
 
-    assert_eq!(repo.info().config(), config);
+    assert_eq!(repo.info().config(), &config);
     Ok(())
 }
 
 #[test]
 fn configure_and_create_new_repo() -> anyhow::Result<()> {
+    let mut config = RepoConfig::default();
+    config.chunking = Chunking::Fixed { size: 200 };
+    config.compression = Compression::Deflate { level: 6 };
+    config.encryption = Encryption::XChaCha20Poly1305;
+    config.memory_limit = ResourceLimit::Sensitive;
+    config.operations_limit = ResourceLimit::Sensitive;
+
     let repo = OpenOptions::new(MemoryStore::new())
         .chunking(Chunking::Fixed { size: 200 })
         .compression(Compression::Deflate { level: 6 })
@@ -60,7 +67,7 @@ fn configure_and_create_new_repo() -> anyhow::Result<()> {
         .operations_limit(ResourceLimit::Sensitive)
         .create_new::<ObjectRepo<_>>()?;
 
-    assert_eq!(repo.info().config(), config);
+    assert_eq!(repo.info().config(), &config);
     Ok(())
 }
 
