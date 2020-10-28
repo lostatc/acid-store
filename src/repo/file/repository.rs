@@ -28,7 +28,7 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 use crate::repo::common::check_version;
-use crate::repo::object::{ObjectHandle, ObjectRepo};
+use crate::repo::object::ObjectRepo;
 use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepoInfo};
 use crate::store::DataStore;
 
@@ -44,9 +44,6 @@ lazy_static! {
 
 /// The ID of the managed object which stores the table of keys for the repository.
 const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("9c114e82 bd64 11ea 9872 ab55cbe7bb41"));
-
-/// The ID of the managed object which stores an empty object handle.
-const EMPTY_HANDLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("baff6bc4 be1f 11ea a383 0b8ef483668f"));
 
 /// The current repository format version ID.
 const VERSION_ID: Uuid = Uuid::from_bytes(hex!("36f6c626 d029 11ea 91e5 4f0aba7bed31"));
@@ -64,12 +61,6 @@ where
 
     /// A map of relative file paths to the handles of the objects containing their entries.
     path_table: PathTree<EntryHandle>,
-
-    /// An object handle that will always be empty.
-    ///
-    /// The purpose of this is so that we can create an empty `ReadOnlyObject` if the user tries to
-    /// call `open` on a `FileHandle` which doesn't have a backing `ObjectHandle`.
-    empty_handle: ObjectHandle,
 
     /// Phantom data.
     marker: PhantomData<(T, M)>,
@@ -89,16 +80,9 @@ where
                 .ok_or(crate::Error::Corrupt)?;
             let path_table = object.deserialize()?;
 
-            // Read and deserialize the empty object.
-            let mut object = repository
-                .managed_object(EMPTY_HANDLE_OBJECT_ID)
-                .ok_or(crate::Error::Corrupt)?;
-            let empty_handle = object.deserialize()?;
-
             Ok(Self {
                 repository,
                 path_table,
-                empty_handle,
                 marker: PhantomData,
             })
         } else {
@@ -108,18 +92,11 @@ where
             object.serialize(&path_table)?;
             drop(object);
 
-            // Create and serialize an empty object handle.
-            let empty_handle = repository.add_unmanaged();
-            let mut object = repository.add_managed(EMPTY_HANDLE_OBJECT_ID);
-            object.serialize(&empty_handle)?;
-            drop(object);
-
             repository.commit()?;
 
             Ok(Self {
                 repository,
                 path_table,
-                empty_handle,
                 marker: PhantomData,
             })
         }
@@ -154,6 +131,41 @@ where
     }
 
     /// Add a new empty file or directory entry to the repository at the given `path`.
+    ///
+    /// # Examples
+    /// Create a new regular file with no metadata.
+    /// ```
+    /// # use acid_store::repo::OpenOptions;
+    /// # use acid_store::repo::file::{FileRepo, Entry, RelativePath};
+    /// # use acid_store::store::MemoryStore;
+    ///
+    /// # let mut repo = OpenOptions::new(MemoryStore::new())
+    /// #    .create_new::<FileRepo<_>>()
+    /// #    .unwrap();
+    ///
+    /// let entry_path = RelativePath::new("file");
+    /// repo.create(entry_path, &Entry::file()).unwrap();
+    ///
+    /// ```
+    ///
+    /// Create a new symbolic link with no metadata.
+    /// ```
+    /// # use std::path::Path;
+    /// # use acid_store::repo::OpenOptions;
+    /// # use acid_store::repo::file::{FileRepo, Entry, RelativePath, UnixSpecialType};
+    /// # use acid_store::store::MemoryStore;
+    ///
+    /// # let mut repo = OpenOptions::new(MemoryStore::new())
+    /// #    .create_new::<FileRepo<_, UnixSpecialType>>()
+    /// #    .unwrap();
+    ///
+    /// let entry_path = RelativePath::new("link");
+    /// let symbolic_link = UnixSpecialType::SymbolicLink {
+    ///     target: Path::new("target").to_owned()
+    /// };
+    /// repo.create(entry_path, &Entry::special(symbolic_link)).unwrap();
+    ///
+    /// ```
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `path` does not exist or is not a directory.
@@ -286,6 +298,21 @@ where
 
     /// Return the entry at `path`.
     ///
+    /// # Examples
+    /// Check if an entry is a regular file.
+    /// ```
+    /// # use acid_store::repo::OpenOptions;
+    /// # use acid_store::repo::file::{FileRepo, Entry, RelativePath};
+    /// # use acid_store::store::MemoryStore;
+    ///
+    /// # let mut repo = OpenOptions::new(MemoryStore::new())
+    /// #    .create_new::<FileRepo<_>>()
+    /// #    .unwrap();
+    ///
+    /// let entry_path = RelativePath::new("file");
+    /// repo.create(entry_path, &Entry::file()).unwrap();
+    /// assert!(repo.entry(entry_path).unwrap().is_file())
+    /// ```
     /// # Errors
     /// - `Error::NotFound`: There is no entry at `path`.
     /// - `Error::Deserialize`: The file metadata could not be deserialized.
