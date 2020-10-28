@@ -109,7 +109,7 @@ pub enum EntryType {
     Special,
 }
 
-/// A handle for accessing the data assocaited with each entry.
+/// A handle for accessing the data associated with each entry.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EntryHandle {
     pub entry: ObjectHandle,
