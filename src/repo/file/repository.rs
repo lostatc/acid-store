@@ -138,11 +138,11 @@ where
     /// # use acid_store::repo::OpenOptions;
     /// # use acid_store::repo::file::{FileRepo, Entry, RelativePath};
     /// # use acid_store::store::MemoryStore;
-    ///
+    /// #
     /// # let mut repo = OpenOptions::new(MemoryStore::new())
     /// #    .create_new::<FileRepo<_>>()
     /// #    .unwrap();
-    ///
+    /// #
     /// let entry_path = RelativePath::new("file");
     /// repo.create(entry_path, &Entry::file()).unwrap();
     ///
@@ -154,11 +154,11 @@ where
     /// # use acid_store::repo::OpenOptions;
     /// # use acid_store::repo::file::{FileRepo, Entry, RelativePath, UnixSpecialType};
     /// # use acid_store::store::MemoryStore;
-    ///
+    /// #
     /// # let mut repo = OpenOptions::new(MemoryStore::new())
     /// #    .create_new::<FileRepo<_, UnixSpecialType>>()
     /// #    .unwrap();
-    ///
+    /// #
     /// let entry_path = RelativePath::new("link");
     /// let symbolic_link = UnixSpecialType::SymbolicLink {
     ///     target: Path::new("target").to_owned()
@@ -304,11 +304,11 @@ where
     /// # use acid_store::repo::OpenOptions;
     /// # use acid_store::repo::file::{FileRepo, Entry, RelativePath};
     /// # use acid_store::store::MemoryStore;
-    ///
+    /// #
     /// # let mut repo = OpenOptions::new(MemoryStore::new())
     /// #    .create_new::<FileRepo<_>>()
     /// #    .unwrap();
-    ///
+    /// #
     /// let entry_path = RelativePath::new("file");
     /// repo.create(entry_path, &Entry::file()).unwrap();
     /// assert!(repo.entry(entry_path).unwrap().is_file())
