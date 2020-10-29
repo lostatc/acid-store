@@ -214,25 +214,28 @@ pub fn write_object(criterion: &mut Criterion) {
 
     let object_size = bytesize::mib(1u64);
 
-    for (repo, name) in test_configs(tmp_dir.path()) {
+    for (mut repo, name) in test_configs(tmp_dir.path()) {
         group.throughput(Throughput::Bytes(object_size));
         group.sample_size(50);
         group.measurement_time(Duration::from_secs(30));
 
+        let object = repo.add_managed(TEST_OBJECT_UUID);
+
         group.bench_with_input(
             format!("{}, {}", bytesize::to_string(object_size, true), name),
-            &RefCell::new(repo),
-            |bencher, repo_cell| {
+            &RefCell::new(object),
+            |bencher, object_cell| {
                 bencher.iter_batched(
                     || {
-                        let mut repo = repo_cell.borrow_mut();
-                        repo.add_managed(TEST_OBJECT_UUID);
+                        // Truncate the object.
+                        let mut object = object_cell.borrow_mut();
+                        object.truncate(0).unwrap();
+                        object.flush().unwrap();
                         random_bytes(object_size as usize)
                     },
                     |data| {
                         // Write data to the object.
-                        let mut repo = repo_cell.borrow_mut();
-                        let mut object = repo.managed_object_mut(TEST_OBJECT_UUID).unwrap();
+                        let mut object = object_cell.borrow_mut();
                         object.write_all(data.as_slice()).unwrap();
                         object.flush().unwrap();
                     },
@@ -287,20 +290,22 @@ pub fn read_object(criterion: &mut Criterion) {
 
     let object_size = bytesize::mib(1u64);
 
-    for (repo, name) in test_configs(tmp_dir.path()) {
+    for (mut repo, name) in test_configs(tmp_dir.path()) {
         group.throughput(Throughput::Bytes(object_size));
         group.sample_size(50);
         group.measurement_time(Duration::from_secs(30));
 
+        let object = repo.add_managed(TEST_OBJECT_UUID);
+
         group.bench_with_input(
             format!("{}, {}", bytesize::to_string(object_size, true), name),
-            &RefCell::new(repo),
-            |bencher, repo_cell| {
+            &RefCell::new(object),
+            |bencher, object_cell| {
                 bencher.iter_batched(
                     || {
                         // Write data to the object.
-                        let mut repo = repo_cell.borrow_mut();
-                        let mut object = repo.add_managed(TEST_OBJECT_UUID);
+                        let mut object = object_cell.borrow_mut();
+                        object.truncate(0).unwrap();
                         object
                             .write_all(random_bytes(object_size as usize).as_slice())
                             .unwrap();
@@ -308,8 +313,7 @@ pub fn read_object(criterion: &mut Criterion) {
                     },
                     |_| {
                         // Read data from the object.
-                        let repo = repo_cell.borrow_mut();
-                        let mut object = repo.managed_object(TEST_OBJECT_UUID).unwrap();
+                        let mut object = object_cell.borrow_mut();
                         let mut buffer = Vec::new();
                         object.read_to_end(&mut buffer).unwrap();
                         buffer
