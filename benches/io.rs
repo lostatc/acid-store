@@ -15,7 +15,7 @@
  */
 
 use std::cell::RefCell;
-use std::fs::{remove_dir_all, File, OpenOptions as FileOpenOptions};
+use std::fs::{remove_dir_all, File};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Duration;
@@ -261,17 +261,12 @@ pub fn read_baseline(criterion: &mut Criterion) {
     group.bench_function(bytesize::to_string(object_size, true), |bencher| {
         bencher.iter_batched(
             || {
-                let mut file = FileOpenOptions::new()
-                    .create(true)
-                    .truncate(true)
-                    .write(true)
-                    .read(true)
-                    .open(&file_path)
-                    .unwrap();
+                let mut file = File::create(&file_path).unwrap();
                 file.write_all(random_bytes(object_size as usize).as_slice())
                     .unwrap();
                 file.flush().unwrap();
-                file
+                drop(file);
+                File::open(&file_path).unwrap()
             },
             |mut file| {
                 let mut buffer = Vec::new();
@@ -328,4 +323,4 @@ pub fn read_object(criterion: &mut Criterion) {
 criterion_group!(baseline, write_baseline, read_baseline);
 criterion_group!(throughput, read_object, write_object);
 criterion_group!(insert, insert_object, insert_object_and_write);
-criterion_main!(baseline, throughput, insert);
+criterion_main!(throughput);
