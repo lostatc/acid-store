@@ -109,6 +109,9 @@ pub struct ObjectState {
 
     /// The contents of the chunk which was most recently read from.
     pub read_buffer: Vec<u8>,
+
+    /// Whether unflushed data has been written to the object.
+    pub needs_flushed: bool,
 }
 
 impl ObjectState {
@@ -121,6 +124,7 @@ impl ObjectState {
             position: 0,
             buffered_chunk: None,
             read_buffer: Vec::new(),
+            needs_flushed: false,
         }
     }
 }

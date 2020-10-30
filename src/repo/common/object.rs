@@ -434,7 +434,7 @@ impl<'a, S: DataStore> ObjectWriter<'a, S> {
 impl<'a, S: DataStore> Write for ObjectWriter<'a, S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         // Check if this is the first time `write` is being called after calling `flush`.
-        if self.object_state.chunker.is_empty() {
+        if !self.object_state.needs_flushed {
             // Because we're starting a new write, we need to set the starting location.
             self.object_state.start_location = self.object_info().current_chunk();
 
@@ -458,11 +458,14 @@ impl<'a, S: DataStore> Write for ObjectWriter<'a, S> {
         // Advance the seek position.
         self.object_state.position += buf.len() as u64;
 
+        // Mark that data has been written to the object since it was last flushed.
+        self.object_state.needs_flushed = true;
+
         Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        if self.object_state.chunker.is_empty() {
+        if !self.object_state.needs_flushed {
             // No new data has been written since data was last flushed.
             return Ok(());
         }
@@ -516,6 +519,7 @@ impl<'a, S: DataStore> Write for ObjectWriter<'a, S> {
         }
 
         self.object_state.start_location = None;
+        self.object_state.needs_flushed = false;
 
         Ok(())
     }
