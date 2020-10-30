@@ -18,7 +18,8 @@
 //!
 //! This crate provides high-level abstractions for data storage over a number of storage backends.
 //!
-//! This library currently provides the following abstractions for data storage:
+//! This library currently provides the following abstractions for data storage. They can be found
+//! in the `acid_store::repo` module.
 //! - `KeyRepo` is an object store which maps keys to seekable binary blobs.
 //! - `FileRepo` is a virtual file system which supports file metadata, special files, and
 //! importing and exporting files to the local OS file system.
@@ -26,9 +27,12 @@
 //! - `VersionRepo` is an object store with support for content versioning.
 //! - `ContentRepo` is a content-addressable storage which allows for accessing data by its
 //! cryptographic hash.
+//! - `ObjectRepo` is a low-level repository type which provides more direct access to the
+//! underlying storage.
 //!
 //! A repository stores its data in a `DataStore`, which is a small trait that can be implemented to
-//! create new storage backends. The following data stores are provided out of the box:
+//! create new storage backends. The following data stores are provided out of the box. They can be
+//! found in the `acid_store::store` module.
 //! - `DirectoryStore` stores data in a directory in the local file system.
 //! - `SqliteStore` stores data in a SQLite database.
 //! - `RedisStore` stores data on a Redis server.
@@ -75,13 +79,13 @@
 //! ```
 //!
 //! # Features
-//! Some functionality is gated behind cargo features:
+//! Some functionality is gated behind cargo features.
 //!
 //! Types | Cargo Feature | Default
 //! --- | --- | ---
 //! `Encryption::XChaCha20Poly1305` | `encryption` | No
 //! `Compression::Deflate`, `Compression::Lzma`, `Compression::Lz4` | `compression` | No
-//! `CommonMetadata`, `UnixMetadata`, `Qualifier`, `UnixSpecialType` | `file-metadata` | No
+//! `CommonMetadata`, `UnixMetadata`, `AccessQualifier`, `UnixSpecialType` | `file-metadata` | No
 //! `DirectoryStore` | `store-directory` | Yes
 //! `SqliteStore` | `store-sqlite` | No
 //! `RedisStore` | `store-redis` | No
