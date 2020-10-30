@@ -16,8 +16,9 @@
 
 use std::cell::RefCell;
 use std::io::{Read, Write};
+use std::time::Duration;
 
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use hex_literal::hex;
 use rand::rngs::SmallRng;
 use rand::{RngCore, SeedableRng};
@@ -180,6 +181,8 @@ pub fn write_baseline(criterion: &mut Criterion) {
     let object_size = bytesize::mib(1u64);
 
     group.throughput(Throughput::Bytes(object_size));
+    group.measurement_time(Duration::from_secs(10));
+    group.sample_size(50);
 
     group.bench_function(bytesize::to_string(object_size, true), |bencher| {
         bencher.iter_batched(
@@ -201,9 +204,11 @@ pub fn write_object(criterion: &mut Criterion) {
 
     let object_size = bytesize::mib(1u64);
 
-    for (repo, name) in test_configs() {
-        group.throughput(Throughput::Bytes(object_size));
+    group.throughput(Throughput::Bytes(object_size));
+    group.measurement_time(Duration::from_secs(10));
+    group.sample_size(50);
 
+    for (repo, name) in test_configs() {
         group.bench_with_input(
             format!("{}, {}", bytesize::to_string(object_size, true), name),
             &RefCell::new(repo),
@@ -233,6 +238,8 @@ pub fn read_baseline(criterion: &mut Criterion) {
     let object_size = bytesize::mib(1u64);
 
     group.throughput(Throughput::Bytes(object_size));
+    group.measurement_time(Duration::from_secs(10));
+    group.sample_size(50);
 
     group.bench_function(bytesize::to_string(object_size, true), |bencher| {
         bencher.iter_batched(
@@ -254,11 +261,13 @@ pub fn read_baseline(criterion: &mut Criterion) {
 pub fn read_object(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("Read from an object");
 
-    let object_size = bytesize::kib(900u64);
+    let object_size = bytesize::mib(1u64);
+
+    group.throughput(Throughput::Bytes(object_size));
+    group.measurement_time(Duration::from_secs(10));
+    group.sample_size(50);
 
     for (repo, name) in test_configs() {
-        group.throughput(Throughput::Bytes(object_size));
-
         group.bench_with_input(
             format!("{}, {}", bytesize::to_string(object_size, true), name),
             &RefCell::new(repo),
@@ -271,7 +280,6 @@ pub fn read_object(criterion: &mut Criterion) {
                         let data = random_bytes(object_size as usize);
                         object.write_all(data.as_slice()).unwrap();
                         object.flush().unwrap();
-                        println!("{}", object.size());
                     },
                     |_| {
                         // Read data from the object.

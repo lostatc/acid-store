@@ -56,8 +56,9 @@ This library provides the following storage backends out of the box.
 
 ## Benchmarks
 
-The following results are from reading and writing data to the local file system.
-You can run the benchmarks yourself by running `cargo bench --all-features`. 
+The following results show read and write speeds for an in-memory repository. An in-memory
+repository is used to make benchmark results more consistent between runs and between machines. You
+can run the benchmarks yourself by running `cargo bench --all-features`.
 
 ### Specs
 
@@ -65,17 +66,16 @@ Spec | Value
 --- | ---
 Processor | Ryzen 5 1600x
 Memory | 32 GB (3200MHz)
-Disk | SATA SSD
 OS | Linux 5.8
 
 ### Results
 
 Encryption | Chunking | Read | Write
 --- | --- | --- | ---
-None | Fixed | 1880 MiB/s | 340 MiB/s
-XChaCha20-Poly1305 | Fixed | 685 MiB/s | 175 MiB/s
-None | ZPAQ | 1840 MiB/s | 190 MiB/s
-XChaCha20-Poly1305 | ZPAQ | 725 MiB/s | 170 MiB/s
+None | Fixed | 2700 MiB/s | 710 MiB/s
+XChaCha20-Poly1305 | Fixed | 870 MiB/s | 425 MiB/s
+None | ZPAQ | 2290 MiB/s | 355 MiB/s
+XChaCha20-Poly1305 | ZPAQ | 845 MiB/s | 270 MiB/s
 
 ## Contributing
 
