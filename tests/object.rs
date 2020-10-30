@@ -19,7 +19,7 @@
 use std::io::{Read, Seek, SeekFrom, Write};
 
 use acid_store::repo::object::ObjectRepo;
-use acid_store::repo::{Chunking, OpenOptions};
+use acid_store::repo::{Chunking, Compression, Encryption, OpenOptions};
 use acid_store::store::MemoryStore;
 use common::{random_buffer, random_bytes, MIN_BUFFER_SIZE, REPO_IO_CONFIG};
 
@@ -387,5 +387,24 @@ fn verify_valid_object_is_valid() -> anyhow::Result<()> {
     object.flush()?;
 
     assert!(object.verify()?);
+    Ok(())
+}
+
+#[test]
+fn write_buffer_with_same_size_as_fixed_chunk_size() -> anyhow::Result<()> {
+    let chunk_size = 1024 * 1024;
+
+    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+        .chunking(Chunking::Fixed { size: chunk_size })
+        .encryption(Encryption::None)
+        .compression(Compression::None)
+        .create_new()?;
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+
+    object.write_all(random_bytes(chunk_size).as_slice())?;
+    object.flush()?;
+
+    assert_eq!(object.size(), chunk_size as u64);
     Ok(())
 }
