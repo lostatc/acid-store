@@ -44,6 +44,9 @@
 //! the repository is dropped or the thread panics, any uncommitted changes are rolled back
 //! automatically.
 //!
+//! When data in a repository is deleted, the space is not reclaimed in the backing data store
+//! until `commit` is called.
+//!
 //! # Encryption
 //! If encryption is enabled, the Argon2id key derivation function is used to derive a key from a
 //! user-supplied password. This key is used to encrypt the repository's randomly generated master
