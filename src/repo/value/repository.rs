@@ -214,6 +214,11 @@ impl<K: Key, S: DataStore> ValueRepo<K, S> {
         self.repository.change_password(new_password);
     }
 
+    /// Return this repository's instance ID.
+    pub fn instance(&self) -> Uuid {
+        self.repository.instance()
+    }
+
     /// Return information about the repository.
     pub fn info(&self) -> RepoInfo {
         self.repository.info()
