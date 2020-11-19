@@ -27,7 +27,7 @@ use super::config::RepoConfig;
 use super::convert::ConvertRepo;
 use super::encryption::{Encryption, EncryptionKey, KeySalt};
 use super::id_table::IdTable;
-use super::lock::{LockStrategy, LockTable};
+use super::lock::LockTable;
 use super::metadata::{Header, RepoMetadata};
 use super::object::ObjectHandle;
 use super::repository::{ObjectRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
@@ -56,7 +56,6 @@ lazy_static! {
 pub struct OpenOptions<S: DataStore> {
     store: S,
     config: RepoConfig,
-    locking: LockStrategy,
     password: Option<Vec<u8>>,
     instance: Uuid,
 }
@@ -67,7 +66,6 @@ impl<S: DataStore> OpenOptions<S> {
         Self {
             store,
             config: RepoConfig::default(),
-            locking: LockStrategy::Abort,
             password: None,
             instance: GLOBAL_INSTANCE,
         }
@@ -127,15 +125,6 @@ impl<S: DataStore> OpenOptions<S> {
         self
     }
 
-    /// Use the given locking `strategy` instead of `LockStrategy::Abort`.
-    ///
-    /// This is only applicable when opening an existing repository. This is ignored when creating
-    /// a new repository.
-    pub fn locking(mut self, strategy: LockStrategy) -> Self {
-        self.locking = strategy;
-        self
-    }
-
     /// Use the given `password`.
     ///
     /// This is required when encryption is enabled for the repository.
@@ -160,7 +149,7 @@ impl<S: DataStore> OpenOptions<S> {
     /// # Errors
     /// - `Error::NotFound`: There is no repository in the given data store.
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
-    /// - `Error::Locked`: The repository is locked and `LockStrategy::Abort` was used.
+    /// - `Error::Locked`: The repository is locked.
     /// - `Error::Password`: The password provided is invalid.
     /// - `Error::Password` A password was required but not provided or provided but not required.
     /// - `Error::UnsupportedFormat`: The backing is an unsupported format. This can happen if the
@@ -178,7 +167,8 @@ impl<S: DataStore> OpenOptions<S> {
         let lock = REPO_LOCKS
             .lock()
             .unwrap()
-            .acquire_lock(repository_id, self.locking)?;
+            .acquire_lock(repository_id)
+            .ok_or(crate::Error::Locked)?;
 
         // Read the repository version to see if this is a compatible repository.
         let serialized_version = self
@@ -330,8 +320,8 @@ impl<S: DataStore> OpenOptions<S> {
         let lock = REPO_LOCKS
             .lock()
             .unwrap()
-            .acquire_lock(id, LockStrategy::Abort)
-            .map_err(|_| crate::Error::AlreadyExists)?;
+            .acquire_lock(id)
+            .ok_or(crate::Error::AlreadyExists)?;
 
         // Check if the repository already exists.
         if self
@@ -465,7 +455,7 @@ impl<S: DataStore> OpenOptions<S> {
     ///
     /// # Errors
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
-    /// - `Error::Locked`: The repository is locked and `LockStrategy::Abort` was used.
+    /// - `Error::Locked`: The repository is locked.
     /// - `Error::Password`: The password provided is invalid.
     /// - `Error::Password`: A password was required but not provided or provided but not required.
     /// - `Error::UnsupportedFormat`: The backing is an unsupported format. This can happen if the

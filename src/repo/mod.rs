@@ -35,9 +35,11 @@
 //! configured when you create a repository. See `Chunking` for details.
 //!
 //! # Locking
-//! A repository cannot be open more than once simultaneously. Once it is opened, it is locked from
-//! further open attempts until the repository is dropped. This lock prevents the repository from
-//! being opened from other threads and processes on the same machine, but not from other machines.
+//! A repository cannot be open more than once simultaneously. Once a repository is opened, it is
+//! locked from further open attempts within the same process until the repository is dropped.
+//! However, **repositories can not protect against concurrent access from multiple processes or
+//! machines**. Opening a repository from multiple processes or machines simultaneously may cause
+//! data loss.
 //!
 //! # Atomicity
 //! Changes made to a repository are not persisted to the data store until `commit` is called. If
@@ -87,8 +89,8 @@
 //! need to store data in memory.
 
 pub use self::common::{
-    Chunking, Compression, ContentId, ConvertRepo, Encryption, LockStrategy, Object, OpenOptions,
-    ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit,
+    Chunking, Compression, ContentId, ConvertRepo, Encryption, Object, OpenOptions, ReadOnlyObject,
+    RepoConfig, RepoInfo, ResourceLimit,
 };
 
 /// A low-level repository type which provides more direct access to the underlying storage.

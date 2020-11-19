@@ -19,8 +19,6 @@ all-features = true
 # File system
 relative-path = { version = "1.0.0", features = ["ci"] }
 walkdir = "2.2.9"
-fs2 = "0.4.3"
-dirs = "2.0.2"
 filetime = { version = "0.2.8", optional = true }
 
 # I/O

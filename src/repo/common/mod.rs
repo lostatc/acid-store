@@ -19,7 +19,6 @@ pub use self::compression::Compression;
 pub use self::config::RepoConfig;
 pub use self::convert::ConvertRepo;
 pub use self::encryption::{Encryption, ResourceLimit};
-pub use self::lock::LockStrategy;
 pub use self::metadata::RepoInfo;
 pub use self::object::{ContentId, Object, ObjectHandle, ReadOnlyObject};
 pub use self::open_options::OpenOptions;
