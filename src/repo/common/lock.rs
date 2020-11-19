@@ -14,60 +14,19 @@
  * limitations under the License.
  */
 
-use dirs::{data_dir, runtime_dir};
-use fs2::FileExt;
-use lazy_static::lazy_static;
-use std::fs::{create_dir_all, remove_file, File, OpenOptions};
-use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use uuid::Uuid;
 use weak_table::WeakHashSet;
-
-lazy_static! {
-    /// The path of the directory where repository lock files are stored.
-    static ref LOCKS_DIR: PathBuf = runtime_dir()
-        .unwrap_or_else(|| data_dir().expect("Unsupported platform"))
-        .join("acid-store")
-        .join("locks");
-
-}
 
 /// A lock acquired on a resource.
 ///
 /// The lock is released when this value is dropped.
 #[derive(Debug)]
-pub struct Lock {
-    /// The reference that is held to lock the resource within this process.
-    id: Arc<Uuid>,
-
-    /// The file lock that is held to lock the resource between processes.
-    file: File,
-
-    /// The path of the lock file.
-    path: PathBuf,
-}
-
-impl Drop for Lock {
-    fn drop(&mut self) {
-        // Attempt to delete the lock file.
-        remove_file(&self.path).ok();
-    }
-}
-
-/// A strategy for handling a repository which is already locked.
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-pub enum LockStrategy {
-    /// Return immediately with an `Err`.
-    Abort,
-
-    /// Block and wait for the lock on the repository to be released.
-    Wait,
-}
+pub struct Lock(Arc<Uuid>);
 
 /// A value which keeps track of locks on resources identified by UUIDs.
 ///
-/// This locks resources between processes using OS file locks, and it locks resources within a
-/// process using weak references.
+/// This locks resources between threads in a process using weak references.
 #[derive(Debug)]
 pub struct LockTable(WeakHashSet<Weak<Uuid>>);
 
@@ -77,39 +36,16 @@ impl LockTable {
         Self(WeakHashSet::new())
     }
 
-    /// Attempt to acquire a lock on the given `id` using a given `strategy`.
+    /// Attempt to acquire a lock on the given `id`.
     ///
-    /// This returns a new lock or returns an `Err` if a lock could not be acquired.
-    pub fn acquire_lock(&mut self, id: Uuid, strategy: LockStrategy) -> crate::Result<Lock> {
-        // Create the lock file if it doesn't already exist.
-        create_dir_all(LOCKS_DIR.as_path())?;
-        let mut buffer = Uuid::encode_buffer();
-        let file_name = format!("{}.lock", id.to_hyphenated().encode_lower(&mut buffer));
-        let lock_path = LOCKS_DIR.join(file_name);
-        let lock_file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(&lock_path)?;
-
-        // Check if this repository is already locked within this process.
+    /// This returns a new lock or `None` if the resource is already locked.
+    pub fn acquire_lock(&mut self, id: Uuid) -> Option<Lock> {
         if self.0.contains(&id) {
-            Err(crate::Error::Locked)
+            None
         } else {
-            match strategy {
-                LockStrategy::Abort => lock_file
-                    .try_lock_exclusive()
-                    .map_err(|_| crate::Error::Locked)?,
-                LockStrategy::Wait => lock_file.lock_exclusive()?,
-            };
-
             let id_arc = Arc::from(id);
             self.0.insert(Arc::clone(&id_arc));
-
-            Ok(Lock {
-                id: id_arc,
-                file: lock_file,
-                path: lock_path,
-            })
+            Some(Lock(id_arc))
         }
     }
 }
