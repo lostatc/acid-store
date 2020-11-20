@@ -33,7 +33,6 @@ use super::encryption::{Encryption, EncryptionKey, KeySalt};
 use super::id_table::IdTable;
 use super::lock::LockTable;
 use super::metadata::{Header, RepoMetadata};
-use super::object::ObjectHandle;
 use super::repository::{ObjectRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
 use super::state::RepoState;
 
@@ -44,7 +43,7 @@ const GLOBAL_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92b 031
 ///
 /// This must be changed any time a backwards-incompatible change is made to the repository
 /// format.
-const VERSION_ID: Uuid = Uuid::from_bytes(hex!("17597ef8 bce7 11ea b70b 17210b172c53"));
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("aca51c7b 6456 4d9a 9149 320df667a7e1"));
 
 lazy_static! {
     /// A table of locks on repositories.
@@ -223,55 +222,27 @@ impl<S: DataStore> OpenOptions<S> {
             None => EncryptionKey::new(Vec::new()),
         };
 
-        // Read, decrypt, decompress, and deserialize the chunk map.
-        let encrypted_chunks = self
+        // Read, decrypt, decompress, and deserialize the repository header.
+        let encrypted_header = self
             .store
-            .read_block(metadata.header.chunks)
+            .read_block(metadata.header_id)
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
             .ok_or(crate::Error::Corrupt)?;
-        let compressed_chunks = metadata
+        let compressed_header = metadata
             .encryption
-            .decrypt(&encrypted_chunks, &master_key)
+            .decrypt(&encrypted_header, &master_key)
             .map_err(|_| crate::Error::Corrupt)?;
-        let serialized_chunks = metadata
+        let serialized_header = metadata
             .compression
-            .decompress(&compressed_chunks)
+            .decompress(&compressed_header)
             .map_err(|_| crate::Error::Corrupt)?;
-        let chunks = from_read(serialized_chunks.as_slice()).map_err(|_| crate::Error::Corrupt)?;
+        let header = from_read(serialized_header.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
-        // Read, decrypt, decompress, and deserialize the managed object map.
-        let encrypted_managed = self
-            .store
-            .read_block(metadata.header.managed)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
-            .ok_or(crate::Error::Corrupt)?;
-        let compressed_managed = metadata
-            .encryption
-            .decrypt(&encrypted_managed, &master_key)
-            .map_err(|_| crate::Error::Corrupt)?;
-        let serialized_managed = metadata
-            .compression
-            .decompress(&compressed_managed)
-            .map_err(|_| crate::Error::Corrupt)?;
-        let mut managed: HashMap<Uuid, HashMap<Uuid, ObjectHandle>> =
-            from_read(serialized_managed.as_slice()).map_err(|_| crate::Error::Corrupt)?;
-
-        // Read, decrypt, decompress, and deserialize the handle ID table.
-        let encrypted_table = self
-            .store
-            .read_block(metadata.header.handles)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
-            .ok_or(crate::Error::Corrupt)?;
-        let compressed_table = metadata
-            .encryption
-            .decrypt(&encrypted_table, &master_key)
-            .map_err(|_| crate::Error::Corrupt)?;
-        let serialized_table = metadata
-            .compression
-            .decompress(&compressed_table)
-            .map_err(|_| crate::Error::Corrupt)?;
-        let handle_table =
-            from_read(serialized_table.as_slice()).map_err(|_| crate::Error::Corrupt)?;
+        let Header {
+            chunks,
+            mut managed,
+            handle_table,
+        } = header;
 
         // If the given instance ID is not in the managed object map, add it.
         managed.entry(self.instance).or_insert_with(HashMap::new);
@@ -365,51 +336,27 @@ impl<S: DataStore> OpenOptions<S> {
             None => Vec::new(),
         };
 
-        // Generate and write the chunk map.
-        let chunks = HashMap::new();
-        let serialized_chunks = to_vec(&chunks).expect("Could not serialize the chunk map.");
-        let compressed_chunks = self.config.compression.compress(&serialized_chunks)?;
-        let encrypted_chunks = self
-            .config
-            .encryption
-            .encrypt(&compressed_chunks, &master_key);
-        let chunks_id = Uuid::new_v4();
-        self.store
-            .write_block(chunks_id, &encrypted_chunks)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-
-        // Generate and write the managed object map.
+        // Generate the header.
         let mut managed = HashMap::new();
         managed.insert(self.instance, HashMap::new());
-        let serialized_managed = to_vec(&managed).expect("Could not serialize the chunk map.");
-        let compressed_managed = self.config.compression.compress(&serialized_managed)?;
-        let encrypted_managed = self
-            .config
-            .encryption
-            .encrypt(&compressed_managed, &master_key);
-        let managed_id = Uuid::new_v4();
-        self.store
-            .write_block(managed_id, &encrypted_managed)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-
-        // Generate and write the handle ID table.
-        let handle_table = IdTable::new();
-        let serialized_handles = to_vec(&handle_table).expect("Could not serialize the chunk map.");
-        let compressed_handles = self.config.compression.compress(&serialized_handles)?;
-        let encrypted_handles = self
-            .config
-            .encryption
-            .encrypt(&compressed_handles, &master_key);
-        let handles_id = Uuid::new_v4();
-        self.store
-            .write_block(handles_id, &encrypted_handles)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-
         let header = Header {
-            chunks: chunks_id,
-            managed: managed_id,
-            handles: handles_id,
+            chunks: HashMap::new(),
+            managed,
+            handle_table: IdTable::new(),
         };
+
+        // Serialize, encode, and write the header to the data store.
+        let serialized_header =
+            to_vec(&header).expect("Could not serialize the repository header.");
+        let compressed_header = self.config.compression.compress(&serialized_header)?;
+        let encrypted_header = self
+            .config
+            .encryption
+            .encrypt(&compressed_header, &master_key);
+        let header_id = Uuid::new_v4();
+        self.store
+            .write_block(header_id, &encrypted_header)
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         // Create the repository metadata with the header block references.
         let metadata = RepoMetadata {
@@ -421,7 +368,7 @@ impl<S: DataStore> OpenOptions<S> {
             operations_limit: self.config.operations_limit,
             master_key: encrypted_master_key,
             salt,
-            header,
+            header_id,
             creation_time: SystemTime::now(),
         };
 
@@ -436,6 +383,12 @@ impl<S: DataStore> OpenOptions<S> {
         self.store
             .write_block(VERSION_BLOCK_ID, VERSION_ID.as_bytes())
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+
+        let Header {
+            chunks,
+            managed,
+            handle_table,
+        } = header;
 
         let state = RepoState {
             store: Mutex::new(self.store),

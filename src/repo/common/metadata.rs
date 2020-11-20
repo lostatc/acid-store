@@ -14,26 +14,31 @@
  * limitations under the License.
  */
 
-use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::time::SystemTime;
+
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::chunking::Chunking;
 use super::compression::Compression;
 use super::config::RepoConfig;
 use super::encryption::{Encryption, KeySalt, ResourceLimit};
+use super::id_table::IdTable;
+use super::object::{Chunk, ObjectHandle};
+use super::state::ChunkInfo;
 
-/// Chunk IDs for accessing persistent repository state.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// The repository state which is persisted to the data store on each commit.
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Header {
-    /// The ID of the chunk which stores the map of chunks.
-    pub chunks: Uuid,
+    /// The map of chunks to information about them.
+    pub chunks: HashMap<Chunk, ChunkInfo>,
 
-    /// The ID of the chunk which stores the map of managed objects.
-    pub managed: Uuid,
+    /// The map of managed objects to object handles for each instance ID.
+    pub managed: HashMap<Uuid, HashMap<Uuid, ObjectHandle>>,
 
-    /// The ID of the chunk which stores the table of ID handles.
-    pub handles: Uuid,
+    /// The table of object handle IDs.
+    pub handle_table: IdTable,
 }
 
 /// Metadata for a repository.
@@ -63,8 +68,8 @@ pub struct RepoMetadata {
     /// The salt used to derive a key from the user's password.
     pub salt: KeySalt,
 
-    /// The IDs of chunks which store repository state.
-    pub header: Header,
+    /// The ID of the chunk which stores the repository header.
+    pub header_id: Uuid,
 
     /// The time this repository was created.
     pub creation_time: SystemTime,
