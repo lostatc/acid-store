@@ -109,6 +109,20 @@ fn change_algorithm() -> anyhow::Result<()> {
 }
 
 #[test]
+fn objects_removed_on_rollback() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    let hash = repository.put(random_buffer().as_slice())?;
+
+    repository.rollback()?;
+
+    assert!(!repository.contains(&hash));
+    assert!(repository.object(&hash).is_none());
+    assert!(repository.list().next().is_none());
+
+    Ok(())
+}
+
+#[test]
 fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.put(random_buffer().as_slice())?;

@@ -349,6 +349,43 @@ fn uncommitted_changes_are_not_persisted() -> anyhow::Result<()> {
 }
 
 #[test]
+fn unmanaged_objects_are_removed_on_rollaback() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let mut handle = repo.add_unmanaged();
+
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repo.rollback()?;
+
+    assert!(!repo.contains_unmanaged(&handle));
+    assert!(repo.unmanaged_object(&handle).is_none());
+
+    Ok(())
+}
+
+#[test]
+fn managed_objects_are_removed_on_rollaback() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let id = Uuid::new_v4();
+
+    let mut object = repo.add_managed(id);
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repo.rollback()?;
+
+    assert!(!repo.contains_managed(id));
+    assert!(repo.managed_object(id).is_none());
+    assert!(repo.list_managed().next().is_none());
+
+    Ok(())
+}
+
+#[test]
 fn unused_data_is_reclaimed_on_commit() -> anyhow::Result<()> {
     let mut repo = create_repo()?;
     let mut handle = repo.add_unmanaged();
