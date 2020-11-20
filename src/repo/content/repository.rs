@@ -231,6 +231,13 @@ impl<S: DataStore> ContentRepo<S> {
         self.repository.commit()
     }
 
+    /// Clean up the repository to reclaim space in the backing data store.
+    ///
+    /// See `ObjectRepo::clean` for details.
+    pub fn clean(&self) -> crate::Result<()> {
+        self.repository.clean()
+    }
+
     /// Verify the integrity of all the data in the repository.
     ///
     /// This returns the set of hashes of objects which are corrupt.

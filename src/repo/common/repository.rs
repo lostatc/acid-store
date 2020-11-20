@@ -19,7 +19,11 @@ use std::mem;
 
 use hex_literal::hex;
 use rmp_serde::{from_read, to_vec};
+use secrecy::ExposeSecret;
 use uuid::Uuid;
+
+use crate::repo::ConvertRepo;
+use crate::store::DataStore;
 
 use super::chunk_store::{ChunkEncoder, ChunkReader};
 use super::encryption::{EncryptionKey, KeySalt};
@@ -28,9 +32,6 @@ use super::metadata::{RepoInfo, RepoMetadata};
 use super::object::{chunk_hash, Object, ObjectHandle, ReadOnlyObject};
 use super::report::IntegrityReport;
 use super::state::RepoState;
-use crate::repo::ConvertRepo;
-use crate::store::DataStore;
-use secrecy::ExposeSecret;
 
 /// The block ID of the block which stores the repository metadata.
 pub(super) const METADATA_BLOCK_ID: Uuid =
@@ -318,7 +319,7 @@ impl<S: DataStore> ObjectRepo<S> {
     }
 
     /// Return a list of blocks in the data store excluding those used to store metadata.
-    fn list_data_blocks(&mut self) -> crate::Result<Vec<Uuid>> {
+    fn list_data_blocks(&self) -> crate::Result<Vec<Uuid>> {
         let all_blocks = self
             .state
             .store
@@ -346,7 +347,16 @@ impl<S: DataStore> ObjectRepo<S> {
     /// atomic and consistent operation; changes cannot be partially committed and interrupting a
     /// commit will never leave the repository in an inconsistent state.
     ///
-    /// This commits changes from all instances of the repository.
+    /// If this method returns `Ok`, changes have been committed. If this method returns `Err`,
+    /// changes have not been committed.
+    ///
+    /// This method will attempt to call `clean` once changes are committed, but will ignore any
+    /// errors returned by it. This means that this method will always return `Ok` if changes have
+    /// been committed, even if cleaning the repository afterwards fails. If you need to ensure that
+    /// cleaning the repository succeeded or handle errors returned by that method, you should call
+    /// `clean` manually.
+    ///
+    /// This method commits changes from all instances of the repository.
     ///
     /// # Errors
     /// - `Error::InvalidData`: Ciphertext verification failed.
@@ -405,7 +415,25 @@ impl<S: DataStore> ObjectRepo<S> {
             .write_block(METADATA_BLOCK_ID, &serialized_metadata)
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
-        // After changes are committed, remove any unused chunks from the data store.
+        // Ignore errors cleaning the repository.
+        self.clean().ok();
+
+        Ok(())
+    }
+
+    /// Clean up the repository to reclaim space in the backing data store.
+    ///
+    /// When data in a repository is deleted, the space is not reclaimed in the backing data store
+    /// until those changes are committed and this method is called. This method is automatically
+    /// called when changes are committed, but any errors returned are ignored. You only need to
+    /// call this method manually if you need to handle these errors and ensure that all space in
+    /// the backing data store has been reclaimed.
+    ///
+    /// # Errors
+    /// - `Error::Store`: An error occurred with the data store.
+    pub fn clean(&self) -> crate::Result<()> {
+        let data_blocks = self.list_data_blocks()?;
+
         let referenced_chunks = self
             .state
             .chunks
@@ -413,18 +441,12 @@ impl<S: DataStore> ObjectRepo<S> {
             .map(|info| info.block_id)
             .collect::<HashSet<_>>();
 
-        let data_blocks = self.list_data_blocks()?;
-
-        // We need to be careful getting a lock on the data store to avoid a panic. We're scoping it
-        // just to be careful.
-        {
-            let mut store = self.state.store.lock().unwrap();
-            for stored_chunk in data_blocks {
-                if !referenced_chunks.contains(&stored_chunk) {
-                    store
-                        .remove_block(stored_chunk)
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-                }
+        let mut store = self.state.store.lock().unwrap();
+        for stored_chunk in data_blocks {
+            if !referenced_chunks.contains(&stored_chunk) {
+                store
+                    .remove_block(stored_chunk)
+                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
             }
         }
 

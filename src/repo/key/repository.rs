@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -27,7 +28,6 @@ use crate::repo::common::check_version;
 use crate::repo::object::{ObjectHandle, ObjectRepo};
 use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepoInfo};
 use crate::store::DataStore;
-use std::borrow::Borrow;
 
 /// The ID of the managed object which stores the table of keys for the repository.
 const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("9db2a036 bd2a 11ea 872b c308cda3d138"));
@@ -196,6 +196,13 @@ impl<K: Key, S: DataStore> KeyRepo<K, S> {
 
         // Commit the underlying repository.
         self.repository.commit()
+    }
+
+    /// Clean up the repository to reclaim space in the backing data store.
+    ///
+    /// See `ObjectRepo::clean` for details.
+    pub fn clean(&self) -> crate::Result<()> {
+        self.repository.clean()
     }
 
     /// Verify the integrity of all the data in the repository.

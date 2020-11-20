@@ -24,13 +24,14 @@ use std::time::SystemTime;
 use hex_literal::hex;
 use uuid::Uuid;
 
-use super::version::{KeyInfo, Version};
 use crate::repo::common::check_version;
 use crate::repo::key::Key;
 use crate::repo::object::ObjectRepo;
 use crate::repo::version::version::VersionInfo;
 use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepoInfo};
 use crate::store::DataStore;
+
+use super::version::{KeyInfo, Version};
 
 /// The ID of the managed object which stores the table of keys for the repository.
 const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("a2cf16fe bd51 11ea 9785 4be1828714c1"));
@@ -325,6 +326,13 @@ impl<K: Key, S: DataStore> VersionRepo<K, S> {
 
         // Commit the underlying repository.
         self.repository.commit()
+    }
+
+    /// Clean up the repository to reclaim space in the backing data store.
+    ///
+    /// See `ObjectRepo::clean` for details.
+    pub fn clean(&self) -> crate::Result<()> {
+        self.repository.clean()
     }
 
     /// Change the password for this repository.

@@ -42,12 +42,14 @@
 //! data loss.
 //!
 //! # Atomicity
-//! Changes made to a repository are not persisted to the data store until `commit` is called. If
-//! the repository is dropped or the thread panics, any uncommitted changes are rolled back
-//! automatically.
+//! Changes made to a repository are not persisted to the data store until those changes are
+//! committed. Committing a repository is an atomic and consistent operation; changes cannot be
+//! partially committed and interrupting a commit will never leave the repository in an inconsistent
+//! state. If the repository is dropped or the thread panics, any uncommitted changes are rolled
+//! back automatically.
 //!
-//! When data in a repository is deleted, the space is not reclaimed in the backing data store
-//! until `commit` is called.
+//! When data in a repository is deleted, the space is not reclaimed in the backing data store until
+//! those changes are committed. See `ObjectRepo::commit` and `ObjectRepo::clean` for details.
 //!
 //! # Encryption
 //! If encryption is enabled, the Argon2id key derivation function is used to derive a key from a

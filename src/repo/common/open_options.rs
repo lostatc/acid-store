@@ -21,7 +21,11 @@ use std::time::SystemTime;
 use hex_literal::hex;
 use lazy_static::lazy_static;
 use rmp_serde::{from_read, to_vec};
+use secrecy::ExposeSecret;
 use uuid::Uuid;
+
+use crate::repo::{Chunking, Compression, ResourceLimit};
+use crate::store::DataStore;
 
 use super::config::RepoConfig;
 use super::convert::ConvertRepo;
@@ -32,9 +36,6 @@ use super::metadata::{Header, RepoMetadata};
 use super::object::ObjectHandle;
 use super::repository::{ObjectRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
 use super::state::RepoState;
-use crate::repo::{Chunking, Compression, ResourceLimit};
-use crate::store::DataStore;
-use secrecy::ExposeSecret;
 
 /// The instance to use when an instance isn't supplied.
 const GLOBAL_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92b 031a9ad75c07"));
@@ -290,6 +291,9 @@ impl<S: DataStore> OpenOptions<S> {
             handle_table,
         };
 
+        // Clean the repository in case changes were rolled back.
+        repository.clean()?;
+
         R::from_repo(repository)
     }
 
@@ -447,6 +451,9 @@ impl<S: DataStore> OpenOptions<S> {
             managed,
             handle_table,
         };
+
+        // Clean the repository in case changes were rolled back.
+        repository.clean()?;
 
         R::from_repo(repository)
     }
