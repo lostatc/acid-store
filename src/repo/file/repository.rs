@@ -103,7 +103,7 @@ where
     }
 
     fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
-        self.commit()?;
+        self.repository.rollback()?;
         Ok(self.repository)
     }
 }
@@ -752,13 +752,36 @@ where
     ///
     /// See `ObjectRepo::commit` for details.
     pub fn commit(&mut self) -> crate::Result<()> {
-        // Serialize and write the table of keys.
-        let mut object = self.repository.managed_object_mut(TABLE_OBJECT_ID).unwrap();
+        // Serialize and write the tree of entry paths.
+        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
         object.serialize(&self.path_table)?;
         drop(object);
 
         // Commit the underlying repository.
         self.repository.commit()
+    }
+
+    /// Roll back all changes made since the last commit.
+    ///
+    /// See `ObjectRepo::rollback` for details.
+    pub fn rollback(&mut self) -> crate::Result<()> {
+        // Read and deserialize the path table from the previous commit.
+        let mut object = self
+            .repository
+            .managed_object(TABLE_OBJECT_ID)
+            .ok_or(crate::Error::Corrupt)?;
+        let path_table = match object.deserialize() {
+            Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
+            Err(error) => return Err(error),
+            Ok(value) => value,
+        };
+        drop(object);
+
+        self.repository.rollback()?;
+
+        self.path_table = path_table;
+
+        Ok(())
     }
 
     /// Clean up the repository to reclaim space in the backing data store.

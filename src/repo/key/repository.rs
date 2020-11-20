@@ -80,7 +80,7 @@ impl<K: Key, S: DataStore> ConvertRepo<S> for KeyRepo<K, S> {
     }
 
     fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
-        self.commit()?;
+        self.repository.rollback()?;
         Ok(self.repository)
     }
 }
@@ -196,6 +196,29 @@ impl<K: Key, S: DataStore> KeyRepo<K, S> {
 
         // Commit the underlying repository.
         self.repository.commit()
+    }
+
+    /// Roll back all changes made since the last commit.
+    ///
+    /// See `ObjectRepo::rollback` for details.
+    pub fn rollback(&mut self) -> crate::Result<()> {
+        // Read and deserialize the key table from the previous commit.
+        let mut object = self
+            .repository
+            .managed_object(TABLE_OBJECT_ID)
+            .ok_or(crate::Error::Corrupt)?;
+        let key_table = match object.deserialize() {
+            Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
+            Err(error) => return Err(error),
+            Ok(value) => value,
+        };
+        drop(object);
+
+        self.repository.rollback()?;
+
+        self.key_table = key_table;
+
+        Ok(())
     }
 
     /// Clean up the repository to reclaim space in the backing data store.

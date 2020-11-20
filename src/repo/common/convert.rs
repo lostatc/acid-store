@@ -16,8 +16,9 @@
 
 use uuid::Uuid;
 
-use super::repository::ObjectRepo;
 use crate::store::DataStore;
+
+use super::repository::ObjectRepo;
 
 /// A repository which is backed by an `ObjectRepo`.
 ///
@@ -40,9 +41,10 @@ pub trait ConvertRepo<S: DataStore> {
 
     /// Consume this repository and return the backing `ObjectRepo`.
     ///
-    /// This commits any uncommitted changes before returning.
+    /// This rolls back any uncommitted changes before returning.
     ///
     /// # Errors
+    /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.

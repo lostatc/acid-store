@@ -57,13 +57,21 @@ impl<S: DataStore> ConvertRepo<S> for ContentRepo<S> {
             let mut object = repository
                 .managed_object(TABLE_OBJECT_ID)
                 .ok_or(crate::Error::Corrupt)?;
-            let hash_table = object.deserialize()?;
+            let hash_table = match object.deserialize() {
+                Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
+                Err(error) => return Err(error),
+                Ok(value) => value,
+            };
 
-            // Read the hash algorithm.
+            // Read and deserialize the hash algorithm.
             let mut object = repository
                 .managed_object(ALGORITHM_OBJECT_ID)
                 .ok_or(crate::Error::Corrupt)?;
-            let hash_algorithm = object.deserialize()?;
+            let hash_algorithm = match object.deserialize() {
+                Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
+                Err(error) => return Err(error),
+                Ok(value) => value,
+            };
             drop(object);
 
             Ok(Self {
@@ -94,7 +102,7 @@ impl<S: DataStore> ConvertRepo<S> for ContentRepo<S> {
     }
 
     fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
-        self.commit()?;
+        self.repository.rollback()?;
         Ok(self.repository)
     }
 }
@@ -220,15 +228,48 @@ impl<S: DataStore> ContentRepo<S> {
     /// See `ObjectRepo::commit` for details.
     pub fn commit(&mut self) -> crate::Result<()> {
         // Serialize and write the table of content hashes.
-        let mut object = self
-            .repository
-            .managed_object_mut(TABLE_OBJECT_ID)
-            .expect("Managed object containing table of content hashes not found in repository.");
+        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
         object.serialize(&self.hash_table)?;
         drop(object);
 
         // Commit the underlying repository.
         self.repository.commit()
+    }
+
+    /// Roll back all changes made since the last commit.
+    ///
+    /// See `ObjectRepo::rollback` for details.
+    pub fn rollback(&mut self) -> crate::Result<()> {
+        // Read and deserialize the table of content hashes from the previous commit.
+        let mut object = self
+            .repository
+            .managed_object(TABLE_OBJECT_ID)
+            .ok_or(crate::Error::Corrupt)?;
+        let hash_table = match object.deserialize() {
+            Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
+            Err(error) => return Err(error),
+            Ok(value) => value,
+        };
+        drop(object);
+
+        // Read and deserialize the hash algorithm from the previous commit.
+        let mut object = self
+            .repository
+            .managed_object(ALGORITHM_OBJECT_ID)
+            .ok_or(crate::Error::Corrupt)?;
+        let hash_algorithm = match object.deserialize() {
+            Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
+            Err(error) => return Err(error),
+            Ok(value) => value,
+        };
+        drop(object);
+
+        self.repository.rollback()?;
+
+        self.hash_table = hash_table;
+        self.hash_algorithm = hash_algorithm;
+
+        Ok(())
     }
 
     /// Clean up the repository to reclaim space in the backing data store.
