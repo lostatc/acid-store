@@ -29,7 +29,7 @@ use tempfile::tempdir;
 use acid_store::repo::file::{Entry, FileRepo, NoMetadata, NoSpecialType};
 use acid_store::repo::{ConvertRepo, OpenOptions};
 use acid_store::store::MemoryStore;
-use common::assert_contains_all;
+use common::{assert_contains_all, random_buffer};
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
     acid_store::repo::file::{
@@ -680,6 +680,23 @@ fn read_common_metadata() -> anyhow::Result<()> {
     let source_metadata = source_path.metadata()?;
 
     assert_eq!(entry_metadata.modified, source_metadata.modified()?);
+
+    Ok(())
+}
+
+#[test]
+fn entries_removed_on_rollback() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.create("file", &Entry::file())?;
+
+    let mut object = repository.open_mut("file")?;
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repository.rollback()?;
+
+    assert!(!repository.exists("file"));
 
     Ok(())
 }

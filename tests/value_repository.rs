@@ -88,6 +88,23 @@ fn list_keys() -> anyhow::Result<()> {
 }
 
 #[test]
+fn values_removed_on_rollback() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+    repository.insert("test".into(), &SERIALIZABLE_VALUE)?;
+
+    repository.rollback()?;
+
+    assert!(!repository.contains("test"));
+    assert!(repository.keys().next().is_none());
+    assert!(matches!(
+        repository.get::<_, (bool, i32)>("test"),
+        Err(acid_store::Error::NotFound)
+    ));
+
+    Ok(())
+}
+
+#[test]
 fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.insert("Test".into(), &SERIALIZABLE_VALUE)?;

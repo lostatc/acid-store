@@ -204,3 +204,23 @@ fn modifying_object_doesnt_modify_versions() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn objects_removed_on_rollback() -> anyhow::Result<()> {
+    let mut repository = create_repo()?;
+
+    let mut object = repository.insert("test".into()).unwrap();
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repository.create_version("test").unwrap();
+
+    repository.rollback()?;
+
+    assert!(!repository.contains("test"));
+    assert!(repository.keys().next().is_none());
+    assert!(repository.object("test").is_none());
+
+    Ok(())
+}

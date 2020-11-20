@@ -124,3 +124,21 @@ fn copying_does_not_overwrite() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn objects_removed_on_rollback() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+
+    let mut object = repo.insert("test".into());
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repo.rollback()?;
+
+    assert!(!repo.contains("test"));
+    assert!(repo.keys().next().is_none());
+    assert!(repo.object("test").is_none());
+
+    Ok(())
+}
