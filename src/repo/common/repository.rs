@@ -357,6 +357,7 @@ impl<S: DataStore> ObjectRepo<S> {
     /// This method commits changes from all instances of the repository.
     ///
     /// # Errors
+    /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -407,6 +408,56 @@ impl<S: DataStore> ObjectRepo<S> {
 
         // Ignore errors cleaning the repository.
         self.clean().ok();
+
+        Ok(())
+    }
+
+    /// Roll back all changes made since the last commit.
+    ///
+    /// Uncommitted changes in repository are automatically rolled back when the repository is
+    /// dropped. This method can be used to manually roll back changes without dropping and
+    /// re-opening the repository.
+    ///
+    /// If this method returns `Ok`, changes have been rolled back. If this method returns `Err`,
+    /// the repository is unchanged.
+    ///
+    /// # Errors
+    /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn rollback(&mut self) -> crate::Result<()> {
+        // Read the previous header from the data store.
+        let encoded_header = self
+            .state
+            .store
+            .lock()
+            .unwrap()
+            .read_block(self.state.metadata.header_id)
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
+            .ok_or(crate::Error::Corrupt)?;
+        let serialized_header = self.state.decode_data(encoded_header.as_slice())?;
+        let header: Header =
+            from_read(serialized_header.as_slice()).map_err(|_| crate::Error::Corrupt)?;
+
+        let Header {
+            chunks: old_chunks,
+            managed: old_managed,
+            handle_table: old_handle_table,
+        } = header;
+
+        // Replace the current header values with the ones from the previous commit.
+        let current_chunks = mem::replace(&mut self.state.chunks, old_chunks);
+        let current_managed = mem::replace(&mut self.managed, old_managed);
+        let current_handle_table = mem::replace(&mut self.handle_table, old_handle_table);
+
+        if let Err(error) = self.clean() {
+            // If cleaning the repository did not succeed, undo the rollback.
+            self.state.chunks = current_chunks;
+            self.managed = current_managed;
+            self.handle_table = current_handle_table;
+            return Err(error);
+        }
 
         Ok(())
     }
