@@ -188,6 +188,13 @@ impl<K: Key, S: DataStore> ValueRepo<K, S> {
         self.repository.commit()
     }
 
+    /// Clean up the repository to reclaim space in the backing data store.
+    ///
+    /// See `ObjectRepo::clean` for details.
+    pub fn clean(&self) -> crate::Result<()> {
+        self.repository.clean()
+    }
+
     /// Verify the integrity of all the data in the repository.
     ///
     /// This returns the set of keys of values which are corrupt.
