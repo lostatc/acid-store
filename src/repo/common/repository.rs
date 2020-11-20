@@ -28,7 +28,7 @@ use crate::store::DataStore;
 use super::chunk_store::{ChunkEncoder, ChunkReader};
 use super::encryption::{EncryptionKey, KeySalt};
 use super::id_table::IdTable;
-use super::metadata::{RepoInfo, RepoMetadata};
+use super::metadata::{Header, RepoInfo, RepoMetadata};
 use super::object::{chunk_hash, Object, ObjectHandle, ReadOnlyObject};
 use super::report::IntegrityReport;
 use super::state::RepoState;
@@ -334,9 +334,7 @@ impl<S: DataStore> ObjectRepo<S> {
             .filter(|id| {
                 *id != METADATA_BLOCK_ID
                     && *id != VERSION_BLOCK_ID
-                    && *id != self.state.metadata.header.chunks
-                    && *id != self.state.metadata.header.managed
-                    && *id != self.state.metadata.header.handles
+                    && *id != self.state.metadata.header_id
             })
             .collect())
     }
@@ -363,51 +361,43 @@ impl<S: DataStore> ObjectRepo<S> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn commit(&mut self) -> crate::Result<()> {
-        let serialized_chunks =
-            to_vec(&self.state.chunks).expect("Could not serialize chunks map.");
-        let encoded_chunks = self.state.encode_data(&serialized_chunks)?;
+        // Temporarily replace the values in the repository which need to be serialized so we can
+        // put them into the `Header`. This avoids the need to clone them. We'll put them back
+        // later.
+        let header = Header {
+            chunks: mem::replace(&mut self.state.chunks, HashMap::new()),
+            managed: mem::replace(&mut self.managed, HashMap::new()),
+            handle_table: mem::replace(&mut self.handle_table, IdTable::new()),
+        };
 
-        // Write the new chunk map to the data store.
-        let chunks_id = Uuid::new_v4();
+        // Serialize and encode the header so we can write it to the data store.
+        let serialized_header =
+            to_vec(&header).expect("Could not serialize the repository header.");
+        let encoded_header = self.state.encode_data(serialized_header.as_slice())?;
+
+        // Unpack the values from the `Header` and put them back where they originally were.
+        let Header {
+            chunks,
+            managed,
+            handle_table,
+        } = header;
+        self.state.chunks = chunks;
+        self.managed = managed;
+        self.handle_table = handle_table;
+
+        // Write the serialized and encoded header to the data store.
+        let header_id = Uuid::new_v4();
         self.state
             .store
             .lock()
             .unwrap()
-            .write_block(chunks_id, &encoded_chunks)
+            .write_block(header_id, &encoded_header)
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        self.state.metadata.header.chunks = chunks_id;
-
-        let serialized_managed =
-            to_vec(&self.managed).expect("Could not serialize managed object map.");
-        let encoded_managed = self.state.encode_data(&serialized_managed)?;
-
-        // Write the new managed object map to the data store.
-        let managed_id = Uuid::new_v4();
-        self.state
-            .store
-            .lock()
-            .unwrap()
-            .write_block(managed_id, &encoded_managed)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        self.state.metadata.header.managed = managed_id;
-
-        let serialized_handles =
-            to_vec(&self.handle_table).expect("Could not serialize handle ID table.");
-        let encoded_handles = self.state.encode_data(&serialized_handles)?;
-
-        // Write the new handle ID table to the data store.
-        let handles_id = Uuid::new_v4();
-        self.state
-            .store
-            .lock()
-            .unwrap()
-            .write_block(handles_id, &encoded_handles)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        self.state.metadata.header.handles = handles_id;
+        self.state.metadata.header_id = header_id;
 
         // Write the repository metadata, atomically completing the commit.
         let serialized_metadata =
-            to_vec(&self.state.metadata).expect("Could not serialize metadata.");
+            to_vec(&self.state.metadata).expect("Could not serialize repository metadata.");
         self.state
             .store
             .lock()
