@@ -28,11 +28,12 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::store::DataStore;
+
 use super::chunk_store::{ChunkReader, ChunkWriter};
 use super::id_table::UniqueId;
 use super::state::RepoState;
 use super::state::{ChunkLocation, ObjectState};
-use crate::store::DataStore;
 
 /// The size of the checksums used for uniquely identifying chunks.
 pub const CHUNK_HASH_SIZE: usize = 32;
@@ -94,6 +95,8 @@ pub struct ObjectHandle {
 impl ObjectHandle {
     /// Return a `ContentId` representing the contents of the object.
     ///
+    /// Calculating a content ID is cheap. This method does not read any data from the data store.
+    ///
     /// The returned `ContentId` represents the contents of the object at the time this method was
     /// called. It is not updated when the object is modified.
     pub fn content_id(&self) -> ContentId {
@@ -117,7 +120,7 @@ impl ObjectHandle {
     }
 }
 
-/// A value that uniquely identifies the contents of an object.
+/// A value that uniquely identifies the contents of an object at a certain point in time.
 ///
 /// A `ContentId` is like a checksum of the data in an object except it is cheap to compute.
 /// A `ContentId` can be compared with other `ContentId` values to determine if the contents of two
@@ -126,8 +129,7 @@ impl ObjectHandle {
 /// you should use `compare_contents`.
 ///
 /// `ContentId` is opaque, but it can be serialized and deserialized. The value of a `ContentId` is
-/// valid for the lifetime of a repository, meaning that they can be compared across invocations of
-/// the library.
+/// stable, meaning that they can be compared across invocations of the library.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct ContentId {
     // We can't compare content IDs from different repositories because those repositories may have
@@ -144,25 +146,25 @@ pub struct ContentId {
 }
 
 impl ContentId {
-    /// The size of the object in bytes.
+    /// The size of the contents represented by this content ID in bytes.
     pub fn size(&self) -> u64 {
         self.size
     }
 
-    /// Return whether this object has the same contents as `other`.
+    /// Return whether this content ID has the same contents as `other`.
     ///
-    /// This compares the contents of this object with `other` without reading any data from the
+    /// This compares the contents of this content ID with `other` without reading any data from the
     /// data store. This is much faster than calculating a checksum of the object, especially if
     /// reading from the data store would be prohibitively slow.
     ///
-    /// This compares the contents of this object with `other` in chunks, and will fail early if any
-    /// chunk does not match. This means that it may not be necessary to read the entire file to
-    /// determine that the contents are different.
+    /// This method compares this content ID with `other` in chunks, and will fail early if any
+    /// chunk does not match. This means that it may not be necessary to read `other` in its
+    /// entirety to determine that the contents are different.
     ///
     /// Because `other` only implements `Read`, this cannot compare the contents by size. If you
-    /// need to compare the contents of this object with a file or some other source of data with
-    /// a known size, you should use `size` to query the size of this object so you can handle the
-    /// trivial case of the contents having different sizes.
+    /// need to compare this content ID with a file or some other source of data with a known size,
+    /// you should use `size` to query the size of this content ID so you can handle the trivial
+    /// case of the contents having different sizes.
     ///
     /// If you need to compare the contents of two objects from the same repository, it's cheaper to
     /// check if their `ContentId` values are equal instead.
