@@ -206,11 +206,6 @@ impl<S: DataStore> ContentRepo<S> {
 
         self.hash_algorithm = new_algorithm;
 
-        // Serialize and write the new hash algorithm.
-        let mut object = self.repository.add_managed(ALGORITHM_OBJECT_ID);
-        object.serialize(&new_algorithm)?;
-        drop(object);
-
         // Re-compute the hashes of the objects in the repository.
         let old_table = mem::replace(&mut self.hash_table, HashMap::new());
         for (_, object_handle) in old_table {
@@ -230,6 +225,11 @@ impl<S: DataStore> ContentRepo<S> {
         // Serialize and write the table of content hashes.
         let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
         object.serialize(&self.hash_table)?;
+        drop(object);
+
+        // Serialize and write the new hash algorithm.
+        let mut object = self.repository.add_managed(ALGORITHM_OBJECT_ID);
+        object.serialize(&self.hash_algorithm)?;
         drop(object);
 
         // Commit the underlying repository.
