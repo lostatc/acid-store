@@ -71,7 +71,7 @@ impl<S: DataStore> ConvertRepo<S> for ObjectRepo<S> {
     }
 
     fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
-        self.commit()?;
+        self.rollback()?;
         Ok(self)
     }
 }
