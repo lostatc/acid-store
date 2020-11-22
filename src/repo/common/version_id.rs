@@ -20,7 +20,6 @@ use lazy_static::lazy_static;
 use uuid::Uuid;
 
 use crate::repo::object::ObjectRepo;
-use crate::store::DataStore;
 
 lazy_static! {
     /// The ID of the managed object which stores the version ID.
@@ -39,10 +38,7 @@ lazy_static! {
 /// - `Error::InvalidData`: Ciphertext verification failed.
 /// - `Error::Store`: An error occurred with the data store.
 /// - `Error::Io`: An I/O error occurred.
-pub fn check_version<S: DataStore>(
-    repository: &mut ObjectRepo<S>,
-    version_id: Uuid,
-) -> crate::Result<bool> {
+pub fn check_version(repository: &mut ObjectRepo, version_id: Uuid) -> crate::Result<bool> {
     match repository.managed_object(*VERSION_OBJECT_ID) {
         Some(mut object) => {
             let mut version_buffer = Vec::new();

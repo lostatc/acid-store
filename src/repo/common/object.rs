@@ -26,8 +26,6 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::store::DataStore;
-
 use super::chunk_store::{ChunkReader, ChunkWriter};
 use super::id_table::UniqueId;
 use super::state::RepoState;
@@ -194,13 +192,13 @@ impl ContentId {
 }
 
 /// A wrapper for getting information about an object.
-struct ObjectInfo<'a, S: DataStore> {
-    repo_state: &'a RepoState<S>,
+struct ObjectInfo<'a> {
+    repo_state: &'a RepoState,
     object_state: &'a ObjectState,
     handle: &'a ObjectHandle,
 }
 
-impl<'a, S: DataStore> ObjectInfo<'a, S> {
+impl<'a> ObjectInfo<'a> {
     /// Verify the integrity of the data in this object.
     fn verify(&self) -> crate::Result<bool> {
         let expected_chunks = self.handle.chunks.iter().copied().collect::<Vec<_>>();
@@ -245,15 +243,15 @@ impl<'a, S: DataStore> ObjectInfo<'a, S> {
     }
 }
 
-struct ObjectReader<'a, S: DataStore> {
-    repo_state: &'a RepoState<S>,
+struct ObjectReader<'a> {
+    repo_state: &'a RepoState,
     object_state: &'a mut ObjectState,
     handle: &'a ObjectHandle,
 }
 
 /// A wrapper for reading data from an object.
-impl<'a, S: DataStore> ObjectReader<'a, S> {
-    fn object_info(&'a self) -> ObjectInfo<'a, S> {
+impl<'a> ObjectReader<'a> {
+    fn object_info(&'a self) -> ObjectInfo<'a> {
         ObjectInfo {
             repo_state: self.repo_state,
             object_state: self.object_state,
@@ -289,7 +287,7 @@ impl<'a, S: DataStore> ObjectReader<'a, S> {
     }
 }
 
-impl<'a, S: DataStore> Seek for ObjectReader<'a, S> {
+impl<'a> Seek for ObjectReader<'a> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         let object_size = self.handle.size;
 
@@ -327,7 +325,7 @@ impl<'a, S: DataStore> Seek for ObjectReader<'a, S> {
 
 // To avoid reading the same chunk from the repository multiple times, the chunk which was most
 // recently read from is cached in a buffer.
-impl<'a, S: DataStore> Read for ObjectReader<'a, S> {
+impl<'a> Read for ObjectReader<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let next_chunk = self.read_chunk(buf.len())?;
         let bytes_read = next_chunk.len();
@@ -338,14 +336,14 @@ impl<'a, S: DataStore> Read for ObjectReader<'a, S> {
 }
 
 /// A wrapper for writing data to an object.
-struct ObjectWriter<'a, S: DataStore> {
-    repo_state: &'a mut RepoState<S>,
+struct ObjectWriter<'a> {
+    repo_state: &'a mut RepoState,
     object_state: &'a mut ObjectState,
     handle: &'a mut ObjectHandle,
 }
 
-impl<'a, S: DataStore> ObjectWriter<'a, S> {
-    fn object_info(&'a self) -> ObjectInfo<'a, S> {
+impl<'a> ObjectWriter<'a> {
+    fn object_info(&'a self) -> ObjectInfo<'a> {
         ObjectInfo {
             repo_state: self.repo_state,
             object_state: self.object_state,
@@ -353,7 +351,7 @@ impl<'a, S: DataStore> ObjectWriter<'a, S> {
         }
     }
 
-    fn object_reader(&mut self) -> ObjectReader<S> {
+    fn object_reader(&mut self) -> ObjectReader {
         ObjectReader {
             repo_state: self.repo_state,
             object_state: self.object_state,
@@ -424,7 +422,7 @@ impl<'a, S: DataStore> ObjectWriter<'a, S> {
 // in-place; they can only be read or written in their entirety. This means we need to do a lot of
 // buffering to wait for a chunk boundary before writing a chunk to the repository. It also means
 // the user needs to explicitly call `flush` when they're done writing data.
-impl<'a, S: DataStore> Write for ObjectWriter<'a, S> {
+impl<'a> Write for ObjectWriter<'a> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         // Check if this is the first time `write` is being called after calling `flush`.
         if !self.object_state.needs_flushed {
@@ -525,9 +523,9 @@ impl<'a, S: DataStore> Write for ObjectWriter<'a, S> {
 ///
 /// See `Object` for details.
 #[derive(Debug)]
-pub struct ReadOnlyObject<'a, S: DataStore> {
+pub struct ReadOnlyObject<'a> {
     /// The state for the object repository.
-    repo_state: &'a RepoState<S>,
+    repo_state: &'a RepoState,
 
     /// The state for the object itself.
     object_state: ObjectState,
@@ -536,8 +534,8 @@ pub struct ReadOnlyObject<'a, S: DataStore> {
     handle: &'a ObjectHandle,
 }
 
-impl<'a, S: DataStore> ReadOnlyObject<'a, S> {
-    pub(crate) fn new(repo_state: &'a RepoState<S>, handle: &'a ObjectHandle) -> Self {
+impl<'a> ReadOnlyObject<'a> {
+    pub(crate) fn new(repo_state: &'a RepoState, handle: &'a ObjectHandle) -> Self {
         Self {
             repo_state,
             object_state: ObjectState::new(repo_state.metadata.chunking.to_chunker()),
@@ -545,7 +543,7 @@ impl<'a, S: DataStore> ReadOnlyObject<'a, S> {
         }
     }
 
-    fn object_info(&self) -> ObjectInfo<S> {
+    fn object_info(&self) -> ObjectInfo {
         ObjectInfo {
             repo_state: self.repo_state,
             object_state: &self.object_state,
@@ -553,7 +551,7 @@ impl<'a, S: DataStore> ReadOnlyObject<'a, S> {
         }
     }
 
-    fn object_reader(&mut self) -> ObjectReader<S> {
+    fn object_reader(&mut self) -> ObjectReader {
         ObjectReader {
             repo_state: self.repo_state,
             object_state: &mut self.object_state,
@@ -604,13 +602,13 @@ impl<'a, S: DataStore> ReadOnlyObject<'a, S> {
     }
 }
 
-impl<'a, S: DataStore> Read for ReadOnlyObject<'a, S> {
+impl<'a> Read for ReadOnlyObject<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.object_reader().read(buf)
     }
 }
 
-impl<'a, S: DataStore> Seek for ReadOnlyObject<'a, S> {
+impl<'a> Seek for ReadOnlyObject<'a> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         self.object_reader().seek(pos)
     }
@@ -636,9 +634,9 @@ impl<'a, S: DataStore> Seek for ReadOnlyObject<'a, S> {
 /// be converted `Into` an `acid_store::Error` to be consistent with the rest of the library. The
 /// implementations document which `acid_store::Error` values they can be converted into.
 #[derive(Debug)]
-pub struct Object<'a, S: DataStore> {
+pub struct Object<'a> {
     /// The state for the object repository.
-    repo_state: &'a mut RepoState<S>,
+    repo_state: &'a mut RepoState,
 
     /// The state for the object itself.
     object_state: ObjectState,
@@ -647,8 +645,8 @@ pub struct Object<'a, S: DataStore> {
     handle: &'a mut ObjectHandle,
 }
 
-impl<'a, S: DataStore> Object<'a, S> {
-    pub(crate) fn new(repo_state: &'a mut RepoState<S>, handle: &'a mut ObjectHandle) -> Self {
+impl<'a> Object<'a> {
+    pub(crate) fn new(repo_state: &'a mut RepoState, handle: &'a mut ObjectHandle) -> Self {
         let chunker = repo_state.metadata.chunking.to_chunker();
         Self {
             repo_state,
@@ -657,7 +655,7 @@ impl<'a, S: DataStore> Object<'a, S> {
         }
     }
 
-    fn object_info(&self) -> ObjectInfo<S> {
+    fn object_info(&self) -> ObjectInfo {
         ObjectInfo {
             repo_state: self.repo_state,
             object_state: &self.object_state,
@@ -665,7 +663,7 @@ impl<'a, S: DataStore> Object<'a, S> {
         }
     }
 
-    fn object_reader(&mut self) -> ObjectReader<S> {
+    fn object_reader(&mut self) -> ObjectReader {
         ObjectReader {
             repo_state: self.repo_state,
             object_state: &mut self.object_state,
@@ -673,7 +671,7 @@ impl<'a, S: DataStore> Object<'a, S> {
         }
     }
 
-    fn object_writer(&mut self) -> ObjectWriter<S> {
+    fn object_writer(&mut self) -> ObjectWriter {
         ObjectWriter {
             repo_state: self.repo_state,
             object_state: &mut self.object_state,
@@ -768,7 +766,7 @@ impl<'a, S: DataStore> Object<'a, S> {
     }
 }
 
-impl<'a, S: DataStore> Read for Object<'a, S> {
+impl<'a> Read for Object<'a> {
     /// The `io::Error` returned by this method can be converted into an `acid_store::Error`.
     ///
     /// # Errors
@@ -781,14 +779,14 @@ impl<'a, S: DataStore> Read for Object<'a, S> {
     }
 }
 
-impl<'a, S: DataStore> Seek for Object<'a, S> {
+impl<'a> Seek for Object<'a> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
         self.object_writer().flush()?;
         self.object_reader().seek(pos)
     }
 }
 
-impl<'a, S: DataStore> Write for Object<'a, S> {
+impl<'a> Write for Object<'a> {
     /// The `io::Error` returned by this method can be converted into an `acid_store::Error`.
     ///
     /// # Errors
@@ -810,7 +808,7 @@ impl<'a, S: DataStore> Write for Object<'a, S> {
     }
 }
 
-impl<'a, S: DataStore> Drop for Object<'a, S> {
+impl<'a> Drop for Object<'a> {
     fn drop(&mut self) {
         self.flush().ok();
     }

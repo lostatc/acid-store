@@ -43,9 +43,9 @@ pub(super) const VERSION_BLOCK_ID: Uuid =
 
 /// A low-level repository type which provides more direct access to the underlying storage.
 #[derive(Debug)]
-pub struct ObjectRepo<S: DataStore> {
+pub struct ObjectRepo {
     /// The state for this repository.
-    pub(super) state: RepoState<S>,
+    pub(super) state: RepoState,
 
     /// The instance ID of this repository instance.
     pub(super) instance_id: Uuid,
@@ -62,21 +62,21 @@ pub struct ObjectRepo<S: DataStore> {
     pub(super) handle_table: IdTable,
 }
 
-impl<S: DataStore> ConvertRepo<S> for ObjectRepo<S> {
-    fn from_repo(repository: ObjectRepo<S>) -> crate::Result<Self>
+impl ConvertRepo for ObjectRepo {
+    fn from_repo(repository: ObjectRepo) -> crate::Result<Self>
     where
         Self: Sized,
     {
         Ok(repository)
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
+    fn into_repo(mut self) -> crate::Result<ObjectRepo> {
         self.rollback()?;
         Ok(self)
     }
 }
 
-impl<S: DataStore> ObjectRepo<S> {
+impl ObjectRepo {
     /// Return whether there is an unmanaged object associated with `handle` in this repository.
     pub fn contains_unmanaged(&self, handle: &ObjectHandle) -> bool {
         handle.repo_id == self.state.metadata.id
@@ -131,10 +131,7 @@ impl<S: DataStore> ObjectRepo<S> {
     ///
     /// The returned object provides read-only access to the data. To get read-write access, use
     /// `unmanaged_object_mut`.
-    pub fn unmanaged_object<'a>(
-        &'a self,
-        handle: &'a ObjectHandle,
-    ) -> Option<ReadOnlyObject<'a, S>> {
+    pub fn unmanaged_object<'a>(&'a self, handle: &'a ObjectHandle) -> Option<ReadOnlyObject<'a>> {
         if self.contains_unmanaged(handle) {
             Some(ReadOnlyObject::new(&self.state, handle))
         } else {
@@ -155,7 +152,7 @@ impl<S: DataStore> ObjectRepo<S> {
     pub fn unmanaged_object_mut<'a>(
         &'a mut self,
         handle: &'a mut ObjectHandle,
-    ) -> Option<Object<'a, S>> {
+    ) -> Option<Object<'a>> {
         if !self.contains_unmanaged(handle) {
             return None;
         }
@@ -228,7 +225,7 @@ impl<S: DataStore> ObjectRepo<S> {
     /// Add a new managed object with a given `id` to the repository and return it.
     ///
     /// If another managed object with the same `id` already exists, it is replaced.
-    pub fn add_managed(&mut self, id: Uuid) -> Object<S> {
+    pub fn add_managed(&mut self, id: Uuid) -> Object {
         let handle = self.add_unmanaged();
         if let Some(old_handle) = self.managed_map_mut().insert(id, handle) {
             self.remove_unmanaged(&old_handle);
@@ -263,7 +260,7 @@ impl<S: DataStore> ObjectRepo<S> {
     ///
     /// The returned object provides read-only access to the data. To get read-write access, use
     /// `managed_object_mut`.
-    pub fn managed_object(&self, id: Uuid) -> Option<ReadOnlyObject<S>> {
+    pub fn managed_object(&self, id: Uuid) -> Option<ReadOnlyObject> {
         let handle = self.managed_map().get(&id)?;
         Some(ReadOnlyObject::new(&self.state, handle))
     }
@@ -274,7 +271,7 @@ impl<S: DataStore> ObjectRepo<S> {
     ///
     /// The returned object provides read-write access to the data. To get read-only access, use
     /// `managed_object`.
-    pub fn managed_object_mut(&mut self, id: Uuid) -> Option<Object<S>> {
+    pub fn managed_object_mut(&mut self, id: Uuid) -> Option<Object> {
         let handle = self
             .managed
             .get_mut(&self.instance_id)
@@ -326,7 +323,7 @@ impl<S: DataStore> ObjectRepo<S> {
             .lock()
             .unwrap()
             .list_blocks()
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(error))?;
 
         Ok(all_blocks
             .iter()
@@ -393,7 +390,7 @@ impl<S: DataStore> ObjectRepo<S> {
             .lock()
             .unwrap()
             .write_block(header_id, &encoded_header)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(error))?;
         self.state.metadata.header_id = header_id;
 
         // Write the repository metadata, atomically completing the commit.
@@ -404,7 +401,7 @@ impl<S: DataStore> ObjectRepo<S> {
             .lock()
             .unwrap()
             .write_block(METADATA_BLOCK_ID, &serialized_metadata)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(error))?;
 
         // Ignore errors cleaning the repository.
         self.clean().ok();
@@ -434,7 +431,7 @@ impl<S: DataStore> ObjectRepo<S> {
             .lock()
             .unwrap()
             .read_block(self.state.metadata.header_id)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
+            .map_err(|error| crate::Error::Store(error))?
             .ok_or(crate::Error::Corrupt)?;
         let serialized_header = self.state.decode_data(encoded_header.as_slice())?;
         let header: Header =
@@ -487,7 +484,7 @@ impl<S: DataStore> ObjectRepo<S> {
             if !referenced_chunks.contains(&stored_chunk) {
                 store
                     .remove_block(stored_chunk)
-                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                    .map_err(|error| crate::Error::Store(error))?;
             }
         }
 
@@ -591,11 +588,11 @@ impl<S: DataStore> ObjectRepo<S> {
     /// - `Error::NotFound`: There is no repository in the given `store`.
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::Store`: An error occurred with the data store.
-    pub fn peek_info(store: &mut S) -> crate::Result<RepoInfo> {
+    pub fn peek_info(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
         // Read and deserialize the metadata.
         let serialized_metadata = match store
             .read_block(METADATA_BLOCK_ID)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
+            .map_err(|error| crate::Error::Store(error))?
         {
             Some(data) => data,
             None => return Err(crate::Error::NotFound),
@@ -609,7 +606,7 @@ impl<S: DataStore> ObjectRepo<S> {
     /// Consume this repository and return the wrapped `DataStore`.
     ///
     /// This rolls back any uncommitted changes.
-    pub fn into_store(self) -> S {
+    pub fn into_store(self) -> Box<dyn DataStore> {
         self.state.store.into_inner().unwrap()
     }
 }

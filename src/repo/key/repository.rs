@@ -45,13 +45,13 @@ impl<T> Key for T where T: Eq + Hash + Clone + Serialize + DeserializeOwned {}
 
 /// An object store which maps keys to seekable binary blobs.
 #[derive(Debug)]
-pub struct KeyRepo<S: DataStore, K: Key> {
-    repository: ObjectRepo<S>,
+pub struct KeyRepo<K: Key> {
+    repository: ObjectRepo,
     key_table: HashMap<K, ObjectHandle>,
 }
 
-impl<S: DataStore, K: Key> ConvertRepo<S> for KeyRepo<S, K> {
-    fn from_repo(mut repository: ObjectRepo<S>) -> crate::Result<Self> {
+impl<K: Key> ConvertRepo for KeyRepo<K> {
+    fn from_repo(mut repository: ObjectRepo) -> crate::Result<Self> {
         if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the key table.
             let mut object = repository
@@ -79,13 +79,13 @@ impl<S: DataStore, K: Key> ConvertRepo<S> for KeyRepo<S, K> {
         }
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
+    fn into_repo(mut self) -> crate::Result<ObjectRepo> {
         self.repository.rollback()?;
         Ok(self.repository)
     }
 }
 
-impl<S: DataStore, K: Key> KeyRepo<S, K> {
+impl<K: Key> KeyRepo<K> {
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
@@ -98,7 +98,7 @@ impl<S: DataStore, K: Key> KeyRepo<S, K> {
     /// Insert the given `key` into the repository and return a new object.
     ///
     /// If the given `key` already exists in the repository, its object is replaced.
-    pub fn insert(&mut self, key: K) -> Object<S> {
+    pub fn insert(&mut self, key: K) -> Object {
         self.key_table.remove(&key);
         let handle = self
             .key_table
@@ -133,7 +133,7 @@ impl<S: DataStore, K: Key> KeyRepo<S, K> {
     ///
     /// The returned object provides read-only access to the data. To get read-write access, use
     /// `object_mut`.
-    pub fn object<Q>(&self, key: &Q) -> Option<ReadOnlyObject<S>>
+    pub fn object<Q>(&self, key: &Q) -> Option<ReadOnlyObject>
     where
         K: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
@@ -148,7 +148,7 @@ impl<S: DataStore, K: Key> KeyRepo<S, K> {
     ///
     /// The returned object provides read-write access to the data. To get read-only access, use
     /// `object`.
-    pub fn object_mut<Q>(&mut self, key: &Q) -> Option<Object<S>>
+    pub fn object_mut<Q>(&mut self, key: &Q) -> Option<Object>
     where
         K: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
@@ -267,7 +267,7 @@ impl<S: DataStore, K: Key> KeyRepo<S, K> {
     /// Return information about the repository in `store` without opening it.
     ///
     /// See `ObjectRepo::peek_info` for details.
-    pub fn peek_info(store: &mut S) -> crate::Result<RepoInfo> {
+    pub fn peek_info(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
         ObjectRepo::peek_info(store)
     }
 }

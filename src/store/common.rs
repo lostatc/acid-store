@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+use std::fmt::{self, Debug};
+
+use serde::export::Formatter;
 use uuid::Uuid;
 
 /// A persistent store for blocks of data.
@@ -53,4 +56,10 @@ pub trait DataStore {
     ///
     /// This only lists the IDs of blocks which are stored persistently.
     fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>>;
+}
+
+impl Debug for dyn DataStore {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "DataStore")
+    }
 }

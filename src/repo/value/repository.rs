@@ -41,13 +41,13 @@ const VERSION_ID: Uuid = Uuid::from_bytes(hex!("7457459c bd4e 11ea 8dad 67ac9eea
 
 /// A persistent, heterogeneous, map-like collection.
 #[derive(Debug)]
-pub struct ValueRepo<S: DataStore, K: Key> {
-    repository: ObjectRepo<S>,
+pub struct ValueRepo<K: Key> {
+    repository: ObjectRepo,
     key_table: HashMap<K, ObjectHandle>,
 }
 
-impl<S: DataStore, K: Key> ConvertRepo<S> for ValueRepo<S, K> {
-    fn from_repo(mut repository: ObjectRepo<S>) -> crate::Result<Self> {
+impl<K: Key> ConvertRepo for ValueRepo<K> {
+    fn from_repo(mut repository: ObjectRepo) -> crate::Result<Self> {
         if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the table of keys.
             let mut object = repository
@@ -75,13 +75,13 @@ impl<S: DataStore, K: Key> ConvertRepo<S> for ValueRepo<S, K> {
         }
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
+    fn into_repo(mut self) -> crate::Result<ObjectRepo> {
         self.repository.rollback()?;
         Ok(self.repository)
     }
 }
 
-impl<S: DataStore, K: Key> ValueRepo<S, K> {
+impl<K: Key> ValueRepo<K> {
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
@@ -257,7 +257,7 @@ impl<S: DataStore, K: Key> ValueRepo<S, K> {
     /// Return information about the repository in `store` without opening it.
     ///
     /// See `ObjectRepo::peek_info` for details.
-    pub fn peek_info(store: &mut S) -> crate::Result<RepoInfo> {
+    pub fn peek_info(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
         ObjectRepo::peek_info(store)
     }
 }

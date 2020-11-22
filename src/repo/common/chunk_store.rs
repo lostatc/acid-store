@@ -18,8 +18,6 @@ use std::collections::HashSet;
 
 use uuid::Uuid;
 
-use crate::store::DataStore;
-
 use super::id_table::UniqueId;
 use super::object::{chunk_hash, Chunk};
 use super::state::{ChunkInfo, RepoState};
@@ -33,7 +31,7 @@ pub trait ChunkEncoder {
     fn decode_data(&self, data: &[u8]) -> crate::Result<Vec<u8>>;
 }
 
-impl<S: DataStore> ChunkEncoder for RepoState<S> {
+impl ChunkEncoder for RepoState {
     fn encode_data(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
         let compressed_data = self.metadata.compression.compress(data)?;
 
@@ -59,7 +57,7 @@ pub trait ChunkReader {
     fn read_chunk(&self, chunk: Chunk) -> crate::Result<Vec<u8>>;
 }
 
-impl<S: DataStore> ChunkReader for RepoState<S> {
+impl ChunkReader for RepoState {
     fn read_chunk(&self, chunk: Chunk) -> crate::Result<Vec<u8>> {
         let chunk_info = self.chunks.get(&chunk).ok_or(crate::Error::InvalidData)?;
         let chunk = self
@@ -85,7 +83,7 @@ pub trait ChunkWriter {
     fn write_chunk(&mut self, data: &[u8], id: UniqueId) -> crate::Result<Chunk>;
 }
 
-impl<S: DataStore> ChunkWriter for RepoState<S> {
+impl ChunkWriter for RepoState {
     fn write_chunk(&mut self, data: &[u8], id: UniqueId) -> crate::Result<Chunk> {
         // Get a checksum of the unencoded data.
         let chunk = Chunk {

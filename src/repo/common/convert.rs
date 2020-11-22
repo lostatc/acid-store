@@ -16,14 +16,12 @@
 
 use uuid::Uuid;
 
-use crate::store::DataStore;
-
 use super::repository::ObjectRepo;
 
 /// A repository which is backed by an `ObjectRepo`.
 ///
 /// Repository types which implement this trait can be opened or created using `OpenOptions`.
-pub trait ConvertRepo<S: DataStore> {
+pub trait ConvertRepo {
     /// Convert the given `repository` to a repository of this type.
     ///
     /// # Errors
@@ -35,7 +33,7 @@ pub trait ConvertRepo<S: DataStore> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    fn from_repo(repository: ObjectRepo<S>) -> crate::Result<Self>
+    fn from_repo(repository: ObjectRepo) -> crate::Result<Self>
     where
         Self: Sized;
 
@@ -48,7 +46,7 @@ pub trait ConvertRepo<S: DataStore> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    fn into_repo(self) -> crate::Result<ObjectRepo<S>>;
+    fn into_repo(self) -> crate::Result<ObjectRepo>;
 
     /// Switch from one instance of a repository to another.
     ///
@@ -60,7 +58,7 @@ pub trait ConvertRepo<S: DataStore> {
     /// instances.
     fn switch_instance<R>(self, id: Uuid) -> crate::Result<R>
     where
-        R: ConvertRepo<S>,
+        R: ConvertRepo,
         Self: Sized,
     {
         let mut repo = self.into_repo()?;
