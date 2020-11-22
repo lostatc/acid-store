@@ -18,10 +18,9 @@
 //!
 //! This module contains the `ContentRepo` repository type.
 //!
-//! This is repository which allows for accessing data by its cryptographic hash. See
-//! `HashAlgorithm` for a list of supported hash algorithms. The default hash algorithm is
-//! 256-bit BLAKE2b, but this can be changed using `ContentRepo::change_algorithm` once the
-//! repository is created.
+//! This is a repository which allows for accessing data by its cryptographic hash. See
+//! `HashAlgorithm` for a list of supported hash algorithms. The default hash algorithm is BLAKE3,
+//! but this can be changed using `ContentRepo::change_algorithm` once the repository is created.
 //!
 //! Like other repositories, changes made to the repository are not persisted to the data store
 //! until `ContentRepo::commit` is called. For details about deduplication, compression, encryption,

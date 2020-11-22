@@ -22,10 +22,11 @@ use hex_literal::hex;
 use uuid::Uuid;
 
 use crate::repo::common::check_version;
-use crate::repo::content::hash::HashAlgorithm;
 use crate::repo::object::{ObjectHandle, ObjectRepo};
 use crate::repo::{ConvertRepo, ReadOnlyObject, RepoInfo};
 use crate::store::DataStore;
+
+use super::hash::{HashAlgorithm, BUFFER_SIZE};
 
 /// The ID of the managed object which stores the table of keys for the repository.
 const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("c5319b76 bd43 11ea 90d4 971a5898591d"));
@@ -36,11 +37,8 @@ const ALGORITHM_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("0e4d5b00 bd45 11ea 9fe3
 /// The current repository format version ID.
 const VERSION_ID: Uuid = Uuid::from_bytes(hex!("e94d5a1e bd42 11ea bbec ebbbc536f7fb"));
 
-/// The size of the buffer to use when copying bytes.
-const BUFFER_SIZE: usize = 4096;
-
 /// The default hash algorithm to use for `ContentRepo`.
-const DEFAULT_ALGORITHM: HashAlgorithm = HashAlgorithm::Blake2b(32);
+const DEFAULT_ALGORITHM: HashAlgorithm = HashAlgorithm::Blake3;
 
 /// A content-addressable storage.
 #[derive(Debug)]
@@ -138,7 +136,7 @@ impl<S: DataStore> ContentRepo<S> {
             if bytes_read == 0 {
                 break;
             }
-            digest.input(&buffer[..bytes_read]);
+            digest.update(&buffer[..bytes_read]);
             stage_object.write_all(&buffer[..bytes_read])?;
         }
 
