@@ -17,7 +17,7 @@
 #![cfg(feature = "store-directory")]
 
 use std::fs::{create_dir_all, read_dir, remove_file, rename, File};
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use uuid::Uuid;
@@ -97,9 +97,7 @@ impl DirectoryStore {
 }
 
 impl DataStore for DirectoryStore {
-    type Error = io::Error;
-
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> Result<(), Self::Error> {
+    fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()> {
         let staging_path = self.staging_path(id);
         let block_path = self.block_path(id);
 
@@ -119,7 +117,7 @@ impl DataStore for DirectoryStore {
         Ok(())
     }
 
-    fn read_block(&mut self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error> {
+    fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>> {
         let block_path = self.block_path(id);
 
         if block_path.exists() {
@@ -132,17 +130,17 @@ impl DataStore for DirectoryStore {
         }
     }
 
-    fn remove_block(&mut self, id: Uuid) -> Result<(), Self::Error> {
+    fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()> {
         let block_path = self.block_path(id);
 
         if block_path.exists() {
-            remove_file(self.block_path(id))
-        } else {
-            Ok(())
+            remove_file(self.block_path(id))?;
         }
+
+        Ok(())
     }
 
-    fn list_blocks(&mut self) -> Result<Vec<Uuid>, Self::Error> {
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>> {
         let mut block_ids = Vec::new();
 
         for directory_entry in read_dir(self.path.join(BLOCKS_DIRECTORY))? {

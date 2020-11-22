@@ -154,21 +154,19 @@ impl RcloneStore {
 }
 
 impl DataStore for RcloneStore {
-    type Error = io::Error;
-
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> Result<(), Self::Error> {
+    fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()> {
         self.sftp_store.write_block(id, data)
     }
 
-    fn read_block(&mut self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error> {
+    fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>> {
         self.sftp_store.read_block(id)
     }
 
-    fn remove_block(&mut self, id: Uuid) -> Result<(), Self::Error> {
+    fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()> {
         self.sftp_store.remove_block(id)
     }
 
-    fn list_blocks(&mut self) -> Result<Vec<Uuid>, Self::Error> {
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>> {
         self.sftp_store.list_blocks()
     }
 }

@@ -98,9 +98,7 @@ impl SqliteStore {
 }
 
 impl DataStore for SqliteStore {
-    type Error = rusqlite::Error;
-
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> Result<(), Self::Error> {
+    fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()> {
         self.connection.execute(
             r#"
                 REPLACE INTO Blocks (uuid, data)
@@ -112,8 +110,9 @@ impl DataStore for SqliteStore {
         Ok(())
     }
 
-    fn read_block(&mut self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error> {
-        self.connection
+    fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>> {
+        Ok(self
+            .connection
             .query_row(
                 r#"
                     SELECT data FROM Blocks
@@ -122,10 +121,10 @@ impl DataStore for SqliteStore {
                 params![&id.as_bytes()[..]],
                 |row| row.get(0),
             )
-            .optional()
+            .optional()?)
     }
 
-    fn remove_block(&mut self, id: Uuid) -> Result<(), Self::Error> {
+    fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()> {
         self.connection.execute(
             r#"
                 DELETE FROM Blocks
@@ -137,7 +136,7 @@ impl DataStore for SqliteStore {
         Ok(())
     }
 
-    fn list_blocks(&mut self) -> Result<Vec<Uuid>, Self::Error> {
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>> {
         let mut statement = self.connection.prepare(r#"SELECT uuid FROM Blocks;"#)?;
 
         let result = statement

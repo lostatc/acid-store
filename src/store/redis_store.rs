@@ -18,7 +18,7 @@
 
 use std::fmt::{self, Debug, Formatter};
 
-use redis::{Commands, Connection, RedisError};
+use redis::{Commands, Connection};
 use uuid::Uuid;
 
 use crate::store::common::DataStore;
@@ -69,26 +69,24 @@ impl RedisStore {
 }
 
 impl DataStore for RedisStore {
-    type Error = RedisError;
-
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> Result<(), Self::Error> {
+    fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()> {
         let key_id = id.to_hyphenated().to_string();
         self.connection.set(format!("block:{}", key_id), data)?;
         Ok(())
     }
 
-    fn read_block(&mut self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error> {
+    fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>> {
         let key_id = id.to_hyphenated().to_string();
-        self.connection.get(format!("block:{}", key_id))
+        Ok(self.connection.get(format!("block:{}", key_id))?)
     }
 
-    fn remove_block(&mut self, id: Uuid) -> Result<(), Self::Error> {
+    fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()> {
         let key_id = id.to_hyphenated().to_string();
         self.connection.del(format!("block:{}", key_id))?;
         Ok(())
     }
 
-    fn list_blocks(&mut self) -> Result<Vec<Uuid>, Self::Error> {
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>> {
         let blocks = self
             .connection
             .keys::<_, Vec<String>>("block:*")?
