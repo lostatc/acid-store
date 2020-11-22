@@ -45,12 +45,12 @@ impl<T> Key for T where T: Eq + Hash + Clone + Serialize + DeserializeOwned {}
 
 /// An object store which maps keys to seekable binary blobs.
 #[derive(Debug)]
-pub struct KeyRepo<K: Key, S: DataStore> {
+pub struct KeyRepo<S: DataStore, K: Key> {
     repository: ObjectRepo<S>,
     key_table: HashMap<K, ObjectHandle>,
 }
 
-impl<K: Key, S: DataStore> ConvertRepo<S> for KeyRepo<K, S> {
+impl<S: DataStore, K: Key> ConvertRepo<S> for KeyRepo<S, K> {
     fn from_repo(mut repository: ObjectRepo<S>) -> crate::Result<Self> {
         if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the key table.
@@ -85,7 +85,7 @@ impl<K: Key, S: DataStore> ConvertRepo<S> for KeyRepo<K, S> {
     }
 }
 
-impl<K: Key, S: DataStore> KeyRepo<K, S> {
+impl<S: DataStore, K: Key> KeyRepo<S, K> {
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where

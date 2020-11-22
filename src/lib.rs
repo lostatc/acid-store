@@ -51,7 +51,7 @@
 //! fn main() -> acid_store::Result<()> {
 //!     // Create a `KeyRepo` with the default configuration that stores data in memory.
 //!     let mut repository = OpenOptions::new(MemoryStore::new())
-//!         .create_new::<KeyRepo<String, _>>()?;
+//!         .create_new::<KeyRepo<_, String>>()?;
 //!
 //!     // Insert a key into the repository and get an object which can be used to read/write data.
 //!     let mut object = repository.insert(String::from("Key"));
