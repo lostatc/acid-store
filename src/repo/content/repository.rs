@@ -42,14 +42,14 @@ const DEFAULT_ALGORITHM: HashAlgorithm = HashAlgorithm::Blake3;
 
 /// A content-addressable storage.
 #[derive(Debug)]
-pub struct ContentRepo<S: DataStore> {
-    repository: ObjectRepo<S>,
+pub struct ContentRepo {
+    repository: ObjectRepo,
     hash_table: HashMap<Vec<u8>, ObjectHandle>,
     hash_algorithm: HashAlgorithm,
 }
 
-impl<S: DataStore> ConvertRepo<S> for ContentRepo<S> {
-    fn from_repo(mut repository: ObjectRepo<S>) -> crate::Result<Self> {
+impl ConvertRepo for ContentRepo {
+    fn from_repo(mut repository: ObjectRepo) -> crate::Result<Self> {
         if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the table of content hashes.
             let mut object = repository
@@ -99,13 +99,13 @@ impl<S: DataStore> ConvertRepo<S> for ContentRepo<S> {
         }
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
+    fn into_repo(mut self) -> crate::Result<ObjectRepo> {
         self.repository.rollback()?;
         Ok(self.repository)
     }
 }
 
-impl<S: DataStore> ContentRepo<S> {
+impl ContentRepo {
     /// Return whether the repository contains an object with the given `hash`.
     pub fn contains(&self, hash: &[u8]) -> bool {
         self.hash_table.contains_key(hash)
@@ -173,7 +173,7 @@ impl<S: DataStore> ContentRepo<S> {
     /// Return a `ReadOnlyObject` for reading the data with the given `hash`.
     ///
     /// This returns `None` if there is no data with the given `hash` in the repository.
-    pub fn object(&self, hash: &[u8]) -> Option<ReadOnlyObject<S>> {
+    pub fn object(&self, hash: &[u8]) -> Option<ReadOnlyObject> {
         let handle = self.hash_table.get(hash)?;
         self.repository.unmanaged_object(handle)
     }
@@ -320,7 +320,7 @@ impl<S: DataStore> ContentRepo<S> {
     /// Return information about the repository in `store` without opening it.
     ///
     /// See `ObjectRepo::peek_info` for details.
-    pub fn peek_info(store: &mut S) -> crate::Result<RepoInfo> {
+    pub fn peek_info(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
         ObjectRepo::peek_info(store)
     }
 }

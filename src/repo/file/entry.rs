@@ -16,13 +16,14 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::metadata::FileMetadata;
 use crate::repo::file::special::SpecialType;
 use crate::repo::object::ObjectHandle;
 
+use super::metadata::FileMetadata;
+
 /// A type of file in a `FileRepo`.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FileType<T> {
+pub enum FileType<S> {
     /// A regular file.
     File,
 
@@ -30,11 +31,11 @@ pub enum FileType<T> {
     Directory,
 
     /// A special file.
-    Special(T),
+    Special(S),
 }
 
-impl<T: SpecialType> From<T> for FileType<T> {
-    fn from(file: T) -> Self {
+impl<S: SpecialType> From<S> for FileType<S> {
+    fn from(file: S) -> Self {
         FileType::Special(file)
     }
 }
@@ -46,15 +47,15 @@ impl<T: SpecialType> From<T> for FileType<T> {
 /// However, entries can also be created that have no metadata. This allows for extracting files to
 /// the file system (`FileRepo::extract`) without copying any metadata.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Entry<T, M> {
+pub struct Entry<S, M> {
     /// The type of file this entry represents.
-    pub file_type: FileType<T>,
+    pub file_type: FileType<S>,
 
     /// The metadata for the file or `None` if the entry has no metadata.
     pub metadata: Option<M>,
 }
 
-impl<T: SpecialType, M: FileMetadata> Entry<T, M> {
+impl<S: SpecialType, M: FileMetadata> Entry<S, M> {
     /// Create an `Entry` for a new regular file.
     ///
     /// The created entry will have no metadata.
@@ -78,7 +79,7 @@ impl<T: SpecialType, M: FileMetadata> Entry<T, M> {
     /// Create an `Entry` for a new special `file`.
     ///
     /// The created entry will have no metadata.
-    pub fn special(file: T) -> Self {
+    pub fn special(file: S) -> Self {
         Entry {
             file_type: FileType::Special(file),
             metadata: None,

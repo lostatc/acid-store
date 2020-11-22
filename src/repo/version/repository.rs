@@ -44,13 +44,13 @@ const VERSION_ID: Uuid = Uuid::from_bytes(hex!("b1671d9c bd51 11ea ab79 8bcf24ad
 
 /// An object store with support for content versioning.
 #[derive(Debug)]
-pub struct VersionRepo<S: DataStore, K: Key> {
-    repository: ObjectRepo<S>,
+pub struct VersionRepo<K: Key> {
+    repository: ObjectRepo,
     key_table: HashMap<K, KeyInfo>,
 }
 
-impl<S: DataStore, K: Key> ConvertRepo<S> for VersionRepo<S, K> {
-    fn from_repo(mut repository: ObjectRepo<S>) -> crate::Result<Self> {
+impl<K: Key> ConvertRepo for VersionRepo<K> {
+    fn from_repo(mut repository: ObjectRepo) -> crate::Result<Self> {
         if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the key table.
             let mut object = repository
@@ -78,13 +78,13 @@ impl<S: DataStore, K: Key> ConvertRepo<S> for VersionRepo<S, K> {
         }
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
+    fn into_repo(mut self) -> crate::Result<ObjectRepo> {
         self.repository.rollback()?;
         Ok(self.repository)
     }
 }
 
-impl<S: DataStore, K: Key> VersionRepo<S, K> {
+impl<K: Key> VersionRepo<K> {
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
@@ -98,7 +98,7 @@ impl<S: DataStore, K: Key> VersionRepo<S, K> {
     ///
     /// The returned object represents the current version of the key. If the given key already
     /// exists in the repository, this returns `None`.
-    pub fn insert(&mut self, key: K) -> Option<Object<S>> {
+    pub fn insert(&mut self, key: K) -> Option<Object> {
         if self.key_table.contains_key(&key) {
             return None;
         }
@@ -143,7 +143,7 @@ impl<S: DataStore, K: Key> VersionRepo<S, K> {
     ///
     /// The returned object provides read-only access to the data. To get read-write access, use
     /// `object_mut`.
-    pub fn object<Q>(&self, key: &Q) -> Option<ReadOnlyObject<S>>
+    pub fn object<Q>(&self, key: &Q) -> Option<ReadOnlyObject>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -158,7 +158,7 @@ impl<S: DataStore, K: Key> VersionRepo<S, K> {
     ///
     /// The returned object provides read-write access to the data. To get read-only access, use
     /// `object`.
-    pub fn object_mut<Q>(&mut self, key: &Q) -> Option<Object<S>>
+    pub fn object_mut<Q>(&mut self, key: &Q) -> Option<Object>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -232,7 +232,7 @@ impl<S: DataStore, K: Key> VersionRepo<S, K> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn version_object<Q>(&self, key: &Q, version_id: u32) -> Option<ReadOnlyObject<S>>
+    pub fn version_object<Q>(&self, key: &Q, version_id: u32) -> Option<ReadOnlyObject>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -379,7 +379,7 @@ impl<S: DataStore, K: Key> VersionRepo<S, K> {
     /// Return information about the repository in `store` without opening it.
     ///
     /// See `ObjectRepo::peek_info` for details.
-    pub fn peek_info(store: &mut S) -> crate::Result<RepoInfo> {
+    pub fn peek_info(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
         ObjectRepo::peek_info(store)
     }
 }

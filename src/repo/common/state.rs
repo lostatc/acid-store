@@ -43,9 +43,9 @@ pub struct ChunkInfo {
 
 /// The state associated with an `ObjectRepo`.
 #[derive(Debug)]
-pub struct RepoState<S: DataStore> {
+pub struct RepoState {
     /// The data store which backs this repository.
-    pub store: Mutex<S>,
+    pub store: Mutex<Box<dyn DataStore>>,
 
     /// The metadata for the repository.
     pub metadata: RepoMetadata,

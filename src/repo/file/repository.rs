@@ -50,29 +50,27 @@ const VERSION_ID: Uuid = Uuid::from_bytes(hex!("36f6c626 d029 11ea 91e5 4f0aba7b
 
 /// A virtual file system.
 #[derive(Debug)]
-pub struct FileRepo<S, T = NoSpecialType, M = NoMetadata>
+pub struct FileRepo<S = NoSpecialType, M = NoMetadata>
 where
-    S: DataStore,
-    T: SpecialType,
+    S: SpecialType,
     M: FileMetadata,
 {
     /// The backing repository.
-    repository: ObjectRepo<S>,
+    repository: ObjectRepo,
 
     /// A map of relative file paths to the handles of the objects containing their entries.
     path_table: PathTree<EntryHandle>,
 
     /// Phantom data.
-    marker: PhantomData<(T, M)>,
+    marker: PhantomData<(S, M)>,
 }
 
-impl<S, T, M> ConvertRepo<S> for FileRepo<S, T, M>
+impl<S, M> ConvertRepo for FileRepo<S, M>
 where
-    S: DataStore,
-    T: SpecialType,
+    S: SpecialType,
     M: FileMetadata,
 {
-    fn from_repo(mut repository: ObjectRepo<S>) -> crate::Result<Self> {
+    fn from_repo(mut repository: ObjectRepo) -> crate::Result<Self> {
         if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the table of entry paths.
             let mut object = repository
@@ -102,16 +100,15 @@ where
         }
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepo<S>> {
+    fn into_repo(mut self) -> crate::Result<ObjectRepo> {
         self.repository.rollback()?;
         Ok(self.repository)
     }
 }
 
-impl<S, T, M> FileRepo<S, T, M>
+impl<S, M> FileRepo<S, M>
 where
-    S: DataStore,
-    T: SpecialType,
+    S: SpecialType,
     M: FileMetadata,
 {
     /// Return whether there is an entry at `path`.
@@ -178,7 +175,7 @@ where
     pub fn create(
         &mut self,
         path: impl AsRef<RelativePath>,
-        entry: &Entry<T, M>,
+        entry: &Entry<S, M>,
     ) -> crate::Result<()> {
         if self.exists(&path) {
             return Err(crate::Error::AlreadyExists);
@@ -227,7 +224,7 @@ where
     pub fn create_parents(
         &mut self,
         path: impl AsRef<RelativePath>,
-        entry: &Entry<T, M>,
+        entry: &Entry<S, M>,
     ) -> crate::Result<()> {
         let parent = match path.as_ref().parent() {
             Some(parent) if parent != *EMPTY_PARENT => parent,
@@ -319,7 +316,7 @@ where
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn entry(&self, path: impl AsRef<RelativePath>) -> crate::Result<Entry<T, M>> {
+    pub fn entry(&self, path: impl AsRef<RelativePath>) -> crate::Result<Entry<S, M>> {
         let entry_handle = &self
             .path_table
             .get(path.as_ref())
@@ -353,7 +350,7 @@ where
             .repository
             .unmanaged_object_mut(&mut entry_handle.entry)
             .unwrap();
-        let mut entry: Entry<T, M> = object.deserialize()?;
+        let mut entry: Entry<S, M> = object.deserialize()?;
         entry.metadata = metadata;
         object.serialize(&entry)
     }
@@ -366,7 +363,7 @@ where
     /// # Errors
     /// - `Error::NotFound`: There is no entry with the given `path`.
     /// - `Error::NotFile`: The entry does not represent a regular file.
-    pub fn open(&self, path: impl AsRef<RelativePath>) -> crate::Result<ReadOnlyObject<S>> {
+    pub fn open(&self, path: impl AsRef<RelativePath>) -> crate::Result<ReadOnlyObject> {
         let entry_handle = self
             .path_table
             .get(path.as_ref())
@@ -386,7 +383,7 @@ where
     /// # Errors
     /// - `Error::NotFound`: There is no entry with the given `path`.
     /// - `Error::NotFile`: The entry does not represent a regular file.
-    pub fn open_mut(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<Object<S>> {
+    pub fn open_mut(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<Object> {
         let entry_handle = self
             .path_table
             .get_mut(path.as_ref())
@@ -587,7 +584,7 @@ where
         } else if file_metadata.is_dir() {
             FileType::Directory
         } else {
-            FileType::Special(T::from_file(source.as_ref())?.ok_or(crate::Error::FileType)?)
+            FileType::Special(S::from_file(source.as_ref())?.ok_or(crate::Error::FileType)?)
         };
 
         let entry = Entry {
@@ -844,7 +841,7 @@ where
     /// Return information about the repository in `store` without opening it.
     ///
     /// See `ObjectRepo::peek_info` for details.
-    pub fn peek_info(store: &mut S) -> crate::Result<RepoInfo> {
+    pub fn peek_info(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
         ObjectRepo::peek_info(store)
     }
 }

@@ -53,18 +53,18 @@ lazy_static! {
 /// Open or create a repository from a `DataStore`.
 ///
 /// `OpenOptions` can be used to open any repository type which implements `ConvertRepo`.
-pub struct OpenOptions<S: DataStore> {
-    store: S,
+pub struct OpenOptions {
+    store: Box<dyn DataStore + 'static>,
     config: RepoConfig,
     password: Option<Vec<u8>>,
     instance: Uuid,
 }
 
-impl<S: DataStore> OpenOptions<S> {
+impl OpenOptions {
     /// Create a new `OpenOptions` for opening or creating a repository backed by `store`.
-    pub fn new(store: S) -> Self {
+    pub fn new(store: impl DataStore + 'static) -> Self {
         Self {
-            store,
+            store: Box::new(store),
             config: RepoConfig::default(),
             password: None,
             instance: GLOBAL_INSTANCE,
@@ -160,10 +160,22 @@ impl<S: DataStore> OpenOptions<S> {
     /// - `Error::Io`: An I/O error occurred.
     pub fn open<R>(mut self) -> crate::Result<R>
     where
-        R: ConvertRepo<S>,
+        R: ConvertRepo,
     {
+        // Get the repository ID.
+        let serialized_metadata = match self
+            .store
+            .read_block(METADATA_BLOCK_ID)
+            .map_err(|error| crate::Error::Store(error))?
+        {
+            Some(data) => data,
+            None => return Err(crate::Error::NotFound),
+        };
+        let repository_id = from_read::<_, RepoMetadata>(serialized_metadata.as_slice())
+            .map_err(|_| crate::Error::Corrupt)?
+            .id;
+
         // Acquire a lock on the repository.
-        let repository_id = ObjectRepo::peek_info(&mut self.store)?.id();
         let lock = REPO_LOCKS
             .lock()
             .unwrap()
@@ -174,7 +186,7 @@ impl<S: DataStore> OpenOptions<S> {
         let serialized_version = self
             .store
             .read_block(VERSION_BLOCK_ID)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
+            .map_err(|error| crate::Error::Store(error))?
             .ok_or(crate::Error::NotFound)?;
         let version =
             Uuid::from_slice(serialized_version.as_slice()).map_err(|_| crate::Error::Corrupt)?;
@@ -187,7 +199,7 @@ impl<S: DataStore> OpenOptions<S> {
         let serialized_metadata = self
             .store
             .read_block(METADATA_BLOCK_ID)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
+            .map_err(|error| crate::Error::Store(error))?
             .ok_or(crate::Error::Corrupt)?;
         let metadata: RepoMetadata =
             from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
@@ -226,7 +238,7 @@ impl<S: DataStore> OpenOptions<S> {
         let encrypted_header = self
             .store
             .read_block(metadata.header_id)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
+            .map_err(|error| crate::Error::Store(error))?
             .ok_or(crate::Error::Corrupt)?;
         let compressed_header = metadata
             .encryption
@@ -278,7 +290,7 @@ impl<S: DataStore> OpenOptions<S> {
     /// - `Error::Io`: An I/O error occurred.
     pub fn create_new<R>(mut self) -> crate::Result<R>
     where
-        R: ConvertRepo<S>,
+        R: ConvertRepo,
     {
         // Return an error if a password was required but not provided.
         if self.password.is_none() && self.config.encryption != Encryption::None {
@@ -302,7 +314,7 @@ impl<S: DataStore> OpenOptions<S> {
         if self
             .store
             .read_block(VERSION_BLOCK_ID)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
+            .map_err(|error| crate::Error::Store(error))?
             .is_some()
         {
             return Err(crate::Error::AlreadyExists);
@@ -356,7 +368,7 @@ impl<S: DataStore> OpenOptions<S> {
         let header_id = Uuid::new_v4();
         self.store
             .write_block(header_id, &encrypted_header)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(error))?;
 
         // Create the repository metadata with the header block references.
         let metadata = RepoMetadata {
@@ -376,13 +388,13 @@ impl<S: DataStore> OpenOptions<S> {
         let serialized_metadata = to_vec(&metadata).expect("Could not serialize metadata.");
         self.store
             .write_block(METADATA_BLOCK_ID, &serialized_metadata)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(error))?;
 
         // Write the repository version. We do this last because this signifies that the repository
         // is done being created.
         self.store
             .write_block(VERSION_BLOCK_ID, VERSION_ID.as_bytes())
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(error))?;
 
         let Header {
             chunks,
@@ -426,12 +438,12 @@ impl<S: DataStore> OpenOptions<S> {
     /// - `Error::Io`: An I/O error occurred.
     pub fn create<R>(mut self) -> crate::Result<R>
     where
-        R: ConvertRepo<S>,
+        R: ConvertRepo,
     {
         if self
             .store
             .read_block(VERSION_BLOCK_ID)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
+            .map_err(|error| crate::Error::Store(error))?
             .is_some()
         {
             self.open()
