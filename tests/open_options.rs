@@ -175,7 +175,7 @@ fn opening_locked_repo_errs() -> anyhow::Result<()> {
 
 #[test]
 fn opening_existing_repo_of_different_type_errs() -> anyhow::Result<()> {
-    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<_, String>>()?;
     let new_repo =
         OpenOptions::new(initial_repo.into_repo()?.into_store()).open::<ContentRepo<_>>();
     assert!(matches!(
@@ -183,24 +183,24 @@ fn opening_existing_repo_of_different_type_errs() -> anyhow::Result<()> {
         Err(acid_store::Error::UnsupportedFormat)
     ));
 
-    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<_, String>>()?;
     let new_repo =
-        OpenOptions::new(initial_repo.into_repo()?.into_store()).open::<VersionRepo<String, _>>();
+        OpenOptions::new(initial_repo.into_repo()?.into_store()).open::<VersionRepo<_, String>>();
     assert!(matches!(
         new_repo,
         Err(acid_store::Error::UnsupportedFormat)
     ));
 
-    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<_, String>>()?;
     let new_repo = OpenOptions::new(initial_repo.into_repo()?.into_store()).open::<FileRepo<_>>();
     assert!(matches!(
         new_repo,
         Err(acid_store::Error::UnsupportedFormat)
     ));
 
-    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<_, String>>()?;
     let new_repo =
-        OpenOptions::new(initial_repo.into_repo()?.into_store()).open::<ValueRepo<String, _>>();
+        OpenOptions::new(initial_repo.into_repo()?.into_store()).open::<ValueRepo<_, String>>();
     assert!(matches!(
         new_repo,
         Err(acid_store::Error::UnsupportedFormat)
@@ -211,7 +211,7 @@ fn opening_existing_repo_of_different_type_errs() -> anyhow::Result<()> {
 
 #[test]
 fn opening_or_creating_existing_repo_of_different_type_errs() -> anyhow::Result<()> {
-    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<_, String>>()?;
     let new_repo =
         OpenOptions::new(initial_repo.into_repo()?.into_store()).create::<ContentRepo<_>>();
     assert!(matches!(
@@ -219,24 +219,24 @@ fn opening_or_creating_existing_repo_of_different_type_errs() -> anyhow::Result<
         Err(acid_store::Error::UnsupportedFormat)
     ));
 
-    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<_, String>>()?;
     let new_repo =
-        OpenOptions::new(initial_repo.into_repo()?.into_store()).create::<VersionRepo<String, _>>();
+        OpenOptions::new(initial_repo.into_repo()?.into_store()).create::<VersionRepo<_, String>>();
     assert!(matches!(
         new_repo,
         Err(acid_store::Error::UnsupportedFormat)
     ));
 
-    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<_, String>>()?;
     let new_repo = OpenOptions::new(initial_repo.into_repo()?.into_store()).create::<FileRepo<_>>();
     assert!(matches!(
         new_repo,
         Err(acid_store::Error::UnsupportedFormat)
     ));
 
-    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String, _>>()?;
+    let initial_repo = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<_, String>>()?;
     let new_repo =
-        OpenOptions::new(initial_repo.into_repo()?.into_store()).create::<ValueRepo<String, _>>();
+        OpenOptions::new(initial_repo.into_repo()?.into_store()).create::<ValueRepo<_, String>>();
     assert!(matches!(
         new_repo,
         Err(acid_store::Error::UnsupportedFormat)

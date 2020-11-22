@@ -44,12 +44,12 @@ const VERSION_ID: Uuid = Uuid::from_bytes(hex!("b1671d9c bd51 11ea ab79 8bcf24ad
 
 /// An object store with support for content versioning.
 #[derive(Debug)]
-pub struct VersionRepo<K: Key, S: DataStore> {
+pub struct VersionRepo<S: DataStore, K: Key> {
     repository: ObjectRepo<S>,
     key_table: HashMap<K, KeyInfo>,
 }
 
-impl<K: Key, S: DataStore> ConvertRepo<S> for VersionRepo<K, S> {
+impl<S: DataStore, K: Key> ConvertRepo<S> for VersionRepo<S, K> {
     fn from_repo(mut repository: ObjectRepo<S>) -> crate::Result<Self> {
         if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the key table.
@@ -84,7 +84,7 @@ impl<K: Key, S: DataStore> ConvertRepo<S> for VersionRepo<K, S> {
     }
 }
 
-impl<K: Key, S: DataStore> VersionRepo<K, S> {
+impl<S: DataStore, K: Key> VersionRepo<S, K> {
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where

@@ -41,12 +41,12 @@ const VERSION_ID: Uuid = Uuid::from_bytes(hex!("7457459c bd4e 11ea 8dad 67ac9eea
 
 /// A persistent, heterogeneous, map-like collection.
 #[derive(Debug)]
-pub struct ValueRepo<K: Key, S: DataStore> {
+pub struct ValueRepo<S: DataStore, K: Key> {
     repository: ObjectRepo<S>,
     key_table: HashMap<K, ObjectHandle>,
 }
 
-impl<K: Key, S: DataStore> ConvertRepo<S> for ValueRepo<K, S> {
+impl<S: DataStore, K: Key> ConvertRepo<S> for ValueRepo<S, K> {
     fn from_repo(mut repository: ObjectRepo<S>) -> crate::Result<Self> {
         if check_version(&mut repository, VERSION_ID)? {
             // Read and deserialize the table of keys.
@@ -81,7 +81,7 @@ impl<K: Key, S: DataStore> ConvertRepo<S> for ValueRepo<K, S> {
     }
 }
 
-impl<K: Key, S: DataStore> ValueRepo<K, S> {
+impl<S: DataStore, K: Key> ValueRepo<S, K> {
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
