@@ -16,95 +16,122 @@
 
 use std::io::Read;
 
-use blake2::{VarBlake2b, VarBlake2s};
-use digest::{Digest, FixedOutput, Input, VariableOutput};
+use blake3::Hasher as Blake3;
+use digest::{Digest, FixedOutput, Update, VariableOutput};
 use serde::{Deserialize, Serialize};
-use sha2::{Sha224, Sha256, Sha384, Sha512, Sha512Trunc224, Sha512Trunc256};
-use sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512};
+
+#[cfg(feature = "hash-algorithms")]
+use {
+    blake2::{VarBlake2b, VarBlake2s},
+    sha2::{Sha224, Sha256, Sha384, Sha512, Sha512Trunc224, Sha512Trunc256},
+    sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512},
+};
 
 /// The size of the buffer to use when copying bytes.
-const BUFFER_SIZE: usize = 4096;
+///
+/// We use a 16KiB buffer because that is the minimum size recommended to make use of SIMD
+/// instruction sets with BLAKE3.
+pub(super) const BUFFER_SIZE: usize = 1024 * 16;
 
 /// A simple digest which supports variable-size output.
 ///
 /// We need this trait because `digest::Digest` does not support variable-sized output.
 pub trait SimpleDigest {
-    fn input(&mut self, data: &[u8]);
+    fn update(&mut self, data: &[u8]);
 
     fn result(self: Box<Self>) -> Vec<u8>;
 }
 
-struct FixedDigest<T: Input + FixedOutput>(T);
+struct FixedDigest<T: Update + FixedOutput>(T);
 
-impl<T: Input + FixedOutput> SimpleDigest for FixedDigest<T> {
-    fn input(&mut self, data: &[u8]) {
-        self.0.input(data)
+impl<T: Update + FixedOutput> SimpleDigest for FixedDigest<T> {
+    fn update(&mut self, data: &[u8]) {
+        self.0.update(data)
     }
 
     fn result(self: Box<Self>) -> Vec<u8> {
-        self.0.fixed_result().to_vec()
+        self.0.finalize_fixed().to_vec()
     }
 }
 
-struct VariableDigest<T: Input + VariableOutput>(T);
+struct VariableDigest<T: Update + VariableOutput>(T);
 
-impl<T: Input + VariableOutput> SimpleDigest for VariableDigest<T> {
-    fn input(&mut self, data: &[u8]) {
-        self.0.input(data)
+impl<T: Update + VariableOutput> SimpleDigest for VariableDigest<T> {
+    fn update(&mut self, data: &[u8]) {
+        self.0.update(data)
     }
 
     fn result(self: Box<Self>) -> Vec<u8> {
-        self.0.vec_result()
+        self.0.finalize_boxed().to_vec()
     }
 }
 
 /// A cryptographic hash algorithm.
+///
+/// The `hash-algorithms` cargo feature is required to use any hash algorithms other than
+/// `HashAlgorithm::Blake3`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum HashAlgorithm {
     /// SHA-224
+    #[cfg(feature = "hash-algorithms")]
     Sha224,
 
     /// SHA-256
+    #[cfg(feature = "hash-algorithms")]
     Sha256,
 
     /// SHA-384
+    #[cfg(feature = "hash-algorithms")]
     Sha384,
 
     /// SHA-512
+    #[cfg(feature = "hash-algorithms")]
     Sha512,
 
     /// SHA-512/224
+    #[cfg(feature = "hash-algorithms")]
     Sha512Trunc224,
 
     /// SHA-512/256
+    #[cfg(feature = "hash-algorithms")]
     Sha512Trunc256,
 
     /// SHA3-224
+    #[cfg(feature = "hash-algorithms")]
     Sha3_224,
 
     /// SHA3-256
+    #[cfg(feature = "hash-algorithms")]
     Sha3_256,
 
     /// SHA3-384
+    #[cfg(feature = "hash-algorithms")]
     Sha3_384,
 
     /// SHA3-512
+    #[cfg(feature = "hash-algorithms")]
     Sha3_512,
 
     /// BLAKE2b
     ///
     /// This accepts a digest size in the range of 1-64 bytes.
+    #[cfg(feature = "hash-algorithms")]
     Blake2b(usize),
 
     /// BLAKE2s
     ///
     /// This accepts a digest size in the range of 1-32 bytes.
+    #[cfg(feature = "hash-algorithms")]
     Blake2s(usize),
+
+    /// BLAKE3
+    Blake3,
 }
 
 impl HashAlgorithm {
     /// The output size of the hash algorithm in bytes.
+    #[cfg(feature = "hash-algorithms")]
     pub fn output_size(&self) -> usize {
         match self {
             HashAlgorithm::Sha224 => Sha224::output_size(),
@@ -119,7 +146,14 @@ impl HashAlgorithm {
             HashAlgorithm::Sha3_512 => Sha3_512::output_size(),
             HashAlgorithm::Blake2b(size) => *size,
             HashAlgorithm::Blake2s(size) => *size,
+            HashAlgorithm::Blake3 => Blake3::output_size(),
         }
+    }
+
+    /// The output size of the hash algorithm in bytes.
+    #[cfg(not(feature = "hash-algorithms"))]
+    pub fn output_size(&self) -> usize {
+        Blake3::output_size()
     }
 
     /// Compute and return the hash of the given `data` using this hash algorithm.
@@ -136,12 +170,13 @@ impl HashAlgorithm {
             if bytes_read == 0 {
                 break;
             }
-            digest.input(&buffer[..bytes_read]);
+            digest.update(&buffer[..bytes_read]);
         }
 
         Ok(digest.result())
     }
 
+    #[cfg(feature = "hash-algorithms")]
     pub(super) fn digest(&self) -> Box<dyn SimpleDigest> {
         match self {
             HashAlgorithm::Sha224 => Box::new(FixedDigest(Sha224::default())),
@@ -160,6 +195,12 @@ impl HashAlgorithm {
             HashAlgorithm::Blake2s(size) => Box::new(VariableDigest(
                 VarBlake2s::new(*size).expect("Invalid digest size for BLAKE2s."),
             )),
+            HashAlgorithm::Blake3 => Box::new(FixedDigest(Blake3::default())),
         }
+    }
+
+    #[cfg(not(feature = "hash-algorithms"))]
+    pub(super) fn digest(&self) -> Box<dyn SimpleDigest> {
+        Box::new(FixedDigest(Blake3::default()))
     }
 }

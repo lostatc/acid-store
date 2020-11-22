@@ -83,9 +83,10 @@
 //!
 //! Types | Cargo Feature | Default
 //! --- | --- | ---
-//! `Encryption::XChaCha20Poly1305` | `encryption` | No
-//! `Compression::Deflate`, `Compression::Lzma`, `Compression::Lz4` | `compression` | No
+//! All `Encryption` variants except `Encryption::None` | `encryption` | No
+//! All `Compression` variants except `Compression::None` | `compression` | No
 //! `CommonMetadata`, `UnixMetadata`, `AccessQualifier`, `UnixSpecialType` | `file-metadata` | No
+//! All `HashAlgorithm` variants except `HashAlgorithm::Blake3` | `hash-algorithms` | No
 //! `DirectoryStore` | `store-directory` | Yes
 //! `SqliteStore` | `store-sqlite` | No
 //! `RedisStore` | `store-redis` | No

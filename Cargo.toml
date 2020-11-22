@@ -31,17 +31,17 @@ rusqlite = { version = "0.22.0", features = ["bundled"], optional = true }
 redis = { version = "0.15.1", optional = true }
 
 # Amazon S3
-rust-s3 =  { version = "0.18.11", optional = true }
+rust-s3 = { version = "0.18.11", optional = true }
 
 # Sftp
 ssh2 = { version = "0.8.2", features = ["vendored-openssl"], optional = true }
 
 # Hashing
-digest = "0.8.1"
+digest = "0.9.0"
 blake3 = "0.3.7"
-blake2 = "0.8.1"
-sha2 = "0.8.1"
-sha3 = "0.8.2"
+blake2 = { version = "0.9.1", optional = true }
+sha2 = { version = "0.9.2", optional = true }
+sha3 = { version = "0.9.1", optional = true }
 
 # Error handling
 thiserror = "1.0.9"
@@ -99,6 +99,7 @@ store-s3 = ["rust-s3"]
 store-sftp = ["ssh2"]
 store-rclone = ["store-sftp", "rand"]
 file-metadata = ["nix", "filetime", "xattr", "posix-acl"]
+hash-algorithms = ["blake2", "sha2", "sha3"]
 compression = ["flate2", "xz2", "lz4"]
 encryption = ["sodiumoxide", "rand"]
 
