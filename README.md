@@ -70,12 +70,12 @@ OS | Linux 5.8
 
 ### Results
 
-Encryption | Chunking | Read | Write
---- | --- | --- | ---
-None | Fixed | 2700 MiB/s | 710 MiB/s
-XChaCha20-Poly1305 | Fixed | 870 MiB/s | 425 MiB/s
-None | ZPAQ | 2290 MiB/s | 355 MiB/s
-XChaCha20-Poly1305 | ZPAQ | 845 MiB/s | 270 MiB/s
+Chunking | Encryption | Compression | Read | Write
+--- | --- | --- | --- | ---
+Fixed | None | None | 2640 MiB/s | 1425 MiB/s
+Fixed | XChaCha20-Poly1305 | None | 865 MiB/s | 610 MiB/s
+ZPAQ | None | None | 2275 MiB/s | 480 MiB/s
+ZPAQ | XChaCha20-Poly1305 | None | 840 MiB/s | 340 MiB/s
 
 ## Contributing
 
