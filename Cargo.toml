@@ -38,6 +38,7 @@ ssh2 = { version = "0.8.2", features = ["vendored-openssl"], optional = true }
 
 # Hashing
 digest = "0.8.1"
+blake3 = "0.3.7"
 blake2 = "0.8.1"
 sha2 = "0.8.1"
 sha3 = "0.8.2"

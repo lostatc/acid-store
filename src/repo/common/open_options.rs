@@ -43,7 +43,7 @@ const GLOBAL_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92b 031
 ///
 /// This must be changed any time a backwards-incompatible change is made to the repository
 /// format.
-const VERSION_ID: Uuid = Uuid::from_bytes(hex!("aca51c7b 6456 4d9a 9149 320df667a7e1"));
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("62c2b71d b8a7 454c a55a e4a47effb744"));
 
 lazy_static! {
     /// A table of locks on repositories.
