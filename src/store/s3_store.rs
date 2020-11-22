@@ -18,7 +18,6 @@
 
 use hex_literal::hex;
 use s3::bucket::Bucket;
-use s3::error::S3Error;
 use uuid::Uuid;
 
 use super::common::DataStore;
@@ -112,16 +111,14 @@ impl S3Store {
 }
 
 impl DataStore for S3Store {
-    type Error = S3Error;
-
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> Result<(), Self::Error> {
+    fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()> {
         let block_path = self.block_path(id);
         self.bucket
             .put_object(&block_path, data, BINARY_CONTENT_TYPE)?;
         Ok(())
     }
 
-    fn read_block(&mut self, id: Uuid) -> Result<Option<Vec<u8>>, Self::Error> {
+    fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>> {
         let block_path = self.block_path(id);
         let (bytes, code) = self.bucket.get_object(&block_path)?;
         if code == NOT_FOUND_CODE {
@@ -131,13 +128,13 @@ impl DataStore for S3Store {
         }
     }
 
-    fn remove_block(&mut self, id: Uuid) -> Result<(), Self::Error> {
+    fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()> {
         let block_path = self.block_path(id);
         self.bucket.delete_object(&block_path)?;
         Ok(())
     }
 
-    fn list_blocks(&mut self) -> Result<Vec<Uuid>, Self::Error> {
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>> {
         let blocks_path = join_key!(self.prefix, BLOCK_PREFIX) + SEPARATOR;
         let block_ids = self
             .bucket

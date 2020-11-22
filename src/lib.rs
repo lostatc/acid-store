@@ -98,6 +98,7 @@
 
 #![allow(dead_code)]
 
+pub use anyhow;
 pub use uuid;
 
 pub use error::{Error, Result};
