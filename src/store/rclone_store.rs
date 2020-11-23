@@ -18,27 +18,24 @@
 
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream, UdpSocket};
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::thread::sleep;
 use std::time::Duration;
 
 use rand::distributions::Alphanumeric;
 use rand::Rng;
-use secrecy::{ExposeSecret, Secret, SecretString};
-use ssh2::Session;
 use uuid::Uuid;
 
+use crate::store::sftp_store::{SftpAuth, SftpConfig};
 use crate::store::{DataStore, SftpStore};
 
 /// Generate a random secure password for the SFTP server.
-fn generate_password(length: u32) -> SecretString {
-    Secret::new(
-        rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(length as usize)
-            .collect(),
-    )
+fn generate_password(length: u32) -> String {
+    rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(length as usize)
+        .collect()
 }
 
 /// Return an unused ephemeral port number.
@@ -59,7 +56,7 @@ const SSH_USERNAME: &str = "rclone";
 const CONNECT_WAIT_TIME: Duration = Duration::from_millis(100);
 
 /// Serve the rclone remote over SFTP and return the server process.
-fn serve(port: u16, password: &SecretString, config: &str) -> io::Result<Child> {
+fn serve(port: u16, password: &str, config: &str) -> io::Result<Child> {
     Command::new("rclone")
         .args(&[
             "serve",
@@ -71,13 +68,29 @@ fn serve(port: u16, password: &SecretString, config: &str) -> io::Result<Child> 
             "--user",
             SSH_USERNAME,
             "--pass",
-            password.expose_secret(),
+            password,
             config,
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())
         .spawn()
+}
+
+/// Wait for a local TCP connection on the given `port` to connect and then drop the connection.
+fn wait_for_connection(port: u16) -> io::Result<()> {
+    loop {
+        match TcpStream::connect(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)) {
+            Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => {
+                sleep(CONNECT_WAIT_TIME);
+                continue;
+            }
+            Err(error) => return Err(error.into()),
+            Ok(_) => break,
+        }
+    }
+
+    Ok(())
 }
 
 /// A `DataStore` which stores data in cloud storage using rclone.
@@ -108,43 +121,22 @@ impl RcloneStore {
     /// library.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn new(config: String) -> crate::Result<Self> {
-        // Serve the rclone remote over SFTP.
+    pub fn new(config: &str) -> crate::Result<Self> {
+        // Serve the rclone remote over SFTP and wait for the server to start.
         let port = ephemeral_port()?;
         let password = generate_password(PASSWORD_LENGTH);
-        let server_process = serve(port, &password, &config)?;
+        let server_process = serve(port, &password, config)?;
+        wait_for_connection(port)?;
 
-        // Attempt to connect to the SFTP server while we wait for it to start up.
-        let tcp_stream: TcpStream;
-        loop {
-            match TcpStream::connect(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)) {
-                Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => {
-                    sleep(CONNECT_WAIT_TIME);
-                    continue;
-                }
-                Err(error) => return Err(error.into()),
-                Ok(tcp) => {
-                    tcp_stream = tcp;
-                    break;
-                }
-            }
-        }
+        let config = SftpConfig {
+            addr: SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into(),
+            auth: SftpAuth::Password {
+                username: SSH_USERNAME.to_string(),
+                password,
+            },
+        };
 
-        // Connect the SFTP client.
-        let mut session =
-            Session::new().map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        session.set_tcp_stream(tcp_stream);
-        session
-            .handshake()
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        session
-            .userauth_password(SSH_USERNAME, password.expose_secret())
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        let sftp = session
-            .sftp()
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-
-        let sftp_store = SftpStore::new(sftp, PathBuf::from(""))?;
+        let sftp_store = SftpStore::new(&config, Path::new(""))?;
 
         Ok(Self {
             sftp_store,

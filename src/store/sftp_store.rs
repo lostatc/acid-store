@@ -18,9 +18,11 @@
 
 use std::fmt::{self, Debug, Formatter};
 use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 
-use ssh2::{self, RenameFlags, Sftp};
+use anyhow::anyhow;
+use ssh2::{self, RenameFlags, Session, Sftp};
 use uuid::Uuid;
 
 use super::common::DataStore;
@@ -33,6 +35,54 @@ const BLOCKS_DIRECTORY: &str = "blocks";
 const STAGING_DIRECTORY: &str = "stage";
 const VERSION_FILE: &str = "version";
 
+/// The authentication for an SSH connection.
+pub enum SftpAuth {
+    /// Authenticate with a password.
+    Password {
+        /// The username to authenticate with.
+        username: String,
+
+        /// The password to authenticate with.
+        password: String,
+    },
+
+    /// Authenticate with a private key.
+    Key {
+        /// The username to authenticate with.
+        username: String,
+
+        /// The optional path of the public key file.
+        public_key: Option<PathBuf>,
+
+        /// The path of the PEM-encoded private key file.
+        private_key: PathBuf,
+
+        /// The optional password used to decrypt the private key.
+        password: Option<String>,
+    },
+
+    /// Authenticate via the system SSH agent.
+    Agent {
+        /// The username to authenticate with.
+        username: String,
+
+        /// The comment of the public key to use.
+        ///
+        /// If this is `Some`, the first public key with a comment that matches this value will be
+        /// used. Otherwise, the first public key found in the agent will be used.
+        comment: Option<String>,
+    },
+}
+
+/// The configuration for an SSH connection.
+pub struct SftpConfig {
+    /// The host and socket to connect to.
+    pub addr: SocketAddr,
+
+    /// The authentication for the connection.
+    pub auth: SftpAuth,
+}
+
 /// A `DataStore` which stores data on an SFTP server.
 ///
 /// The `store-sftp` cargo feature is required to use this.
@@ -42,10 +92,9 @@ pub struct SftpStore {
 }
 
 impl SftpStore {
-    /// Create or open an `SftpStore`.
+    /// Create or open an `SftpStore` from the given `config`.
     ///
-    /// This accepts an `sftp` value representing a connection to the server and the `path` of the
-    /// store on the server.
+    /// This accepts the `path` of the store on the server.
     ///
     /// # Errors
     /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
@@ -53,12 +102,79 @@ impl SftpStore {
     /// library.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn new(sftp: Sftp, path: PathBuf) -> crate::Result<Self> {
+    pub fn new(config: &SftpConfig, path: impl AsRef<Path>) -> crate::Result<Self> {
+        // Connect to the SSH server.
+        let stream = TcpStream::connect(config.addr)
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+        let mut session =
+            Session::new().map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+        session.set_tcp_stream(stream);
+        session
+            .handshake()
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+
+        // Perform authentication.
+        match &config.auth {
+            SftpAuth::Password { username, password } => {
+                session
+                    .userauth_password(username, password)
+                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            }
+            SftpAuth::Key {
+                username,
+                public_key,
+                private_key,
+                password,
+            } => {
+                session
+                    .userauth_pubkey_file(
+                        username,
+                        public_key.as_ref().map(|path| path.as_path()),
+                        private_key,
+                        password.as_ref().map(|str| str.as_str()),
+                    )
+                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            }
+            SftpAuth::Agent { username, comment } => match comment {
+                Some(comment) => {
+                    let mut agent = session
+                        .agent()
+                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                    agent
+                        .connect()
+                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                    agent
+                        .list_identities()
+                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                    let identities = agent
+                        .identities()
+                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                    let key = identities
+                        .iter()
+                        .find(|key| key.comment() == comment)
+                        .ok_or(anyhow!("No key with matching comment found in agent."))
+                        .map_err(|error| crate::Error::Store(error))?;
+                    agent
+                        .userauth(username, key)
+                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                }
+                None => {
+                    session
+                        .userauth_agent(username)
+                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                }
+            },
+        }
+
+        let sftp = session
+            .sftp()
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+
         // Create the directories if they don't exist.
         let directories = &[
-            &path,
-            &path.join(BLOCKS_DIRECTORY),
-            &path.join(STAGING_DIRECTORY),
+            path.as_ref().to_owned(),
+            path.as_ref().join(BLOCKS_DIRECTORY),
+            path.as_ref().join(STAGING_DIRECTORY),
         ];
         for directory in directories {
             if sftp.stat(&directory).is_err() {
@@ -67,7 +183,7 @@ impl SftpStore {
             }
         }
 
-        let version_path = path.join(VERSION_FILE);
+        let version_path = path.as_ref().join(VERSION_FILE);
 
         if sftp.stat(&version_path).is_ok() {
             // Read the version ID file.
@@ -89,7 +205,10 @@ impl SftpStore {
             version_file.write_all(CURRENT_VERSION.as_bytes())?;
         }
 
-        Ok(SftpStore { sftp, path })
+        Ok(SftpStore {
+            sftp,
+            path: path.as_ref().to_owned(),
+        })
     }
 
     /// Return the path where a block with the given `id` will be stored.
