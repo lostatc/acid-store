@@ -26,7 +26,7 @@ mod common;
 /// A serializable value to test with.
 const SERIALIZABLE_VALUE: (bool, i32) = (true, 42);
 
-fn create_repo() -> acid_store::Result<ValueRepo<MemoryStore, String>> {
+fn create_repo() -> acid_store::Result<ValueRepo<String>> {
     OpenOptions::new(MemoryStore::new()).create_new()
 }
 
@@ -35,7 +35,7 @@ fn open_repository() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.commit()?;
     let store = repository.into_repo()?.into_store();
-    OpenOptions::new(store).open::<ValueRepo<_, String>>()?;
+    OpenOptions::new(store).open::<ValueRepo<String>>()?;
     Ok(())
 }
 

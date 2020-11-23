@@ -26,7 +26,7 @@ use common::random_buffer;
 
 mod common;
 
-fn create_repo() -> acid_store::Result<ContentRepo<MemoryStore>> {
+fn create_repo() -> acid_store::Result<ContentRepo> {
     OpenOptions::new(MemoryStore::new()).create_new()
 }
 
@@ -35,7 +35,7 @@ fn open_repository() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.commit()?;
     let store = repository.into_repo()?.into_store();
-    OpenOptions::new(store).open::<ContentRepo<_>>()?;
+    OpenOptions::new(store).open::<ContentRepo>()?;
     Ok(())
 }
 

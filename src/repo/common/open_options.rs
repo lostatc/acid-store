@@ -162,20 +162,8 @@ impl OpenOptions {
     where
         R: ConvertRepo,
     {
-        // Get the repository ID.
-        let serialized_metadata = match self
-            .store
-            .read_block(METADATA_BLOCK_ID)
-            .map_err(|error| crate::Error::Store(error))?
-        {
-            Some(data) => data,
-            None => return Err(crate::Error::NotFound),
-        };
-        let repository_id = from_read::<_, RepoMetadata>(serialized_metadata.as_slice())
-            .map_err(|_| crate::Error::Corrupt)?
-            .id;
-
         // Acquire a lock on the repository.
+        let repository_id = ObjectRepo::peek_info(&mut self.store)?.id();
         let lock = REPO_LOCKS
             .lock()
             .unwrap()

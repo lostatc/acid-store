@@ -27,7 +27,7 @@ use common::{assert_contains_all, random_buffer};
 
 mod common;
 
-fn create_repo() -> acid_store::Result<ObjectRepo<MemoryStore>> {
+fn create_repo() -> acid_store::Result<ObjectRepo> {
     OpenOptions::new(MemoryStore::new()).create_new()
 }
 
@@ -263,7 +263,7 @@ fn committing_commits_all_instances() -> anyhow::Result<()> {
     repo.add_managed(id_2);
 
     repo.commit()?;
-    let mut repo = OpenOptions::new(repo.into_store()).open::<ObjectRepo<_>>()?;
+    let mut repo = OpenOptions::new(repo.into_store()).open::<ObjectRepo>()?;
 
     repo.set_instance(instance_1);
     assert!(repo.contains_managed(id_1));
@@ -276,7 +276,7 @@ fn committing_commits_all_instances() -> anyhow::Result<()> {
 
 #[test]
 fn change_password() -> anyhow::Result<()> {
-    let mut repo: ObjectRepo<_> = OpenOptions::new(MemoryStore::new())
+    let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
         .encryption(Encryption::XChaCha20Poly1305)
         .password(b"Password")
         .create_new()?;
@@ -285,14 +285,14 @@ fn change_password() -> anyhow::Result<()> {
 
     OpenOptions::new(repo.into_store())
         .password(b"New password")
-        .open::<ObjectRepo<_>>()?;
+        .open::<ObjectRepo>()?;
 
     Ok(())
 }
 
 #[test]
 fn peek_info() -> anyhow::Result<()> {
-    let repository: ObjectRepo<_> = OpenOptions::new(MemoryStore::new()).create_new()?;
+    let repository: ObjectRepo = OpenOptions::new(MemoryStore::new()).create_new()?;
     let expected_info = repository.info();
     let mut store = repository.into_store();
     let actual_info = ObjectRepo::peek_info(&mut store)?;
@@ -316,7 +316,7 @@ fn committed_changes_are_persisted() -> anyhow::Result<()> {
     repo.commit()?;
 
     // Re-open the repository.
-    let repo: ObjectRepo<_> = OpenOptions::new(repo.into_store()).open()?;
+    let repo: ObjectRepo = OpenOptions::new(repo.into_store()).open()?;
 
     // Read that data from the repository.
     let mut actual_data = Vec::with_capacity(expected_data.len());
@@ -341,7 +341,7 @@ fn uncommitted_changes_are_not_persisted() -> anyhow::Result<()> {
     drop(object);
 
     // Re-open the repository.
-    let repo: ObjectRepo<_> = OpenOptions::new(repo.into_store()).open()?;
+    let repo: ObjectRepo = OpenOptions::new(repo.into_store()).open()?;
 
     assert!(repo.unmanaged_object(&handle).is_none());
 
@@ -399,7 +399,7 @@ fn unused_data_is_reclaimed_on_commit() -> anyhow::Result<()> {
     let mut store = repo.into_repo()?.into_store();
     let original_blocks = store.list_blocks()?.len();
 
-    let mut repo = OpenOptions::new(store).open::<ObjectRepo<_>>()?;
+    let mut repo = OpenOptions::new(store).open::<ObjectRepo>()?;
     repo.remove_unmanaged(&handle);
     repo.commit()?;
 
