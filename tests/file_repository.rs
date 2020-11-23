@@ -45,7 +45,7 @@ use {
 
 mod common;
 
-fn create_repo() -> acid_store::Result<FileRepo<MemoryStore>> {
+fn create_repo() -> acid_store::Result<FileRepo> {
     OpenOptions::new(MemoryStore::new()).create_new()
 }
 
@@ -54,7 +54,7 @@ fn open_repository() -> anyhow::Result<()> {
     let mut repo = create_repo()?;
     repo.commit()?;
     let store = repo.into_repo()?.into_store();
-    OpenOptions::new(store).open::<FileRepo<_>>()?;
+    OpenOptions::new(store).open::<FileRepo>()?;
     Ok(())
 }
 
@@ -180,7 +180,7 @@ fn setting_metadata_on_nonexistent_file_errs() -> anyhow::Result<()> {
 #[test]
 #[cfg(feature = "file-metadata")]
 fn set_metadata() -> anyhow::Result<()> {
-    let mut repository: FileRepo<_, NoSpecialType, CommonMetadata> =
+    let mut repository: FileRepo<NoSpecialType, CommonMetadata> =
         OpenOptions::new(MemoryStore::new()).create_new()?;
 
     let expected_metadata = CommonMetadata {
@@ -390,7 +390,7 @@ fn archive_unix_special_files() -> anyhow::Result<()> {
     mkfifo(&fifo_path, Mode::S_IRWXU)?;
     symlink("/dev/null", &symlink_path)?;
 
-    let mut repository: FileRepo<_, _, NoMetadata> =
+    let mut repository: FileRepo<_, NoMetadata> =
         OpenOptions::new(MemoryStore::new()).create_new()?;
 
     repository.create("dest", &Entry::directory())?;
@@ -480,7 +480,7 @@ fn extract_unix_special_files() -> anyhow::Result<()> {
     let symlink_path = temp_dir.as_ref().join("symlink");
     let device_path = temp_dir.as_ref().join("device");
 
-    let mut repository: FileRepo<_, _, NoMetadata> =
+    let mut repository: FileRepo<_, NoMetadata> =
         OpenOptions::new(MemoryStore::new()).create_new()?;
 
     repository.create("fifo", &Entry::special(UnixSpecialType::NamedPipe))?;
@@ -555,7 +555,7 @@ fn write_unix_metadata() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let dest_path = temp_dir.as_ref().join("dest");
 
-    let mut repository: FileRepo<_, NoSpecialType, UnixMetadata> =
+    let mut repository: FileRepo<NoSpecialType, UnixMetadata> =
         OpenOptions::new(MemoryStore::new()).create_new()?;
 
     // This does not test extended attributes because user extended attributes are not supported
@@ -609,7 +609,7 @@ fn read_unix_metadata() -> anyhow::Result<()> {
         dest_acl.write_acl(&source_path)?;
     }
 
-    let mut repository: FileRepo<_, NoSpecialType, UnixMetadata> =
+    let mut repository: FileRepo<NoSpecialType, UnixMetadata> =
         OpenOptions::new(MemoryStore::new()).create_new()?;
 
     repository.archive(&source_path, "dest")?;
@@ -642,7 +642,7 @@ fn write_common_metadata() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let dest_path = temp_dir.as_ref().join("dest");
 
-    let mut repository: FileRepo<_, NoSpecialType, CommonMetadata> =
+    let mut repository: FileRepo<NoSpecialType, CommonMetadata> =
         OpenOptions::new(MemoryStore::new()).create_new()?;
 
     let entry_metadata = CommonMetadata {
@@ -671,7 +671,7 @@ fn read_common_metadata() -> anyhow::Result<()> {
     let source_path = temp_dir.as_ref().join("source");
     File::create(&source_path)?;
 
-    let mut repository: FileRepo<_, NoSpecialType, CommonMetadata> =
+    let mut repository: FileRepo<NoSpecialType, CommonMetadata> =
         OpenOptions::new(MemoryStore::new()).create_new()?;
 
     repository.archive(&source_path, "dest")?;

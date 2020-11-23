@@ -25,7 +25,7 @@ use common::{assert_contains_all, random_buffer};
 
 mod common;
 
-fn create_repo() -> acid_store::Result<VersionRepo<MemoryStore, String>> {
+fn create_repo() -> acid_store::Result<VersionRepo<String>> {
     OpenOptions::new(MemoryStore::new()).create_new()
 }
 
@@ -34,7 +34,7 @@ fn open_repository() -> anyhow::Result<()> {
     let mut repository = create_repo()?;
     repository.commit()?;
     let store = repository.into_repo()?.into_store();
-    OpenOptions::new(store).open::<VersionRepo<_, String>>()?;
+    OpenOptions::new(store).open::<VersionRepo<String>>()?;
     Ok(())
 }
 

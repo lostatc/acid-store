@@ -25,7 +25,7 @@ use common::random_buffer;
 
 mod common;
 
-fn create_repo() -> acid_store::Result<KeyRepo<MemoryStore, String>> {
+fn create_repo() -> acid_store::Result<KeyRepo<String>> {
     OpenOptions::new(MemoryStore::new()).create_new()
 }
 
@@ -34,7 +34,7 @@ fn open_repository() -> anyhow::Result<()> {
     let mut repo = create_repo()?;
     repo.commit()?;
     let store = repo.into_repo()?.into_store();
-    OpenOptions::new(store).open::<KeyRepo<_, String>>()?;
+    OpenOptions::new(store).open::<KeyRepo<String>>()?;
     Ok(())
 }
 
@@ -45,7 +45,7 @@ fn opening_with_wrong_key_type_errs() -> anyhow::Result<()> {
     repo.commit()?;
 
     let store = repo.into_repo()?.into_store();
-    let repo: Result<KeyRepo<_, isize>, _> = OpenOptions::new(store).open();
+    let repo: Result<KeyRepo<isize>, _> = OpenOptions::new(store).open();
 
     assert!(matches!(repo, Err(acid_store::Error::Deserialize)));
     Ok(())

@@ -36,7 +36,7 @@
 //!
 //!     fn main() -> acid_store::Result<()> {
 //!         let mut repository = OpenOptions::new(MemoryStore::new())
-//!             .create_new::<VersionRepo<_, String>>()?;
+//!             .create_new::<VersionRepo<String>>()?;
 //!
 //!         // Insert a new object and write some data to it.
 //!         let mut object = repository.insert(String::from("Key")).unwrap();

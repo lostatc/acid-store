@@ -137,7 +137,7 @@ where
     /// # use acid_store::store::MemoryStore;
     /// #
     /// # let mut repo = OpenOptions::new(MemoryStore::new())
-    /// #    .create_new::<FileRepo<_>>()
+    /// #    .create_new::<FileRepo>()
     /// #    .unwrap();
     /// #
     /// let entry_path = RelativePath::new("file");
@@ -153,7 +153,7 @@ where
     /// # use acid_store::store::MemoryStore;
     /// #
     /// # let mut repo = OpenOptions::new(MemoryStore::new())
-    /// #    .create_new::<FileRepo<_, UnixSpecialType>>()
+    /// #    .create_new::<FileRepo<UnixSpecialType>>()
     /// #    .unwrap();
     /// #
     /// let entry_path = RelativePath::new("link");
@@ -303,7 +303,7 @@ where
     /// # use acid_store::store::MemoryStore;
     /// #
     /// # let mut repo = OpenOptions::new(MemoryStore::new())
-    /// #    .create_new::<FileRepo<_>>()
+    /// #    .create_new::<FileRepo>()
     /// #    .unwrap();
     /// #
     /// let entry_path = RelativePath::new("file");
