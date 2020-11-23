@@ -16,6 +16,8 @@
 
 #![cfg(feature = "store-sqlite")]
 
+use std::path::Path;
+
 use hex_literal::hex;
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
@@ -35,7 +37,7 @@ pub struct SqliteStore {
 }
 
 impl SqliteStore {
-    /// Open or create a `SqliteStore` with the given database `connection`.
+    /// Open or create a `SqliteStore` at the given `path`.
     ///
     /// # Errors
     /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
@@ -43,7 +45,10 @@ impl SqliteStore {
     /// library.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn new(connection: Connection) -> crate::Result<Self> {
+    pub fn new(path: impl AsRef<Path>) -> crate::Result<Self> {
+        let connection = Connection::open(path)
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+
         connection
             .execute_batch(
                 r#"

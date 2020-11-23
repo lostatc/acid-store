@@ -88,9 +88,9 @@
 //! All `HashAlgorithm` variants except `HashAlgorithm::Blake3` | `hash-algorithms` | No
 //! `DirectoryStore` | `store-directory` | Yes
 //! `SqliteStore` | `store-sqlite` | No
-//! `RedisStore` | `store-redis` | No
-//! `S3Store` | `store-s3` | No
-//! `SftpStore` | `store-sftp`| No
+//! `RedisStore`, `RedisConfig`, `RedisAddr` | `store-redis` | No
+//! `S3Store`, `S3Config`, `S3Credentials`, `S3Region` | `store-s3` | No
+//! `SftpStore`, `SftpConfig`, `SftpAuth` | `store-sftp`| No
 //! `RcloneStore` | `store-rclone` | No
 //!
 //! To use a feature which is not enabled by default, you must enable it in your `Cargo.toml`.

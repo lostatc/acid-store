@@ -18,7 +18,7 @@
 
 use std::fs::{create_dir_all, read_dir, remove_file, rename, File};
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use uuid::Uuid;
 
@@ -42,7 +42,7 @@ pub struct DirectoryStore {
 }
 
 impl DirectoryStore {
-    /// Open or create a `DirectoryStore` in the given `path`.
+    /// Open or create a `DirectoryStore` at the given `path`.
     ///
     /// # Errors
     /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
@@ -50,15 +50,16 @@ impl DirectoryStore {
     /// library.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn new(path: PathBuf) -> crate::Result<Self> {
+    pub fn new(path: impl AsRef<Path>) -> crate::Result<Self> {
         // Create the blocks directory in the data store.
-        create_dir_all(&path).map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        create_dir_all(&path.join(BLOCKS_DIRECTORY))
+        create_dir_all(path.as_ref())
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        create_dir_all(&path.join(STAGING_DIRECTORY))
+        create_dir_all(path.as_ref().join(BLOCKS_DIRECTORY))
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+        create_dir_all(path.as_ref().join(STAGING_DIRECTORY))
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
-        let version_path = path.join(VERSION_FILE);
+        let version_path = path.as_ref().join(VERSION_FILE);
 
         if version_path.exists() {
             // Read the version ID file.
@@ -78,7 +79,9 @@ impl DirectoryStore {
             version_file.write_all(CURRENT_VERSION.as_bytes())?;
         }
 
-        Ok(DirectoryStore { path })
+        Ok(DirectoryStore {
+            path: path.as_ref().to_owned(),
+        })
     }
 
     /// Return the path where a block with the given `id` will be stored.

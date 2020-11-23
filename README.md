@@ -88,6 +88,7 @@ their corresponding Cargo features are enabled when running the test suite.
 | --- | --- | --- |
 | `REDIS_URL` | The `redis://` URL of the Redis server to test against. | `store-redis` |
 | `S3_BUCKET` | The name of the S3 bucket to test against. | `store-s3` |
+| `S3_REGION` | The name of the AWS region containing the S3 bucket. | `store-s3` |
 | `S3_ACCESS_KEY` | The access key for accessing the S3 bucket. | `store-s3` |
 | `S3_SECRET_KEY` | The secret key for accessing the S3 bucket. | `store-s3` |
 | `RCLONE_REMOTE` | The `<remote>:<path>` string for the rclone remote to test against. | `store-rclone` |

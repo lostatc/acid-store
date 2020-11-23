@@ -17,14 +17,39 @@
 #![cfg(feature = "store-redis")]
 
 use std::fmt::{self, Debug, Formatter};
+use std::path::PathBuf;
 
-use redis::{Commands, Connection};
+use redis::{Client, Commands, Connection, ConnectionAddr, ConnectionInfo, IntoConnectionInfo};
 use uuid::Uuid;
 
 use crate::store::common::DataStore;
 
 /// A UUID which acts as the version ID of the store format.
 const CURRENT_VERSION: &str = "b733bd82-4206-11ea-a3dc-7354076bdaf9";
+
+/// The address for a Redis connection.
+pub enum RedisAddr {
+    /// A hostname and port.
+    Tcp(String, u16),
+
+    /// The path of a Unix socket.
+    Unix(PathBuf),
+}
+
+/// The configuration for a Redis connection.
+pub struct RedisConfig {
+    /// The address to connect to.
+    pub addr: RedisAddr,
+
+    /// The database number to use. This is usually `0`.
+    pub db: i64,
+
+    /// The optional username to use for the connection.
+    pub username: Option<String>,
+
+    /// The optional password to use for the connection.
+    pub password: Option<String>,
+}
 
 /// A `DataStore` which stores data on a Redis server.
 ///
@@ -40,15 +65,12 @@ impl Debug for RedisStore {
 }
 
 impl RedisStore {
-    /// Open or create a `RedisStore` using the given `connection`.
-    ///
-    /// # Errors
-    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
-    /// this is not a valid `RedisStore` or this repository format is no longer supported by the
-    /// library.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn new(mut connection: Connection) -> crate::Result<Self> {
+    fn from_connection_info(info: ConnectionInfo) -> crate::Result<Self> {
+        let mut connection = Client::open(info)
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
+            .get_connection()
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+
         let version_response: Option<String> = connection
             .get("version")
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
@@ -65,6 +87,46 @@ impl RedisStore {
         }
 
         Ok(RedisStore { connection })
+    }
+
+    /// Open or create a `RedisStore` from the given `config`.
+    ///
+    /// # Errors
+    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
+    /// this is not a valid `RedisStore` or this repository format is no longer supported by the
+    /// library.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn new(config: RedisConfig) -> crate::Result<Self> {
+        let info = ConnectionInfo {
+            addr: Box::new(match config.addr {
+                RedisAddr::Tcp(host, port) => ConnectionAddr::Tcp(host, port),
+                RedisAddr::Unix(path) => ConnectionAddr::Unix(path),
+            }),
+            db: config.db,
+            username: config.username,
+            passwd: config.password,
+        };
+        Self::from_connection_info(info)
+    }
+
+    /// Open or create a `RedisStore` from a URL.
+    ///
+    /// For a TCP connection: `redis://[<username>][:<passwd>@]<hostname>[:port][/<db>]`
+    ///
+    /// For a Unix socket: `redis+unix:///[:<passwd>@]<path>[?db=<db>]`
+    ///
+    /// # Errors
+    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
+    /// this is not a valid `RedisStore` or this repository format is no longer supported by the
+    /// library.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn from_url(url: &str) -> crate::Result<Self> {
+        let info = url
+            .into_connection_info()
+            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+        Self::from_connection_info(info)
     }
 }
 

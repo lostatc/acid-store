@@ -31,16 +31,16 @@ pub use self::common::DataStore;
 #[cfg(feature = "store-directory")]
 pub use self::directory_store::DirectoryStore;
 pub use self::memory_store::MemoryStore;
-#[cfg(all(unix, feature = "store-rclone"))]
+#[cfg(feature = "store-rclone")]
 pub use self::rclone_store::RcloneStore;
 #[cfg(feature = "store-redis")]
-pub use {self::redis_store::RedisStore, redis};
+pub use self::redis_store::{RedisAddr, RedisConfig, RedisStore};
 #[cfg(feature = "store-s3")]
-pub use {self::s3_store::S3Store, s3};
+pub use self::s3_store::{S3Config, S3Credentials, S3Region, S3Store};
 #[cfg(feature = "store-sftp")]
-pub use {self::sftp_store::SftpStore, ssh2};
+pub use self::sftp_store::{SftpAuth, SftpConfig, SftpStore};
 #[cfg(feature = "store-sqlite")]
-pub use {self::sqlite_store::SqliteStore, rusqlite};
+pub use self::sqlite_store::SqliteStore;
 
 mod common;
 mod directory_store;
