@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#![cfg(all(unix, feature = "store-rclone"))]
+#![cfg(feature = "store-rclone")]
 
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream, UdpSocket};
