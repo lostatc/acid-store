@@ -103,7 +103,8 @@ impl RedisStore {
     /// library.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn new(config: RedisConfig) -> crate::Result<Self> {
+    pub fn new(config: &RedisConfig) -> crate::Result<Self> {
+        let config = config.to_owned();
         let info = ConnectionInfo {
             addr: Box::new(match config.addr {
                 RedisAddr::Tcp(host, port) => ConnectionAddr::Tcp(host, port),
