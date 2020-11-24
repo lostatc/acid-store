@@ -21,7 +21,7 @@ jobs:
       - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
         with:
-          args: --features 'store-directory file-metadata encryption compression' --ignore-tests
+          args: --features 'file-metadata hash-algorithms encryption compression' --ignore-tests
         env:
           REDIS_URL: redis://localhost:6379
 
