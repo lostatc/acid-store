@@ -39,7 +39,7 @@
 //! - `S3Store` stores data in an Amazon S3 bucket.
 //! - `SftpStore` stores data on an SFTP server.
 //! - `RcloneStore` stores data in a varity of cloud storage backends using
-//! [rclone](https://rclone.org/).
+//! [rclone].
 //! - `MemoryStore` stores data in memory.
 //!
 //! # Examples
@@ -80,20 +80,22 @@
 //! # Features
 //! Some functionality is gated behind cargo features.
 //!
-//! Types | Cargo Feature | Default
-//! --- | --- | ---
-//! All `Encryption` variants except `Encryption::None` | `encryption` | No
-//! All `Compression` variants except `Compression::None` | `compression` | No
-//! `CommonMetadata`, `UnixMetadata`, `AccessQualifier`, `UnixSpecialType` | `file-metadata` | No
-//! All `HashAlgorithm` variants except `HashAlgorithm::Blake3` | `hash-algorithms` | No
-//! `DirectoryStore` | `store-directory` | Yes
-//! `SqliteStore` | `store-sqlite` | No
-//! `RedisStore`, `RedisConfig`, `RedisAddr` | `store-redis` | No
-//! `S3Store`, `S3Config`, `S3Credentials`, `S3Region` | `store-s3` | No
-//! `SftpStore`, `SftpConfig`, `SftpAuth` | `store-sftp`| No
-//! `RcloneStore` | `store-rclone` | No
+//! Feature | Description | Types | Default
+//! --- | --- | --- | ---
+//! `encryption` | Encrypt repositories | All `Encryption` variants except `Encryption::None` | No
+//! `compression` | Compress repositories | All `Compression` variants except `Compression::None` | No
+//! `file-metadata` | Store file metadata and special file types in `FileRepo` | `CommonMetadata`, `UnixMetadata`, `AccessQualifier`, `UnixSpecialType` | No
+//! `hash-algorithms` | Use hash algorithms other than BLAKE3 in `ContentRepo` | All `HashAlgorithm` variants except `HashAlgorithm::Blake3` | No
+//! `store-directory` | Store data in a directory in the local file system | `DirectoryStore` | Yes
+//! `store-sqlite` | Store data in a SQLite database | `SqliteStore` | No
+//! `store-redis` | Store data on a Redis server | `RedisStore`, `RedisConfig`, `RedisAddr` | No
+//! `store-s3` | Store data in an Amazon S3 bucket | `S3Store`, `S3Config`, `S3Credentials`, `S3Region` | No
+//! `store-sftp` | Store data on an SFTP server | `SftpStore`, `SftpConfig`, `SftpAuth` | No
+//! `store-rclone` | Store data in cloud storage via [rclone] | `RcloneStore` | No
 //!
 //! To use a feature which is not enabled by default, you must enable it in your `Cargo.toml`.
+//!
+//! [rclone]: https://rclone.org/
 
 #![allow(dead_code)]
 
