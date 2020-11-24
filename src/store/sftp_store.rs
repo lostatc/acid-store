@@ -36,6 +36,8 @@ const STAGING_DIRECTORY: &str = "stage";
 const VERSION_FILE: &str = "version";
 
 /// The authentication for an SSH connection.
+///
+/// The `store-sftp` cargo feature is required to use this.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SftpAuth {
     /// Authenticate with a password.
@@ -76,6 +78,8 @@ pub enum SftpAuth {
 }
 
 /// The configuration for an SSH connection.
+///
+/// The `store-sftp` cargo feature is required to use this.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SftpConfig {
     /// The host and socket to connect to.

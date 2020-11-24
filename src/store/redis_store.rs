@@ -28,6 +28,8 @@ use crate::store::common::DataStore;
 const CURRENT_VERSION: &str = "b733bd82-4206-11ea-a3dc-7354076bdaf9";
 
 /// The address for a Redis connection.
+///
+/// The `store-redis` cargo feature is required to use this.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RedisAddr {
     /// A hostname and port.
@@ -38,6 +40,8 @@ pub enum RedisAddr {
 }
 
 /// The configuration for a Redis connection.
+///
+/// The `store-redis` cargo feature is required to use this.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RedisConfig {
     /// The address to connect to.

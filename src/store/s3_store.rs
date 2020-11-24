@@ -70,6 +70,8 @@ macro_rules! join_key {
 }
 
 /// An AWS region.
+///
+/// The `store-s3` cargo feature is required to use this.
 #[non_exhaustive]
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum S3Region {
@@ -242,6 +244,8 @@ impl S3Region {
 }
 
 /// The credentials for an S3 connection.
+///
+/// The `store-s3` cargo feature is required to use this.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum S3Credentials {
     /// Anonymous credentials for accessing public objects.
@@ -308,6 +312,8 @@ impl S3Credentials {
 }
 
 /// The configuration for an S3 connection.
+///
+/// The `store-s3` cargo feature is required to use this.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct S3Config {
     /// The name of the S3 bucket.
