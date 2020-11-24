@@ -148,7 +148,7 @@ pub enum S3Region {
 
 impl S3Region {
     /// Return the S3 region with the given `name` or `None` if there is none.
-    pub fn new(name: &str) -> Option<S3Region> {
+    pub fn from_name(name: &str) -> Option<S3Region> {
         use S3Region::*;
         Some(match name {
             "us-east-1" => UsEast1,

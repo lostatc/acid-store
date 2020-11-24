@@ -95,7 +95,7 @@ pub fn redis_store() -> anyhow::Result<RedisStore> {
 pub fn s3_store() -> anyhow::Result<S3Store> {
     let config = S3Config {
         bucket: dotenv::var("S3_BUCKET").unwrap(),
-        region: S3Region::new(&dotenv::var("S3_REGION").unwrap()).unwrap(),
+        region: S3Region::from_name(&dotenv::var("S3_REGION").unwrap()).unwrap(),
         credentials: S3Credentials::Basic {
             access_key: dotenv::var("S3_ACCESS_KEY").unwrap(),
             secret_key: dotenv::var("S3_SECRET_KEY").unwrap(),
