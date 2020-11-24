@@ -43,6 +43,8 @@ const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("a2cf16fe bd51 11ea 9785 4be
 const VERSION_ID: Uuid = Uuid::from_bytes(hex!("b1671d9c bd51 11ea ab79 8bcf24ad6a9a"));
 
 /// An object store with support for content versioning.
+///
+/// See [`crate::repo::version`] for more information.
 #[derive(Debug)]
 pub struct VersionRepo<K: Key> {
     repository: ObjectRepo,

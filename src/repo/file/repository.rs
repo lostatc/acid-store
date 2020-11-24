@@ -49,6 +49,8 @@ const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("9c114e82 bd64 11ea 9872 ab5
 const VERSION_ID: Uuid = Uuid::from_bytes(hex!("36f6c626 d029 11ea 91e5 4f0aba7bed31"));
 
 /// A virtual file system.
+///
+/// See [`crate::repo::file`] for more information.
 #[derive(Debug)]
 pub struct FileRepo<S = NoSpecialType, M = NoMetadata>
 where

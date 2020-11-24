@@ -44,6 +44,8 @@ pub trait Key: Eq + Hash + Clone + Serialize + DeserializeOwned {}
 impl<T> Key for T where T: Eq + Hash + Clone + Serialize + DeserializeOwned {}
 
 /// An object store which maps keys to seekable binary blobs.
+///
+/// See [`crate::repo::key`] for more information.
 #[derive(Debug)]
 pub struct KeyRepo<K: Key> {
     repository: ObjectRepo,

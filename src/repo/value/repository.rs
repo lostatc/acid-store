@@ -40,6 +40,8 @@ const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("69f329d6 bd4e 11ea 980a 3f2
 const VERSION_ID: Uuid = Uuid::from_bytes(hex!("7457459c bd4e 11ea 8dad 67ac9eea7160"));
 
 /// A persistent, heterogeneous, map-like collection.
+///
+/// See [`crate::repo::value`] for more information.
 #[derive(Debug)]
 pub struct ValueRepo<K: Key> {
     repository: ObjectRepo,

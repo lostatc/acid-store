@@ -22,10 +22,12 @@
 //! Those features are implemented at a higher level. Data stores are meant to be easy to implement
 //! so that providing support for new storage backends is relatively painless.
 //!
-//! All data stores implement the `DataStore` trait.
+//! All data stores implement the [`DataStore`] trait.
 //!
 //! Many of the data stores in this module are gated behind cargo features. See the crate-level
 //! documentation for more details.
+//!
+//! [`DataStore`]: crate::store::DataStore
 
 pub use self::common::DataStore;
 #[cfg(feature = "store-directory")]

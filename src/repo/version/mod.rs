@@ -16,15 +16,15 @@
 
 //! An object store with support for content versioning.
 //!
-//! This module contains the `VersionRepo` repository type.
+//! This module contains the [`VersionRepo`] repository type.
 //!
-//! This repository is an object store like `KeyRepo`, except it supports storing multiple
+//! This repository is an object store like [`KeyRepo`], except it supports storing multiple
 //! versions of each object. The current version of each object is mutable, while past versions are
 //! read-only.
 //!
 //! Like other repositories, changes made to the repository are not persisted to the data store
-//! until `VersionRepo::commit` is called. For details about deduplication, compression, encryption,
-//! and locking, see the module-level documentation for `acid_store::repo`.
+//! until [`VersionRepo::commit`] is called. For details about deduplication, compression,
+//! encryption, and locking, see the module-level documentation for [`crate::repo`].
 //!
 //! # Examples
 //! Create a version of an object, delete the object's contents, and then restore from the version.
@@ -65,6 +65,10 @@
 //!     }
 //!
 //! ```
+//!
+//! [`VersionRepo`]: crate::repo::version::VersionRepo
+//! [`VersionRepo::commit`]: crate::repo::version::VersionRepo::commit
+//! [`KeyRepo`]: crate::repo::key::KeyRepo
 
 pub use self::repository::VersionRepo;
 pub use self::version::Version;
