@@ -41,6 +41,8 @@ const VERSION_ID: Uuid = Uuid::from_bytes(hex!("e94d5a1e bd42 11ea bbec ebbbc536
 const DEFAULT_ALGORITHM: HashAlgorithm = HashAlgorithm::Blake3;
 
 /// A content-addressable storage.
+///
+/// See [`crate::repo::content`] for more information.
 #[derive(Debug)]
 pub struct ContentRepo {
     repository: ObjectRepo,

@@ -42,6 +42,8 @@ pub(super) const VERSION_BLOCK_ID: Uuid =
     Uuid::from_bytes(hex!("cbf28b1c 3550 11ea 8cb0 87d7a14efe10"));
 
 /// A low-level repository type which provides more direct access to the underlying storage.
+///
+/// See [`crate::repo::object`] for more information.
 #[derive(Debug)]
 pub struct ObjectRepo {
     /// The state for this repository.

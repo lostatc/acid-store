@@ -17,22 +17,22 @@
 //! High-level abstractions for data storage.
 //!
 //! This module provides abstractions for data storage called repositories. Each repository is
-//! backed by a `DataStore`, and provides features like encryption, compression, deduplication,
+//! backed by a [`DataStore`], and provides features like encryption, compression, deduplication,
 //! integrity checking, locking, and atomic transactions.
 //!
 //! This module contains types which are common to most repositories. The most important of these
-//! are `Object` and `ReadOnlyObject`, which provide views of data in a repository and are used to
+//! are [`Object`] and [`ReadOnlyObject`], which provide views of data in a repository and are used to
 //! read data from them and write data to them.
 //!
 //! Each sub-module of this module contains a different repository type. If you're not sure which
-//! one you should use, `KeyRepo` has the most general use-case.
+//! one you should use, [`KeyRepo`] has the most general use-case.
 //!
-//! You can open or create a repository using `OpenOptions`.
+//! You can open or create a repository using [`OpenOptions`].
 //!
 //! # Deduplication
 //! Data in a repository is transparently deduplicated using either fixed-size chunking (faster) or
 //! contend-defined chunking (better deduplication). The chunk size and chunking method are
-//! configured when you create a repository. See `Chunking` for details.
+//! configured when you create a repository. See [`Chunking`] for details.
 //!
 //! # Locking
 //! A repository cannot be open more than once simultaneously. Once a repository is opened, it is
@@ -49,7 +49,7 @@
 //! back automatically.
 //!
 //! When data in a repository is deleted, the space is not reclaimed in the backing data store until
-//! those changes are committed. See `ObjectRepo::commit` and `ObjectRepo::clean` for details.
+//! those changes are committed. See [`ObjectRepo::commit`] and [`ObjectRepo::clean`] for details.
 //!
 //! # Encryption
 //! If encryption is enabled, the Argon2id key derivation function is used to derive a key from a
@@ -64,7 +64,7 @@
 //! repository does not attempt to hide the size of chunks produced by the chunking algorithm, but
 //! information about which chunks belong to which objects is encrypted.
 //!
-//! The information in `RepoInfo` is never encrypted, and can be read without opening the
+//! The information in [`RepoInfo`] is never encrypted, and can be read without opening the
 //! repository.
 //!
 //! # Instances
@@ -73,22 +73,35 @@
 //! others.
 //!
 //! You can specify the ID of the instance you want to access when you open or create a repository
-//! using `OpenOptions`. You can also switch from one instance to another using
-//! `ConvertRepo::switch_instance`.
+//! using [`OpenOptions`]. You can also switch from one instance to another using
+//! [`ConvertRepo::switch_instance`].
 //!
 //! Different repository instances share the same underlying storage, meaning that they share
 //! the same configuration, they are encrypted using the same password, and data is deduplicated
 //! between them. This also means that only one instance of a repository can be open at a time.
 //!
 //! Instances of the same repository can be different repository types. This feature allows for
-//! having multiple repositories of different types which are backed by the same `DataStore`. For
-//! example, you could have a data store which contains both a `FileRepo` and a `VersionRepo` by
+//! having multiple repositories of different types which are backed by the same [`DataStore`]. For
+//! example, you could have a data store which contains both a [`FileRepo`] and a [`VersionRepo`] by
 //! giving them different instance IDs, and data will still be deduplicated between them.
 //!
 //! This feature can also be used to manage memory usage. The amount of memory used by a repository
 //! while it's open is typically proportional to the number of objects in the repository. If you
 //! split your data between multiple repository instances, only the currently open instance will
 //! need to store data in memory.
+//!
+//! [`DataStore`]: crate::store::DataStore
+//! [`Object`]: crate::repo::Object
+//! [`ReadOnlyObject`]: crate::repo::ReadOnlyObject
+//! [`KeyRepo`]: crate::repo::key::KeyRepo
+//! [`OpenOptions`]: crate::repo::OpenOptions
+//! [`Chunking`]: crate::repo::Chunking
+//! [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
+//! [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
+//! [`RepoInfo`]: crate::repo::RepoInfo
+//! [`ConvertRepo::switch_instance`]: crate::repo::ConvertRepo::switch_instance
+//! [`FileRepo`]: crate::repo::file::FileRepo
+//! [`VersionRepo`]: crate::repo::version::VersionRepo
 
 pub use self::common::{
     Chunking, Compression, ContentId, ConvertRepo, Encryption, Object, OpenOptions, ReadOnlyObject,
@@ -97,25 +110,25 @@ pub use self::common::{
 
 /// A low-level repository type which provides more direct access to the underlying storage.
 ///
-/// This module contains the `ObjectRepo` repository type.
+/// This module contains the [`ObjectRepo`] repository type.
 ///
 /// This repository type is mostly intended to be used to create other, higher-level repository
-/// types. All the other repository types in `acid_store::repo` are implemented on top of it. Its
+/// types. All the other repository types in [`crate::repo`] are implemented on top of it. Its
 /// API is more complicated than the other repository types, but it provides more control over how
 /// data is stored and how memory is managed.
 ///
-/// Repository types which are implemented on top of `ObjectRepo` can implement `ConvertRepo`, which
-/// allows them to be opened or created using `OpenOptions` and also allows for easily switching
+/// Repository types which are implemented on top of [`ObjectRepo`] can implement [`ConvertRepo`], which
+/// allows them to be opened or created using [`OpenOptions`] and also allows for easily switching
 /// between repository instances of different types.
 ///
 /// Like other repositories, changes made to the repository are not persisted to the data store
-/// until `ObjectRepo::commit` is called. For details about deduplication, compression, encryption,
-/// and locking, see the module-level documentation for `acid_store::repo`.
+/// until [`ObjectRepo::commit`] is called. For details about deduplication, compression, encryption,
+/// and locking, see the module-level documentation for [`crate::repo`].
 ///
 /// # Managed and unmanaged objects
-/// An `ObjectRepo` has two modes for storing data, *managed* objects and *unmanaged* objects.
+/// An [`ObjectRepo`] has two modes for storing data, *managed* objects and *unmanaged* objects.
 ///
-/// Unmanaged objects are accessed via an `ObjectHandle`. Object handles are not stored in the
+/// Unmanaged objects are accessed via an [`ObjectHandle`]. Object handles are not stored in the
 /// repository, and it's the user's responsibility to keep track of them. Without an object handle,
 /// you cannot access or remove the data associated with it.
 ///
@@ -125,13 +138,19 @@ pub use self::common::{
 ///
 /// If your repository has many objects, you may not want to store all the object handles in memory,
 /// since they take up a non-trivial amount of space. Object handles are always stored in memory for
-/// managed objects, but not necessarily for unmanaged objects. `ObjectHandle` is serializable, so
+/// managed objects, but not necessarily for unmanaged objects. [`ObjectHandle`] is serializable, so
 /// it can be stored in other managed or unmanaged objects.
 ///
-/// However, if `ObjectRepo` only had unmanaged objects, and all the object handles were
+/// However, if [`ObjectRepo`] only had unmanaged objects, and all the object handles were
 /// stored in other unmanaged objects, you would have a chicken-and-egg problem and wouldn't be able
 /// to access any data! This is where managed objects are useful. They can be used to store
 /// object handles (and other data) with a predictable UUID, potentially set at compile time.
+///
+/// [`ObjectRepo`]: crate::repo::object::ObjectRepo
+/// [`ConvertRepo`]: crate::repo::ConvertRepo
+/// [`OpenOptions`]: crate::repo::OpenOptions
+/// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
+/// [`ObjectHandle`]: crate::repo::object::ObjectHandle
 pub mod object {
     pub use super::common::{IntegrityReport, ObjectHandle, ObjectRepo};
 }

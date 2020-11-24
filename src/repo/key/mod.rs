@@ -16,14 +16,18 @@
 
 //! An object store which maps keys to seekable binary blobs.
 //!
-//! This module contains the `KeyRepo` repository type.
+//! This module contains the [`KeyRepo`] repository type.
 //!
-//! A `KeyRepo` maps keys to seekable binary blobs called objects and stores them persistently in a
-//! `DataStore`. A key is any type which implements `Key`.
+//! A [`KeyRepo`] maps keys to seekable binary blobs called objects and stores them persistently in
+//! a [`DataStore`]. A key is any type which implements `Key`.
 //!
 //! Like other repositories, changes made to the repository are not persisted to the data store
-//! until `KeyRepo::commit` is called. For details about deduplication, compression, encryption, and
-//! locking, see the module-level documentation for `acid_store::repo`.
+//! until [`KeyRepo::commit`] is called. For details about deduplication, compression, encryption, and
+//! locking, see the module-level documentation for [`crate::repo`].
+//!
+//! [`KeyRepo`]: crate::repo::key::KeyRepo
+//! [`DataStore`]: crate::store::DataStore
+//! [`KeyRepo::commit`]: crate::repo::key::KeyRepo::commit
 
 pub use self::repository::{Key, KeyRepo};
 

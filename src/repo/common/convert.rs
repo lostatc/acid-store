@@ -54,6 +54,8 @@ pub trait ConvertRepo {
     /// the `id` of the new instance, which is the same instance ID you would provide to
     /// `OpenOptions::instance`.
     ///
+    /// This rolls back any uncommitted changes before returning.
+    ///
     /// See the module-level documentation for `acid_store::repo` for more information on repository
     /// instances.
     fn switch_instance<R>(self, id: Uuid) -> crate::Result<R>
