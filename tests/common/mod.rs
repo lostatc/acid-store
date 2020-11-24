@@ -32,10 +32,10 @@ use acid_store::store::DataStore;
 use acid_store::store::DirectoryStore;
 #[cfg(feature = "store-sftp")]
 use acid_store::store::RcloneStore;
+#[cfg(feature = "store-redis")]
+use acid_store::store::RedisStore;
 #[cfg(feature = "store-sqlite")]
 use acid_store::store::SqliteStore;
-#[cfg(feature = "store-redis")]
-use acid_store::store::{RedisAddr, RedisConfig, RedisStore};
 #[cfg(feature = "store-s3")]
 use acid_store::store::{S3Config, S3Credentials, S3Region, S3Store};
 #[cfg(feature = "store-sftp")]
