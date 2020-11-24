@@ -101,7 +101,7 @@ pub fn s3_store() -> anyhow::Result<S3Store> {
             secret_key: dotenv::var("S3_SECRET_KEY").unwrap(),
         },
     };
-    let mut store = S3Store::new(config, "test")?;
+    let mut store = S3Store::new(&config, "test")?;
     truncate_store(&mut store)?;
     Ok(store)
 }

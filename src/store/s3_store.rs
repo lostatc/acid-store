@@ -383,8 +383,8 @@ impl S3Store {
     /// library.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn new(config: S3Config, prefix: &str) -> crate::Result<Self> {
-        let bucket = config.into_bucket();
+    pub fn new(config: &S3Config, prefix: &str) -> crate::Result<Self> {
+        let bucket = config.to_owned().into_bucket();
         let prefix = prefix.trim_end_matches('/').to_owned();
         let version_key = join_key!(prefix, VERSION_KEY);
         let mut runtime = Runtime::new().unwrap();
