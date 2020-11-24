@@ -71,6 +71,7 @@ macro_rules! join_key {
 
 /// An AWS region.
 #[non_exhaustive]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum S3Region {
     /// us-east-1
     UsEast1,
@@ -241,6 +242,7 @@ impl S3Region {
 }
 
 /// The credentials for an S3 connection.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum S3Credentials {
     /// Anonymous credentials for accessing public objects.
     Anonymous,
@@ -306,6 +308,7 @@ impl S3Credentials {
 }
 
 /// The configuration for an S3 connection.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct S3Config {
     /// The name of the S3 bucket.
     pub bucket: String,
