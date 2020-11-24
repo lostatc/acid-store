@@ -12,8 +12,10 @@ keywords = ["storage", "filesystem", "data", "transactional", "security"]
 categories = ["filesystem", "encoding", "cryptography"]
 license = "Apache-2.0"
 
+# We use an attribute when building on docs.rs so we can make use of unstable rustdoc features.
 [package.metadata.docs.rs]
 all-features = true
+rustdocflags = ["--cfg", "docsrs"]
 
 [dependencies]
 # File system

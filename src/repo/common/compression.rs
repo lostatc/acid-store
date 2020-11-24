@@ -26,9 +26,6 @@ use {
 };
 
 /// A data compression method.
-///
-/// The `compression` cargo feature is required to use any compression method other than
-/// `Compression::None`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Compression {
@@ -37,6 +34,7 @@ pub enum Compression {
 
     /// Compress data using the DEFLATE compression algorithm.
     #[cfg(feature = "compression")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "compression")))]
     Deflate {
         /// The compression level to use.
         ///
@@ -46,6 +44,7 @@ pub enum Compression {
 
     /// Compress data using the LZMA compression algorithm.
     #[cfg(feature = "compression")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "compression")))]
     Lzma {
         /// The compression level to use.
         ///
@@ -55,6 +54,7 @@ pub enum Compression {
 
     /// Compress data using the LZ4 compression algorithm.
     #[cfg(feature = "compression")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "compression")))]
     Lz4 {
         /// The compression level to use.
         ///

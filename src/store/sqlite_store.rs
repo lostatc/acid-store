@@ -28,9 +28,8 @@ use crate::store::common::DataStore;
 const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("08d14eb8 4156 11ea 8ec7 a31cc3dfe2e4"));
 
 /// A `DataStore` which stores data in a SQLite database.
-///
-/// The `store-sqlite` cargo feature is required to use this.
 #[derive(Debug)]
+#[cfg_attr(docsrs, doc(cfg(feature = "store-sqlite")))]
 pub struct SqliteStore {
     /// The connection to the SQLite database.
     connection: Connection,

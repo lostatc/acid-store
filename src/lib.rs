@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 //! `acid-store` is a library for secure, deduplicated, transactional, and verifiable data storage.
 //!
 //! This crate provides high-level abstractions for data storage over a number of storage backends.
@@ -80,18 +82,18 @@
 //! # Features
 //! Some functionality is gated behind cargo features.
 //!
-//! Feature | Description | Types | Default
-//! --- | --- | --- | ---
-//! `encryption` | Encrypt repositories | All [`Encryption`] variants except [`Encryption::None`] | No
-//! `compression` | Compress repositories | All [`Compression`] variants except [`Compression::None`] | No
-//! `file-metadata` | Store file metadata and special file types in [`FileRepo`] | [`CommonMetadata`], [`UnixMetadata`], [`AccessQualifier`], [`UnixSpecialType`] | No
-//! `hash-algorithms` | Use hash algorithms other than BLAKE3 in [`ContentRepo`] | All [`HashAlgorithm`] variants except [`HashAlgorithm::Blake3`] | No
-//! `store-directory` | Store data in a directory in the local file system | [`DirectoryStore`] | Yes
-//! `store-sqlite` | Store data in a SQLite database | [`SqliteStore`] | No
-//! `store-redis` | Store data on a Redis server | [`RedisStore`], [`RedisConfig`], [`RedisAddr`] | No
-//! `store-s3` | Store data in an Amazon S3 bucket | [`S3Store`], [`S3Config`], [`S3Credentials`], [`S3Region`] | No
-//! `store-sftp` | Store data on an SFTP server | [`SftpStore`], [`SftpConfig`], [`SftpAuth`] | No
-//! `store-rclone` | Store data in cloud storage via [rclone] | [`RcloneStore`] | No
+//! Feature | Description | Default
+//! --- | --- | ---
+//! `encryption` | Encrypt repositories | No
+//! `compression` | Compress repositories | No
+//! `file-metadata` | Store file metadata and special file types in [`FileRepo`] | No
+//! `hash-algorithms` | Use hash algorithms other than BLAKE3 in [`ContentRepo`] | No
+//! `store-directory` | Store data in a directory in the local file system | Yes
+//! `store-sqlite` | Store data in a SQLite database | No
+//! `store-redis` | Store data on a Redis server | No
+//! `store-s3` | Store data in an Amazon S3 bucket | No
+//! `store-sftp` | Store data on an SFTP server | No
+//! `store-rclone` | Store data in cloud storage via [rclone] | No
 //!
 //! To use a feature which is not enabled by default, you must enable it in your `Cargo.toml`.
 //!
@@ -112,24 +114,6 @@
 //! [`SftpStore`]: crate::store::SftpStore
 //! [`RcloneStore`]: crate::store::RcloneStore
 //! [`MemoryStore`]: crate::store::MemoryStore
-//!
-//! [`Encryption`]: crate::repo::Encryption
-//! [`Encryption::None`]: crate::repo::Encryption::None
-//! [`Compression`]: crate::repo::Compression
-//! [`Compression::None`]: crate::repo::Compression::None
-//! [`CommonMetadata`]: crate::repo::file::CommonMetadata
-//! [`UnixMetadata`]: crate::repo::file::UnixMetadata
-//! [`AccessQualifier`]: crate::repo::file::AccessQualifier
-//! [`UnixSpecialType`]: crate::repo::file::UnixSpecialType
-//! [`HashAlgorithm`]: crate::repo::content::HashAlgorithm
-//! [`HashAlgorithm::Blake3`]: crate::repo::content::HashAlgorithm::Blake3
-//! [`RedisConfig`]: crate::store::RedisConfig
-//! [`RedisAddr`]: crate::store::RedisAddr
-//! [`S3Config`]: crate::store::S3Config
-//! [`S3Credentials`]: crate::store::S3Credentials
-//! [`S3Region`]: crate::store::S3Region
-//! [`SftpConfig`]: crate::store::SftpConfig
-//! [`SftpAuth`]: crate::store::SftpAuth
 
 #![allow(dead_code)]
 

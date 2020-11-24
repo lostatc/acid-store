@@ -95,14 +95,13 @@ fn wait_for_connection(port: u16) -> io::Result<()> {
 
 /// A `DataStore` which stores data in cloud storage using rclone.
 ///
-/// The `store-rclone` cargo feature is required to use this.
-///
 /// This is a data store which is backed by [rclone](https://rclone.org/), allowing access to a wide
 /// variety of cloud storage providers.
 ///
 /// To use this data store, rclone must be installed and available on the `PATH`. Rclone version
 /// 1.48.0 or higher is required.
 #[derive(Debug)]
+#[cfg_attr(docsrs, doc(cfg(feature = "store-rclone")))]
 pub struct RcloneStore {
     sftp_store: SftpStore,
     server_process: Child,

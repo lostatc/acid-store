@@ -36,9 +36,8 @@ const STAGING_DIRECTORY: &str = "stage";
 const VERSION_FILE: &str = "version";
 
 /// The authentication for an SSH connection.
-///
-/// The `store-sftp` cargo feature is required to use this.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(docsrs, doc(cfg(feature = "store-sftp")))]
 pub enum SftpAuth {
     /// Authenticate with a password.
     Password {
@@ -78,9 +77,8 @@ pub enum SftpAuth {
 }
 
 /// The configuration for an SSH connection.
-///
-/// The `store-sftp` cargo feature is required to use this.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(docsrs, doc(cfg(feature = "store-sftp")))]
 pub struct SftpConfig {
     /// The host and socket to connect to.
     pub addr: SocketAddr,
@@ -90,8 +88,7 @@ pub struct SftpConfig {
 }
 
 /// A `DataStore` which stores data on an SFTP server.
-///
-/// The `store-sftp` cargo feature is required to use this.
+#[cfg_attr(docsrs, doc(cfg(feature = "store-sftp")))]
 pub struct SftpStore {
     sftp: Sftp,
     path: PathBuf,
