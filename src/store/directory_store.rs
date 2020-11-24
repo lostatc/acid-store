@@ -33,9 +33,8 @@ const STAGING_DIRECTORY: &str = "stage";
 const VERSION_FILE: &str = "version";
 
 /// A `DataStore` which stores data in a directory in the local file system.
-///
-/// The `store-directory` cargo feature is required to use this.
 #[derive(Debug)]
+#[cfg_attr(docsrs, doc(cfg(feature = "store-directory")))]
 pub struct DirectoryStore {
     /// The path of the store's root directory.
     path: PathBuf,

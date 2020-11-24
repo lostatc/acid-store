@@ -70,10 +70,9 @@ macro_rules! join_key {
 }
 
 /// An AWS region.
-///
-/// The `store-s3` cargo feature is required to use this.
 #[non_exhaustive]
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(docsrs, doc(cfg(feature = "store-s3")))]
 pub enum S3Region {
     /// us-east-1
     UsEast1,
@@ -244,9 +243,8 @@ impl S3Region {
 }
 
 /// The credentials for an S3 connection.
-///
-/// The `store-s3` cargo feature is required to use this.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(docsrs, doc(cfg(feature = "store-s3")))]
 pub enum S3Credentials {
     /// Anonymous credentials for accessing public objects.
     Anonymous,
@@ -312,9 +310,8 @@ impl S3Credentials {
 }
 
 /// The configuration for an S3 connection.
-///
-/// The `store-s3` cargo feature is required to use this.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(docsrs, doc(cfg(feature = "store-s3")))]
 pub struct S3Config {
     /// The name of the S3 bucket.
     pub bucket: String,
@@ -362,9 +359,8 @@ impl S3Config {
 }
 
 /// A `DataStore` which stores data in an Amazon S3 bucket.
-///
-/// The `store-s3` cargo feature is required to use this.
 #[derive(Debug)]
+#[cfg_attr(docsrs, doc(cfg(feature = "store-s3")))]
 pub struct S3Store {
     bucket: Bucket,
     prefix: String,

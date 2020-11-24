@@ -78,9 +78,6 @@ impl ResourceLimit {
 }
 
 /// A data encryption method.
-///
-/// The `encryption` cargo feature is required to use any encryption method other than
-/// `Encryption::None`.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Encryption {
@@ -89,6 +86,7 @@ pub enum Encryption {
 
     /// Encrypt data using the XChaCha20-Poly1305 cipher.
     #[cfg(feature = "encryption")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
     XChaCha20Poly1305,
 }
 

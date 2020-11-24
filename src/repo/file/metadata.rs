@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
+use std::io;
+use std::path::Path;
+
 #[cfg(all(linux, feature = "file-metadata"))]
 use posix_acl::{PosixACL, Qualifier as PosixQualifier};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::io;
-use std::path::Path;
+
 #[cfg(feature = "file-metadata")]
 use {filetime::set_file_times, std::time::SystemTime};
 #[cfg(all(unix, feature = "file-metadata"))]
@@ -56,9 +58,8 @@ impl FileMetadata for NoMetadata {
 }
 
 /// A qualifier which determines who is granted a set of permissions in an access control list.
-///
-/// The `file-metadata` cargo feature is required to use this.
 #[cfg(all(unix, feature = "file-metadata"))]
+#[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub enum AccessQualifier {
     /// The user with a given UID.
@@ -70,8 +71,6 @@ pub enum AccessQualifier {
 
 /// A `FileMetadata` for unix-like operating systems.
 ///
-/// The `file-metadata` cargo feature is required to use this.
-///
 /// Extended attributes and access control lists may not work on all platforms. If a platform is
 /// unsupported, `from_file` will acts as if files have no extended attributes or ACL entries and
 /// `write_metadata` will not attempt to write them.
@@ -79,6 +78,7 @@ pub enum AccessQualifier {
 /// If the current user does not have the necessary permissions to set the UID/GID of the file,
 /// `write_metadata` will silently ignore the error and return `Ok`.
 #[cfg(all(unix, feature = "file-metadata"))]
+#[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct UnixMetadata {
     /// The file mode (st_mode).
@@ -187,9 +187,8 @@ impl FileMetadata for UnixMetadata {
 }
 
 /// A `FileMetadata` for metadata that is common to most platforms.
-///
-/// The `file-metadata` cargo feature is required to use this.
 #[cfg(feature = "file-metadata")]
+#[cfg_attr(docsrs, doc(cfg(feature = "file-metadata")))]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct CommonMetadata {
     /// The time the file was last modified.

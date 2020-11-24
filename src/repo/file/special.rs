@@ -16,19 +16,20 @@
 
 use std::io;
 use std::path::Path;
-#[cfg(all(unix, feature = "file-metadata"))]
-use {
-    std::fs::read_link,
-    std::os::unix::fs::{symlink, MetadataExt},
-};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
     nix::sys::stat::{major, makedev, minor, mknod, Mode, SFlag},
     nix::unistd::mkfifo,
     std::path::PathBuf,
+};
+#[cfg(all(unix, feature = "file-metadata"))]
+use {
+    std::fs::read_link,
+    std::os::unix::fs::{symlink, MetadataExt},
 };
 
 /// A special file type.
@@ -60,12 +61,11 @@ impl SpecialType for NoSpecialType {
 
 /// A `SpecialType` which supports special file types on unix systems.
 ///
-/// The `file-metadata` cargo feature is required to use this.
-///
 /// If the current user does not have the necessary permissions to create a block/character device,
 /// `create_file` will silently ignore the error and return `Ok`.
 #[cfg(all(unix, feature = "file-metadata"))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
+#[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
 pub enum UnixSpecialType {
     /// A symbolic link which points to `target`.
     SymbolicLink { target: PathBuf },

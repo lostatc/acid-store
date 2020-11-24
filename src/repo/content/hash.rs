@@ -67,62 +67,71 @@ impl<T: Update + VariableOutput> SimpleDigest for VariableDigest<T> {
 }
 
 /// A cryptographic hash algorithm.
-///
-/// The `hash-algorithms` cargo feature is required to use any hash algorithms other than
-/// `HashAlgorithm::Blake3`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum HashAlgorithm {
     /// SHA-224
     #[cfg(feature = "hash-algorithms")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "hash-algorithms")))]
     Sha224,
 
     /// SHA-256
     #[cfg(feature = "hash-algorithms")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "hash-algorithms")))]
     Sha256,
 
     /// SHA-384
     #[cfg(feature = "hash-algorithms")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "hash-algorithms")))]
     Sha384,
 
     /// SHA-512
     #[cfg(feature = "hash-algorithms")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "hash-algorithms")))]
     Sha512,
 
     /// SHA-512/224
     #[cfg(feature = "hash-algorithms")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "hash-algorithms")))]
     Sha512Trunc224,
 
     /// SHA-512/256
     #[cfg(feature = "hash-algorithms")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "hash-algorithms")))]
     Sha512Trunc256,
 
     /// SHA3-224
     #[cfg(feature = "hash-algorithms")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "hash-algorithms")))]
     Sha3_224,
 
     /// SHA3-256
     #[cfg(feature = "hash-algorithms")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "hash-algorithms")))]
     Sha3_256,
 
     /// SHA3-384
     #[cfg(feature = "hash-algorithms")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "hash-algorithms")))]
     Sha3_384,
 
     /// SHA3-512
     #[cfg(feature = "hash-algorithms")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "hash-algorithms")))]
     Sha3_512,
 
     /// BLAKE2b
     ///
     /// This accepts a digest size in the range of 1-64 bytes.
     #[cfg(feature = "hash-algorithms")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "hash-algorithms")))]
     Blake2b(usize),
 
     /// BLAKE2s
     ///
     /// This accepts a digest size in the range of 1-32 bytes.
     #[cfg(feature = "hash-algorithms")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "hash-algorithms")))]
     Blake2s(usize),
 
     /// BLAKE3
