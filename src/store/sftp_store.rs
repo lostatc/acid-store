@@ -36,6 +36,7 @@ const STAGING_DIRECTORY: &str = "stage";
 const VERSION_FILE: &str = "version";
 
 /// The authentication for an SSH connection.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SftpAuth {
     /// Authenticate with a password.
     Password {
@@ -75,6 +76,7 @@ pub enum SftpAuth {
 }
 
 /// The configuration for an SSH connection.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SftpConfig {
     /// The host and socket to connect to.
     pub addr: SocketAddr,
