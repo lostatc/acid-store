@@ -27,19 +27,22 @@ use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 
 use acid_store::repo::{Chunking, Compression, Encryption, RepoConfig};
+use acid_store::store::DataStore;
 #[cfg(feature = "store-directory")]
 use acid_store::store::DirectoryStore;
 #[cfg(feature = "store-sftp")]
 use acid_store::store::RcloneStore;
-#[cfg(feature = "store-redis")]
-use acid_store::store::RedisStore;
-#[cfg(feature = "store-s3")]
-use acid_store::store::S3Store;
 #[cfg(feature = "store-sqlite")]
 use acid_store::store::SqliteStore;
-use acid_store::store::{DataStore, S3Config, S3Credentials, S3Region, SftpAuth, SftpConfig};
+#[cfg(feature = "store-redis")]
+use acid_store::store::{RedisAddr, RedisConfig, RedisStore};
+#[cfg(feature = "store-s3")]
+use acid_store::store::{S3Config, S3Credentials, S3Region, S3Store};
 #[cfg(feature = "store-sftp")]
-use {acid_store::store::SftpStore, std::path::PathBuf};
+use {
+    acid_store::store::{SftpAuth, SftpConfig, SftpStore},
+    std::path::PathBuf,
+};
 
 /// The minimum size of test data buffers.
 pub const MIN_BUFFER_SIZE: usize = 1024;
