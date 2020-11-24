@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "file-metadata")]
 use {filetime::set_file_times, std::time::SystemTime};
-#[cfg(all(unix, feature = "file-metadata"))]
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
 use {
     nix::unistd::{chown, Gid, Uid},
     std::collections::HashMap,
@@ -58,7 +58,7 @@ impl FileMetadata for NoMetadata {
 }
 
 /// A qualifier which determines who is granted a set of permissions in an access control list.
-#[cfg(all(unix, feature = "file-metadata"))]
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub enum AccessQualifier {
@@ -77,7 +77,7 @@ pub enum AccessQualifier {
 ///
 /// If the current user does not have the necessary permissions to set the UID/GID of the file,
 /// `write_metadata` will silently ignore the error and return `Ok`.
-#[cfg(all(unix, feature = "file-metadata"))]
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct UnixMetadata {
@@ -105,7 +105,7 @@ pub struct UnixMetadata {
     pub acl: HashMap<AccessQualifier, u32>,
 }
 
-#[cfg(all(unix, feature = "file-metadata"))]
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
 impl FileMetadata for UnixMetadata {
     fn from_file(path: &Path) -> io::Result<Self> {
         let metadata = path.metadata()?;

@@ -20,13 +20,13 @@ use std::path::Path;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-#[cfg(all(unix, feature = "file-metadata"))]
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
 use {
     nix::sys::stat::{major, makedev, minor, mknod, Mode, SFlag},
     nix::unistd::mkfifo,
     std::path::PathBuf,
 };
-#[cfg(all(unix, feature = "file-metadata"))]
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
 use {
     std::fs::read_link,
     std::os::unix::fs::{symlink, MetadataExt},
@@ -63,7 +63,7 @@ impl SpecialType for NoSpecialType {
 ///
 /// If the current user does not have the necessary permissions to create a block/character device,
 /// `create_file` will silently ignore the error and return `Ok`.
-#[cfg(all(unix, feature = "file-metadata"))]
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
 pub enum UnixSpecialType {
@@ -80,7 +80,7 @@ pub enum UnixSpecialType {
     CharacterDevice { major: u64, minor: u64 },
 }
 
-#[cfg(all(unix, feature = "file-metadata"))]
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
 impl SpecialType for UnixSpecialType {
     fn from_file(path: &Path) -> io::Result<Option<Self>> {
         let metadata = path.symlink_metadata()?;
