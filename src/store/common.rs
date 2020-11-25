@@ -22,12 +22,12 @@ use uuid::Uuid;
 /// A persistent store for blocks of data.
 ///
 /// A `DataStore` persistently stores blocks of data uniquely identified by UUIDs. Data stores are
-/// used as the storage backend for repositories in the `repo` module.
+/// used as the storage backend for repositories in the [`crate::repo`] module.
 pub trait DataStore {
     /// Write the given `data` as a new block with the given `id`.
     ///
     /// If this method returns `Ok`, the block is stored persistently until it is removed with
-    /// `remove_block`. If this method returns `Err` or panics, the block is not stored persistently
+    /// `remove_block`. If this method returns `Err`, the block is not stored persistently
     /// and it is up to the implementation to ensure that any data which may have been written is
     /// cleaned up.
     ///
@@ -44,8 +44,8 @@ pub trait DataStore {
     /// Remove the block with the given `id` from the store.
     ///
     /// If this method returns `Ok`, the given `id` is no longer stored persistently and any space
-    /// allocated for it will be freed. If this method returns `Err` or panics, the block is still
-    /// stored persistently.
+    /// allocated for it will be freed. If this method returns `Err`, the block is still stored
+    /// persistently.
     ///
     /// If there is no block with the given `id`, this method does nothing and returns `Ok`.
     ///
@@ -53,8 +53,6 @@ pub trait DataStore {
     fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()>;
 
     /// Return a list of IDs of blocks in the store.
-    ///
-    /// This only lists the IDs of blocks which are stored persistently.
     fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>>;
 }
 

@@ -18,14 +18,11 @@
 //!
 //! This module provides low-level data storage backends called data stores. A data store provides
 //! only the most basic storage operations, and doesn't have to worry about providing features like
-//! encryption, compression, deduplication, integrity checking, locking, or atomic transactions.
-//! Those features are implemented at a higher level. Data stores are meant to be easy to implement
-//! so that providing support for new storage backends is relatively painless.
+//! encryption, compression, deduplication, integrity checking, or atomic transactions. Those
+//! features are implemented at a higher level. Data stores are meant to be easy to implement so
+//! that providing support for new storage backends is relatively painless.
 //!
 //! All data stores implement the [`DataStore`] trait.
-//!
-//! Many of the data stores in this module are gated behind cargo features. See the crate-level
-//! documentation for more details.
 //!
 //! [`DataStore`]: crate::store::DataStore
 

@@ -18,11 +18,11 @@
 //!
 //! This module provides abstractions for data storage called repositories. Each repository is
 //! backed by a [`DataStore`], and provides features like encryption, compression, deduplication,
-//! integrity checking, locking, and atomic transactions.
+//! integrity checking, and atomic transactions.
 //!
 //! This module contains types which are common to most repositories. The most important of these
-//! are [`Object`] and [`ReadOnlyObject`], which provide views of data in a repository and are used to
-//! read data from them and write data to them.
+//! are [`Object`] and [`ReadOnlyObject`], which provide views of data in a repository and are used
+//! to read data from them and write data to them.
 //!
 //! Each sub-module of this module contains a different repository type. If you're not sure which
 //! one you should use, [`KeyRepo`] has the most general use-case.
@@ -60,11 +60,12 @@
 //! The master key is generated using the operating system's secure random number generator. Both
 //! the master key and the derived key are zeroed in memory once they go out of scope.
 //!
-//! Data in a data store is identified by UUIDs and not hashes, so data hashes are not leaked. The
-//! repository does not attempt to hide the size of chunks produced by the chunking algorithm, but
-//! information about which chunks belong to which objects is encrypted.
+//! Data in a data store is identified by UUIDs and not hashes, so data hashes are not leaked.
+//! However, the repository does not attempt to hide the size of chunks produced by the chunking
+//! algorithm. Even when using fixed-size chunking, chunks which are smaller than the configured
+//! chunk size can still be produced.
 //!
-//! The information in [`RepoInfo`] is never encrypted, and can be read without opening the
+//! The information in [`RepoInfo`] is never encrypted, and can be read without decrypting the
 //! repository.
 //!
 //! # Instances
@@ -117,13 +118,13 @@ pub use self::common::{
 /// API is more complicated than the other repository types, but it provides more control over how
 /// data is stored and how memory is managed.
 ///
-/// Repository types which are implemented on top of [`ObjectRepo`] can implement [`ConvertRepo`], which
-/// allows them to be opened or created using [`OpenOptions`] and also allows for easily switching
-/// between repository instances of different types.
+/// Repository types which are implemented on top of [`ObjectRepo`] can implement [`ConvertRepo`],
+/// which allows them to be opened or created using [`OpenOptions`] and also allows for easily
+/// switching between repository instances of different types.
 ///
 /// Like other repositories, changes made to the repository are not persisted to the data store
-/// until [`ObjectRepo::commit`] is called. For details about deduplication, compression, encryption,
-/// and locking, see the module-level documentation for [`crate::repo`].
+/// until [`ObjectRepo::commit`] is called. For details about deduplication, compression,
+/// encryption, and locking, see the module-level documentation for [`crate::repo`].
 ///
 /// # Managed and unmanaged objects
 /// An [`ObjectRepo`] has two modes for storing data, *managed* objects and *unmanaged* objects.
