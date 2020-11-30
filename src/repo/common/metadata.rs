@@ -26,6 +26,7 @@ use super::config::RepoConfig;
 use super::encryption::{Encryption, KeySalt, ResourceLimit};
 use super::id_table::IdTable;
 use super::object::{Chunk, ObjectHandle};
+use super::packing::Packing;
 use super::state::ChunkInfo;
 
 /// The repository state which is persisted to the data store on each commit.
@@ -55,6 +56,9 @@ pub struct RepoMetadata {
 
     /// The encryption method being used in this repository.
     pub encryption: Encryption,
+
+    /// The packing method used in this repository.
+    pub packing: Packing,
 
     /// The maximum amount of memory the key derivation function will use in bytes.
     pub memory_limit: ResourceLimit,

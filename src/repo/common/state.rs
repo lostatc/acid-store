@@ -30,6 +30,7 @@ use super::id_table::UniqueId;
 use super::lock::Lock;
 use super::metadata::RepoMetadata;
 use super::object::Chunk;
+use super::packing::{DirectDataStore, Packing, PackingDataStore};
 
 /// Information about a chunk in a repository.
 #[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
@@ -39,6 +40,46 @@ pub struct ChunkInfo {
 
     /// The IDs of objects which reference this chunk.
     pub references: HashSet<UniqueId>,
+}
+
+/// The location of a block in a pack.
+pub struct PackIndex {
+    /// The UUID of the pack in the data store.
+    pub id: Uuid,
+
+    /// The offset from the start of the pack where the block is located.
+    pub offset: u32,
+
+    /// The size of the block in bytes.
+    pub size: u32,
+}
+
+/// A pack which stores multiple blocks.
+pub struct Pack {
+    /// The UUID of this pack in the data store.
+    pub id: Uuid,
+
+    /// The data contained in the pack.
+    pub buffer: Vec<u8>,
+}
+
+impl Pack {
+    /// Create a new empty pack with the given `pack_size`.
+    pub fn new(pack_size: u32) -> Self {
+        Pack {
+            id: Uuid::new_v4(),
+            buffer: Vec::with_capacity(pack_size as usize),
+        }
+    }
+
+    /// Pad the buffer with zeroes to the given `pack_size`.
+    pub fn pad(&mut self, pack_size: u32) {
+        assert!(
+            self.buffer.len() <= pack_size as usize,
+            "The size of the current pack has exceeded the configured pack size.",
+        );
+        self.buffer.resize(pack_size as usize, 0u8);
+    }
 }
 
 /// The state associated with an `ObjectRepo`.
@@ -53,11 +94,30 @@ pub struct RepoState {
     /// A map of chunk hashes to information about them.
     pub chunks: HashMap<Chunk, ChunkInfo>,
 
+    /// A map of block IDs to their locations in packs.
+    pub packs: HashMap<Uuid, Vec<PackIndex>>,
+
+    /// The incomplete pack being written to.
+    pub write_buffer: Option<Pack>,
+
+    /// The pack which was most recently read from.
+    pub read_buffer: Option<Pack>,
+
     /// The master encryption key for the repository.
     pub master_key: EncryptionKey,
 
     /// The lock on the repository.
     pub lock: Lock,
+}
+
+impl RepoState {
+    /// Return a `BufferedDataStore` which delegates to the `RepoState::store`.
+    pub fn buffered_store(&mut self) -> Box<dyn BufferedDataStore> {
+        match self.metadata.packing {
+            Packing::None => Box::new(DirectDataStore::new(&mut self)),
+            Packing::Fixed(pack_size) => Box::new(PackingDataStore::new(&mut self, pack_size)),
+        }
+    }
 }
 
 /// The location of a chunk in a stream of bytes.
