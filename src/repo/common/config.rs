@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
+use super::chunking::Chunking;
 use super::compression::Compression;
 use super::encryption::{Encryption, ResourceLimit};
-use crate::repo::common::Chunking;
+use super::packing::Packing;
 
 /// The configuration for an repository.
 ///
@@ -30,6 +31,11 @@ pub struct RepoConfig {
     ///
     /// The default value is `Chunking::Zpaq { bits: 20 }`.
     pub chunking: Chunking,
+
+    /// The packing method to use in the repository.
+    ///
+    /// The default value is `Packing::None`.
+    pub packing: Packing,
 
     /// The compression method to use in the repository.
     ///
@@ -56,6 +62,7 @@ impl Default for RepoConfig {
     fn default() -> Self {
         RepoConfig {
             chunking: Chunking::Zpaq { bits: 20 },
+            packing: Packing::None,
             compression: Compression::None,
             encryption: Encryption::None,
             memory_limit: ResourceLimit::Interactive,

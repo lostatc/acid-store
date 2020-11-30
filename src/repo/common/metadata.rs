@@ -27,13 +27,16 @@ use super::encryption::{Encryption, KeySalt, ResourceLimit};
 use super::id_table::IdTable;
 use super::object::{Chunk, ObjectHandle};
 use super::packing::Packing;
-use super::state::ChunkInfo;
+use super::state::{ChunkInfo, PackIndex};
 
 /// The repository state which is persisted to the data store on each commit.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Header {
     /// The map of chunks to information about them.
     pub chunks: HashMap<Chunk, ChunkInfo>,
+
+    /// A map of block IDs to their locations in packs.
+    pub packs: HashMap<Uuid, Vec<PackIndex>>,
 
     /// The map of managed objects to object handles for each instance ID.
     pub managed: HashMap<Uuid, HashMap<Uuid, ObjectHandle>>,
@@ -51,14 +54,14 @@ pub struct RepoMetadata {
     /// The chunking method being used in this repository.
     pub chunking: Chunking,
 
+    /// The packing method used in this repository.
+    pub packing: Packing,
+
     /// The compression method being used in this repository.
     pub compression: Compression,
 
     /// The encryption method being used in this repository.
     pub encryption: Encryption,
-
-    /// The packing method used in this repository.
-    pub packing: Packing,
 
     /// The maximum amount of memory the key derivation function will use in bytes.
     pub memory_limit: ResourceLimit,
