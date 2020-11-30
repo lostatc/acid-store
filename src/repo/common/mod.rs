@@ -26,6 +26,7 @@ pub use self::report::IntegrityReport;
 pub use self::repository::ObjectRepo;
 pub use self::version_id::check_version;
 
+mod block_store;
 mod chunk_store;
 mod chunking;
 mod compression;
@@ -37,6 +38,7 @@ mod lock;
 mod metadata;
 mod object;
 mod open_options;
+mod packing;
 mod report;
 mod repository;
 mod state;
