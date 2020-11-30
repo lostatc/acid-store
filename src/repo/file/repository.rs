@@ -802,7 +802,7 @@ where
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn verify(&self) -> crate::Result<HashSet<RelativePathBuf>> {
+    pub fn verify(&mut self) -> crate::Result<HashSet<RelativePathBuf>> {
         let report = self.repository.verify()?;
 
         // Check for corrupt metadata.

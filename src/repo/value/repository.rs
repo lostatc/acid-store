@@ -228,7 +228,7 @@ impl<K: Key> ValueRepo<K> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn verify(&self) -> crate::Result<HashSet<&K>> {
+    pub fn verify(&mut self) -> crate::Result<HashSet<&K>> {
         let report = self.repository.verify()?;
         Ok(self
             .key_table

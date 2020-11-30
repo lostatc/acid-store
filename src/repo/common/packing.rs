@@ -47,7 +47,6 @@ pub enum Packing {
     ///
     /// This accepts the size in bytes of the blocks to produce.
     ///
-    /// This typically results in worse performance than `Packing::None`. This can also cause some
-    /// storage overhead, especially when using a large block size.
+    /// This typically results in worse performance than `Packing::None`.
     Fixed(u32),
 }

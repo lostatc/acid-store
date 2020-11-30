@@ -33,6 +33,7 @@ use super::encryption::{Encryption, EncryptionKey, KeySalt};
 use super::id_table::IdTable;
 use super::lock::LockTable;
 use super::metadata::{Header, RepoMetadata};
+use super::packing::Packing;
 use super::repository::{ObjectRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
 use super::state::RepoState;
 
@@ -89,6 +90,15 @@ impl OpenOptions {
         self
     }
 
+    /// Overwrite the packing method specified in `RepoConfig::packing`.
+    ///
+    /// This is only applicable when creating a new repository. This is ignored when opening an
+    /// existing repository.
+    pub fn packing(mut self, method: Packing) -> Self {
+        self.config.packing = method;
+        self
+    }
+
     /// Overwrite the compression method specified in `RepoConfig::compression`.
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
@@ -138,7 +148,7 @@ impl OpenOptions {
     /// Opening a repository without specifying an instance ID will always open the same global
     /// instance.
     ///
-    /// See `ObjectRepo` for details.
+    /// See the module-level documentation for [`crate::repo`] for details.
     pub fn instance(mut self, id: Uuid) -> Self {
         self.instance = id;
         self
@@ -240,6 +250,7 @@ impl OpenOptions {
 
         let Header {
             chunks,
+            packs,
             mut managed,
             handle_table,
         } = header;
@@ -251,6 +262,9 @@ impl OpenOptions {
             store: Mutex::new(self.store),
             metadata,
             chunks,
+            packs,
+            read_buffer: None,
+            write_buffer: None,
             master_key,
             lock,
         };
@@ -341,6 +355,7 @@ impl OpenOptions {
         managed.insert(self.instance, HashMap::new());
         let header = Header {
             chunks: HashMap::new(),
+            packs: HashMap::new(),
             managed,
             handle_table: IdTable::new(),
         };
@@ -362,6 +377,7 @@ impl OpenOptions {
         let metadata = RepoMetadata {
             id,
             chunking: self.config.chunking,
+            packing: self.config.packing,
             compression: self.config.compression,
             encryption: self.config.encryption,
             memory_limit: self.config.memory_limit,
@@ -386,6 +402,7 @@ impl OpenOptions {
 
         let Header {
             chunks,
+            packs,
             managed,
             handle_table,
         } = header;
@@ -394,6 +411,9 @@ impl OpenOptions {
             store: Mutex::new(self.store),
             metadata,
             chunks,
+            packs,
+            write_buffer: None,
+            read_buffer: None,
             master_key,
             lock,
         };

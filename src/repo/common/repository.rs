@@ -25,6 +25,7 @@ use uuid::Uuid;
 use crate::repo::ConvertRepo;
 use crate::store::DataStore;
 
+use super::block_store::BlockEncoder;
 use super::chunk_store::{ChunkEncoder, ChunkReader};
 use super::encryption::{EncryptionKey, KeySalt};
 use super::id_table::IdTable;
@@ -366,6 +367,7 @@ impl ObjectRepo {
         // later.
         let header = Header {
             chunks: mem::replace(&mut self.state.chunks, HashMap::new()),
+            packs: mem::replace(&mut self.state.packs, HashMap::new()),
             managed: mem::replace(&mut self.managed, HashMap::new()),
             handle_table: mem::replace(&mut self.handle_table, IdTable::new()),
         };
@@ -378,10 +380,12 @@ impl ObjectRepo {
         // Unpack the values from the `Header` and put them back where they originally were.
         let Header {
             chunks,
+            packs,
             managed,
             handle_table,
         } = header;
         self.state.chunks = chunks;
+        self.state.packs = packs;
         self.managed = managed;
         self.handle_table = handle_table;
 
@@ -441,18 +445,21 @@ impl ObjectRepo {
 
         let Header {
             chunks: old_chunks,
+            packs: old_packs,
             managed: old_managed,
             handle_table: old_handle_table,
         } = header;
 
         // Replace the current header values with the ones from the previous commit.
         let current_chunks = mem::replace(&mut self.state.chunks, old_chunks);
+        let current_packs = mem::replace(&mut self.state.packs, old_packs);
         let current_managed = mem::replace(&mut self.managed, old_managed);
         let current_handle_table = mem::replace(&mut self.handle_table, old_handle_table);
 
         if let Err(error) = self.clean() {
             // If cleaning the repository did not succeed, undo the rollback.
             self.state.chunks = current_chunks;
+            self.state.packs = current_packs;
             self.managed = current_managed;
             self.handle_table = current_handle_table;
             return Err(error);
@@ -506,7 +513,7 @@ impl ObjectRepo {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn verify(&self) -> crate::Result<IntegrityReport> {
+    pub fn verify(&mut self) -> crate::Result<IntegrityReport> {
         let mut report = IntegrityReport {
             corrupt_chunks: HashSet::new(),
             corrupt_managed: HashMap::new(),
