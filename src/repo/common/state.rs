@@ -97,12 +97,6 @@ pub struct RepoState {
     /// A map of block IDs to their locations in packs.
     pub packs: HashMap<Uuid, Vec<PackIndex>>,
 
-    /// The incomplete pack being written to.
-    pub write_buffer: Option<Pack>,
-
-    /// The pack which was most recently read from.
-    pub read_buffer: Option<Pack>,
-
     /// The master encryption key for the repository.
     pub master_key: EncryptionKey,
 

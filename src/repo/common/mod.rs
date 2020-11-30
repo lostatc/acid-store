@@ -26,7 +26,6 @@ pub use self::report::IntegrityReport;
 pub use self::repository::ObjectRepo;
 pub use self::version_id::check_version;
 
-mod block_store;
 mod chunk_store;
 mod chunking;
 mod compression;
