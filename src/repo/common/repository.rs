@@ -513,7 +513,7 @@ impl ObjectRepo {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn verify(&mut self) -> crate::Result<IntegrityReport> {
+    pub fn verify(&self) -> crate::Result<IntegrityReport> {
         let mut report = IntegrityReport {
             corrupt_chunks: HashSet::new(),
             corrupt_managed: HashMap::new(),
