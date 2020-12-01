@@ -26,7 +26,7 @@ use crate::repo::ConvertRepo;
 use crate::store::DataStore;
 
 use super::chunk_store::EncodeBlock;
-use super::chunk_store::{ChunkEncoder, ReadChunk};
+use super::chunk_store::{ChunkEncoder, ReadChunk, StoreReader};
 use super::encryption::{EncryptionKey, KeySalt};
 use super::id_table::IdTable;
 use super::metadata::{Header, RepoInfo, RepoMetadata};
@@ -522,8 +522,9 @@ impl ObjectRepo {
         let expected_chunks = self.state.chunks.keys().copied().collect::<Vec<_>>();
 
         // Get the set of hashes of chunks which are corrupt.
+        let mut chunk_reader = StoreReader::new(&self.state);
         for chunk in expected_chunks {
-            match self.state.read_chunk(chunk) {
+            match chunk_reader.read_chunk(chunk) {
                 Ok(data) => {
                     if data.len() != chunk.size || chunk_hash(&data) != chunk.hash {
                         report.corrupt_chunks.insert(chunk.hash);
