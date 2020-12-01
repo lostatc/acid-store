@@ -26,7 +26,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::chunk_store::{ReadChunk, WriteChunk};
+use super::chunk_store::{ReadChunk, StoreReader, StoreWriter, WriteChunk};
 use super::id_table::UniqueId;
 use super::state::RepoState;
 use super::state::{ChunkLocation, ObjectState};
@@ -191,20 +191,20 @@ impl ContentId {
     }
 }
 
-/// A wrapper for getting information about an object.
-struct ObjectInfo<'a> {
-    repo_state: &'a RepoState,
-    object_state: &'a ObjectState,
+struct ObjectReader<'a> {
+    chunk_reader: &'a mut Box<dyn ReadChunk>,
+    object_state: &'a mut ObjectState,
     handle: &'a ObjectHandle,
 }
 
-impl<'a> ObjectInfo<'a> {
+/// A wrapper for reading data from an object.
+impl<'a> ObjectReader<'a> {
     /// Verify the integrity of the data in this object.
-    fn verify(&self) -> crate::Result<bool> {
+    fn verify(&mut self) -> crate::Result<bool> {
         let expected_chunks = self.handle.chunks.iter().copied().collect::<Vec<_>>();
 
         for chunk in expected_chunks {
-            match self.repo_state.read_chunk(chunk) {
+            match self.chunk_reader.read_chunk(chunk) {
                 Ok(data) => {
                     if data.len() != chunk.size || chunk_hash(&data) != chunk.hash {
                         return Ok(false);
@@ -241,30 +241,13 @@ impl<'a> ObjectInfo<'a> {
         // There are no chunks in the object.
         None
     }
-}
-
-struct ObjectReader<'a> {
-    repo_state: &'a RepoState,
-    object_state: &'a mut ObjectState,
-    handle: &'a ObjectHandle,
-}
-
-/// A wrapper for reading data from an object.
-impl<'a> ObjectReader<'a> {
-    fn object_info(&'a self) -> ObjectInfo<'a> {
-        ObjectInfo {
-            repo_state: self.repo_state,
-            object_state: self.object_state,
-            handle: self.handle,
-        }
-    }
 
     /// Return the slice of bytes between the current seek position and the end of the chunk.
     ///
     /// The returned slice will be no longer than `size`.
     fn read_chunk(&mut self, size: usize) -> crate::Result<&[u8]> {
         // If the object is empty, there's no data to read.
-        let current_location = match self.object_info().current_chunk() {
+        let current_location = match self.object_reader().current_chunk() {
             Some(location) => location,
             None => return Ok(&[]),
         };
@@ -272,7 +255,7 @@ impl<'a> ObjectReader<'a> {
         // If we're reading from a new chunk, read the contents of that chunk into the read buffer.
         if Some(current_location.chunk) != self.object_state.buffered_chunk {
             self.object_state.buffered_chunk = Some(current_location.chunk);
-            self.object_state.read_buffer = self.repo_state.read_chunk(current_location.chunk)?;
+            self.object_state.read_buffer = self.chunk_reader.read_chunk(current_location.chunk)?;
         }
 
         let start = current_location.relative_position();
@@ -337,23 +320,15 @@ impl<'a> Read for ObjectReader<'a> {
 
 /// A wrapper for writing data to an object.
 struct ObjectWriter<'a> {
-    repo_state: &'a mut RepoState,
+    chunk_writer: &'a mut Box<dyn ReadChunk + WriteChunk>,
     object_state: &'a mut ObjectState,
     handle: &'a mut ObjectHandle,
 }
 
 impl<'a> ObjectWriter<'a> {
-    fn object_info(&'a self) -> ObjectInfo<'a> {
-        ObjectInfo {
-            repo_state: self.repo_state,
-            object_state: self.object_state,
-            handle: self.handle,
-        }
-    }
-
     fn object_reader(&mut self) -> ObjectReader {
         ObjectReader {
-            repo_state: self.repo_state,
+            chunk_reader: self.chunk_writer,
             object_state: self.object_state,
             handle: self.handle,
         }
@@ -370,14 +345,14 @@ impl<'a> ObjectWriter<'a> {
 
         // Truncating the object may mean slicing a chunk in half. Because we can't edit chunks
         // in-place, we need to read the final chunk, slice it, and write it back.
-        let end_location = match self.object_info().current_chunk() {
+        let end_location = match self.object_reader().current_chunk() {
             Some(location) => location,
             None => return Ok(()),
         };
-        let last_chunk = self.repo_state.read_chunk(end_location.chunk)?;
+        let last_chunk = self.chunk_writer.read_chunk(end_location.chunk)?;
         let new_last_chunk = &last_chunk[..end_location.relative_position()];
         let new_last_chunk = self
-            .repo_state
+            .chunk_writer
             .write_chunk(&new_last_chunk, self.handle.handle_id)?;
 
         // Remove all chunks including and after the final chunk.
@@ -410,7 +385,7 @@ impl<'a> ObjectWriter<'a> {
     fn write_chunks(&mut self) -> crate::Result<()> {
         for chunk_data in self.object_state.chunker.chunks() {
             let chunk = self
-                .repo_state
+                .chunk_writer
                 .write_chunk(&chunk_data, self.handle.handle_id)?;
             self.object_state.new_chunks.push(chunk);
         }
@@ -427,7 +402,7 @@ impl<'a> Write for ObjectWriter<'a> {
         // Check if this is the first time `write` is being called after calling `flush`.
         if !self.object_state.needs_flushed {
             // Because we're starting a new write, we need to set the starting location.
-            self.object_state.start_location = self.object_info().current_chunk();
+            self.object_state.start_location = self.object_reader().current_chunk();
 
             if let Some(location) = &self.object_state.start_location {
                 let chunk = location.chunk;
@@ -435,7 +410,7 @@ impl<'a> Write for ObjectWriter<'a> {
 
                 // We need to make sure the data before the seek position is saved when we replace
                 // the chunk. Read this data from the repository and write it to the chunker.
-                let first_chunk = self.repo_state.read_chunk(chunk)?;
+                let first_chunk = self.chunk_writer.read_chunk(chunk)?;
                 self.object_state
                     .chunker
                     .write_all(&first_chunk[..position])?;
@@ -461,12 +436,12 @@ impl<'a> Write for ObjectWriter<'a> {
             return Ok(());
         }
 
-        let current_chunk = self.object_info().current_chunk();
+        let current_chunk = self.object_reader().current_chunk();
 
         if let Some(location) = &current_chunk {
             // We need to make sure the data after the seek position is saved when we replace the
             // current chunk. Read this data from the repository and write it to the chunker.
-            let last_chunk = self.repo_state.read_chunk(location.chunk)?;
+            let last_chunk = self.chunk_writer.read_chunk(location.chunk)?;
             self.object_state
                 .chunker
                 .write_all(&last_chunk[location.relative_position()..])?;
@@ -525,7 +500,7 @@ impl<'a> Write for ObjectWriter<'a> {
 #[derive(Debug)]
 pub struct ReadOnlyObject<'a> {
     /// The state for the object repository.
-    repo_state: &'a RepoState,
+    chunk_reader: Box<dyn ReadChunk>,
 
     /// The state for the object itself.
     object_state: ObjectState,
@@ -537,23 +512,15 @@ pub struct ReadOnlyObject<'a> {
 impl<'a> ReadOnlyObject<'a> {
     pub(crate) fn new(repo_state: &'a RepoState, handle: &'a ObjectHandle) -> Self {
         Self {
-            repo_state,
             object_state: ObjectState::new(repo_state.metadata.chunking.to_chunker()),
+            chunk_reader: Box::new(StoreReader::new(repo_state)),
             handle,
-        }
-    }
-
-    fn object_info(&self) -> ObjectInfo {
-        ObjectInfo {
-            repo_state: self.repo_state,
-            object_state: &self.object_state,
-            handle: self.handle,
         }
     }
 
     fn object_reader(&mut self) -> ObjectReader {
         ObjectReader {
-            repo_state: self.repo_state,
+            chunk_reader: &mut self.chunk_reader,
             object_state: &mut self.object_state,
             handle: self.handle,
         }
@@ -590,8 +557,8 @@ impl<'a> ReadOnlyObject<'a> {
     /// Verify the integrity of the data in this object.
     ///
     /// See `Object::verify` for details.
-    pub fn verify(&self) -> crate::Result<bool> {
-        self.object_info().verify()
+    pub fn verify(&mut self) -> crate::Result<bool> {
+        self.object_reader().verify()
     }
 
     /// Deserialize a value serialized with `Object::serialize`.
@@ -636,7 +603,7 @@ impl<'a> Seek for ReadOnlyObject<'a> {
 #[derive(Debug)]
 pub struct Object<'a> {
     /// The state for the object repository.
-    repo_state: &'a mut RepoState,
+    chunk_writer: Box<dyn ReadChunk + WriteChunk>,
 
     /// The state for the object itself.
     object_state: ObjectState,
@@ -649,23 +616,15 @@ impl<'a> Object<'a> {
     pub(crate) fn new(repo_state: &'a mut RepoState, handle: &'a mut ObjectHandle) -> Self {
         let chunker = repo_state.metadata.chunking.to_chunker();
         Self {
-            repo_state,
             object_state: ObjectState::new(chunker),
+            chunk_writer: Box::new(StoreWriter::new(repo_state)),
             handle,
-        }
-    }
-
-    fn object_info(&self) -> ObjectInfo {
-        ObjectInfo {
-            repo_state: self.repo_state,
-            object_state: &self.object_state,
-            handle: self.handle,
         }
     }
 
     fn object_reader(&mut self) -> ObjectReader {
         ObjectReader {
-            repo_state: self.repo_state,
+            chunk_reader: &mut self.chunk_writer,
             object_state: &mut self.object_state,
             handle: self.handle,
         }
@@ -673,7 +632,7 @@ impl<'a> Object<'a> {
 
     fn object_writer(&mut self) -> ObjectWriter {
         ObjectWriter {
-            repo_state: self.repo_state,
+            chunk_writer: &mut self.chunk_writer,
             object_state: &mut self.object_state,
             handle: self.handle,
         }
@@ -718,8 +677,8 @@ impl<'a> Object<'a> {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn verify(&self) -> crate::Result<bool> {
-        self.object_info().verify()
+    pub fn verify(&mut self) -> crate::Result<bool> {
+        self.object_reader().verify()
     }
 
     /// Truncate the object to the given `length`.
