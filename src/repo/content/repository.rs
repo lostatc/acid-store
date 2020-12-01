@@ -291,7 +291,7 @@ impl ContentRepo {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn verify(&mut self) -> crate::Result<HashSet<&[u8]>> {
+    pub fn verify(&self) -> crate::Result<HashSet<&[u8]>> {
         let report = self.repository.verify()?;
         Ok(self
             .hash_table

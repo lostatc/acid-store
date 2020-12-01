@@ -14,16 +14,6 @@
  * limitations under the License.
  */
 
-use std::cmp::min;
-use std::collections::HashMap;
-use std::mem::size_of;
-
-use uuid::Uuid;
-
-use crate::store::DataStore;
-
-use super::state::{Pack, PackIndex, RepoState};
-
 /// A method for packing data in a repository.
 ///
 /// By default, repositories do not attempt to hide the size of chunks produced by the chunker.

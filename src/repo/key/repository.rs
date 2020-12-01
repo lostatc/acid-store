@@ -237,7 +237,7 @@ impl<K: Key> KeyRepo<K> {
     /// If you just need to verify the integrity of one object, `Object::verify` is faster. If you
     /// need to verify the integrity of all the data in the repository, however, this can be more
     /// efficient.
-    pub fn verify(&mut self) -> crate::Result<HashSet<&K>> {
+    pub fn verify(&self) -> crate::Result<HashSet<&K>> {
         let report = self.repository.verify()?;
 
         Ok(self
