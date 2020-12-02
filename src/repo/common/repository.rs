@@ -477,20 +477,43 @@ impl ObjectRepo {
     /// the backing data store has been reclaimed.
     ///
     /// # Errors
+    /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
     pub fn clean(&self) -> crate::Result<()> {
         let data_blocks = self.list_data_blocks()?;
 
-        let referenced_chunks = self
+        // Read the header from the previous commit.
+        let encoded_header = self
+            .state
+            .store
+            .lock()
+            .unwrap()
+            .read_block(self.state.metadata.header_id)
+            .map_err(|error| crate::Error::Store(error))?
+            .ok_or(crate::Error::Corrupt)?;
+        let serialized_header = self.state.decode_data(encoded_header.as_slice())?;
+        let previous_header: Header =
+            from_read(serialized_header.as_slice()).map_err(|_| crate::Error::Corrupt)?;
+
+        // Need to find the set of blocks which are either currently referenced by the repository or
+        // were referenced after the previous commit. It's important that we don't clean up blocks
+        // which were referenced after the previous commit because that would make it impossible to
+        // roll back changes, and this method may be called before the repository is committed.
+        let mut current_referenced_chunks = self
             .state
             .chunks
             .values()
             .map(|info| info.block_id)
             .collect::<HashSet<_>>();
+        let previous_referenced_chunks = previous_header.chunks.values().map(|info| info.block_id);
+        current_referenced_chunks.extend(previous_referenced_chunks);
 
+        // Remove all blocks from the data store which are unreferenced.
         let mut store = self.state.store.lock().unwrap();
         for stored_chunk in data_blocks {
-            if !referenced_chunks.contains(&stored_chunk) {
+            if !current_referenced_chunks.contains(&stored_chunk) {
                 store
                     .remove_block(stored_chunk)
                     .map_err(|error| crate::Error::Store(error))?;
