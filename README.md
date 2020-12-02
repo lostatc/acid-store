@@ -26,6 +26,7 @@ All the usual disclaimers apply.
 [libsodium](https://download.libsodium.org/doc/)
 - Optional compression using DEFLATE, LZMA, or LZ4
 - Optional content-based deduplication using the ZPAQ chunking algorithm
+- Supports packing data into fixed-size blocks to avoid metadata leakage
 - Integrity checking of data and metadata using checksums and (if encryption is enabled) AEAD
 - Transactional operations providing atomicity, consistency, isolation, and durability (ACID)
 - Copy-on-write semantics
