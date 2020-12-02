@@ -451,9 +451,6 @@ impl<'a> Write for ObjectWriter<'a> {
         self.object_state.chunker.flush()?;
         self.write_chunks()?;
 
-        // Flush written chunks to the backing data store.
-        self.chunk_writer.flush_chunk()?;
-
         // Find the index of the first chunk which is being overwritten.
         let start_index = self
             .object_state

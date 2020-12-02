@@ -66,11 +66,10 @@ pub trait ReadBlock {
 pub trait WriteBlock {
     /// Write the given `data` as a new block with the given `id`.
     ///
+    /// If a block with the given `id` already exists, it is overwritten.
+    ///
     /// The data is encoded before it is written.
     fn write_block(&mut self, id: Uuid, data: &[u8]) -> crate::Result<()>;
-
-    /// Flush any buffered data.
-    fn flush_block(&mut self) -> crate::Result<()>;
 }
 
 /// A `ReadBlock` which packs data into fixed-size blocks.
@@ -173,6 +172,9 @@ impl WriteBlock for PackingBlockWriter {
         // The slice of `data` to write to the current pack.
         let mut next_buffer;
 
+        // The list packs which store the current block and where it's located in those packs.
+        let mut new_packs_indices = Vec::new();
+
         loop {
             // Fill the current pack with the provided `data`.
             remaining_space = self.pack_size as usize - current_pack.buffer.len();
@@ -192,17 +194,13 @@ impl WriteBlock for PackingBlockWriter {
                 "More bytes were written than are available in the provided buffer."
             );
 
-            // Write the location of this block in the pack.
+            // Add the location of this block in the pack to the list.
             let pack_index = PackIndex {
                 id: current_pack.id,
                 offset: current_offset,
                 size: current_size,
             };
-            self.repo_state
-                .packs
-                .entry(id)
-                .or_insert_with(Vec::new)
-                .push(pack_index);
+            new_packs_indices.push(pack_index);
 
             // If we've filled the current pack, write it to the data store.
             if current_pack.buffer.len() == self.pack_size {
@@ -225,38 +223,37 @@ impl WriteBlock for PackingBlockWriter {
 
             // Break once we've written all the `data`.
             if bytes_written == data.len() {
-                break;
+                // Once we've exhausted all the bytes in `data`, we need to pad the currently
+                // buffered pack with zeroes and write it to the data store. The contract of this
+                // interface guarantees that all data will be written to the data store once it
+                // returns, and we won't have the opportunity to flush it later. We'll keep a clone
+                // of this pack buffered in memory though, so we can write more data to the pack and
+                // overwrite it in the data store in the future. This way, we don't have a bunch of
+                // half-empty packs in the data store.
+                let padded_pack = current_pack.padded(self.pack_size);
+                let encoded_pack = self.repo_state.encode_data(padded_pack.as_slice())?;
+                self.repo_state
+                    .store
+                    .lock()
+                    .unwrap()
+                    .write_block(current_pack.id, encoded_pack.as_slice())
+                    .map_err(|error| crate::Error::Store(error))?;
+
+                // We need to update the pack map in the repository state after all data has been
+                // written to the data store. If this method fails early, we can't have the pack map
+                // referencing data which hasn't been written to the data store. If this method
+                // fails and there is data in the data store which isn't referenced in the pack map,
+                // we'll have the opportunity to clean up the unreferenced data later.
+                //
+                // The contract of this interface guarantees that if a block with this `id` is
+                // already in the data store, it is replaced. We can't remove the unreferenced data
+                // from the data store at this point in case the repository is rolled back, but we
+                // do need to replace the pack indices in the pack map, which we do here.
+                self.repo_state.packs.insert(id, new_packs_indices);
+
+                return Ok(());
             }
         }
-
-        Ok(())
-    }
-
-    fn flush_block(&mut self) -> crate::Result<()> {
-        let mut current_pack = match &self.store_state.write_buffer {
-            Some(pack) => pack,
-            None => return Ok(()),
-        };
-
-        current_pack.pad(self.pack_size);
-        assert!(
-            current_pack.buffer.len() == self.pack_size,
-            "The current pack was not padded to the pack size."
-        );
-
-        let encoded_pack = self
-            .repo_state
-            .encode_data(current_pack.buffer.as_slice())?;
-
-        self.repo_state
-            .store
-            .lock()
-            .unwrap()
-            .write_block(current_pack.id, encoded_pack.as_slice())
-            .map_err(|error| crate::Error::Store(error))?;
-
-        self.store_state.write_buffer = None;
-        Ok(())
     }
 }
 
@@ -294,11 +291,6 @@ impl WriteBlock for DirectBlockWriter {
             .unwrap()
             .write_block(id, encoded_block.as_slice())
             .map_err(|error| crate::Error::Store(error))
-    }
-
-    fn flush_block(&mut self) -> crate::Result<()> {
-        // Because we write directly to the data store without buffering, there's nothing to flush.
-        Ok(())
     }
 }
 
@@ -410,10 +402,6 @@ impl<'a> WriteBlock for StoreWriter<'a> {
     fn write_block(&mut self, id: Uuid, data: &[u8]) -> crate::Result<()> {
         self.as_write_block().write_block(id, data)
     }
-
-    fn flush_block(&mut self) -> crate::Result<()> {
-        self.as_write_block().flush_block()
-    }
 }
 
 /// Read chunks of data.
@@ -431,9 +419,6 @@ pub trait WriteChunk {
     ///
     /// This requires a unique `id` which is used for reference counting.
     fn write_chunk(&mut self, data: &[u8], id: UniqueId) -> crate::Result<Chunk>;
-
-    /// Flush any buffered data.
-    fn flush_chunk(&mut self) -> crate::Result<()>;
 }
 
 impl ReadChunk for StoreReader {
@@ -476,9 +461,5 @@ impl WriteChunk for StoreWriter {
         self.repo_state.chunks.insert(chunk, chunk_info);
 
         Ok(chunk)
-    }
-
-    fn flush_chunk(&mut self) -> crate::Result<()> {
-        self.flush_block()
     }
 }

@@ -89,6 +89,7 @@ impl RepoMetadata {
             id: self.id,
             config: RepoConfig {
                 chunking: self.chunking.clone(),
+                packing: self.packing.clone(),
                 compression: self.compression.clone(),
                 encryption: self.encryption.clone(),
                 memory_limit: self.memory_limit,
