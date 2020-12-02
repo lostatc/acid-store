@@ -16,11 +16,18 @@
 
 use std::collections::{HashMap, HashSet};
 
+use lazy_static::lazy_static;
 use uuid::Uuid;
 
 use super::object::{ChunkHash, ObjectHandle};
 
+lazy_static! {
+    /// An empty set of managed object IDs
+    static ref EMPTY_SET: HashSet<Uuid> = HashSet::new();
+}
+
 /// A report of the integrity of the data in an `ObjectRepo`.
+#[derive(Debug)]
 pub struct IntegrityReport {
     /// The hashes of chunks which are corrupt.
     pub(super) corrupt_chunks: HashSet<ChunkHash>,
@@ -52,11 +59,10 @@ impl IntegrityReport {
         true
     }
 
-    /// Return the set of managed objects from each instance which are corrupt.
+    /// Return the set of managed objects which are corrupt.
     ///
-    /// This returns a map of instance IDs to sets of IDs of managed objects from that instance
-    /// which are corrupt.
-    pub fn list_managed(&self) -> &HashMap<Uuid, HashSet<Uuid>> {
-        &self.corrupt_managed
+    /// This returns the set of IDs of managed objects from the given `instance` which are corrupt.
+    pub fn list_managed(&self, instance: Uuid) -> &HashSet<Uuid> {
+        self.corrupt_managed.get(&instance).unwrap_or(&EMPTY_SET)
     }
 }
