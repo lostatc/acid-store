@@ -57,13 +57,11 @@
 //! key, which is used to encrypt all data in the repository. This setup means that the repository's
 //! password can be changed without re-encrypting any data.
 //!
-//! The master key is generated using the operating system's secure random number generator. Both
-//! the master key and the derived key are zeroed in memory once they go out of scope.
-//!
-//! Data in a data store is identified by UUIDs and not hashes, so data hashes are not leaked.
-//! However, the repository does not attempt to hide the size of chunks produced by the chunking
-//! algorithm. Even when using fixed-size chunking, chunks which are smaller than the configured
-//! chunk size can still be produced.
+//! Data in a data store is identified by random UUIDs and not hashes, so data hashes are not
+//! leaked. By default, the repository does not attempt to hide the size of chunks produced by the
+//! chunking algorithm, which is a form of metadata leakage which may be undesirable in some cases.
+//! You can configure the repository to pack data into fixed-size blocks before writing it to the
+//! data store at the cost of performance. See [`Packing`] for details.
 //!
 //! The information in [`RepoInfo`] is never encrypted, and can be read without decrypting the
 //! repository.
@@ -99,14 +97,15 @@
 //! [`Chunking`]: crate::repo::Chunking
 //! [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
 //! [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
+//! [`Packing`]: crate::repo::Packing;
 //! [`RepoInfo`]: crate::repo::RepoInfo
 //! [`ConvertRepo::switch_instance`]: crate::repo::ConvertRepo::switch_instance
 //! [`FileRepo`]: crate::repo::file::FileRepo
 //! [`VersionRepo`]: crate::repo::version::VersionRepo
 
 pub use self::common::{
-    Chunking, Compression, ContentId, ConvertRepo, Encryption, Object, OpenOptions, ReadOnlyObject,
-    RepoConfig, RepoInfo, ResourceLimit,
+    Chunking, Compression, ContentId, ConvertRepo, Encryption, Object, OpenOptions, Packing,
+    ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit,
 };
 
 /// A low-level repository type which provides more direct access to the underlying storage.

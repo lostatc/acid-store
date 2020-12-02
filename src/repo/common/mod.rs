@@ -22,6 +22,7 @@ pub use self::encryption::{Encryption, ResourceLimit};
 pub use self::metadata::RepoInfo;
 pub use self::object::{ContentId, Object, ObjectHandle, ReadOnlyObject};
 pub use self::open_options::OpenOptions;
+pub use self::packing::Packing;
 pub use self::report::IntegrityReport;
 pub use self::repository::ObjectRepo;
 pub use self::version_id::check_version;
