@@ -411,6 +411,38 @@ fn unused_data_is_reclaimed_on_commit() -> anyhow::Result<()> {
 }
 
 #[test]
+fn clean_before_commit_does_not_prevent_rollback() -> anyhow::Result<()> {
+    let mut repo = create_repo()?;
+    let id = Uuid::new_v4();
+    let mut object = repo.add_managed(id);
+
+    let expected_data = random_buffer();
+    let mut actual_data = Vec::new();
+
+    // Write to an object and commit.
+    object.write_all(expected_data.as_slice())?;
+    object.flush()?;
+    drop(object);
+    repo.commit()?;
+
+    // Delete that object, clean without committing first, and then roll back.
+    repo.remove_managed(id);
+    repo.clean()?;
+    repo.rollback()?;
+
+    // Check if the object still exists.
+    assert!(repo.contains_managed(id));
+
+    // Check if the object's data was cleaned up.
+    let mut object = repo.managed_object(id).unwrap();
+    object.read_to_end(&mut actual_data)?;
+
+    assert_eq!(actual_data.as_slice(), expected_data.as_slice());
+
+    Ok(())
+}
+
+#[test]
 fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
     let mut repo = create_repo()?;
     let mut handle = repo.add_unmanaged();
