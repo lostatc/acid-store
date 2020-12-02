@@ -22,11 +22,12 @@ use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
 use uuid::Uuid;
 
-use crate::repo::ConvertRepo;
+use crate::repo::{ConvertRepo, Packing};
 use crate::store::DataStore;
 
-use super::chunk_store::EncodeBlock;
-use super::chunk_store::{ChunkEncoder, ReadChunk, StoreReader};
+use super::chunk_store::{
+    ChunkEncoder, EncodeBlock, ReadBlock, ReadChunk, StoreReader, StoreWriter, WriteBlock,
+};
 use super::encryption::{EncryptionKey, KeySalt};
 use super::id_table::IdTable;
 use super::metadata::{Header, RepoInfo, RepoMetadata};
@@ -481,9 +482,7 @@ impl ObjectRepo {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn clean(&self) -> crate::Result<()> {
-        let data_blocks = self.list_data_blocks()?;
-
+    pub fn clean(&mut self) -> crate::Result<()> {
         // Read the header from the previous commit.
         let encoded_header = self
             .state
@@ -497,26 +496,99 @@ impl ObjectRepo {
         let previous_header: Header =
             from_read(serialized_header.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
-        // Need to find the set of blocks which are either currently referenced by the repository or
-        // were referenced after the previous commit. It's important that we don't clean up blocks
-        // which were referenced after the previous commit because that would make it impossible to
-        // roll back changes, and this method may be called before the repository is committed.
-        let mut current_referenced_chunks = self
+        // We need to find the set of blocks which are either currently referenced by the repository
+        // or were referenced after the previous commit. It's important that we don't clean up
+        // blocks which were referenced after the previous commit because that would make it
+        // impossible to roll back changes, and this method may be called before the repository is
+        // committed.
+        let mut referenced_blocks = self
             .state
             .chunks
             .values()
             .map(|info| info.block_id)
             .collect::<HashSet<_>>();
-        let previous_referenced_chunks = previous_header.chunks.values().map(|info| info.block_id);
-        current_referenced_chunks.extend(previous_referenced_chunks);
+        let previous_referenced_blocks = previous_header.chunks.values().map(|info| info.block_id);
+        referenced_blocks.extend(previous_referenced_blocks);
 
         // Remove all blocks from the data store which are unreferenced.
-        let mut store = self.state.store.lock().unwrap();
-        for stored_chunk in data_blocks {
-            if !current_referenced_chunks.contains(&stored_chunk) {
-                store
-                    .remove_block(stored_chunk)
-                    .map_err(|error| crate::Error::Store(error))?;
+        match &self.state.metadata.packing {
+            Packing::None => {
+                // When packing is disabled, we can just remove the unreferenced blocks from the
+                // data store directly.
+                let block_ids = self.list_data_blocks()?;
+
+                let mut store = self.state.store.lock().unwrap();
+                for block_id in block_ids {
+                    if !referenced_blocks.contains(&block_id) {
+                        store
+                            .remove_block(block_id)
+                            .map_err(|error| crate::Error::Store(error))?;
+                    }
+                }
+            }
+            Packing::Fixed(_) => {
+                // When packing is enabled, we need to repack the packs which contain unreferenced
+                // blocks.
+
+                // Get an iterator of block IDs and the list of packs they're contained in.
+                let blocks_to_packs = self.state.packs.iter().chain(previous_header.packs.iter());
+
+                // Get a map of pack IDs to the set of blocks contained in them.
+                let mut packs_to_blocks = HashMap::new();
+                for (block_id, index_list) in &blocks_to_packs {
+                    for pack_index in index_list {
+                        packs_to_blocks
+                            .entry(pack_index.id)
+                            .or_insert_with(HashSet::new)
+                            .insert(*block_id)
+                    }
+                }
+
+                // The list of IDs of packs which contain at least one unreferenced block.
+                let mut packs_to_remove = Vec::new();
+
+                // The list of blocks which need to be repacked. These are referenced blocks which
+                // are contained in packs which contain at least one unreferenced block.
+                let mut blocks_to_repack = Vec::new();
+
+                // Iterate over the IDs of packs which are contained in the data store.
+                for pack_id in self.list_data_blocks()? {
+                    match packs_to_blocks.get(&pack_id) {
+                        Some(contained_blocks) => {
+                            let contains_unreferenced_blocks = contained_blocks
+                                .iter()
+                                .any(|block_id| !referenced_blocks.contains(block_id));
+                            if contains_unreferenced_blocks {
+                                let contained_referenced_blocks =
+                                    contained_blocks.intersection(&referenced_blocks).copied();
+                                packs_to_remove.push(pack_id);
+                                blocks_to_repack.extend(contained_referenced_blocks);
+                            }
+                        }
+                        // This pack does not contain any blocks that we know about. We can remove
+                        // it.
+                        None => packs_to_remove.push(*pack_id),
+                    }
+                }
+
+                // For each block that needs repacking, read it from its current pack and write it
+                // to a new one.
+                {
+                    let mut store_writer = StoreWriter::new(&mut self.state);
+                    for block_id in blocks_to_repack {
+                        let block_data = store_writer.read_block(block_id)?;
+                        store_writer.write_block(block_id, block_data.as_slice())?;
+                    }
+                }
+
+                // Once all the referenced blocks have been written to new packs, remove the old
+                // packs from the data store.
+                {
+                    let mut store = self.state.store.lock().unwrap();
+                    for pack_id in packs_to_remove {
+                        store.remove_block(pack_id)?;
+                    }
+                }
             }
         }
 

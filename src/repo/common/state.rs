@@ -43,6 +43,7 @@ pub struct ChunkInfo {
 }
 
 /// The location of a block in a pack.
+#[derive(Debug, Clone)]
 pub struct PackIndex {
     /// The UUID of the pack in the data store.
     pub id: Uuid,
@@ -55,6 +56,7 @@ pub struct PackIndex {
 }
 
 /// A pack which stores multiple blocks.
+#[derive(Debug)]
 pub struct Pack {
     /// The UUID of this pack in the data store.
     pub id: Uuid,
@@ -72,13 +74,15 @@ impl Pack {
         }
     }
 
-    /// Pad the buffer with zeroes to the given `pack_size`.
-    pub fn pad(&mut self, pack_size: u32) {
+    /// Return a clone of this buffer padded to `pack_size` with zeroes.
+    pub fn padded(&mut self, pack_size: u32) -> Vec<u8> {
         assert!(
             self.buffer.len() <= pack_size as usize,
             "The size of the current pack has exceeded the configured pack size.",
         );
-        self.buffer.resize(pack_size as usize, 0u8);
+        let mut padded = self.buffer.clone();
+        padded.resize(pack_size as usize, 0u8);
+        padded
     }
 }
 

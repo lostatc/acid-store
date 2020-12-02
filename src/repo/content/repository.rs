@@ -275,7 +275,7 @@ impl ContentRepo {
     /// Clean up the repository to reclaim space in the backing data store.
     ///
     /// See `ObjectRepo::clean` for details.
-    pub fn clean(&self) -> crate::Result<()> {
+    pub fn clean(&mut self) -> crate::Result<()> {
         self.repository.clean()
     }
 
