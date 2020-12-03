@@ -138,25 +138,6 @@ fn opening_without_password_errs() -> anyhow::Result<()> {
 }
 
 #[test]
-fn creating_with_unnecessary_password_errs() -> anyhow::Result<()> {
-    let repo: Result<ObjectRepo, _> = OpenOptions::new(MemoryStore::new())
-        .password(b"Unnecessary password")
-        .create_new();
-    assert!(matches!(repo, Err(acid_store::Error::Password)));
-    Ok(())
-}
-
-#[test]
-fn opening_with_unnecessary_password_errs() -> anyhow::Result<()> {
-    let repo: ObjectRepo = OpenOptions::new(MemoryStore::new()).create_new()?;
-    let new_repo: Result<ObjectRepo, _> = OpenOptions::new(repo.into_store())
-        .password(b"Unnecessary password")
-        .open();
-    assert!(matches!(new_repo, Err(acid_store::Error::Password)));
-    Ok(())
-}
-
-#[test]
 fn opening_locked_repo_errs() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
 

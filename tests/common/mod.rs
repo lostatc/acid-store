@@ -26,7 +26,7 @@ use lazy_static::lazy_static;
 use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 
-use acid_store::repo::{Chunking, Compression, Encryption, RepoConfig};
+use acid_store::repo::{Chunking, Compression, Encryption, Packing, RepoConfig};
 use acid_store::store::DataStore;
 #[cfg(feature = "store-directory")]
 use acid_store::store::DirectoryStore;
@@ -45,18 +45,57 @@ use {
 };
 
 /// The minimum size of test data buffers.
-pub const MIN_BUFFER_SIZE: usize = 1024;
+pub const MIN_BUFFER_SIZE: usize = 2048;
 
 /// The maximum size of test data buffers.
-pub const MAX_BUFFER_SIZE: usize = 2048;
+pub const MAX_BUFFER_SIZE: usize = 4096;
 
 lazy_static! {
-    /// The repository config to use for testing IO.
-    pub static ref REPO_IO_CONFIG: RepoConfig = {
+    /// The repository config used for testing fixed-size chunking.
+    pub static ref FIXED_CONFIG: RepoConfig = {
         let mut config = RepoConfig::default();
-        config.chunking = Chunking::Zpaq { bits: 8 };
+        config.chunking = Chunking::Fixed { size: 256 };
+        config.packing = Packing::None;
+        config.encryption = Encryption::None;
+        config.compression = Compression::None;
+        config
+    };
+
+    /// The repository config used for testing encryption and compression.
+    pub static ref ENCODING_CONFIG: RepoConfig = {
+        let mut config = FIXED_CONFIG.to_owned();
         config.encryption = Encryption::XChaCha20Poly1305;
-        config.compression = Compression::Lz4 { level: 2 };
+        config.compression = Compression::Lz4 { level: 1 };
+        config
+    };
+
+    /// The repository config used for testing ZPAQ chunking.
+    pub static ref ZPAQ_CONFIG: RepoConfig = {
+        let mut config = FIXED_CONFIG.to_owned();
+        config.chunking = Chunking::Zpaq { bits: 8 };
+        config
+    };
+
+    /// The repository config used for testing packing with a size smaller than the chunk size.
+    pub static ref FIXED_PACKING_SMALL_CONFIG: RepoConfig = {
+        let mut config = FIXED_CONFIG.to_owned();
+        // Smaller than the chunk size and not a factor of it.
+        config.packing = Packing::Fixed(100);
+        config
+    };
+
+    /// The repository config used for testing packing with a size larger than the chunk size.
+    pub static ref FIXED_PACKING_LARGE_CONFIG: RepoConfig = {
+        let mut config = FIXED_CONFIG.to_owned();
+        // Larger than the chunk size and not a multiple of it.
+        config.packing = Packing::Fixed(300);
+        config
+    };
+
+    /// The repository config used for testing packing with ZPAQ chunking.
+    pub static ref ZPAQ_PACKING_CONFIG: RepoConfig = {
+        let mut config = ZPAQ_CONFIG.to_owned();
+        config.packing = Packing::Fixed(256);
         config
     };
 }
