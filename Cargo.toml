@@ -93,6 +93,7 @@ dotenv = "0.15.0"
 criterion = "0.3.1"
 bytesize = "1.0.0"
 maplit = "1.0.2"
+test-case = "1.0.0"
 
 [features]
 default = ["store-directory"]

@@ -18,17 +18,24 @@
 
 use std::io::{Read, Seek, SeekFrom, Write};
 
+use test_case::test_case;
+
 use acid_store::repo::object::ObjectRepo;
-use acid_store::repo::{Chunking, Compression, Encryption, OpenOptions};
+use acid_store::repo::{Chunking, Compression, Encryption, OpenOptions, RepoConfig};
 use acid_store::store::MemoryStore;
-use common::{random_buffer, random_bytes, MIN_BUFFER_SIZE, REPO_IO_CONFIG};
+use common::{random_buffer, random_bytes, MIN_BUFFER_SIZE};
 
 mod common;
 
-#[test]
-fn read_written_data_with_zpaq_chunking() -> anyhow::Result<()> {
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn read_written_data(config: RepoConfig) -> anyhow::Result<()> {
     let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
-        .config(REPO_IO_CONFIG.to_owned())
+        .config(config)
         .password(b"Password")
         .create_new()?;
     let mut handle = repo.add_unmanaged();
@@ -47,34 +54,15 @@ fn read_written_data_with_zpaq_chunking() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn read_written_data_with_fixed_chunking() -> anyhow::Result<()> {
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn seek_and_read_data(config: RepoConfig) -> anyhow::Result<()> {
     let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
-        .config(REPO_IO_CONFIG.to_owned())
-        .chunking(Chunking::Fixed { size: 256 })
-        .password(b"Password")
-        .create_new()?;
-
-    let mut handle = repo.add_unmanaged();
-    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
-
-    let expected_data = random_buffer();
-    let mut actual_data = vec![0u8; expected_data.len()];
-    object.write_all(expected_data.as_slice())?;
-    object.flush()?;
-    object.seek(SeekFrom::Start(0))?;
-    object.read_exact(&mut actual_data)?;
-
-    assert_eq!(actual_data, expected_data);
-    assert_eq!(object.size(), expected_data.len() as u64);
-
-    Ok(())
-}
-
-#[test]
-fn seek_and_read_data() -> anyhow::Result<()> {
-    let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
-        .config(REPO_IO_CONFIG.to_owned())
+        .config(config)
         .password(b"Password")
         .create_new()?;
     let mut handle = repo.add_unmanaged();
@@ -108,10 +96,15 @@ fn seek_and_read_data() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn seek_to_negative_offset() -> anyhow::Result<()> {
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn seek_to_negative_offset(config: RepoConfig) -> anyhow::Result<()> {
     let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
-        .config(REPO_IO_CONFIG.to_owned())
+        .config(config)
         .password(b"Password")
         .create_new()?;
     let mut handle = repo.add_unmanaged();
@@ -126,10 +119,15 @@ fn seek_to_negative_offset() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn overwrite_written_data() -> anyhow::Result<()> {
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn overwrite_written_data(config: RepoConfig) -> anyhow::Result<()> {
     let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
-        .config(REPO_IO_CONFIG.to_owned())
+        .config(config)
         .password(b"Password")
         .create_new()?;
     let mut handle = repo.add_unmanaged();
@@ -155,10 +153,15 @@ fn overwrite_written_data() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn partially_overwrite_written_data() -> anyhow::Result<()> {
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn partially_overwrite_written_data(config: RepoConfig) -> anyhow::Result<()> {
     let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
-        .config(REPO_IO_CONFIG.to_owned())
+        .config(config)
         .password(b"Password")
         .create_new()?;
     let mut handle = repo.add_unmanaged();
@@ -187,10 +190,15 @@ fn partially_overwrite_written_data() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn partially_overwrite_and_grow_data() -> anyhow::Result<()> {
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn partially_overwrite_and_grow_data(config: RepoConfig) -> anyhow::Result<()> {
     let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
-        .config(REPO_IO_CONFIG.to_owned())
+        .config(config)
         .password(b"Password")
         .create_new()?;
     let mut handle = repo.add_unmanaged();
@@ -221,10 +229,15 @@ fn partially_overwrite_and_grow_data() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn truncate_object() -> anyhow::Result<()> {
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn truncate_object(config: RepoConfig) -> anyhow::Result<()> {
     let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
-        .config(REPO_IO_CONFIG.to_owned())
+        .config(config)
         .password(b"Password")
         .create_new()?;
     let mut handle = repo.add_unmanaged();
@@ -253,10 +266,15 @@ fn truncate_object() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn compare_content_ids() -> anyhow::Result<()> {
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn compare_content_ids(config: RepoConfig) -> anyhow::Result<()> {
     let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
-        .config(REPO_IO_CONFIG.to_owned())
+        .config(config)
         .password(b"Password")
         .create_new()?;
     let mut handle1 = repo.add_unmanaged();
@@ -291,10 +309,15 @@ fn compare_content_ids() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn compare_contents_with_are_equal() -> anyhow::Result<()> {
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn compare_contents_with_are_equal(config: RepoConfig) -> anyhow::Result<()> {
     let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
-        .config(REPO_IO_CONFIG.to_owned())
+        .config(config)
         .password(b"Password")
         .create_new()?;
     let mut handle = repo.add_unmanaged();
@@ -311,10 +334,15 @@ fn compare_contents_with_are_equal() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn compare_unequal_contents_with_same_size() -> anyhow::Result<()> {
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn compare_unequal_contents_with_same_size(config: RepoConfig) -> anyhow::Result<()> {
     let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
-        .config(REPO_IO_CONFIG.to_owned())
+        .config(config)
         .password(b"Password")
         .create_new()?;
     let mut handle = repo.add_unmanaged();
@@ -332,10 +360,15 @@ fn compare_unequal_contents_with_same_size() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn compare_contents_which_are_smaller() -> anyhow::Result<()> {
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn compare_contents_which_are_smaller(config: RepoConfig) -> anyhow::Result<()> {
     let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
-        .config(REPO_IO_CONFIG.to_owned())
+        .config(config)
         .password(b"Password")
         .create_new()?;
     let mut handle = repo.add_unmanaged();
@@ -353,10 +386,15 @@ fn compare_contents_which_are_smaller() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn compare_contents_which_are_larger() -> anyhow::Result<()> {
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn compare_contents_which_are_larger(config: RepoConfig) -> anyhow::Result<()> {
     let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
-        .config(REPO_IO_CONFIG.to_owned())
+        .config(config)
         .password(b"Password")
         .create_new()?;
     let mut handle = repo.add_unmanaged();
@@ -374,10 +412,15 @@ fn compare_contents_which_are_larger() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn verify_valid_object_is_valid() -> anyhow::Result<()> {
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn verify_valid_object_is_valid(config: RepoConfig) -> anyhow::Result<()> {
     let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
-        .config(REPO_IO_CONFIG.to_owned())
+        .config(config)
         .password(b"Password")
         .create_new()?;
     let mut handle = repo.add_unmanaged();
