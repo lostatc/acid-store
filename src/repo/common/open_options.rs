@@ -207,9 +207,9 @@ impl OpenOptions {
             return Err(crate::Error::Password);
         }
 
-        // Return an error if a password was provided but not required.
+        // Clear the password if one was provided but not required.
         if self.password.is_some() && metadata.encryption == Encryption::None {
-            return Err(crate::Error::Password);
+            self.password = None;
         }
 
         // Decrypt the master key for the repository.
@@ -284,7 +284,7 @@ impl OpenOptions {
     ///
     /// # Errors
     /// - `Error::AlreadyExists`: A repository already exists in the given `store`.
-    /// - `Error::Password` A password was required but not provided or provided but not required.
+    /// - `Error::Password` A password was required but not provided.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -297,9 +297,9 @@ impl OpenOptions {
             return Err(crate::Error::Password);
         }
 
-        // Return an error if a password was provided but not required.
+        // Clear the password if one was provided but not required.
         if self.password.is_some() && self.config.encryption == Encryption::None {
-            return Err(crate::Error::Password);
+            self.password = None;
         }
 
         // Acquire an exclusive lock on the repository.
