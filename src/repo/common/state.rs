@@ -30,7 +30,6 @@ use super::id_table::UniqueId;
 use super::lock::Lock;
 use super::metadata::RepoMetadata;
 use super::object::Chunk;
-use super::packing::{DirectDataStore, Packing, PackingDataStore};
 
 /// Information about a chunk in a repository.
 #[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
@@ -106,16 +105,6 @@ pub struct RepoState {
 
     /// The lock on the repository.
     pub lock: Lock,
-}
-
-impl RepoState {
-    /// Return a `BufferedDataStore` which delegates to the `RepoState::store`.
-    pub fn buffered_store(&mut self) -> Box<dyn BufferedDataStore> {
-        match self.metadata.packing {
-            Packing::None => Box::new(DirectDataStore::new(&mut self)),
-            Packing::Fixed(pack_size) => Box::new(PackingDataStore::new(&mut self, pack_size)),
-        }
-    }
 }
 
 /// The location of a chunk in a stream of bytes.

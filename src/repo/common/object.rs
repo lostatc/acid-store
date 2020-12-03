@@ -320,7 +320,7 @@ impl<'a> Read for ObjectReader<'a> {
 
 /// A wrapper for writing data to an object.
 struct ObjectWriter<'a> {
-    chunk_writer: &'a mut Box<dyn ReadChunk + WriteChunk>,
+    chunk_writer: &'a mut Box<dyn WriteChunk>,
     object_state: &'a mut ObjectState,
     handle: &'a mut ObjectHandle,
 }
@@ -603,7 +603,7 @@ impl<'a> Seek for ReadOnlyObject<'a> {
 #[derive(Debug)]
 pub struct Object<'a> {
     /// The state for the object repository.
-    chunk_writer: Box<dyn ReadChunk + WriteChunk>,
+    chunk_writer: Box<dyn WriteChunk>,
 
     /// The state for the object itself.
     object_state: ObjectState,

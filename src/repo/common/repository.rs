@@ -25,9 +25,7 @@ use uuid::Uuid;
 use crate::repo::{ConvertRepo, Packing};
 use crate::store::DataStore;
 
-use super::chunk_store::{
-    ChunkEncoder, EncodeBlock, ReadBlock, ReadChunk, StoreReader, StoreWriter, WriteBlock,
-};
+use super::chunk_store::{EncodeBlock, ReadBlock, ReadChunk, StoreReader, StoreWriter, WriteBlock};
 use super::encryption::{EncryptionKey, KeySalt};
 use super::id_table::IdTable;
 use super::metadata::{Header, RepoInfo, RepoMetadata};

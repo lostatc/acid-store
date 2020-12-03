@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+use serde::{Deserialize, Serialize};
+
 /// A method for packing data in a repository.
 ///
 /// By default, repositories do not attempt to hide the size of chunks produced by the chunking
