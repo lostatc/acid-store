@@ -192,19 +192,23 @@ impl ContentId {
 }
 
 struct ObjectReader<'a> {
-    chunk_reader: &'a mut Box<dyn ReadChunk>,
+    repo_state: &'a RepoState,
     object_state: &'a mut ObjectState,
     handle: &'a ObjectHandle,
 }
 
 /// A wrapper for reading data from an object.
 impl<'a> ObjectReader<'a> {
+    fn store_reader(&mut self) -> StoreReader {
+        StoreReader::new(self.repo_state, &mut self.object_state.store_state)
+    }
+
     /// Verify the integrity of the data in this object.
     fn verify(&mut self) -> crate::Result<bool> {
         let expected_chunks = self.handle.chunks.iter().copied().collect::<Vec<_>>();
 
         for chunk in expected_chunks {
-            match self.chunk_reader.read_chunk(chunk) {
+            match self.store_reader().read_chunk(chunk) {
                 Ok(data) => {
                     if data.len() != chunk.size || chunk_hash(&data) != chunk.hash {
                         return Ok(false);
@@ -247,7 +251,7 @@ impl<'a> ObjectReader<'a> {
     /// The returned slice will be no longer than `size`.
     fn read_chunk(&mut self, size: usize) -> crate::Result<&[u8]> {
         // If the object is empty, there's no data to read.
-        let current_location = match self.object_reader().current_chunk() {
+        let current_location = match self.current_chunk() {
             Some(location) => location,
             None => return Ok(&[]),
         };
@@ -255,7 +259,8 @@ impl<'a> ObjectReader<'a> {
         // If we're reading from a new chunk, read the contents of that chunk into the read buffer.
         if Some(current_location.chunk) != self.object_state.buffered_chunk {
             self.object_state.buffered_chunk = Some(current_location.chunk);
-            self.object_state.read_buffer = self.chunk_reader.read_chunk(current_location.chunk)?;
+            self.object_state.read_buffer =
+                self.store_reader().read_chunk(current_location.chunk)?;
         }
 
         let start = current_location.relative_position();
@@ -320,15 +325,19 @@ impl<'a> Read for ObjectReader<'a> {
 
 /// A wrapper for writing data to an object.
 struct ObjectWriter<'a> {
-    chunk_writer: &'a mut Box<dyn WriteChunk>,
+    repo_state: &'a mut RepoState,
     object_state: &'a mut ObjectState,
     handle: &'a mut ObjectHandle,
 }
 
 impl<'a> ObjectWriter<'a> {
+    fn store_writer(&mut self) -> StoreWriter {
+        StoreWriter::new(&mut self.repo_state, &mut self.object_state.store_state)
+    }
+
     fn object_reader(&mut self) -> ObjectReader {
         ObjectReader {
-            chunk_reader: self.chunk_writer,
+            repo_state: self.repo_state,
             object_state: self.object_state,
             handle: self.handle,
         }
@@ -349,11 +358,12 @@ impl<'a> ObjectWriter<'a> {
             Some(location) => location,
             None => return Ok(()),
         };
-        let last_chunk = self.chunk_writer.read_chunk(end_location.chunk)?;
+        let last_chunk = self.store_writer().read_chunk(end_location.chunk)?;
         let new_last_chunk = &last_chunk[..end_location.relative_position()];
+        let handle_id = self.handle.handle_id;
         let new_last_chunk = self
-            .chunk_writer
-            .write_chunk(&new_last_chunk, self.handle.handle_id)?;
+            .store_writer()
+            .write_chunk(&new_last_chunk, handle_id)?;
 
         // Remove all chunks including and after the final chunk.
         self.handle.chunks.drain(end_location.index..);
@@ -384,9 +394,8 @@ impl<'a> ObjectWriter<'a> {
     /// Write chunks stored in the chunker to the repository.
     fn write_chunks(&mut self) -> crate::Result<()> {
         for chunk_data in self.object_state.chunker.chunks() {
-            let chunk = self
-                .chunk_writer
-                .write_chunk(&chunk_data, self.handle.handle_id)?;
+            let handle_id = self.handle.handle_id;
+            let chunk = self.store_writer().write_chunk(&chunk_data, handle_id)?;
             self.object_state.new_chunks.push(chunk);
         }
         Ok(())
@@ -410,7 +419,7 @@ impl<'a> Write for ObjectWriter<'a> {
 
                 // We need to make sure the data before the seek position is saved when we replace
                 // the chunk. Read this data from the repository and write it to the chunker.
-                let first_chunk = self.chunk_writer.read_chunk(chunk)?;
+                let first_chunk = self.store_writer().read_chunk(chunk)?;
                 self.object_state
                     .chunker
                     .write_all(&first_chunk[..position])?;
@@ -441,7 +450,7 @@ impl<'a> Write for ObjectWriter<'a> {
         if let Some(location) = &current_chunk {
             // We need to make sure the data after the seek position is saved when we replace the
             // current chunk. Read this data from the repository and write it to the chunker.
-            let last_chunk = self.chunk_writer.read_chunk(location.chunk)?;
+            let last_chunk = self.store_writer().read_chunk(location.chunk)?;
             self.object_state
                 .chunker
                 .write_all(&last_chunk[location.relative_position()..])?;
@@ -500,7 +509,7 @@ impl<'a> Write for ObjectWriter<'a> {
 #[derive(Debug)]
 pub struct ReadOnlyObject<'a> {
     /// The state for the object repository.
-    chunk_reader: Box<dyn ReadChunk>,
+    repo_state: &'a RepoState,
 
     /// The state for the object itself.
     object_state: ObjectState,
@@ -512,15 +521,15 @@ pub struct ReadOnlyObject<'a> {
 impl<'a> ReadOnlyObject<'a> {
     pub(crate) fn new(repo_state: &'a RepoState, handle: &'a ObjectHandle) -> Self {
         Self {
+            repo_state,
             object_state: ObjectState::new(repo_state.metadata.chunking.to_chunker()),
-            chunk_reader: Box::new(StoreReader::new(repo_state)),
             handle,
         }
     }
 
     fn object_reader(&mut self) -> ObjectReader {
         ObjectReader {
-            chunk_reader: &mut self.chunk_reader,
+            repo_state: &mut self.repo_state,
             object_state: &mut self.object_state,
             handle: self.handle,
         }
@@ -603,7 +612,7 @@ impl<'a> Seek for ReadOnlyObject<'a> {
 #[derive(Debug)]
 pub struct Object<'a> {
     /// The state for the object repository.
-    chunk_writer: Box<dyn WriteChunk>,
+    repo_state: &'a mut RepoState,
 
     /// The state for the object itself.
     object_state: ObjectState,
@@ -616,15 +625,15 @@ impl<'a> Object<'a> {
     pub(crate) fn new(repo_state: &'a mut RepoState, handle: &'a mut ObjectHandle) -> Self {
         let chunker = repo_state.metadata.chunking.to_chunker();
         Self {
+            repo_state,
             object_state: ObjectState::new(chunker),
-            chunk_writer: Box::new(StoreWriter::new(repo_state)),
             handle,
         }
     }
 
     fn object_reader(&mut self) -> ObjectReader {
         ObjectReader {
-            chunk_reader: &mut self.chunk_writer,
+            repo_state: &self.repo_state,
             object_state: &mut self.object_state,
             handle: self.handle,
         }
@@ -632,7 +641,7 @@ impl<'a> Object<'a> {
 
     fn object_writer(&mut self) -> ObjectWriter {
         ObjectWriter {
-            chunk_writer: &mut self.chunk_writer,
+            repo_state: &mut self.repo_state,
             object_state: &mut self.object_state,
             handle: self.handle,
         }

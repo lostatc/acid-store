@@ -24,6 +24,7 @@ use uuid::Uuid;
 
 use crate::store::DataStore;
 
+use super::chunk_store::StoreState;
 use super::chunking::IncrementalChunker;
 use super::encryption::EncryptionKey;
 use super::id_table::UniqueId;
@@ -42,7 +43,7 @@ pub struct ChunkInfo {
 }
 
 /// The location of a block in a pack.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackIndex {
     /// The UUID of the pack in the data store.
     pub id: Uuid,
@@ -159,6 +160,9 @@ pub struct ObjectState {
 
     /// Whether unflushed data has been written to the object.
     pub needs_flushed: bool,
+
+    /// The state for reading and writing blocks to the data store.
+    pub store_state: StoreState,
 }
 
 impl ObjectState {
@@ -172,6 +176,7 @@ impl ObjectState {
             buffered_chunk: None,
             read_buffer: Vec::new(),
             needs_flushed: false,
+            store_state: StoreState::new(),
         }
     }
 }

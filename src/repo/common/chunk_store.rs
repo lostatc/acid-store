@@ -85,7 +85,7 @@ impl<'a> ReadBlock for PackingBlockReader<'a> {
             None => return Err(crate::Error::InvalidData),
         };
 
-        let block_size = index_list.iter().map(|index| index.size).sum();
+        let block_size: u32 = index_list.iter().map(|index| index.size).sum();
         let mut block_buffer = Vec::with_capacity(block_size as usize);
 
         // A block can be spread across multiple packs. Get the data from each pack and concatenate
@@ -103,7 +103,7 @@ impl<'a> ReadBlock for PackingBlockReader<'a> {
                         .store
                         .lock()
                         .unwrap()
-                        .read_block(pack_index.id)?
+                        .read_block(pack_index.id)
                         .map_err(|error| crate::Error::Store(error))?
                         .ok_or(crate::Error::InvalidData)?;
                     let pack_buffer = self
@@ -114,13 +114,13 @@ impl<'a> ReadBlock for PackingBlockReader<'a> {
                         buffer: pack_buffer,
                     };
                     self.store_state.read_buffer = Some(pack);
-                    self.store_state.read_buffer.unwrap().buffer
+                    &self.store_state.read_buffer.as_ref().unwrap().buffer
                 }
             };
 
             // Get the slice of the pack containing the block data.
-            let start = pack_index.offset;
-            let end = pack_index.offset + pack_index.size;
+            let start = pack_index.offset as usize;
+            let end = (pack_index.offset + pack_index.size) as usize;
             block_buffer.extend_from_slice(&pack_buffer[start..end]);
         }
 
@@ -147,10 +147,11 @@ impl<'a> ReadBlock for PackingBlockWriter<'a> {
 
 impl<'a> WriteBlock for PackingBlockWriter<'a> {
     fn write_block(&mut self, id: Uuid, data: &[u8]) -> crate::Result<()> {
+        let pack_size = self.pack_size;
         let current_pack = self
             .store_state
             .write_buffer
-            .get_or_insert_with(|| Pack::new(self.pack_size));
+            .get_or_insert_with(|| Pack::new(pack_size));
 
         // The block's offset from the start of the current pack.
         let mut current_offset = current_pack.buffer.len() as u32;
@@ -180,7 +181,7 @@ impl<'a> WriteBlock for PackingBlockWriter<'a> {
             next_buffer = &data[bytes_written..buffer_end];
             current_pack.buffer.extend_from_slice(next_buffer);
             bytes_written += next_buffer.len();
-            current_size += next_buffer.len();
+            current_size += next_buffer.len() as u32;
 
             assert!(
                 current_pack.buffer.len() <= self.pack_size as usize,
@@ -201,7 +202,7 @@ impl<'a> WriteBlock for PackingBlockWriter<'a> {
             new_packs_indices.push(pack_index);
 
             // If we've filled the current pack, write it to the data store.
-            if current_pack.buffer.len() == self.pack_size {
+            if current_pack.buffer.len() == self.pack_size as usize {
                 let encoded_pack = self
                     .repo_state
                     .encode_data(current_pack.buffer.as_slice())?;
@@ -260,7 +261,7 @@ struct DirectBlockWriter<'a> {
 }
 
 impl<'a> DirectBlockWriter<'a> {
-    pub fn new(state: &'a RepoState) -> Self {
+    fn new(state: &'a RepoState) -> Self {
         DirectBlockWriter { state }
     }
 }
@@ -292,7 +293,8 @@ impl<'a> WriteBlock for DirectBlockWriter<'a> {
 }
 
 /// The state for a `StoreReader` or `StoreWriter`.
-struct StoreState {
+#[derive(Debug)]
+pub struct StoreState {
     /// The pack which was most recently read from the data store.
     read_buffer: Option<Pack>,
 
@@ -300,8 +302,9 @@ struct StoreState {
     write_buffer: Option<Pack>,
 }
 
-impl Default for StoreState {
-    fn default() -> Self {
+impl StoreState {
+    /// Create a new empty `StoreState`.
+    pub fn new() -> Self {
         StoreState {
             read_buffer: None,
             write_buffer: None,
@@ -326,14 +329,25 @@ pub trait WriteChunk: ReadChunk {
     fn write_chunk(&mut self, data: &[u8], id: UniqueId) -> crate::Result<Chunk>;
 }
 
-struct ChunkReader<'a> {
+/// A borrowed type for reading from a data store.
+pub struct StoreReader<'a> {
     repo_state: &'a RepoState,
     store_state: &'a mut StoreState,
 }
 
-impl<'a> ReadBlock for ChunkReader<'a> {
+impl<'a> StoreReader<'a> {
+    /// Create a new instance which borrows the given state.
+    pub fn new(repo_state: &'a RepoState, store_state: &'a mut StoreState) -> Self {
+        StoreReader {
+            repo_state,
+            store_state,
+        }
+    }
+}
+
+impl<'a> ReadBlock for StoreReader<'a> {
     fn read_block(&mut self, id: Uuid) -> crate::Result<Vec<u8>> {
-        let mut read_block = match &self.repo_state.metadata.packing {
+        let mut read_block: Box<dyn ReadBlock> = match &self.repo_state.metadata.packing {
             Packing::None => Box::new(DirectBlockWriter {
                 state: &self.repo_state,
             }),
@@ -347,7 +361,7 @@ impl<'a> ReadBlock for ChunkReader<'a> {
     }
 }
 
-impl<'a> ReadChunk for ChunkReader<'a> {
+impl<'a> ReadChunk for StoreReader<'a> {
     fn read_chunk(&mut self, chunk: Chunk) -> crate::Result<Vec<u8>> {
         let chunk_info = self
             .repo_state
@@ -358,14 +372,25 @@ impl<'a> ReadChunk for ChunkReader<'a> {
     }
 }
 
-struct ChunkWriter<'a> {
+/// A borrowed type for reading from and writing to a data store.
+pub struct StoreWriter<'a> {
     repo_state: &'a mut RepoState,
     store_state: &'a mut StoreState,
 }
 
-impl<'a> ReadBlock for ChunkWriter<'a> {
+impl<'a> StoreWriter<'a> {
+    /// Create a new instance which borrows the given state.
+    pub fn new(repo_state: &'a mut RepoState, store_state: &'a mut StoreState) -> Self {
+        StoreWriter {
+            repo_state,
+            store_state,
+        }
+    }
+}
+
+impl<'a> ReadBlock for StoreWriter<'a> {
     fn read_block(&mut self, id: Uuid) -> crate::Result<Vec<u8>> {
-        let mut chunk_reader = ChunkReader {
+        let mut chunk_reader = StoreReader {
             repo_state: self.repo_state,
             store_state: self.store_state,
         };
@@ -373,25 +398,25 @@ impl<'a> ReadBlock for ChunkWriter<'a> {
     }
 }
 
-impl<'a> WriteBlock for ChunkWriter<'a> {
+impl<'a> WriteBlock for StoreWriter<'a> {
     fn write_block(&mut self, id: Uuid, data: &[u8]) -> crate::Result<()> {
-        let mut block_writer = match &self.repo_state.metadata.packing {
+        let mut block_writer: Box<dyn WriteBlock> = match self.repo_state.metadata.packing.clone() {
             Packing::None => Box::new(DirectBlockWriter {
                 state: &self.repo_state,
             }),
             Packing::Fixed(pack_size) => Box::new(PackingBlockWriter {
                 repo_state: &mut self.repo_state,
                 store_state: &mut self.store_state,
-                pack_size: *pack_size,
+                pack_size,
             }),
         };
         block_writer.write_block(id, data)
     }
 }
 
-impl<'a> ReadChunk for ChunkWriter<'a> {
+impl<'a> ReadChunk for StoreWriter<'a> {
     fn read_chunk(&mut self, chunk: Chunk) -> crate::Result<Vec<u8>> {
-        let mut chunk_reader = ChunkReader {
+        let mut chunk_reader = StoreReader {
             repo_state: self.repo_state,
             store_state: self.store_state,
         };
@@ -399,7 +424,7 @@ impl<'a> ReadChunk for ChunkWriter<'a> {
     }
 }
 
-impl<'a> WriteChunk for ChunkWriter<'a> {
+impl<'a> WriteChunk for StoreWriter<'a> {
     fn write_chunk(&mut self, data: &[u8], id: UniqueId) -> crate::Result<Chunk> {
         // Get a checksum of the unencoded data.
         let chunk = Chunk {
@@ -428,97 +453,5 @@ impl<'a> WriteChunk for ChunkWriter<'a> {
         self.repo_state.chunks.insert(chunk, chunk_info);
 
         Ok(chunk)
-    }
-}
-
-/// An borrowed type for reading from a data store.
-pub struct StoreReader<'a> {
-    repo_state: &'a RepoState,
-    store_state: StoreState,
-}
-
-impl<'a> StoreReader<'a> {
-    /// Return a new `StoreReader` which encapsulates the given `state`.
-    pub fn new(state: &'a RepoState) -> Self {
-        StoreReader {
-            repo_state: state,
-            store_state: StoreState::default(),
-        }
-    }
-}
-
-impl<'a> ReadBlock for StoreReader<'a> {
-    fn read_block(&mut self, id: Uuid) -> crate::Result<Vec<u8>> {
-        let mut chunk_reader = ChunkReader {
-            repo_state: self.repo_state,
-            store_state: &mut self.store_state,
-        };
-        chunk_reader.read_block(id)
-    }
-}
-
-impl<'a> ReadChunk for StoreReader<'a> {
-    fn read_chunk(&mut self, chunk: Chunk) -> crate::Result<Vec<u8>> {
-        let mut chunk_reader = ChunkReader {
-            repo_state: self.repo_state,
-            store_state: &mut self.store_state,
-        };
-        chunk_reader.read_chunk(chunk)
-    }
-}
-
-/// An borrowed type for reading from and writing to a data store.
-pub struct StoreWriter<'a> {
-    repo_state: &'a mut RepoState,
-    store_state: StoreState,
-}
-
-impl<'a> StoreWriter<'a> {
-    /// Return a new `StoreWriter` which encapsulates the given `state`.
-    pub fn new(state: &'a mut RepoState) -> Self {
-        StoreWriter {
-            repo_state: state,
-            store_state: StoreState::default(),
-        }
-    }
-}
-
-impl<'a> ReadBlock for StoreWriter<'a> {
-    fn read_block(&mut self, id: Uuid) -> crate::Result<Vec<u8>> {
-        let mut chunk_reader = ChunkReader {
-            repo_state: self.repo_state,
-            store_state: &mut self.store_state,
-        };
-        chunk_reader.read_block(id)
-    }
-}
-
-impl<'a> WriteBlock for StoreWriter<'a> {
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> crate::Result<()> {
-        let mut chunk_writer = ChunkWriter {
-            repo_state: self.repo_state,
-            store_state: &mut self.store_state,
-        };
-        chunk_writer.write_block(id, data)
-    }
-}
-
-impl<'a> ReadChunk for StoreWriter<'a> {
-    fn read_chunk(&mut self, chunk: Chunk) -> crate::Result<Vec<u8>> {
-        let mut chunk_reader = ChunkReader {
-            repo_state: self.repo_state,
-            store_state: &mut self.store_state,
-        };
-        chunk_reader.read_chunk(chunk)
-    }
-}
-
-impl<'a> WriteChunk for StoreWriter<'a> {
-    fn write_chunk(&mut self, data: &[u8], id: UniqueId) -> crate::Result<Chunk> {
-        let mut chunk_writer = ChunkWriter {
-            repo_state: self.repo_state,
-            store_state: &mut self.store_state,
-        };
-        chunk_writer.write_chunk(data, id)
     }
 }

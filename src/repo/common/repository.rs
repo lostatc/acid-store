@@ -25,7 +25,9 @@ use uuid::Uuid;
 use crate::repo::{ConvertRepo, Packing};
 use crate::store::DataStore;
 
-use super::chunk_store::{EncodeBlock, ReadBlock, ReadChunk, StoreReader, StoreWriter, WriteBlock};
+use super::chunk_store::{
+    EncodeBlock, ReadBlock, ReadChunk, StoreReader, StoreState, StoreWriter, WriteBlock,
+};
 use super::encryption::{EncryptionKey, KeySalt};
 use super::id_table::IdTable;
 use super::metadata::{Header, RepoInfo, RepoMetadata};
@@ -533,12 +535,12 @@ impl ObjectRepo {
 
                 // Get a map of pack IDs to the set of blocks contained in them.
                 let mut packs_to_blocks = HashMap::new();
-                for (block_id, index_list) in &blocks_to_packs {
+                for (block_id, index_list) in blocks_to_packs {
                     for pack_index in index_list {
                         packs_to_blocks
                             .entry(pack_index.id)
                             .or_insert_with(HashSet::new)
-                            .insert(*block_id)
+                            .insert(*block_id);
                     }
                 }
 
@@ -565,14 +567,15 @@ impl ObjectRepo {
                         }
                         // This pack does not contain any blocks that we know about. We can remove
                         // it.
-                        None => packs_to_remove.push(*pack_id),
+                        None => packs_to_remove.push(pack_id),
                     }
                 }
 
                 // For each block that needs repacking, read it from its current pack and write it
                 // to a new one.
                 {
-                    let mut store_writer = StoreWriter::new(&mut self.state);
+                    let mut store_state = StoreState::new();
+                    let mut store_writer = StoreWriter::new(&mut self.state, &mut store_state);
                     for block_id in blocks_to_repack {
                         let block_data = store_writer.read_block(block_id)?;
                         store_writer.write_block(block_id, block_data.as_slice())?;
@@ -584,7 +587,9 @@ impl ObjectRepo {
                 {
                     let mut store = self.state.store.lock().unwrap();
                     for pack_id in packs_to_remove {
-                        store.remove_block(pack_id)?;
+                        store
+                            .remove_block(pack_id)
+                            .map_err(|error| crate::Error::Store(error))?;
                     }
                 }
             }
@@ -615,9 +620,10 @@ impl ObjectRepo {
         let expected_chunks = self.state.chunks.keys().copied().collect::<Vec<_>>();
 
         // Get the set of hashes of chunks which are corrupt.
-        let mut chunk_reader = StoreReader::new(&self.state);
+        let mut store_state = StoreState::new();
+        let mut store_reader = StoreReader::new(&self.state, &mut store_state);
         for chunk in expected_chunks {
-            match chunk_reader.read_chunk(chunk) {
+            match store_reader.read_chunk(chunk) {
                 Ok(data) => {
                     if data.len() != chunk.size || chunk_hash(&data) != chunk.hash {
                         report.corrupt_chunks.insert(chunk.hash);
