@@ -263,13 +263,11 @@ impl OpenOptions {
             metadata,
             chunks,
             packs,
-            read_buffer: None,
-            write_buffer: None,
             master_key,
             lock,
         };
 
-        let repository = ObjectRepo {
+        let mut repository = ObjectRepo {
             state,
             instance_id: self.instance,
             managed,
@@ -412,13 +410,11 @@ impl OpenOptions {
             metadata,
             chunks,
             packs,
-            write_buffer: None,
-            read_buffer: None,
             master_key,
             lock,
         };
 
-        let repository = ObjectRepo {
+        let mut repository = ObjectRepo {
             state,
             instance_id: self.instance,
             managed,
