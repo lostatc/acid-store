@@ -43,7 +43,7 @@ pub fn chunk_hash(data: &[u8]) -> ChunkHash {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Chunk {
     /// The size of the chunk in bytes.
-    pub size: usize,
+    pub size: u32,
 
     /// The checksum of the chunk.
     pub hash: ChunkHash,
@@ -165,11 +165,11 @@ impl ContentId {
 
         for chunk in &self.chunks {
             // Grow the buffer so it's large enough.
-            if buffer.len() < chunk.size {
-                buffer.resize(chunk.size, 0u8);
+            if buffer.len() < chunk.size as usize {
+                buffer.resize(chunk.size as usize, 0u8);
             }
 
-            if let Err(error) = other.read_exact(&mut buffer[..chunk.size]) {
+            if let Err(error) = other.read_exact(&mut buffer[..chunk.size as usize]) {
                 return if error.kind() == io::ErrorKind::UnexpectedEof {
                     Ok(false)
                 } else {
@@ -177,7 +177,7 @@ impl ContentId {
                 };
             }
 
-            if chunk.hash != chunk_hash(&buffer[..chunk.size]) {
+            if chunk.hash != chunk_hash(&buffer[..chunk.size as usize]) {
                 return Ok(false);
             }
         }
@@ -210,7 +210,7 @@ impl<'a> ObjectReader<'a> {
         for chunk in expected_chunks {
             match self.store_reader().read_chunk(chunk) {
                 Ok(data) => {
-                    if data.len() != chunk.size || chunk_hash(&data) != chunk.hash {
+                    if data.len() != chunk.size as usize || chunk_hash(&data) != chunk.hash {
                         return Ok(false);
                     }
                 }

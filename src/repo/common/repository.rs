@@ -625,7 +625,7 @@ impl ObjectRepo {
         for chunk in expected_chunks {
             match store_reader.read_chunk(chunk) {
                 Ok(data) => {
-                    if data.len() != chunk.size || chunk_hash(&data) != chunk.hash {
+                    if data.len() != chunk.size as usize || chunk_hash(&data) != chunk.hash {
                         report.corrupt_chunks.insert(chunk.hash);
                     }
                 }

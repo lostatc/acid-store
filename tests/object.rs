@@ -445,7 +445,7 @@ fn write_buffer_with_same_size_as_fixed_chunk_size() -> anyhow::Result<()> {
     let mut handle = repo.add_unmanaged();
     let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
 
-    object.write_all(random_bytes(chunk_size).as_slice())?;
+    object.write_all(random_bytes(chunk_size as usize).as_slice())?;
     object.flush()?;
 
     assert_eq!(object.size(), chunk_size as u64);
