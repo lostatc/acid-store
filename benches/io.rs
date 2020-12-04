@@ -26,12 +26,14 @@ use uuid::Uuid;
 
 use acid_store::repo::key::KeyRepo;
 use acid_store::repo::object::ObjectRepo;
-use acid_store::repo::{Chunking, Encryption, OpenOptions};
-use acid_store::store::{DataStore, MemoryStore};
+use acid_store::repo::{Chunking, Encryption, OpenOptions, Packing};
+use acid_store::store::MemoryStore;
 
+/// The ID of the managed object to write to for the bench test.
 const TEST_OBJECT_UUID: Uuid = Uuid::from_bytes(hex!("375e9f00 d476 4f2c a5db 1aec51c0a240"));
 
-const TEST_BLOCK_UUID: Uuid = Uuid::from_bytes(hex!("58f1788f 5b45 4176 8e0a b9ab18a3cf50"));
+/// The number of bytes to write when a trivial amount of data must be written.
+const TRIVIAL_DATA_SIZE: usize = 16;
 
 /// Return a buffer containing `size` random bytes for testing purposes.
 pub fn random_bytes(size: usize) -> Vec<u8> {
@@ -41,7 +43,7 @@ pub fn random_bytes(size: usize) -> Vec<u8> {
     buffer
 }
 
-fn create_repo_fixed() -> ObjectRepo<MemoryStore> {
+fn create_repo_fixed() -> ObjectRepo {
     OpenOptions::new(MemoryStore::new())
         .chunking(Chunking::Fixed {
             size: bytesize::mib(1u64) as usize,
@@ -50,60 +52,59 @@ fn create_repo_fixed() -> ObjectRepo<MemoryStore> {
         .unwrap()
 }
 
-fn create_repo_fixed_encryption() -> ObjectRepo<MemoryStore> {
+fn create_repo_zpaq() -> ObjectRepo {
+    OpenOptions::new(MemoryStore::new())
+        .chunking(Chunking::Zpaq { bits: 18 })
+        .create_new()
+        .unwrap()
+}
+
+fn create_repo_fixed_encryption() -> ObjectRepo {
     OpenOptions::new(MemoryStore::new())
         .chunking(Chunking::Fixed {
             size: bytesize::mib(1u64) as usize,
         })
         .encryption(Encryption::XChaCha20Poly1305)
+        .packing(Packing::Fixed(bytesize::kib(64u64) as u32))
         .password(b"password")
         .create_new()
         .unwrap()
 }
 
-fn create_repo_zpaq() -> ObjectRepo<MemoryStore> {
+fn create_repo_zpaq_encryption() -> ObjectRepo {
     OpenOptions::new(MemoryStore::new())
-        .chunking(Chunking::Zpaq { bits: 20 })
-        .create_new()
-        .unwrap()
-}
-
-fn create_repo_zpaq_encryption() -> ObjectRepo<MemoryStore> {
-    OpenOptions::new(MemoryStore::new())
-        .chunking(Chunking::Zpaq { bits: 20 })
+        .chunking(Chunking::Zpaq { bits: 18 })
         .encryption(Encryption::XChaCha20Poly1305)
+        .packing(Packing::Fixed(bytesize::kib(16u64) as u32))
         .password(b"password")
         .create_new()
         .unwrap()
 }
 
-/// Return an iterator of repositories and test descriptions.
-fn test_configs() -> Vec<(ObjectRepo<MemoryStore>, String)> {
+/// Return a list of repositories and test descriptions.
+fn test_configs() -> Vec<(ObjectRepo, String)> {
     let fixed = (
         create_repo_fixed(),
-        String::from("Chunking::Fixed, Encryption::None"),
-    );
-
-    let fixed_encryption = (
-        create_repo_fixed_encryption(),
-        String::from("Chunking::Fixed, Encryption::XChaCha20Poly1305"),
+        String::from("Chunking::Fixed, Packing::None, Encryption::None"),
     );
 
     let zpaq = (
         create_repo_zpaq(),
-        String::from("Chunking::Zpaq, Encryption::None"),
+        String::from("Chunking::Zpaq, Packing::None, Encryption::None"),
     );
 
-    let zpaq_encryption = (
+    let fixed_packing = (
+        create_repo_fixed_encryption(),
+        String::from("Chunking::Fixed, Packing::Fixed, Encryption::XChaCha20Poly1305"),
+    );
+
+    let zpaq_packing = (
         create_repo_zpaq_encryption(),
-        String::from("Chunking::Zpaq, Encryption::XChaCha20Poly1305"),
+        String::from("Chunking::Zpaq, Packing::Fixed, Encryption::XChaCha20Poly1305"),
     );
 
-    vec![fixed, fixed_encryption, zpaq, zpaq_encryption]
+    vec![fixed, zpaq, fixed_packing, zpaq_packing]
 }
-
-/// The number of bytes to write when a trivial amount of data must be written.
-const TRIVIAL_DATA_SIZE: usize = 16;
 
 pub fn insert_object(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("Insert an object");
@@ -111,7 +112,7 @@ pub fn insert_object(criterion: &mut Criterion) {
     for num_objects in [100, 1_000, 10_000].iter() {
         // Create a new repository.
         let mut repo = OpenOptions::new(MemoryStore::new())
-            .create_new::<KeyRepo<String, _>>()
+            .create_new::<KeyRepo<String>>()
             .unwrap();
 
         // Insert objects and write to them but don't commit them.
@@ -143,7 +144,7 @@ pub fn insert_object_and_write(criterion: &mut Criterion) {
     for num_objects in [100, 1_000, 10_000].iter() {
         // Create a new repository.
         let mut repo = OpenOptions::new(MemoryStore::new())
-            .create_new::<KeyRepo<String, _>>()
+            .create_new::<KeyRepo<String>>()
             .unwrap();
 
         // Insert objects and write to them but don't commit them.
@@ -173,30 +174,6 @@ pub fn insert_object_and_write(criterion: &mut Criterion) {
             },
         );
     }
-}
-
-pub fn write_baseline(criterion: &mut Criterion) {
-    let mut group = criterion.benchmark_group("Baseline write");
-
-    let object_size = bytesize::mib(1u64);
-
-    group.throughput(Throughput::Bytes(object_size));
-    group.measurement_time(Duration::from_secs(10));
-    group.sample_size(50);
-
-    group.bench_function(bytesize::to_string(object_size, true), |bencher| {
-        bencher.iter_batched(
-            || {
-                let store = MemoryStore::new();
-                let data = random_bytes(object_size as usize);
-                (store, data)
-            },
-            |(mut store, data)| {
-                store.write_block(TEST_BLOCK_UUID, data.as_slice()).unwrap();
-            },
-            BatchSize::PerIteration,
-        );
-    });
 }
 
 pub fn write_object(criterion: &mut Criterion) {
@@ -230,32 +207,6 @@ pub fn write_object(criterion: &mut Criterion) {
             },
         );
     }
-}
-
-pub fn read_baseline(criterion: &mut Criterion) {
-    let mut group = criterion.benchmark_group("Baseline read");
-
-    let object_size = bytesize::mib(1u64);
-
-    group.throughput(Throughput::Bytes(object_size));
-    group.measurement_time(Duration::from_secs(10));
-    group.sample_size(50);
-
-    group.bench_function(bytesize::to_string(object_size, true), |bencher| {
-        bencher.iter_batched(
-            || {
-                let mut store = MemoryStore::new();
-                let data = random_bytes(object_size as usize);
-                store.write_block(TEST_BLOCK_UUID, data.as_slice()).unwrap();
-                store
-            },
-            |mut store| {
-                let block = store.read_block(TEST_BLOCK_UUID).unwrap().unwrap();
-                block
-            },
-            BatchSize::PerIteration,
-        );
-    });
 }
 
 pub fn read_object(criterion: &mut Criterion) {
@@ -296,7 +247,6 @@ pub fn read_object(criterion: &mut Criterion) {
     }
 }
 
-criterion_group!(baseline, write_baseline, read_baseline);
 criterion_group!(throughput, read_object, write_object);
 criterion_group!(insert, insert_object, insert_object_and_write);
 criterion_main!(throughput);
