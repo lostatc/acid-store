@@ -36,19 +36,25 @@ pub trait EncodeBlock {
 
 impl EncodeBlock for RepoState {
     fn encode_data(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
-        let compressed_data = self.metadata.compression.compress(data)?;
+        let compressed_data = self.metadata.config.compression.compress(data)?;
 
         Ok(self
             .metadata
+            .config
             .encryption
             .encrypt(compressed_data.as_slice(), &self.master_key))
     }
 
     fn decode_data(&self, data: &[u8]) -> crate::Result<Vec<u8>> {
-        let decrypted_data = self.metadata.encryption.decrypt(data, &self.master_key)?;
+        let decrypted_data = self
+            .metadata
+            .config
+            .encryption
+            .decrypt(data, &self.master_key)?;
 
         Ok(self
             .metadata
+            .config
             .compression
             .decompress(decrypted_data.as_slice())?)
     }
@@ -347,7 +353,7 @@ impl<'a> StoreReader<'a> {
 
 impl<'a> ReadBlock for StoreReader<'a> {
     fn read_block(&mut self, id: Uuid) -> crate::Result<Vec<u8>> {
-        let mut read_block: Box<dyn ReadBlock> = match &self.repo_state.metadata.packing {
+        let mut read_block: Box<dyn ReadBlock> = match &self.repo_state.metadata.config.packing {
             Packing::None => Box::new(DirectBlockWriter {
                 state: &self.repo_state,
             }),
@@ -400,16 +406,17 @@ impl<'a> ReadBlock for StoreWriter<'a> {
 
 impl<'a> WriteBlock for StoreWriter<'a> {
     fn write_block(&mut self, id: Uuid, data: &[u8]) -> crate::Result<()> {
-        let mut block_writer: Box<dyn WriteBlock> = match self.repo_state.metadata.packing.clone() {
-            Packing::None => Box::new(DirectBlockWriter {
-                state: &self.repo_state,
-            }),
-            Packing::Fixed(pack_size) => Box::new(PackingBlockWriter {
-                repo_state: &mut self.repo_state,
-                store_state: &mut self.store_state,
-                pack_size,
-            }),
-        };
+        let mut block_writer: Box<dyn WriteBlock> =
+            match self.repo_state.metadata.config.packing.clone() {
+                Packing::None => Box::new(DirectBlockWriter {
+                    state: &self.repo_state,
+                }),
+                Packing::Fixed(pack_size) => Box::new(PackingBlockWriter {
+                    repo_state: &mut self.repo_state,
+                    store_state: &mut self.store_state,
+                    pack_size,
+                }),
+            };
         block_writer.write_block(id, data)
     }
 }

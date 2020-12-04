@@ -522,7 +522,7 @@ impl<'a> ReadOnlyObject<'a> {
     pub(crate) fn new(repo_state: &'a RepoState, handle: &'a ObjectHandle) -> Self {
         Self {
             repo_state,
-            object_state: ObjectState::new(repo_state.metadata.chunking.to_chunker()),
+            object_state: ObjectState::new(repo_state.metadata.config.chunking.to_chunker()),
             handle,
         }
     }
@@ -623,7 +623,7 @@ pub struct Object<'a> {
 
 impl<'a> Object<'a> {
     pub(crate) fn new(repo_state: &'a mut RepoState, handle: &'a mut ObjectHandle) -> Self {
-        let chunker = repo_state.metadata.chunking.to_chunker();
+        let chunker = repo_state.metadata.config.chunking.to_chunker();
         Self {
             repo_state,
             object_state: ObjectState::new(chunker),

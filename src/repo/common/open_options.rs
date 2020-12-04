@@ -16,7 +16,6 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::SystemTime;
 
 use hex_literal::hex;
 use lazy_static::lazy_static;
@@ -44,7 +43,7 @@ const GLOBAL_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92b 031
 ///
 /// This must be changed any time a backwards-incompatible change is made to the repository
 /// format.
-const VERSION_ID: Uuid = Uuid::from_bytes(hex!("62c2b71d b8a7 454c a55a e4a47effb744"));
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("9070207d 98de 462f 91b8 68e73680ee18"));
 
 lazy_static! {
     /// A table of locks on repositories.
@@ -203,12 +202,12 @@ impl OpenOptions {
             from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
         // Return an error if a password was required but not provided.
-        if self.password.is_none() && metadata.encryption != Encryption::None {
+        if self.password.is_none() && metadata.config.encryption != Encryption::None {
             return Err(crate::Error::Password);
         }
 
         // Clear the password if one was provided but not required.
-        if self.password.is_some() && metadata.encryption == Encryption::None {
+        if self.password.is_some() && metadata.config.encryption == Encryption::None {
             self.password = None;
         }
 
@@ -218,12 +217,13 @@ impl OpenOptions {
                 let user_key = EncryptionKey::derive(
                     password_bytes.as_slice(),
                     &metadata.salt,
-                    metadata.encryption.key_size(),
-                    metadata.memory_limit,
-                    metadata.operations_limit,
+                    metadata.config.encryption.key_size(),
+                    metadata.config.memory_limit,
+                    metadata.config.operations_limit,
                 );
                 EncryptionKey::new(
                     metadata
+                        .config
                         .encryption
                         .decrypt(&metadata.master_key, &user_key)
                         .map_err(|_| crate::Error::Password)?,
@@ -239,10 +239,12 @@ impl OpenOptions {
             .map_err(|error| crate::Error::Store(error))?
             .ok_or(crate::Error::Corrupt)?;
         let compressed_header = metadata
+            .config
             .encryption
             .decrypt(&encrypted_header, &master_key)
             .map_err(|_| crate::Error::Corrupt)?;
         let serialized_header = metadata
+            .config
             .compression
             .decompress(&compressed_header)
             .map_err(|_| crate::Error::Corrupt)?;
@@ -374,16 +376,10 @@ impl OpenOptions {
         // Create the repository metadata with the header block references.
         let metadata = RepoMetadata {
             id,
-            chunking: self.config.chunking,
-            packing: self.config.packing,
-            compression: self.config.compression,
-            encryption: self.config.encryption,
-            memory_limit: self.config.memory_limit,
-            operations_limit: self.config.operations_limit,
+            config: self.config,
             master_key: encrypted_master_key,
             salt,
             header_id,
-            creation_time: SystemTime::now(),
         };
 
         // Write the repository metadata.

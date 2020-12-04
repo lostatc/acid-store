@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+use serde::{Deserialize, Serialize};
+
 use super::chunking::Chunking;
 use super::compression::Compression;
 use super::encryption::{Encryption, ResourceLimit};
@@ -24,7 +26,7 @@ use super::packing::Packing;
 /// This type is used to configure a repository when it is created. Once a repository is created,
 /// the config values provided cannot be changed. This type implements `Default` to provide a
 /// reasonable default configuration.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct RepoConfig {
     /// The chunking method to use in the repository.

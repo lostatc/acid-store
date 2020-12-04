@@ -15,18 +15,14 @@
  */
 
 use std::collections::HashMap;
-use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::chunking::Chunking;
-use super::compression::Compression;
 use super::config::RepoConfig;
-use super::encryption::{Encryption, KeySalt, ResourceLimit};
+use super::encryption::KeySalt;
 use super::id_table::IdTable;
 use super::object::{Chunk, ObjectHandle};
-use super::packing::Packing;
 use super::state::{ChunkInfo, PackIndex};
 
 /// The repository state which is persisted to the data store on each commit.
@@ -51,23 +47,8 @@ pub struct RepoMetadata {
     /// The unique ID of this repository.
     pub id: Uuid,
 
-    /// The chunking method being used in this repository.
-    pub chunking: Chunking,
-
-    /// The packing method used in this repository.
-    pub packing: Packing,
-
-    /// The compression method being used in this repository.
-    pub compression: Compression,
-
-    /// The encryption method being used in this repository.
-    pub encryption: Encryption,
-
-    /// The maximum amount of memory the key derivation function will use in bytes.
-    pub memory_limit: ResourceLimit,
-
-    /// The maximum number of computations the key derivation function will perform.
-    pub operations_limit: ResourceLimit,
+    /// The configuration for the repository.
+    pub config: RepoConfig,
 
     /// The master encryption key encrypted with the user's password.
     pub master_key: Vec<u8>,
@@ -77,9 +58,6 @@ pub struct RepoMetadata {
 
     /// The ID of the chunk which stores the repository header.
     pub header_id: Uuid,
-
-    /// The time this repository was created.
-    pub creation_time: SystemTime,
 }
 
 impl RepoMetadata {
@@ -87,15 +65,7 @@ impl RepoMetadata {
     pub fn to_info(&self) -> RepoInfo {
         RepoInfo {
             id: self.id,
-            config: RepoConfig {
-                chunking: self.chunking.clone(),
-                packing: self.packing.clone(),
-                compression: self.compression.clone(),
-                encryption: self.encryption.clone(),
-                memory_limit: self.memory_limit,
-                operations_limit: self.operations_limit,
-            },
-            created: self.creation_time,
+            config: self.config.clone(),
         }
     }
 }
@@ -105,7 +75,6 @@ impl RepoMetadata {
 pub struct RepoInfo {
     id: Uuid,
     config: RepoConfig,
-    created: SystemTime,
 }
 
 impl RepoInfo {
@@ -120,10 +89,5 @@ impl RepoInfo {
     /// The configuration used to create this repository.
     pub fn config(&self) -> &RepoConfig {
         &self.config
-    }
-
-    /// The time this repository was created.
-    pub fn created(&self) -> SystemTime {
-        self.created
     }
 }
