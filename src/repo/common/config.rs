@@ -29,7 +29,7 @@ use super::packing::Packing;
 pub struct RepoConfig {
     /// The chunking method to use in the repository.
     ///
-    /// The default value is `Chunking::Zpaq { bits: 20 }`.
+    /// The default value is `Chunking::Fixed { size: 1048576 }` (1 MiB).
     pub chunking: Chunking,
 
     /// The packing method to use in the repository.
@@ -61,7 +61,7 @@ pub struct RepoConfig {
 impl Default for RepoConfig {
     fn default() -> Self {
         RepoConfig {
-            chunking: Chunking::Zpaq { bits: 20 },
+            chunking: Chunking::Fixed { size: 1024 * 1024 },
             packing: Packing::None,
             compression: Compression::None,
             encryption: Encryption::None,
