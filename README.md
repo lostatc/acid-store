@@ -57,9 +57,9 @@ This library provides the following storage backends out of the box.
 
 ## Benchmarks
 
-The following results show read and write speeds for an in-memory repository. An in-memory
-repository is used to make benchmark results more consistent between runs and between machines. You
-can run the benchmarks yourself by running `cargo bench --all-features`.
+The following results show read and write speeds for an in-memory repository with various configurations. An in-memory
+repository is used to make benchmark results more consistent between runs and between machines. You can run the
+benchmarks yourself by running `cargo bench --all-features`.
 
 ### Specs
 
@@ -71,9 +71,10 @@ OS | Linux 5.8
 
 ### Results
 
-Chunking | Encryption | Compression | Read | Write
---- | --- | --- | --- | ---
-Fixed | None | None | 2640 MiB/s | 1425 MiB/s
-Fixed | XChaCha20-Poly1305 | None | 865 MiB/s | 610 MiB/s
-ZPAQ | None | None | 2275 MiB/s | 480 MiB/s
-ZPAQ | XChaCha20-Poly1305 | None | 840 MiB/s | 340 MiB/s
+Chunking | Packing | Encryption | Compression | Read | Write
+--- | --- | --- | --- | --- | ---
+Fixed | None | None | None | 2410 MiB/s | 1360 MiB/s
+ZPAQ | None | None | None | 2210 MiB/s | 470 MiB/s
+Fixed | Fixed | XChaCha20-Poly1305 | None | 805 MiB/s | 565 MiB/s
+ZPAQ | Fixed | XChaCha20-Poly1305 | None | 805 MiB/s | 300 MiB/s
+
