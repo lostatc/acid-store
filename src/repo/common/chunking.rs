@@ -36,7 +36,7 @@ pub enum Chunking {
     /// content-defined deduplication and will typically result in worse deduplication ratios.
     Fixed {
         /// The size of each chunk in bytes.
-        size: usize,
+        size: u32,
     },
 
     /// Split data using the ZPAQ content-defined chunking algorithm.
@@ -48,7 +48,7 @@ pub enum Chunking {
         ///
         /// For example, a value of `20` will result in an average chunk size of 1MiB
         /// (2^20 = 1048576).
-        bits: usize,
+        bits: u32,
     },
 }
 
@@ -56,8 +56,8 @@ impl Chunking {
     /// Return a chunker for this chunking method.
     pub(super) fn to_chunker(&self) -> Box<dyn ChunkerImpl> {
         match self {
-            Chunking::Fixed { size } => Box::new(FixedChunker::new(*size)),
-            Chunking::Zpaq { bits } => Box::new(ZPAQ::new(*bits)),
+            Chunking::Fixed { size } => Box::new(FixedChunker::new(*size as usize)),
+            Chunking::Zpaq { bits } => Box::new(ZPAQ::new(*bits as usize)),
         }
     }
 }

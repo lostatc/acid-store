@@ -426,10 +426,15 @@ impl<'a> ReadChunk for StoreWriter<'a> {
 
 impl<'a> WriteChunk for StoreWriter<'a> {
     fn write_chunk(&mut self, data: &[u8], id: UniqueId) -> crate::Result<Chunk> {
+        assert!(
+            data.len() <= std::u32::MAX as usize,
+            "Given data exceeds maximum chunk size."
+        );
+
         // Get a checksum of the unencoded data.
         let chunk = Chunk {
             hash: chunk_hash(data),
-            size: data.len(),
+            size: data.len() as u32,
         };
 
         // Check if the chunk already exists.
