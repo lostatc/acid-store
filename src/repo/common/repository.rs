@@ -511,7 +511,7 @@ impl ObjectRepo {
         referenced_blocks.extend(previous_referenced_blocks);
 
         // Remove all blocks from the data store which are unreferenced.
-        match &self.state.metadata.packing {
+        match &self.state.metadata.config.packing {
             Packing::None => {
                 // When packing is disabled, we can just remove the unreferenced blocks from the
                 // data store directly.
@@ -671,14 +671,15 @@ impl ObjectRepo {
         let user_key = EncryptionKey::derive(
             new_password,
             &salt,
-            self.state.metadata.encryption.key_size(),
-            self.state.metadata.memory_limit,
-            self.state.metadata.operations_limit,
+            self.state.metadata.config.encryption.key_size(),
+            self.state.metadata.config.memory_limit,
+            self.state.metadata.config.operations_limit,
         );
 
         let encrypted_master_key = self
             .state
             .metadata
+            .config
             .encryption
             .encrypt(self.state.master_key.expose_secret(), &user_key);
 
