@@ -53,8 +53,6 @@ thiserror = "1.0.9"
 anyhow = "1.0.26"
 
 # Compression
-flate2 = { version = "1.0.13", optional = true }
-xz2 = { version = "0.1.6", optional = true }
 lz4 = { version = "1.23.1", optional = true }
 
 # Encryption
@@ -106,7 +104,7 @@ store-sftp = ["ssh2"]
 store-rclone = ["store-sftp", "rand"]
 file-metadata = ["nix", "filetime", "xattr", "posix-acl"]
 hash-algorithms = ["blake2", "sha2", "sha3"]
-compression = ["flate2", "xz2", "lz4"]
+compression = ["lz4"]
 encryption = ["sodiumoxide", "rand"]
 
 [[bench]]

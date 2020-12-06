@@ -37,7 +37,7 @@ fn set_existing_config_and_create_new_repo() -> anyhow::Result<()> {
     // These are random config values for testing. This should not be used as an example config.
     let mut config = RepoConfig::default();
     config.chunking = Chunking::Fixed { size: 1024 * 16 };
-    config.compression = Compression::Deflate { level: 3 };
+    config.compression = Compression::Lz4 { level: 2 };
     config.encryption = Encryption::XChaCha20Poly1305;
     config.memory_limit = ResourceLimit::Moderate;
     config.operations_limit = ResourceLimit::Moderate;
@@ -56,14 +56,14 @@ fn configure_and_create_new_repo() -> anyhow::Result<()> {
     // These are random config values for testing. This should not be used as an example config.
     let mut config = RepoConfig::default();
     config.chunking = Chunking::Fixed { size: 1024 * 16 };
-    config.compression = Compression::Deflate { level: 3 };
+    config.compression = Compression::Lz4 { level: 2 };
     config.encryption = Encryption::XChaCha20Poly1305;
     config.memory_limit = ResourceLimit::Moderate;
     config.operations_limit = ResourceLimit::Moderate;
 
     let repo = OpenOptions::new(MemoryStore::new())
         .chunking(Chunking::Fixed { size: 1024 * 16 })
-        .compression(Compression::Deflate { level: 3 })
+        .compression(Compression::Lz4 { level: 2 })
         .encryption(Encryption::XChaCha20Poly1305)
         .memory_limit(ResourceLimit::Moderate)
         .operations_limit(ResourceLimit::Moderate)
