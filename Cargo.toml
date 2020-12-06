@@ -94,7 +94,7 @@ maplit = "1.0.2"
 test-case = "1.0.0"
 
 [features]
-default = ["store-directory"]
+default = []
 
 store-directory = []
 store-sqlite = ["rusqlite"]
