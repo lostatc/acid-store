@@ -97,7 +97,7 @@
 //! [`Chunking`]: crate::repo::Chunking
 //! [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
 //! [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
-//! [`Packing`]: crate::repo::Packing;
+//! [`Packing`]: crate::repo::Packing
 //! [`RepoInfo`]: crate::repo::RepoInfo
 //! [`ConvertRepo::switch_instance`]: crate::repo::ConvertRepo::switch_instance
 //! [`FileRepo`]: crate::repo::file::FileRepo
