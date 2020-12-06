@@ -75,7 +75,7 @@ impl OpenOptions {
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
-    pub fn config(mut self, config: RepoConfig) -> Self {
+    pub fn config(&mut self, config: RepoConfig) -> &mut Self {
         self.config = config;
         self
     }
@@ -84,7 +84,7 @@ impl OpenOptions {
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
-    pub fn chunking(mut self, method: Chunking) -> Self {
+    pub fn chunking(&mut self, method: Chunking) -> &mut Self {
         self.config.chunking = method;
         self
     }
@@ -93,7 +93,7 @@ impl OpenOptions {
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
-    pub fn packing(mut self, method: Packing) -> Self {
+    pub fn packing(&mut self, method: Packing) -> &mut Self {
         self.config.packing = method;
         self
     }
@@ -102,7 +102,7 @@ impl OpenOptions {
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
-    pub fn compression(mut self, method: Compression) -> Self {
+    pub fn compression(&mut self, method: Compression) -> &mut Self {
         self.config.compression = method;
         self
     }
@@ -111,7 +111,7 @@ impl OpenOptions {
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
-    pub fn encryption(mut self, method: Encryption) -> Self {
+    pub fn encryption(&mut self, method: Encryption) -> &mut Self {
         self.config.encryption = method;
         self
     }
@@ -120,7 +120,7 @@ impl OpenOptions {
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
-    pub fn memory_limit(mut self, limit: ResourceLimit) -> Self {
+    pub fn memory_limit(&mut self, limit: ResourceLimit) -> &mut Self {
         self.config.memory_limit = limit;
         self
     }
@@ -129,7 +129,7 @@ impl OpenOptions {
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
-    pub fn operations_limit(mut self, limit: ResourceLimit) -> Self {
+    pub fn operations_limit(&mut self, limit: ResourceLimit) -> &mut Self {
         self.config.operations_limit = limit;
         self
     }
@@ -137,7 +137,7 @@ impl OpenOptions {
     /// Use the given `password`.
     ///
     /// This is required when encryption is enabled for the repository.
-    pub fn password(mut self, password: &[u8]) -> Self {
+    pub fn password(&mut self, password: &[u8]) -> &mut Self {
         self.password = Some(password.to_vec());
         self
     }
@@ -148,7 +148,7 @@ impl OpenOptions {
     /// instance.
     ///
     /// See the module-level documentation for [`crate::repo`] for details.
-    pub fn instance(mut self, id: Uuid) -> Self {
+    pub fn instance(&mut self, id: Uuid) -> &mut Self {
         self.instance = id;
         self
     }
