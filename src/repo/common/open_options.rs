@@ -75,6 +75,7 @@ pub enum OpenMode {
 ///
 /// # Examples
 /// ```no_run
+/// # #[cfg(feature = "store-directory")] {
 /// use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo, Chunking, Compression, Encryption, Packing};
 /// use acid_store::store::DirectoryConfig;
 ///
@@ -88,7 +89,7 @@ pub enum OpenMode {
 ///     .mode(OpenMode::Create)
 ///     .open(&config)
 ///     .unwrap();
-///         
+/// # }
 /// ```
 pub struct OpenOptions {
     config: RepoConfig,
