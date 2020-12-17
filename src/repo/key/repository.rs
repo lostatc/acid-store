@@ -112,8 +112,10 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// This returns `true` if the object was removed or `false` if it didn't exist.
     ///
-    /// The space used by the given object isn't freed and made available for new objects until
-    /// `commit` is called.
+    /// The space used by the given object isn't reclaimed in the backing data store until changes
+    /// are committed and [`clean`] is called.
+    ///
+    /// [`clean`]: crate::repo::key::KeyRepo::clean
     pub fn remove<Q>(&mut self, key: &Q) -> bool
     where
         K: Borrow<Q>,
@@ -133,7 +135,9 @@ impl<K: Key> KeyRepo<K> {
     /// This returns `None` if the given key does not exist in the repository.
     ///
     /// The returned object provides read-only access to the data. To get read-write access, use
-    /// `object_mut`.
+    /// [`object_mut`].
+    ///
+    /// [`object_mut`]: crate::repo::key::KeyRepo::object_mut
     pub fn object<Q>(&self, key: &Q) -> Option<ReadOnlyObject>
     where
         K: Borrow<Q>,
@@ -148,7 +152,9 @@ impl<K: Key> KeyRepo<K> {
     /// This returns `None` if the given key does not exist in the repository.
     ///
     /// The returned object provides read-write access to the data. To get read-only access, use
-    /// `object`.
+    /// [`object`].
+    ///
+    /// [`object`]: crate::repo::key::KeyRepo::object
     pub fn object_mut<Q>(&mut self, key: &Q) -> Option<Object>
     where
         K: Borrow<Q>,
@@ -188,7 +194,9 @@ impl<K: Key> KeyRepo<K> {
 
     /// Commit changes which have been made to the repository.
     ///
-    /// See `ObjectRepo::commit` for details.
+    /// See [`ObjectRepo::commit`] for details.
+    ///
+    /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
         // Serialize and write the key table.
         let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
@@ -201,7 +209,9 @@ impl<K: Key> KeyRepo<K> {
 
     /// Roll back all changes made since the last commit.
     ///
-    /// See `ObjectRepo::rollback` for details.
+    /// See [`ObjectRepo::rollback`] for details.
+    ///
+    /// [`ObjectRepo::rollback`]: crate::repo::object::ObjectRepo::rollback
     pub fn rollback(&mut self) -> crate::Result<()> {
         // Read and deserialize the key table from the previous commit.
         let mut object = self
@@ -224,7 +234,9 @@ impl<K: Key> KeyRepo<K> {
 
     /// Clean up the repository to reclaim space in the backing data store.
     ///
-    /// See `ObjectRepo::clean` for details.
+    /// See [`ObjectRepo::clean`] for details.
+    ///
+    /// [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
     pub fn clean(&mut self) -> crate::Result<()> {
         self.repository.clean()
     }
@@ -232,11 +244,15 @@ impl<K: Key> KeyRepo<K> {
     /// Delete all data in the current instance of the repository.
     ///
     /// This does not delete data from other instances of the repository. To delete all data from
-    /// all instances of the repository, use `ConvertRepo::into_repo` to convert this repository to
-    /// an `ObjectRepo` and use `ObjectRepo::clear_repo` to delete data from all instances of the
-    /// repository.
+    /// all instances of the repository, use [`ConvertRepo::into_repo`] to convert this repository
+    /// to an [`ObjectRepo`] and use [`ObjectRepo::clear_repo`] to delete data from all instances of
+    /// the repository.
     ///
     /// No data is reclaimed in the backing data store until changes are committed.
+    ///
+    /// [`ConvertRepo::into_repo`]: crate::repo::ConvertRepo::into_repo
+    /// [`ObjectRepo`]: crate::repo::object::ObjectRepo
+    /// [`ObjectRepo::clear_repo`]: crate::repo::object::ObjectRepo::clear_repo
     pub fn clear_instance(&mut self) {
         for handle in self.key_table.values() {
             self.repository.remove_unmanaged(handle);
@@ -248,9 +264,11 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// This returns the set of keys of objects which are corrupt.
     ///
-    /// If you just need to verify the integrity of one object, `Object::verify` is faster. If you
+    /// If you just need to verify the integrity of one object, [`Object::verify`] is faster. If you
     /// need to verify the integrity of all the data in the repository, however, this can be more
     /// efficient.
+    ///
+    /// [`Object::verify`]: crate::repo::Object::verify
     pub fn verify(&self) -> crate::Result<HashSet<&K>> {
         let report = self.repository.verify()?;
 
@@ -264,7 +282,9 @@ impl<K: Key> KeyRepo<K> {
 
     /// Change the password for this repository.
     ///
-    /// See `ObjectRepo::change_password` for details.
+    /// See [`ObjectRepo::change_password`] for details.
+    ///
+    /// [`ObjectRepo::change_password`]: crate::repo::object::ObjectRepo::change_password
     #[cfg(feature = "encryption")]
     pub fn change_password(&mut self, new_password: &[u8]) {
         self.repository.change_password(new_password)

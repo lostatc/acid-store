@@ -77,7 +77,9 @@ pub enum SftpAuth {
     },
 }
 
-/// The configuration for opening an `SftpStore`.
+/// The configuration for opening an [`SftpStore`].
+///
+/// [`SftpStore`]: crate::store::SftpStore
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(docsrs, doc(cfg(feature = "store-sftp")))]
 pub struct SftpConfig {

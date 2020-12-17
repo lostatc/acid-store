@@ -248,12 +248,14 @@ where
 
     /// Remove the entry with the given `path` from the repository.
     ///
-    /// The space used by the given entry isn't freed and made available for new entries until
-    /// `commit` is called.
+    /// The space used by the given entry isn't reclaimed in the backing data store until changes
+    /// are committed and [`clean`] is called.
     ///
     /// # Errors
     /// - `Error::NotFound`: There is no entry with the given `path`.
     /// - `Error::NotEmpty`: The entry is a directory which is not empty.
+    ///
+    /// [`clean`]: crate::repo::file::FileRepo::clean
     pub fn remove(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<()> {
         match self.path_table.list(&path) {
             Some(mut children) => {
@@ -275,11 +277,13 @@ where
 
     /// Remove the entry with the given `path` and its descendants from the repository.
     ///
-    /// The space used by the given entry isn't freed and made available for new entries until
-    /// `commit` is called.
+    /// The space used by the given entry isn't reclaimed in the backing data store until changes
+    /// are committed and [`clean`] is called.
     ///
     /// # Errors
     /// - `Error::NotFound`: There is no entry with the given `path`.
+    ///
+    /// [`clean`]: crate::repo::file::FileRepo::clean
     pub fn remove_tree(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<()> {
         for (_, handles) in self
             .path_table
@@ -361,11 +365,13 @@ where
     /// Return a `ReadOnlyObject` for reading the contents of the file at `path`.
     ///
     /// The returned object provides read-only access to the file. To get read-write access, use
-    /// `open_mut`.
+    /// [`open_mut`].
     ///
     /// # Errors
     /// - `Error::NotFound`: There is no entry with the given `path`.
     /// - `Error::NotFile`: The entry does not represent a regular file.
+    ///
+    /// [`open_mut`]: crate::repo::file::FileRepo::open_mut
     pub fn open(&self, path: impl AsRef<RelativePath>) -> crate::Result<ReadOnlyObject> {
         let entry_handle = self
             .path_table
@@ -381,11 +387,13 @@ where
     /// Return an `Object` for reading and writing the contents of the file at `path`.
     ///
     /// The returned object provides read-write access to the file. To get read-only access, use
-    /// `open`.
+    /// [`open`].
     ///
     /// # Errors
     /// - `Error::NotFound`: There is no entry with the given `path`.
     /// - `Error::NotFile`: The entry does not represent a regular file.
+    ///
+    /// [`open`]: crate::repo::file::FileRepo::open
     pub fn open_mut(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<Object> {
         let entry_handle = self
             .path_table
@@ -404,8 +412,8 @@ where
     /// If `source` is a directory entry, its descendants are not copied.
     ///
     /// This copies the entry from one location in the repository to another. To copy files from the
-    /// file system to the repository, see `archive`. To copy files from the repository to the file
-    /// system, see `extract`.
+    /// file system to the repository, see [`archive`]. To copy files from the repository to the
+    /// file system, see [`extract`].
     ///
     /// This is a cheap operation which does not require copying the bytes in the files.
     ///
@@ -413,6 +421,9 @@ where
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
     /// - `Error::NotFound`: There is no entry at `source`.
     /// - `Error::AlreadyExists`: There is already an entry at `dest`.
+    ///
+    /// [`archive`]: crate::repo::file::FileRepo::archive
+    /// [`extract`]: crate::repo::file::FileRepo::extract
     pub fn copy(
         &mut self,
         source: impl AsRef<RelativePath>,
@@ -448,8 +459,8 @@ where
     /// If `source` is a directory entry, this also copies its descendants.
     ///
     /// This copies entries from one location in the repository to another. To copy files from the
-    /// file system to the repository, see `archive`. To copy files from the repository to the file
-    /// system, see `extract`.
+    /// file system to the repository, see [`archive_tree`]. To copy files from the repository to
+    /// the file system, see [`extract_tree`].
     ///
     /// This is a cheap operation which does not require copying the bytes in the files.
     ///
@@ -457,6 +468,9 @@ where
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
     /// - `Error::NotFound`: There is no entry at `source`.
     /// - `Error::AlreadyExists`: There is already an entry at `dest`.
+    ///
+    /// [`archive_tree`]: crate::repo::file::FileRepo::archive
+    /// [`extract_tree`]: crate::repo::file::FileRepo::extract
     pub fn copy_tree(
         &mut self,
         source: impl AsRef<RelativePath>,
@@ -561,7 +575,7 @@ where
     /// If `source` is a directory, its descendants are not copied.
     ///
     /// The `source` file's metadata will be copied to the `dest` entry according to the selected
-    /// `FileMetadata` implementation.
+    /// [`FileMetadata`] implementation.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
@@ -571,6 +585,8 @@ where
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`FileMetadata`]: crate::repo::file::FileMetadata
     pub fn archive(
         &mut self,
         source: impl AsRef<Path>,
@@ -612,11 +628,11 @@ where
     /// Copy a directory tree from the file system into the repository.
     ///
     /// If `source` is a directory, this also copies its descendants. If `source` is not a
-    /// directory, this is the same as calling `archive`. If one of the files in the tree is not a
+    /// directory, this is the same as calling [`archive`]. If one of the files in the tree is not a
     /// regular file, directory, or supported special file, it is skipped.
     ///
     /// The `source` file's metadata will be copied to the `dest` entry according to the selected
-    /// `FileMetadata` implementation.
+    /// [`FileMetadata`] implementation.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
@@ -624,6 +640,9 @@ where
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`archive`]: crate::repo::file::FileRepo::archive
+    /// [`FileMetadata`]: crate::repo::file::FileMetadata
     pub fn archive_tree(
         &mut self,
         source: impl AsRef<Path>,
@@ -653,7 +672,7 @@ where
     /// If `source` is a directory, its descendants are not copied.
     ///
     /// The `source` entry's metadata will be copied to the `dest` file according to the selected
-    /// `FileMetadata` implementation.
+    /// [`FileMetadata`] implementation.
     ///
     /// # Errors
     /// - `Error::NotFound`: The `source` entry does not exist.
@@ -662,6 +681,8 @@ where
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`FileMetadata`]: crate::repo::file::FileMetadata
     pub fn extract(
         &self,
         source: impl AsRef<RelativePath>,
@@ -707,14 +728,10 @@ where
     /// Copy a tree of entries from the repository into the file system.
     ///
     /// If `source` is a directory, this also copies its descendants. If `source` is not a
-    /// directory, this is the same as calling `extract`.
-    ///
-    /// This accepts a `filter` which is passed the relative path of each entry in the tree. A file
-    /// is only copied if `filter` returns `true`. A directory is not descended into unless `filter`
-    /// returns `true`. To copy all files in the tree, pass `|_| true`.
+    /// directory, this is the same as calling [`extract`].
     ///
     /// The `source` entry's metadata will be copied to the `dest` file according to the selected
-    /// `FileMetadata` implementation.
+    /// [`FileMetadata`] implementation.
     ///
     /// # Errors
     /// - `Error::NotFound`: The `source` entry does not exist.
@@ -723,6 +740,9 @@ where
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`extract`]: crate::repo::file::FileRepo::extract
+    /// [`FileMetadata`]: crate::repo::file::FileMetadata
     pub fn extract_tree(
         &self,
         source: impl AsRef<RelativePath>,
@@ -750,7 +770,9 @@ where
 
     /// Commit changes which have been made to the repository.
     ///
-    /// See `ObjectRepo::commit` for details.
+    /// See [`ObjectRepo::commit`] for details.
+    ///
+    /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
         // Serialize and write the tree of entry paths.
         let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
@@ -763,7 +785,9 @@ where
 
     /// Roll back all changes made since the last commit.
     ///
-    /// See `ObjectRepo::rollback` for details.
+    /// See [`ObjectRepo::rollback`] for details.
+    ///
+    /// [`ObjectRepo::rollback`]: crate::repo::object::ObjectRepo::rollback
     pub fn rollback(&mut self) -> crate::Result<()> {
         // Read and deserialize the path table from the previous commit.
         let mut object = self
@@ -786,14 +810,18 @@ where
 
     /// Clean up the repository to reclaim space in the backing data store.
     ///
-    /// See `ObjectRepo::clean` for details.
+    /// See [`ObjectRepo::clean`] for details.
+    ///
+    /// [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
     pub fn clean(&mut self) -> crate::Result<()> {
         self.repository.clean()
     }
 
     /// Delete all data in the current instance of the repository.
     ///
-    /// See `KeyRepo::clear_instance` for details.
+    /// See [`KeyRepo::clear_instance`] for details.
+    ///
+    /// [`KeyRepo::clear_instance`]: crate::repo::key::KeyRepo::clear_instance
     pub fn clear_instance(&mut self) {
         for (_, handle) in self.path_table.walk(&*EMPTY_PARENT).unwrap() {
             if let EntryType::File(handle) = &handle.entry_type {
@@ -808,7 +836,7 @@ where
     ///
     /// This returns the set of paths of files with corrupt data or metadata.
     ///
-    /// If you just need to verify the integrity of one object, `Object::verify` is faster. If you
+    /// If you just need to verify the integrity of one object, [`Object::verify`] is faster. If you
     /// need to verify the integrity of all the data in the repository, however, this can be more
     /// efficient.
     ///
@@ -816,6 +844,8 @@ where
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`Object::verify`]: crate::repo::Object::verify
     pub fn verify(&self) -> crate::Result<HashSet<RelativePathBuf>> {
         let report = self.repository.verify()?;
 
@@ -838,7 +868,9 @@ where
 
     /// Change the password for this repository.
     ///
-    /// See `ObjectRepo::change_password` for details.
+    /// See [`ObjectRepo::change_password`] for details.
+    ///
+    /// [`ObjectRepo::change_password`]: crate::repo::object::ObjectRepo::change_password
     #[cfg(feature = "encryption")]
     pub fn change_password(&mut self, new_password: &[u8]) {
         self.repository.change_password(new_password);

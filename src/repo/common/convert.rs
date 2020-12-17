@@ -18,9 +18,12 @@ use uuid::Uuid;
 
 use super::repository::ObjectRepo;
 
-/// A repository which is backed by an `ObjectRepo`.
+/// A repository which is backed by an [`ObjectRepo`].
 ///
-/// Repository types which implement this trait can be opened or created using `OpenOptions`.
+/// Repository types which implement this trait can be opened or created using [`OpenOptions`].
+///
+/// [`ObjectRepo`]: crate::repo::object::ObjectRepo
+/// [`OpenOptions`]: crate::repo::OpenOptions
 pub trait ConvertRepo {
     /// Convert the given `repository` to a repository of this type.
     ///
@@ -52,12 +55,14 @@ pub trait ConvertRepo {
     ///
     /// This method consumes this repository and returns a new repository of type `R`. This accepts
     /// the `id` of the new instance, which is the same instance ID you would provide to
-    /// `OpenOptions::instance`.
+    /// [`OpenOptions::instance`].
     ///
     /// This rolls back any uncommitted changes before returning.
     ///
-    /// See the module-level documentation for `acid_store::repo` for more information on repository
+    /// See the module-level documentation for [`crate::repo`] for more information on repository
     /// instances.
+    ///
+    /// [`OpenOptions::instance`]: crate::repo::OpenOptions::instance
     fn switch_instance<R>(self, id: Uuid) -> crate::Result<R>
     where
         R: ConvertRepo,

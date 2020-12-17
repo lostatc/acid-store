@@ -34,7 +34,9 @@ use {
 
 /// A special file type.
 ///
-/// This trait can be implemented to customize how `FileRepo` handles special file types.
+/// This trait can be implemented to customize how [`FileRepo`] handles special file types.
+///
+/// [`FileRepo`]: crate::repo::file::FileRepo
 pub trait SpecialType: Serialize + DeserializeOwned {
     /// Create a new instance from the file in the file system at `path`.
     ///
@@ -62,7 +64,9 @@ impl SpecialType for NoSpecialType {
 /// A `SpecialType` which supports special file types on unix systems.
 ///
 /// If the current user does not have the necessary permissions to create a block/character device,
-/// `create_file` will silently ignore the error and return `Ok`.
+/// [`create_file`] will silently ignore the error and return `Ok`.
+///
+/// [`create_file`]: crate::repo::file::SpecialType::create_file
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]

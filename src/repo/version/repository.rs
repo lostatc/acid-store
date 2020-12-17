@@ -117,8 +117,10 @@ impl<K: Key> VersionRepo<K> {
     ///
     /// This returns `true` if the key was removed or `false` if it doesn't exist in the repository.
     ///
-    /// The space used by the given object isn't freed and made available for new objects until
-    /// `commit` is called.
+    /// The space used by the given object isn't reclaimed in the backing data store until changes
+    /// are committed and [`clean`] is called.
+    ///
+    /// [`clean`]: crate::repo::version::VersionRepo::clean
     pub fn remove<Q>(&mut self, key: &Q) -> bool
     where
         K: Borrow<Q>,
@@ -143,7 +145,9 @@ impl<K: Key> VersionRepo<K> {
     /// This returns `None` if the key doesn't exist in the repository.
     ///
     /// The returned object provides read-only access to the data. To get read-write access, use
-    /// `object_mut`.
+    /// [`object_mut`].
+    ///
+    /// [`object_mut`]: crate::repo::version::VersionRepo::object_mut
     pub fn object<Q>(&self, key: &Q) -> Option<ReadOnlyObject>
     where
         K: Borrow<Q>,
@@ -158,7 +162,9 @@ impl<K: Key> VersionRepo<K> {
     /// This returns `None` if the key doesn't exist in the repository.
     ///
     /// The returned object provides read-write access to the data. To get read-only access, use
-    /// `object`.
+    /// [`object`].
+    ///
+    /// [`object`]: crate::repo::version::VersionRepo::object
     pub fn object_mut<Q>(&mut self, key: &Q) -> Option<Object>
     where
         K: Borrow<Q>,
@@ -318,7 +324,9 @@ impl<K: Key> VersionRepo<K> {
 
     /// Commit changes which have been made to the repository.
     ///
-    /// See `ObjectRepo::commit` for details.
+    /// See [`ObjectRepo::commit`] for details.
+    ///
+    /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
         // Serialize and write the table of keys.
         let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
@@ -331,7 +339,9 @@ impl<K: Key> VersionRepo<K> {
 
     /// Roll back all changes made since the last commit.
     ///
-    /// See `ObjectRepo::rollback` for details.
+    /// See [`ObjectRepo::rollback`] for details.
+    ///
+    /// [`ObjectRepo::rollback`]: crate::repo::object::ObjectRepo::rollback
     pub fn rollback(&mut self) -> crate::Result<()> {
         // Read and deserialize the key table from the previous commit.
         let mut object = self
@@ -354,14 +364,18 @@ impl<K: Key> VersionRepo<K> {
 
     /// Clean up the repository to reclaim space in the backing data store.
     ///
-    /// See `ObjectRepo::clean` for details.
+    /// See [`ObjectRepo::clean`] for details.
+    ///
+    /// [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
     pub fn clean(&mut self) -> crate::Result<()> {
         self.repository.clean()
     }
 
     /// Delete all data in the current instance of the repository.
     ///
-    /// See `KeyRepo::clear_instance` for details.
+    /// See [`KeyRepo::clear_instance`] for details.
+    ///
+    /// [`KeyRepo::clear_instance`]: crate::repo::key::KeyRepo::clear_instance
     pub fn clear_instance(&mut self) {
         for key_info in self.key_table.values() {
             self.repository.remove_unmanaged(&key_info.object);
@@ -374,7 +388,9 @@ impl<K: Key> VersionRepo<K> {
 
     /// Change the password for this repository.
     ///
-    /// See `ObjectRepo::change_password` for details.
+    /// See [`ObjectRepo::change_password`] for details.
+    ///
+    /// [`ObjectRepo::change_password`]: crate::repo::object::ObjectRepo::change_password
     #[cfg(feature = "encryption")]
     pub fn change_password(&mut self, new_password: &[u8]) {
         self.repository.change_password(new_password);

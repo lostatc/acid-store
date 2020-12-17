@@ -24,7 +24,9 @@ use super::object::{ChunkHash, ObjectHandle};
 /// An empty set of managed object IDs
 static EMPTY_SET: Lazy<HashSet<Uuid>> = Lazy::new(|| HashSet::new());
 
-/// A report of the integrity of the data in an `ObjectRepo`.
+/// A report of the integrity of the data in an [`ObjectRepo`].
+///
+/// [`ObjectRepo`]: crate::repo::object::ObjectRepo
 #[derive(Debug)]
 pub struct IntegrityReport {
     /// The hashes of chunks which are corrupt.

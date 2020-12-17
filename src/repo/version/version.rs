@@ -14,16 +14,18 @@
  * limitations under the License.
  */
 
+use std::collections::BTreeMap;
+use std::io::Read;
 use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
 use crate::repo::object::ObjectHandle;
 use crate::repo::ContentId;
-use std::collections::BTreeMap;
-use std::io::Read;
 
-/// Information about a version in a `VersionRepo`.
+/// Information about a version in a [`VersionRepo`].
+///
+/// [`VersionRepo`]: crate::repo::version::VersionRepo
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct Version {
     pub(super) id: u32,
@@ -46,7 +48,9 @@ impl Version {
 
     /// Return a `ContentId` representing the contents of this version.
     ///
-    /// See `ObjectHandle::content_id` for details.
+    /// See [`ObjectHandle::content_id`] for details.
+    ///
+    /// [`ObjectHandle::content_id`]: crate::repo::object::ObjectHandle::content_id
     pub fn content_id(&self) -> &ContentId {
         &self.content_id
     }
@@ -58,7 +62,9 @@ impl Version {
 
     /// Return whether this version has the same contents as `other`.
     ///
-    /// See `ContentId::compare_contents` for details.
+    /// See [`ContentId::compare_contents`] for details.
+    ///
+    /// [`ContentId::compare_contents`]: crate::repo::ContentId::compare_contents
     pub fn compare_contents(&self, other: impl Read) -> crate::Result<bool> {
         self.content_id.compare_contents(other)
     }

@@ -40,12 +40,16 @@ impl<S: SpecialType> From<S> for FileType<S> {
     }
 }
 
-/// An entry in a `FileRepo` which represents a regular file, directory, or special file.
+/// An entry in a [`FileRepo`] which represents a regular file, directory, or special file.
 ///
 /// An entry may or may not have metadata associated with it. When an entry is created by archiving
-/// a file in the file system (`FileRepo::archive`), it will have the metadata of that file.
+/// a file in the file system ([`FileRepo::archive`]), it will have the metadata of that file.
 /// However, entries can also be created that have no metadata. This allows for extracting files to
-/// the file system (`FileRepo::extract`) without copying any metadata.
+/// the file system ([`FileRepo::extract`]) without copying any metadata.
+///
+/// [`FileRepo`]: crate::repo::file::FileRepo
+/// [`FileRepo::archive`]: crate::repo::file::FileRepo::archive
+/// [`FileRepo::extract`]: crate::repo::file::FileRepo::extract
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry<S, M> {
     /// The type of file this entry represents.
