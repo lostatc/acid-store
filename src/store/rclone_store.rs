@@ -27,8 +27,9 @@ use rand::distributions::Alphanumeric;
 use rand::Rng;
 use uuid::Uuid;
 
-use crate::store::sftp_store::{SftpAuth, SftpConfig};
-use crate::store::{DataStore, SftpStore};
+use super::data_store::DataStore;
+use super::open_store::OpenStore;
+use super::sftp_store::{SftpAuth, SftpConfig, SftpStore};
 
 /// Generate a random secure password for the SFTP server.
 fn generate_password(length: u32) -> String {
@@ -93,6 +94,46 @@ fn wait_for_connection(port: u16) -> io::Result<()> {
     Ok(())
 }
 
+/// The configuration for opening an `RcloneStore`.
+#[derive(Debug, PartialEq, Eq, Clone)]
+#[cfg_attr(docsrs, doc(cfg(feature = "store-rclone")))]
+pub struct RcloneConfig {
+    /// The rclone remote and path.
+    ///
+    /// This is a string with the format `<remote>:<path>`, where `<remote>` is the name of the
+    /// remote as configured using `rclone config` and `<path>` is the path of the directory on the
+    /// remote to use.
+    pub config: String,
+}
+
+impl OpenStore for RcloneConfig {
+    type Store = RcloneStore;
+
+    fn open(&self) -> crate::Result<Self::Store> {
+        // Serve the rclone remote over SFTP and wait for the server to start.
+        let port = ephemeral_port()?;
+        let password = generate_password(PASSWORD_LENGTH);
+        let server_process = serve(port, &password, &self.config)?;
+        wait_for_connection(port)?;
+
+        let sftp_config = SftpConfig {
+            addr: SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into(),
+            auth: SftpAuth::Password {
+                username: SSH_USERNAME.to_string(),
+                password,
+            },
+            path: Path::new("").to_owned(),
+        };
+
+        let sftp_store = sftp_config.open()?;
+
+        Ok(RcloneStore {
+            sftp_store,
+            server_process,
+        })
+    }
+}
+
 /// A `DataStore` which stores data in cloud storage using rclone.
 ///
 /// This is a data store which is backed by [rclone](https://rclone.org/), allowing access to a wide
@@ -100,48 +141,15 @@ fn wait_for_connection(port: u16) -> io::Result<()> {
 ///
 /// To use this data store, rclone must be installed and available on the `PATH`. Rclone version
 /// 1.48.0 or higher is required.
+///
+/// You can use [`RcloneConfig`] to open a data store of this type.
+///
+/// [`RcloneConfig`]: crate::store::RcloneConfig
 #[derive(Debug)]
 #[cfg_attr(docsrs, doc(cfg(feature = "store-rclone")))]
 pub struct RcloneStore {
     sftp_store: SftpStore,
     server_process: Child,
-}
-
-impl RcloneStore {
-    /// Open or create an `RcloneStore`.
-    ///
-    /// This accepts a `config` value, which is a string with the format `<remote>:<path>`, where
-    /// `<remote>` is the name of the remote as configured using `rclone config` and `<path>` is
-    /// the path of the directory on the remote to use.
-    ///
-    /// # Errors
-    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
-    /// this is not a valid `RcloneStore` or this repository format is no longer supported by the
-    /// library.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn new(config: &str) -> crate::Result<Self> {
-        // Serve the rclone remote over SFTP and wait for the server to start.
-        let port = ephemeral_port()?;
-        let password = generate_password(PASSWORD_LENGTH);
-        let server_process = serve(port, &password, config)?;
-        wait_for_connection(port)?;
-
-        let config = SftpConfig {
-            addr: SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into(),
-            auth: SftpAuth::Password {
-                username: SSH_USERNAME.to_string(),
-                password,
-            },
-        };
-
-        let sftp_store = SftpStore::new(&config, Path::new(""))?;
-
-        Ok(Self {
-            sftp_store,
-            server_process,
-        })
-    }
 }
 
 impl DataStore for RcloneStore {

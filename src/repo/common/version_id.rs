@@ -51,7 +51,7 @@ pub fn check_version(repository: &mut ObjectRepo, version_id: Uuid) -> crate::Re
             if version == version_id {
                 Ok(true)
             } else {
-                Err(crate::Error::UnsupportedFormat)
+                Err(crate::Error::UnsupportedRepo)
             }
         }
         None => {

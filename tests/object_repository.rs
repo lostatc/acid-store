@@ -22,22 +22,27 @@ use test_case::test_case;
 use uuid::Uuid;
 
 use acid_store::repo::object::ObjectRepo;
-use acid_store::repo::{ConvertRepo, Encryption, OpenOptions, RepoConfig};
-use acid_store::store::{DataStore, MemoryStore};
+use acid_store::repo::{peek_info, Encryption, OpenMode, OpenOptions, RepoConfig};
+use acid_store::store::{DataStore, MemoryConfig, OpenStore};
 use common::{assert_contains_all, random_buffer};
 
 mod common;
 
-fn create_repo(config: RepoConfig) -> acid_store::Result<ObjectRepo> {
-    OpenOptions::new(MemoryStore::new())
-        .config(config)
+fn create_repo(
+    repo_config: RepoConfig,
+    store_config: &MemoryConfig,
+) -> acid_store::Result<ObjectRepo> {
+    OpenOptions::new()
+        .config(repo_config)
         .password(b"Password")
-        .create_new()
+        .mode(OpenMode::CreateNew)
+        .open(store_config)
 }
 
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn contains_unmanaged_object(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn contains_unmanaged_object(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let handle = repo.add_unmanaged();
 
     assert!(repo.contains_unmanaged(&handle));
@@ -46,8 +51,9 @@ fn contains_unmanaged_object(config: RepoConfig) -> anyhow::Result<()> {
 }
 
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn remove_unmanaged_object(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn remove_unmanaged_object(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let handle = repo.add_unmanaged();
 
     assert!(repo.remove_unmanaged(&handle));
@@ -58,8 +64,9 @@ fn remove_unmanaged_object(config: RepoConfig) -> anyhow::Result<()> {
 }
 
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn can_not_get_object_from_removed_handle(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn can_not_get_object_from_removed_handle(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let mut handle = repo.add_unmanaged();
     repo.remove_unmanaged(&handle);
 
@@ -70,8 +77,9 @@ fn can_not_get_object_from_removed_handle(config: RepoConfig) -> anyhow::Result<
 }
 
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn removing_unmanaged_copy_does_not_affect_original(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn removing_unmanaged_copy_does_not_affect_original(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let handle = repo.add_unmanaged();
     let copy = repo.copy_unmanaged(&handle);
 
@@ -87,8 +95,9 @@ fn removing_unmanaged_copy_does_not_affect_original(config: RepoConfig) -> anyho
 #[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
 #[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn unmanaged_copy_has_same_contents(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn unmanaged_copy_has_same_contents(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let mut handle = repo.add_unmanaged();
 
     let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
@@ -109,8 +118,9 @@ fn unmanaged_copy_has_same_contents(config: RepoConfig) -> anyhow::Result<()> {
 }
 
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn contains_managed_object(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn contains_managed_object(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let id = Uuid::new_v4();
     repo.add_managed(id);
 
@@ -120,8 +130,9 @@ fn contains_managed_object(config: RepoConfig) -> anyhow::Result<()> {
 }
 
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn remove_managed_object(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn remove_managed_object(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let id = Uuid::new_v4();
     repo.add_managed(id);
 
@@ -138,8 +149,9 @@ fn remove_managed_object(config: RepoConfig) -> anyhow::Result<()> {
 #[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
 #[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn managed_object_is_replaced(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn managed_object_is_replaced(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let id = Uuid::new_v4();
 
     let mut object = repo.add_managed(id);
@@ -154,8 +166,9 @@ fn managed_object_is_replaced(config: RepoConfig) -> anyhow::Result<()> {
 }
 
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn copy_nonexistent_managed_object(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn copy_nonexistent_managed_object(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     assert!(!repo.copy_managed(Uuid::new_v4(), Uuid::new_v4()));
     Ok(())
 }
@@ -166,8 +179,9 @@ fn copy_nonexistent_managed_object(config: RepoConfig) -> anyhow::Result<()> {
 #[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
 #[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn managed_copy_has_same_contents(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn managed_copy_has_same_contents(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let source_id = Uuid::new_v4();
     let dest_id = Uuid::new_v4();
 
@@ -189,8 +203,9 @@ fn managed_copy_has_same_contents(config: RepoConfig) -> anyhow::Result<()> {
 }
 
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn list_managed_objects(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn list_managed_objects(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
 
     let id_1 = Uuid::new_v4();
     let id_2 = Uuid::new_v4();
@@ -210,9 +225,10 @@ fn list_managed_objects(config: RepoConfig) -> anyhow::Result<()> {
 
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
 fn unmanaged_object_is_not_accessible_from_another_instance(
-    config: RepoConfig,
+    repo_config: RepoConfig,
 ) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let handle = repo.add_unmanaged();
 
     assert!(repo.unmanaged_object(&handle).is_some());
@@ -226,9 +242,10 @@ fn unmanaged_object_is_not_accessible_from_another_instance(
 
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
 fn managed_object_is_not_accessible_from_another_instance(
-    config: RepoConfig,
+    repo_config: RepoConfig,
 ) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let id = Uuid::new_v4();
 
     repo.add_managed(id);
@@ -243,8 +260,9 @@ fn managed_object_is_not_accessible_from_another_instance(
 }
 
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn list_managed_objects_in_different_instance(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn list_managed_objects_in_different_instance(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let instance_id = repo.instance();
 
     let id_1 = Uuid::new_v4();
@@ -276,13 +294,14 @@ fn list_managed_objects_in_different_instance(config: RepoConfig) -> anyhow::Res
 #[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
 #[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn committing_commits_all_instances(config: RepoConfig) -> anyhow::Result<()> {
+fn committing_commits_all_instances(repo_config: RepoConfig) -> anyhow::Result<()> {
     let instance_1 = Uuid::new_v4();
     let instance_2 = Uuid::new_v4();
     let id_1 = Uuid::new_v4();
     let id_2 = Uuid::new_v4();
 
-    let mut repo = create_repo(config)?;
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
 
     repo.set_instance(instance_1);
     repo.add_managed(id_1);
@@ -291,7 +310,7 @@ fn committing_commits_all_instances(config: RepoConfig) -> anyhow::Result<()> {
     repo.add_managed(id_2);
 
     repo.commit()?;
-    let mut repo = OpenOptions::new(repo.into_store()).open::<ObjectRepo>()?;
+    let mut repo: ObjectRepo = OpenOptions::new().open(&store_config)?;
 
     repo.set_instance(instance_1);
     assert!(repo.contains_managed(id_1));
@@ -304,26 +323,31 @@ fn committing_commits_all_instances(config: RepoConfig) -> anyhow::Result<()> {
 
 #[test]
 fn change_password() -> anyhow::Result<()> {
-    let mut repo: ObjectRepo = OpenOptions::new(MemoryStore::new())
+    let store_config = MemoryConfig::new();
+    let mut repo: ObjectRepo = OpenOptions::new()
         .encryption(Encryption::XChaCha20Poly1305)
         .password(b"Password")
-        .create_new()?;
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
     repo.change_password(b"New password");
     repo.commit()?;
+    drop(repo);
 
-    OpenOptions::new(repo.into_store())
+    OpenOptions::new()
         .password(b"New password")
-        .open::<ObjectRepo>()?;
+        .open::<ObjectRepo, _>(&store_config)?;
 
     Ok(())
 }
 
 #[test]
-fn peek_info() -> anyhow::Result<()> {
-    let repository: ObjectRepo = OpenOptions::new(MemoryStore::new()).create_new()?;
+fn peek_info_succeeds() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let repository: ObjectRepo = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
     let expected_info = repository.info();
-    let mut store = repository.into_store();
-    let actual_info = ObjectRepo::peek_info(&mut store)?;
+    let actual_info = peek_info(&store_config)?;
 
     assert_eq!(actual_info, expected_info);
     Ok(())
@@ -335,8 +359,9 @@ fn peek_info() -> anyhow::Result<()> {
 #[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
 #[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn committed_changes_are_persisted(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn committed_changes_are_persisted(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let mut handle = repo.add_unmanaged();
 
     // Write some data to the repository.
@@ -347,9 +372,10 @@ fn committed_changes_are_persisted(config: RepoConfig) -> anyhow::Result<()> {
 
     drop(object);
     repo.commit()?;
+    drop(repo);
 
     // Re-open the repository.
-    let repo: ObjectRepo = OpenOptions::new(repo.into_store()).open()?;
+    let repo: ObjectRepo = OpenOptions::new().open(&store_config)?;
 
     // Read that data from the repository.
     let mut actual_data = Vec::with_capacity(expected_data.len());
@@ -367,8 +393,9 @@ fn committed_changes_are_persisted(config: RepoConfig) -> anyhow::Result<()> {
 #[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
 #[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn uncommitted_changes_are_not_persisted(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn uncommitted_changes_are_not_persisted(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let mut handle = repo.add_unmanaged();
 
     // Write some data to the repository.
@@ -377,9 +404,10 @@ fn uncommitted_changes_are_not_persisted(config: RepoConfig) -> anyhow::Result<(
     object.write_all(expected_data.as_slice())?;
     object.flush()?;
     drop(object);
+    drop(repo);
 
     // Re-open the repository.
-    let repo: ObjectRepo = OpenOptions::new(repo.into_store()).open()?;
+    let repo: ObjectRepo = OpenOptions::new().open(&store_config)?;
 
     assert!(repo.unmanaged_object(&handle).is_none());
 
@@ -392,8 +420,9 @@ fn uncommitted_changes_are_not_persisted(config: RepoConfig) -> anyhow::Result<(
 #[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
 #[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn unmanaged_objects_are_removed_on_rollaback(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn unmanaged_objects_are_removed_on_rollaback(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let mut handle = repo.add_unmanaged();
 
     let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
@@ -415,8 +444,9 @@ fn unmanaged_objects_are_removed_on_rollaback(config: RepoConfig) -> anyhow::Res
 #[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
 #[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn managed_objects_are_removed_on_rollaback(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn managed_objects_are_removed_on_rollaback(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let id = Uuid::new_v4();
 
     let mut object = repo.add_managed(id);
@@ -439,8 +469,9 @@ fn managed_objects_are_removed_on_rollaback(config: RepoConfig) -> anyhow::Resul
 #[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
 #[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn unused_data_is_reclaimed_on_commit(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn unused_data_is_reclaimed_on_commit(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let mut handle = repo.add_unmanaged();
     let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
 
@@ -448,15 +479,18 @@ fn unused_data_is_reclaimed_on_commit(config: RepoConfig) -> anyhow::Result<()> 
     object.flush()?;
     drop(object);
     repo.commit()?;
+    drop(repo);
 
-    let mut store = repo.into_repo()?.into_store();
+    let mut store = store_config.open()?;
     let original_blocks = store.list_blocks()?.len();
+    drop(store);
 
-    let mut repo = OpenOptions::new(store).open::<ObjectRepo>()?;
+    let mut repo: ObjectRepo = OpenOptions::new().open(&store_config)?;
     repo.remove_unmanaged(&handle);
     repo.commit()?;
+    drop(repo);
 
-    let mut store = repo.into_store();
+    let mut store = store_config.open()?;
     let new_blocks = store.list_blocks()?.len();
 
     assert!(new_blocks < original_blocks);
@@ -469,8 +503,9 @@ fn unused_data_is_reclaimed_on_commit(config: RepoConfig) -> anyhow::Result<()> 
 #[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
 #[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn clean_before_commit_does_not_prevent_rollback(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn clean_before_commit_does_not_prevent_rollback(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let id = Uuid::new_v4();
     let mut object = repo.add_managed(id);
 
@@ -506,8 +541,9 @@ fn clean_before_commit_does_not_prevent_rollback(config: RepoConfig) -> anyhow::
 #[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
 #[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn verify_valid_repository_is_valid(config: RepoConfig) -> anyhow::Result<()> {
-    let mut repo = create_repo(config)?;
+fn verify_valid_repository_is_valid(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
     let mut handle = repo.add_unmanaged();
     let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
 

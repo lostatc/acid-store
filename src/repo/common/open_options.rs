@@ -23,15 +23,16 @@ use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
 use uuid::Uuid;
 
-use crate::repo::{Chunking, Compression, ResourceLimit};
-use crate::store::DataStore;
+use crate::store::{DataStore, OpenStore};
 
+use super::chunking::Chunking;
+use super::compression::Compression;
 use super::config::RepoConfig;
 use super::convert::ConvertRepo;
-use super::encryption::{Encryption, EncryptionKey, KeySalt};
+use super::encryption::{Encryption, EncryptionKey, KeySalt, ResourceLimit};
 use super::id_table::IdTable;
 use super::lock::LockTable;
-use super::metadata::{Header, RepoMetadata};
+use super::metadata::{peek_info_store, Header, RepoMetadata};
 use super::packing::Packing;
 use super::repository::{ObjectRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
 use super::state::RepoState;
@@ -50,25 +51,53 @@ lazy_static! {
     static ref REPO_LOCKS: Mutex<LockTable> = Mutex::new(LockTable::new());
 }
 
-/// Open or create a repository from a `DataStore`.
+/// The mode to use to open a repository.
+#[derive(Debug, Clone, Copy)]
+pub enum OpenMode {
+    /// Open an existing repository, failing if it doesn't exist.
+    Open,
+
+    /// Open an existing repository or create a new one if it doesn't exist.
+    Create,
+
+    /// Create a new repository, failing if it already exists.
+    CreateNew,
+}
+
+/// Open or create a repository.
 ///
-/// `OpenOptions` can be used to open any repository type which implements `ConvertRepo`.
+/// This type is a builder used to open or create repositories. Typically, when using `OpenOptions`,
+/// you'll first call `new`, then chain method calls to configure how the repository will be opened,
+/// and then finally call `open`.
+///
+/// To open or create a repository, you'll need a value which implements `OpenRepo` to pass to
+/// `open`. You can think of this value as the configuration necessary to open the backing data
+/// store. This builder can be used to open or create any repository type which implements
+/// `ConvertRepo`.
 pub struct OpenOptions {
-    store: Box<dyn DataStore + 'static>,
     config: RepoConfig,
+    mode: OpenMode,
     password: Option<Vec<u8>>,
     instance: Uuid,
 }
 
 impl OpenOptions {
-    /// Create a new `OpenOptions` for opening or creating a repository backed by `store`.
-    pub fn new(store: impl DataStore + 'static) -> Self {
+    /// Create a new `OpenOptions`.
+    pub fn new() -> Self {
         Self {
-            store: Box::new(store),
             config: RepoConfig::default(),
+            mode: OpenMode::Open,
             password: None,
             instance: GLOBAL_INSTANCE,
         }
+    }
+
+    /// The mode to use to open the repository.
+    ///
+    /// If this is not specified, the default mode is `OpenMode::Open`.
+    pub fn mode(&mut self, mode: OpenMode) -> &mut Self {
+        self.mode = mode;
+        self
     }
 
     /// Use the given `config` instead of the default `RepoConfig`.
@@ -154,25 +183,9 @@ impl OpenOptions {
     }
 
     /// Open the repository, failing if it doesn't exist.
-    ///
-    /// # Errors
-    /// - `Error::NotFound`: There is no repository in the given data store.
-    /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
-    /// - `Error::Locked`: The repository is locked.
-    /// - `Error::Password`: The password provided is invalid.
-    /// - `Error::Password` A password was required but not provided or provided but not required.
-    /// - `Error::UnsupportedFormat`: The backing is an unsupported format. This can happen if the
-    /// serialized data format changed or if the data store already contains a different type of
-    /// repository.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn open<R>(mut self) -> crate::Result<R>
-    where
-        R: ConvertRepo,
-    {
+    fn open_repo(&self, mut store: impl DataStore + 'static) -> crate::Result<ObjectRepo> {
         // Acquire a lock on the repository.
-        let repository_id = ObjectRepo::peek_info(&mut self.store)?.id();
+        let repository_id = peek_info_store(&mut store)?.id();
         let lock = REPO_LOCKS
             .lock()
             .unwrap()
@@ -180,39 +193,36 @@ impl OpenOptions {
             .ok_or(crate::Error::Locked)?;
 
         // Read the repository version to see if this is a compatible repository.
-        let serialized_version = self
-            .store
+        let serialized_version = store
             .read_block(VERSION_BLOCK_ID)
             .map_err(|error| crate::Error::Store(error))?
             .ok_or(crate::Error::NotFound)?;
         let version =
             Uuid::from_slice(serialized_version.as_slice()).map_err(|_| crate::Error::Corrupt)?;
         if version != VERSION_ID {
-            return Err(crate::Error::UnsupportedFormat);
+            return Err(crate::Error::UnsupportedRepo);
         }
 
         // We read the metadata again after reading the UUID to prevent a race condition when
         // acquiring the lock.
-        let serialized_metadata = self
-            .store
+        let serialized_metadata = store
             .read_block(METADATA_BLOCK_ID)
             .map_err(|error| crate::Error::Store(error))?
             .ok_or(crate::Error::Corrupt)?;
         let metadata: RepoMetadata =
             from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
-        // Return an error if a password was required but not provided.
-        if self.password.is_none() && metadata.config.encryption != Encryption::None {
-            return Err(crate::Error::Password);
-        }
-
-        // Clear the password if one was provided but not required.
-        if self.password.is_some() && metadata.config.encryption == Encryption::None {
-            self.password = None;
-        }
+        let password = match self.password.clone() {
+            Some(password) if metadata.config.encryption != Encryption::None => Some(password),
+            // Return an error if a password was required but not provided.
+            None if metadata.config.encryption != Encryption::None => {
+                return Err(crate::Error::Password)
+            }
+            _ => None,
+        };
 
         // Decrypt the master key for the repository.
-        let master_key = match self.password {
+        let master_key = match password {
             Some(password_bytes) => {
                 let user_key = EncryptionKey::derive(
                     password_bytes.as_slice(),
@@ -233,8 +243,7 @@ impl OpenOptions {
         };
 
         // Read, decrypt, decompress, and deserialize the repository header.
-        let encrypted_header = self
-            .store
+        let encrypted_header = store
             .read_block(metadata.header_id)
             .map_err(|error| crate::Error::Store(error))?
             .ok_or(crate::Error::Corrupt)?;
@@ -261,7 +270,7 @@ impl OpenOptions {
         managed.entry(self.instance).or_insert_with(HashMap::new);
 
         let state = RepoState {
-            store: Mutex::new(self.store),
+            store: Mutex::new(Box::new(store)),
             metadata,
             chunks,
             packs,
@@ -279,30 +288,19 @@ impl OpenOptions {
         // Clean the repository in case changes were rolled back.
         repository.clean()?;
 
-        R::from_repo(repository)
+        Ok(repository)
     }
 
     /// Create a new repository, failing if one already exists.
-    ///
-    /// # Errors
-    /// - `Error::AlreadyExists`: A repository already exists in the given `store`.
-    /// - `Error::Password` A password was required but not provided.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn create_new<R>(mut self) -> crate::Result<R>
-    where
-        R: ConvertRepo,
-    {
-        // Return an error if a password was required but not provided.
-        if self.password.is_none() && self.config.encryption != Encryption::None {
-            return Err(crate::Error::Password);
-        }
-
-        // Clear the password if one was provided but not required.
-        if self.password.is_some() && self.config.encryption == Encryption::None {
-            self.password = None;
-        }
+    fn create_repo(&self, mut store: impl DataStore + 'static) -> crate::Result<ObjectRepo> {
+        let password = match self.password.clone() {
+            Some(password) if self.config.encryption != Encryption::None => Some(password),
+            // Return an error if a password was required but not provided.
+            None if self.config.encryption != Encryption::None => {
+                return Err(crate::Error::Password)
+            }
+            _ => None,
+        };
 
         // Acquire an exclusive lock on the repository.
         let id = Uuid::new_v4();
@@ -313,8 +311,7 @@ impl OpenOptions {
             .ok_or(crate::Error::AlreadyExists)?;
 
         // Check if the repository already exists.
-        if self
-            .store
+        if store
             .read_block(VERSION_BLOCK_ID)
             .map_err(|error| crate::Error::Store(error))?
             .is_some()
@@ -323,18 +320,18 @@ impl OpenOptions {
         }
 
         // Generate the master encryption key.
-        let master_key = match self.password {
+        let master_key = match password {
             Some(..) => EncryptionKey::generate(self.config.encryption.key_size()),
             None => EncryptionKey::new(Vec::new()),
         };
 
-        let salt = match self.password {
+        let salt = match password {
             Some(..) => KeySalt::generate(),
             None => KeySalt::empty(),
         };
 
         // Encrypt the master encryption key.
-        let encrypted_master_key = match self.password {
+        let encrypted_master_key = match password {
             Some(password_bytes) => {
                 let user_key = EncryptionKey::derive(
                     password_bytes.as_slice(),
@@ -369,14 +366,14 @@ impl OpenOptions {
             .encryption
             .encrypt(&compressed_header, &master_key);
         let header_id = Uuid::new_v4();
-        self.store
+        store
             .write_block(header_id, &encrypted_header)
             .map_err(|error| crate::Error::Store(error))?;
 
         // Create the repository metadata with the header block references.
         let metadata = RepoMetadata {
             id,
-            config: self.config,
+            config: self.config.clone(),
             master_key: encrypted_master_key,
             salt,
             header_id,
@@ -384,13 +381,13 @@ impl OpenOptions {
 
         // Write the repository metadata.
         let serialized_metadata = to_vec(&metadata).expect("Could not serialize metadata.");
-        self.store
+        store
             .write_block(METADATA_BLOCK_ID, &serialized_metadata)
             .map_err(|error| crate::Error::Store(error))?;
 
         // Write the repository version. We do this last because this signifies that the repository
         // is done being created.
-        self.store
+        store
             .write_block(VERSION_BLOCK_ID, VERSION_ID.as_bytes())
             .map_err(|error| crate::Error::Store(error))?;
 
@@ -402,7 +399,7 @@ impl OpenOptions {
         } = header;
 
         let state = RepoState {
-            store: Mutex::new(self.store),
+            store: Mutex::new(Box::new(store)),
             metadata,
             chunks,
             packs,
@@ -420,35 +417,53 @@ impl OpenOptions {
         // Clean the repository in case changes were rolled back.
         repository.clean()?;
 
-        R::from_repo(repository)
+        Ok(repository)
     }
 
-    /// Open the repository if it exists or create one if it doesn't.
+    /// Open or create the repository.
     ///
     /// # Errors
+    /// - `Error::NotFound`: There is no repository in the data store and `OpenMode::Open` was
+    /// specified.
+    /// - `Error::AlreadyExists`: A repository already exists in the data store and
+    /// `OpenMode::CreateNew` was specified.
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::Locked`: The repository is locked.
     /// - `Error::Password`: The password provided is invalid.
-    /// - `Error::Password`: A password was required but not provided or provided but not required.
-    /// - `Error::UnsupportedFormat`: The backing is an unsupported format. This can happen if the
+    /// - `Error::Password`: A password was required but not provided.
+    /// - `Error::Deserialize`: Could not deserialize some data in the repository.
+    /// - `Error::UnsupportedRepo`: The repository is an unsupported format. This can happen if the
     /// serialized data format changed or if the data store already contains a different type of
     /// repository.
+    /// - `Error::UnsupportedStore`: The data store is an unsupported format. This can happen if
+    /// the serialized data format changed or if the storage represented by `config` does not
+    /// contain a valid data store.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn create<R>(mut self) -> crate::Result<R>
+    pub fn open<R, C>(&self, config: &C) -> crate::Result<R>
     where
         R: ConvertRepo,
+        C: OpenStore,
     {
-        if self
-            .store
-            .read_block(VERSION_BLOCK_ID)
-            .map_err(|error| crate::Error::Store(error))?
-            .is_some()
-        {
-            self.open()
-        } else {
-            self.create_new()
-        }
+        let mut store = config.open()?;
+
+        let repo = match self.mode {
+            OpenMode::Open => self.open_repo(store)?,
+            OpenMode::Create => {
+                if store
+                    .read_block(VERSION_BLOCK_ID)
+                    .map_err(|error| crate::Error::Store(error))?
+                    .is_some()
+                {
+                    self.open_repo(store)?
+                } else {
+                    self.create_repo(store)?
+                }
+            }
+            OpenMode::CreateNew => self.create_repo(store)?,
+        };
+
+        R::from_repo(repo)
     }
 }

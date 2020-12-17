@@ -30,7 +30,6 @@ use walkdir::WalkDir;
 use crate::repo::common::check_version;
 use crate::repo::object::ObjectRepo;
 use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepoInfo};
-use crate::store::DataStore;
 
 use super::entry::{Entry, EntryHandle, EntryType, FileType};
 use super::metadata::{FileMetadata, NoMetadata};
@@ -134,12 +133,13 @@ where
     /// # Examples
     /// Create a new regular file with no metadata.
     /// ```
-    /// # use acid_store::repo::OpenOptions;
+    /// # use acid_store::repo::{OpenOptions, OpenMode};
     /// # use acid_store::repo::file::{FileRepo, Entry, RelativePath};
-    /// # use acid_store::store::MemoryStore;
+    /// # use acid_store::store::{MemoryStore, MemoryConfig};
     /// #
-    /// # let mut repo = OpenOptions::new(MemoryStore::new())
-    /// #    .create_new::<FileRepo>()
+    /// # let mut repo: FileRepo = OpenOptions::new()
+    /// #    .mode(OpenMode::CreateNew)
+    /// #    .open(&MemoryConfig::new())
     /// #    .unwrap();
     /// #
     /// let entry_path = RelativePath::new("file");
@@ -150,12 +150,13 @@ where
     /// Create a new symbolic link with no metadata.
     /// ```
     /// # use std::path::Path;
-    /// # use acid_store::repo::OpenOptions;
+    /// # use acid_store::repo::{OpenOptions, OpenMode};
     /// # use acid_store::repo::file::{FileRepo, Entry, RelativePath, UnixSpecialType};
-    /// # use acid_store::store::MemoryStore;
+    /// # use acid_store::store::{MemoryStore, MemoryConfig};
     /// #
-    /// # let mut repo = OpenOptions::new(MemoryStore::new())
-    /// #    .create_new::<FileRepo<UnixSpecialType>>()
+    /// # let mut repo: FileRepo<UnixSpecialType> = OpenOptions::new()
+    /// #    .mode(OpenMode::CreateNew)
+    /// #    .open(&MemoryConfig::new())
     /// #    .unwrap();
     /// #
     /// let entry_path = RelativePath::new("link");
@@ -300,12 +301,13 @@ where
     /// # Examples
     /// Check if an entry is a regular file.
     /// ```
-    /// # use acid_store::repo::OpenOptions;
+    /// # use acid_store::repo::{OpenOptions, OpenMode};
     /// # use acid_store::repo::file::{FileRepo, Entry, RelativePath};
-    /// # use acid_store::store::MemoryStore;
+    /// # use acid_store::store::{MemoryStore, MemoryConfig};
     /// #
-    /// # let mut repo = OpenOptions::new(MemoryStore::new())
-    /// #    .create_new::<FileRepo>()
+    /// # let mut repo: FileRepo = OpenOptions::new()
+    /// #    .mode(OpenMode::CreateNew)
+    /// #    .open(&MemoryConfig::new())
     /// #    .unwrap();
     /// #
     /// let entry_path = RelativePath::new("file");
@@ -838,12 +840,5 @@ where
     /// Return information about the repository.
     pub fn info(&self) -> RepoInfo {
         self.repository.info()
-    }
-
-    /// Return information about the repository in `store` without opening it.
-    ///
-    /// See `ObjectRepo::peek_info` for details.
-    pub fn peek_info(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
-        ObjectRepo::peek_info(store)
     }
 }

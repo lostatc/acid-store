@@ -29,7 +29,6 @@ use crate::repo::key::Key;
 use crate::repo::object::ObjectRepo;
 use crate::repo::version::version::VersionInfo;
 use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepoInfo};
-use crate::store::DataStore;
 
 use super::version::{KeyInfo, Version};
 
@@ -376,12 +375,5 @@ impl<K: Key> VersionRepo<K> {
     /// Return information about the repository.
     pub fn info(&self) -> RepoInfo {
         self.repository.info()
-    }
-
-    /// Return information about the repository in `store` without opening it.
-    ///
-    /// See `ObjectRepo::peek_info` for details.
-    pub fn peek_info(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
-        ObjectRepo::peek_info(store)
     }
 }

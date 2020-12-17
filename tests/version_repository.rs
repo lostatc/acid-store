@@ -19,28 +19,30 @@
 use std::io::{Read, Write};
 
 use acid_store::repo::version::VersionRepo;
-use acid_store::repo::{ConvertRepo, OpenOptions};
-use acid_store::store::MemoryStore;
+use acid_store::repo::{OpenMode, OpenOptions};
+use acid_store::store::MemoryConfig;
 use common::{assert_contains_all, random_buffer};
 
 mod common;
 
-fn create_repo() -> acid_store::Result<VersionRepo<String>> {
-    OpenOptions::new(MemoryStore::new()).create_new()
+fn create_repo(config: &MemoryConfig) -> acid_store::Result<VersionRepo<String>> {
+    OpenOptions::new().mode(OpenMode::CreateNew).open(config)
 }
 
 #[test]
 fn open_repository() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.commit()?;
-    let store = repository.into_repo()?.into_store();
-    OpenOptions::new(store).open::<VersionRepo<String>>()?;
+    drop(repository);
+    OpenOptions::new().open::<VersionRepo<String>, _>(&config)?;
     Ok(())
 }
 
 #[test]
 fn read_version() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     // Add a new object and write data to it.
     let expected_data = random_buffer();
@@ -67,7 +69,8 @@ fn read_version() -> anyhow::Result<()> {
 
 #[test]
 fn list_versions() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     repository.insert("Key".into()).unwrap();
     let version1 = repository.create_version("Key").unwrap();
@@ -85,7 +88,8 @@ fn list_versions() -> anyhow::Result<()> {
 
 #[test]
 fn remove_version() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     repository.insert(String::from("Key")).unwrap();
     let version = repository.create_version("Key").unwrap();
@@ -97,7 +101,8 @@ fn remove_version() -> anyhow::Result<()> {
 
 #[test]
 fn remove_and_list_versions() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     repository.insert("Key".into()).unwrap();
     let version1 = repository.create_version("Key").unwrap();
@@ -116,7 +121,8 @@ fn remove_and_list_versions() -> anyhow::Result<()> {
 
 #[test]
 fn remove_and_get_version() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     repository.insert("Key".into()).unwrap();
     let version = repository.create_version("Key").unwrap();
@@ -133,7 +139,9 @@ fn remove_and_get_version() -> anyhow::Result<()> {
 
 #[test]
 fn versioning_nonexistent_key_errs() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
+
     assert!(repository.create_version("Key").is_none());
     assert!(!repository.remove_version("Key", 1));
     assert!(repository.versions("Key").is_none());
@@ -142,7 +150,8 @@ fn versioning_nonexistent_key_errs() -> anyhow::Result<()> {
 
 #[test]
 fn removing_key_removes_versions() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     repository.insert("Key".into()).unwrap();
     let version = repository.create_version("Key").unwrap();
@@ -156,7 +165,8 @@ fn removing_key_removes_versions() -> anyhow::Result<()> {
 
 #[test]
 fn restore_version() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     let expected_data = random_buffer();
 
@@ -189,7 +199,8 @@ fn restore_version() -> anyhow::Result<()> {
 
 #[test]
 fn modifying_object_doesnt_modify_versions() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     repository.insert(String::from("Key")).unwrap();
     let version = repository.create_version("Key").unwrap();
@@ -207,7 +218,8 @@ fn modifying_object_doesnt_modify_versions() -> anyhow::Result<()> {
 
 #[test]
 fn objects_removed_on_rollback() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     let mut object = repository.insert("test".into()).unwrap();
     object.write_all(random_buffer().as_slice())?;

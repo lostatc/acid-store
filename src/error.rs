@@ -15,6 +15,7 @@
  */
 use std::io;
 use std::result;
+
 use thiserror::Error as DeriveError;
 
 /// The error type for operations with a repository.
@@ -45,9 +46,13 @@ pub enum Error {
     #[error("The repository is corrupt.")]
     Corrupt,
 
-    /// This format is not supported by this version of the library.
-    #[error("This format is not supported by this version of the library.")]
-    UnsupportedFormat,
+    /// This data store is an unsupported format.
+    #[error("This data store is an unsupported format.")]
+    UnsupportedStore,
+
+    /// This repository is an unsupported format.
+    #[error("This repository is an unsupported format.")]
+    UnsupportedRepo,
 
     /// This file type is not supported.
     #[error("This file type is not supported.")]

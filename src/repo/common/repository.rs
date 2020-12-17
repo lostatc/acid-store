@@ -30,7 +30,7 @@ use super::chunk_store::{
 };
 use super::encryption::{EncryptionKey, KeySalt};
 use super::id_table::IdTable;
-use super::metadata::{Header, RepoInfo, RepoMetadata};
+use super::metadata::{Header, RepoInfo};
 use super::object::{chunk_hash, Object, ObjectHandle, ReadOnlyObject};
 use super::report::IntegrityReport;
 use super::state::RepoState;
@@ -690,33 +690,5 @@ impl ObjectRepo {
     /// Return information about the repository.
     pub fn info(&self) -> RepoInfo {
         self.state.metadata.to_info()
-    }
-
-    /// Return information about the repository in `store` without opening it.
-    ///
-    /// # Errors
-    /// - `Error::NotFound`: There is no repository in the given `store`.
-    /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
-    /// - `Error::Store`: An error occurred with the data store.
-    pub fn peek_info(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
-        // Read and deserialize the metadata.
-        let serialized_metadata = match store
-            .read_block(METADATA_BLOCK_ID)
-            .map_err(|error| crate::Error::Store(error))?
-        {
-            Some(data) => data,
-            None => return Err(crate::Error::NotFound),
-        };
-        let metadata: RepoMetadata =
-            from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
-
-        Ok(metadata.to_info())
-    }
-
-    /// Consume this repository and return the wrapped `DataStore`.
-    ///
-    /// This rolls back any uncommitted changes.
-    pub fn into_store(self) -> Box<dyn DataStore> {
-        self.state.store.into_inner().unwrap()
     }
 }

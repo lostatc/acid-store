@@ -22,7 +22,8 @@ use std::path::PathBuf;
 use redis::{Client, Commands, Connection, ConnectionAddr, ConnectionInfo, IntoConnectionInfo};
 use uuid::Uuid;
 
-use crate::store::common::DataStore;
+use super::data_store::DataStore;
+use super::open_store::OpenStore;
 
 /// A UUID which acts as the version ID of the store format.
 const CURRENT_VERSION: &str = "b733bd82-4206-11ea-a3dc-7354076bdaf9";
@@ -38,7 +39,7 @@ pub enum RedisAddr {
     Unix(PathBuf),
 }
 
-/// The configuration for a Redis connection.
+/// The configuration for opening a `RedisStore`.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(docsrs, doc(cfg(feature = "store-redis")))]
 pub struct RedisConfig {
@@ -55,7 +56,53 @@ pub struct RedisConfig {
     pub password: Option<String>,
 }
 
+impl RedisConfig {
+    /// Construct a `RedisConfig` from a `url`.
+    ///
+    /// This returns `None` if the URL is invalid.
+    ///
+    /// For a TCP connection, the URL format is:
+    /// `redis://[<username>][:<passwd>@]<hostname>[:port][/<db>]`.
+    ///
+    /// For a Unix socket connection, the URL format is:
+    /// `redis+unix:///<path>[?db=<db>[&pass=<password>][&user=<username>]]`.
+    pub fn from_url(url: &str) -> Option<Self> {
+        let connection_info = url.into_connection_info().ok()?;
+        Some(RedisConfig {
+            addr: match *connection_info.addr {
+                ConnectionAddr::Tcp(host, port) => RedisAddr::Tcp(host, port),
+                ConnectionAddr::TcpTls { host, port, .. } => RedisAddr::Tcp(host, port),
+                ConnectionAddr::Unix(path) => RedisAddr::Unix(path),
+            },
+            db: connection_info.db,
+            username: connection_info.username,
+            password: connection_info.passwd,
+        })
+    }
+}
+
+impl OpenStore for RedisConfig {
+    type Store = RedisStore;
+
+    fn open(&self) -> crate::Result<Self::Store> {
+        let info = ConnectionInfo {
+            addr: Box::new(match self.addr.clone() {
+                RedisAddr::Tcp(host, port) => ConnectionAddr::Tcp(host, port),
+                RedisAddr::Unix(path) => ConnectionAddr::Unix(path),
+            }),
+            db: self.db.clone(),
+            username: self.username.clone(),
+            passwd: self.password.clone(),
+        };
+        RedisStore::from_connection_info(info)
+    }
+}
+
 /// A `DataStore` which stores data on a Redis server.
+///
+/// You can use [`RedisConfig`] to open a data store of this type.
+///
+/// [`RedisConfig`]: crate::store::RedisConfig
 #[cfg_attr(docsrs, doc(cfg(feature = "store-redis")))]
 pub struct RedisStore {
     connection: Connection,
@@ -81,7 +128,7 @@ impl RedisStore {
         match version_response {
             Some(version) => {
                 if version != CURRENT_VERSION {
-                    return Err(crate::Error::UnsupportedFormat);
+                    return Err(crate::Error::UnsupportedStore);
                 }
             }
             None => connection
@@ -90,47 +137,6 @@ impl RedisStore {
         }
 
         Ok(RedisStore { connection })
-    }
-
-    /// Open or create a `RedisStore` from the given `config`.
-    ///
-    /// # Errors
-    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
-    /// this is not a valid `RedisStore` or this repository format is no longer supported by the
-    /// library.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn new(config: &RedisConfig) -> crate::Result<Self> {
-        let config = config.to_owned();
-        let info = ConnectionInfo {
-            addr: Box::new(match config.addr {
-                RedisAddr::Tcp(host, port) => ConnectionAddr::Tcp(host, port),
-                RedisAddr::Unix(path) => ConnectionAddr::Unix(path),
-            }),
-            db: config.db,
-            username: config.username,
-            passwd: config.password,
-        };
-        Self::from_connection_info(info)
-    }
-
-    /// Open or create a `RedisStore` from a URL.
-    ///
-    /// For a TCP connection: `redis://[<username>][:<passwd>@]<hostname>[:port][/<db>]`
-    ///
-    /// For a Unix socket: `redis+unix:///[:<passwd>@]<path>[?db=<db>]`
-    ///
-    /// # Errors
-    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
-    /// this is not a valid `RedisStore` or this repository format is no longer supported by the
-    /// library.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn from_url(url: &str) -> crate::Result<Self> {
-        let info = url
-            .into_connection_info()
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        Self::from_connection_info(info)
     }
 }
 

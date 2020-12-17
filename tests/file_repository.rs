@@ -27,8 +27,8 @@ use relative_path::RelativePathBuf;
 use tempfile::tempdir;
 
 use acid_store::repo::file::{Entry, FileRepo, NoMetadata, NoSpecialType};
-use acid_store::repo::{ConvertRepo, OpenOptions};
-use acid_store::store::MemoryStore;
+use acid_store::repo::{OpenMode, OpenOptions};
+use acid_store::store::MemoryConfig;
 use common::{assert_contains_all, random_buffer};
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
@@ -45,22 +45,24 @@ use {
 
 mod common;
 
-fn create_repo() -> acid_store::Result<FileRepo> {
-    OpenOptions::new(MemoryStore::new()).create_new()
+fn create_repo(config: &MemoryConfig) -> acid_store::Result<FileRepo> {
+    OpenOptions::new().mode(OpenMode::CreateNew).open(config)
 }
 
 #[test]
 fn open_repository() -> anyhow::Result<()> {
-    let mut repo = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
     repo.commit()?;
-    let store = repo.into_repo()?.into_store();
-    OpenOptions::new(store).open::<FileRepo>()?;
+    drop(repo);
+    OpenOptions::new().open::<FileRepo, _>(&config)?;
     Ok(())
 }
 
 #[test]
 fn creating_existing_file_errs() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     repository.create("home", &Entry::directory())?;
     let result = repository.create("home", &Entry::directory());
@@ -74,7 +76,8 @@ fn creating_existing_file_errs() -> anyhow::Result<()> {
 
 #[test]
 fn creating_file_without_parent_errs() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     // Creating a directory without a parent fails.
     let result = repository.create("home/lostatc", &Entry::directory());
@@ -96,7 +99,8 @@ fn creating_file_without_parent_errs() -> anyhow::Result<()> {
 
 #[test]
 fn create_parents() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     repository.create_parents("home/lostatc/test", &Entry::file())?;
 
@@ -109,7 +113,8 @@ fn create_parents() -> anyhow::Result<()> {
 
 #[test]
 fn create_parent_of_top_level_file() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     repository.create_parents("home", &Entry::directory())?;
 
@@ -119,7 +124,8 @@ fn create_parent_of_top_level_file() -> anyhow::Result<()> {
 
 #[test]
 fn removing_nonexistent_path_errs() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     let result = repository.remove("home");
 
     assert!(matches!(result, Err(acid_store::Error::NotFound)));
@@ -128,7 +134,8 @@ fn removing_nonexistent_path_errs() -> anyhow::Result<()> {
 
 #[test]
 fn removing_non_empty_directory_errs() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create_parents("home/lostatc", &Entry::directory())?;
     let result = repository.remove("home");
 
@@ -138,7 +145,8 @@ fn removing_non_empty_directory_errs() -> anyhow::Result<()> {
 
 #[test]
 fn remove_file() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create("home", &Entry::directory())?;
     repository.remove("home")?;
 
@@ -148,7 +156,8 @@ fn remove_file() -> anyhow::Result<()> {
 
 #[test]
 fn remove_tree() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create_parents("home/lostatc/test", &Entry::file())?;
     repository.remove_tree("home")?;
 
@@ -160,7 +169,8 @@ fn remove_tree() -> anyhow::Result<()> {
 
 #[test]
 fn remove_tree_without_descendants() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create("home", &Entry::directory())?;
     repository.remove_tree("home")?;
 
@@ -170,7 +180,8 @@ fn remove_tree_without_descendants() -> anyhow::Result<()> {
 
 #[test]
 fn setting_metadata_on_nonexistent_file_errs() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     let result = repository.set_metadata("file", None);
 
     assert!(matches!(result, Err(acid_store::Error::NotFound)));
@@ -180,8 +191,9 @@ fn setting_metadata_on_nonexistent_file_errs() -> anyhow::Result<()> {
 #[test]
 #[cfg(feature = "file-metadata")]
 fn set_metadata() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
     let mut repository: FileRepo<NoSpecialType, CommonMetadata> =
-        OpenOptions::new(MemoryStore::new()).create_new()?;
+        OpenOptions::new().mode(OpenMode::CreateNew).open(&config)?;
 
     let expected_metadata = CommonMetadata {
         modified: SystemTime::UNIX_EPOCH,
@@ -197,7 +209,8 @@ fn set_metadata() -> anyhow::Result<()> {
 
 #[test]
 fn open_file() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create("file", &Entry::file())?;
     let mut object = repository.open_mut("file")?;
 
@@ -215,7 +228,8 @@ fn open_file() -> anyhow::Result<()> {
 
 #[test]
 fn copied_file_has_same_contents() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     let expected_data = b"expected";
     let mut actual_data = Vec::new();
@@ -239,7 +253,8 @@ fn copied_file_has_same_contents() -> anyhow::Result<()> {
 
 #[test]
 fn copy_file_with_invalid_destination() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create("source", &Entry::file())?;
 
     assert!(matches!(
@@ -259,7 +274,8 @@ fn copy_file_with_invalid_destination() -> anyhow::Result<()> {
 
 #[test]
 fn copy_tree() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create_parents("source/file1", &Entry::file())?;
     repository.create_parents("source/directory/file2", &Entry::file())?;
 
@@ -273,7 +289,8 @@ fn copy_tree() -> anyhow::Result<()> {
 
 #[test]
 fn copy_tree_which_is_a_file() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create("source", &Entry::file())?;
 
     repository.copy_tree("source", "dest")?;
@@ -285,7 +302,8 @@ fn copy_tree_which_is_a_file() -> anyhow::Result<()> {
 
 #[test]
 fn list_children() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create_parents("root/child1", &Entry::file())?;
     repository.create_parents("root/child2/descendant", &Entry::file())?;
 
@@ -301,7 +319,8 @@ fn list_children() -> anyhow::Result<()> {
 
 #[test]
 fn list_children_of_nonexistent_directory() -> anyhow::Result<()> {
-    let repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let repository = create_repo(&config)?;
     let result = repository.list("nonexistent");
 
     assert!(matches!(result, Err(acid_store::Error::NotFound)));
@@ -311,7 +330,8 @@ fn list_children_of_nonexistent_directory() -> anyhow::Result<()> {
 
 #[test]
 fn list_children_of_a_file() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create("file", &Entry::file())?;
 
     let result = repository.list("file");
@@ -323,7 +343,8 @@ fn list_children_of_a_file() -> anyhow::Result<()> {
 
 #[test]
 fn walk_descendants() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create_parents("root/child1", &Entry::file())?;
     repository.create_parents("root/child2/descendant", &Entry::file())?;
 
@@ -340,7 +361,8 @@ fn walk_descendants() -> anyhow::Result<()> {
 
 #[test]
 fn walk_descendants_of_nonexistent_directory() -> anyhow::Result<()> {
-    let repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let repository = create_repo(&config)?;
     let result = repository.walk("nonexistent");
 
     assert!(matches!(result, Err(acid_store::Error::NotFound)));
@@ -350,7 +372,8 @@ fn walk_descendants_of_nonexistent_directory() -> anyhow::Result<()> {
 
 #[test]
 fn walk_descendants_of_a_file() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create("file", &Entry::file())?;
 
     let result = repository.walk("file");
@@ -368,7 +391,8 @@ fn archive_file() -> anyhow::Result<()> {
     source_file.write_all(b"file contents")?;
     source_file.flush()?;
 
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.archive(&source_path, "dest")?;
 
     let mut object = repository.open("dest")?;
@@ -390,8 +414,9 @@ fn archive_unix_special_files() -> anyhow::Result<()> {
     mkfifo(&fifo_path, Mode::S_IRWXU)?;
     symlink("/dev/null", &symlink_path)?;
 
+    let config = MemoryConfig::new();
     let mut repository: FileRepo<_, NoMetadata> =
-        OpenOptions::new(MemoryStore::new()).create_new()?;
+        OpenOptions::new().mode(OpenMode::CreateNew).open(&config)?;
 
     repository.create("dest", &Entry::directory())?;
     repository.archive(fifo_path, "dest/fifo")?;
@@ -423,7 +448,8 @@ fn archiving_file_with_existing_dest_errs() -> anyhow::Result<()> {
     let source_path = temp_dir.as_ref().join("source");
     File::create(&source_path)?;
 
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create("dest", &Entry::file())?;
     let result = repository.archive(&source_path, "dest");
 
@@ -441,7 +467,8 @@ fn archive_tree() -> anyhow::Result<()> {
     create_dir(&source_path.join("directory"))?;
     File::create(&source_path.join("directory/file2"))?;
 
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.archive_tree(&source_path, "dest")?;
 
     assert!(repository.entry("dest")?.is_directory());
@@ -456,7 +483,9 @@ fn extract_file() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let dest_path = temp_dir.as_ref().join("dest");
 
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
+
     repository.create("source", &Entry::file())?;
     let mut object = repository.open_mut("source")?;
     object.write_all(b"file contents")?;
@@ -480,8 +509,9 @@ fn extract_unix_special_files() -> anyhow::Result<()> {
     let symlink_path = temp_dir.as_ref().join("symlink");
     let device_path = temp_dir.as_ref().join("device");
 
+    let config = MemoryConfig::new();
     let mut repository: FileRepo<_, NoMetadata> =
-        OpenOptions::new(MemoryStore::new()).create_new()?;
+        OpenOptions::new().mode(OpenMode::CreateNew).open(&config)?;
 
     repository.create("fifo", &Entry::special(UnixSpecialType::NamedPipe))?;
     repository.create(
@@ -522,7 +552,9 @@ fn extracting_file_with_existing_dest_errs() -> anyhow::Result<()> {
     let dest_path = temp_dir.as_ref().join("dest");
     File::create(&dest_path)?;
 
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
+
     repository.create("source", &Entry::file())?;
     let result = repository.extract("source", &dest_path);
 
@@ -535,7 +567,9 @@ fn extract_tree() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let dest_path = temp_dir.as_ref().join("dest");
 
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
+
     repository.create("source", &Entry::directory())?;
     repository.create("source/file1", &Entry::file())?;
     repository.create("source/directory", &Entry::directory())?;
@@ -555,8 +589,9 @@ fn write_unix_metadata() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let dest_path = temp_dir.as_ref().join("dest");
 
+    let config = MemoryConfig::new();
     let mut repository: FileRepo<NoSpecialType, UnixMetadata> =
-        OpenOptions::new(MemoryStore::new()).create_new()?;
+        OpenOptions::new().mode(OpenMode::CreateNew).open(&config)?;
 
     // This does not test extended attributes because user extended attributes are not supported
     // on tmpfs, which is most likely where the temporary directory will be created.
@@ -609,8 +644,9 @@ fn read_unix_metadata() -> anyhow::Result<()> {
         dest_acl.write_acl(&source_path)?;
     }
 
+    let config = MemoryConfig::new();
     let mut repository: FileRepo<NoSpecialType, UnixMetadata> =
-        OpenOptions::new(MemoryStore::new()).create_new()?;
+        OpenOptions::new().mode(OpenMode::CreateNew).open(&config)?;
 
     repository.archive(&source_path, "dest")?;
     let entry = repository.entry("dest")?;
@@ -642,8 +678,9 @@ fn write_common_metadata() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let dest_path = temp_dir.as_ref().join("dest");
 
+    let config = MemoryConfig::new();
     let mut repository: FileRepo<NoSpecialType, CommonMetadata> =
-        OpenOptions::new(MemoryStore::new()).create_new()?;
+        OpenOptions::new().mode(OpenMode::CreateNew).open(&config)?;
 
     let entry_metadata = CommonMetadata {
         modified: SystemTime::UNIX_EPOCH,
@@ -671,8 +708,9 @@ fn read_common_metadata() -> anyhow::Result<()> {
     let source_path = temp_dir.as_ref().join("source");
     File::create(&source_path)?;
 
+    let config = MemoryConfig::new();
     let mut repository: FileRepo<NoSpecialType, CommonMetadata> =
-        OpenOptions::new(MemoryStore::new()).create_new()?;
+        OpenOptions::new().mode(OpenMode::CreateNew).open(&config)?;
 
     repository.archive(&source_path, "dest")?;
     let entry = repository.entry("dest")?;
@@ -686,7 +724,8 @@ fn read_common_metadata() -> anyhow::Result<()> {
 
 #[test]
 fn entries_removed_on_rollback() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create("file", &Entry::file())?;
 
     let mut object = repository.open_mut("file")?;
@@ -703,7 +742,8 @@ fn entries_removed_on_rollback() -> anyhow::Result<()> {
 
 #[test]
 fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.create_parents("home/lostatc/file", &Entry::file())?;
 
     assert!(repository.verify()?.is_empty());

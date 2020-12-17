@@ -18,11 +18,12 @@
 
 use std::fs::{create_dir_all, read_dir, remove_file, rename, File};
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use uuid::Uuid;
 
-use super::common::DataStore;
+use super::data_store::DataStore;
+use super::open_store::OpenStore;
 
 /// A UUID which acts as the version ID of the directory store format.
 const CURRENT_VERSION: &str = "2891c3da-297e-11ea-a7c9-1b8f8be4fc9b";
@@ -32,33 +33,27 @@ const BLOCKS_DIRECTORY: &str = "blocks";
 const STAGING_DIRECTORY: &str = "stage";
 const VERSION_FILE: &str = "version";
 
-/// A `DataStore` which stores data in a directory in the local file system.
-#[derive(Debug)]
+/// The configuration for opening a `DirectoryStore`.
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(docsrs, doc(cfg(feature = "store-directory")))]
-pub struct DirectoryStore {
-    /// The path of the store's root directory.
-    path: PathBuf,
+pub struct DirectoryConfig {
+    /// The path of the directory store.
+    pub path: PathBuf,
 }
 
-impl DirectoryStore {
-    /// Open or create a `DirectoryStore` at the given `path`.
-    ///
-    /// # Errors
-    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
-    /// this is not a valid `DirectoryStore` or this repository format is no longer supported by the
-    /// library.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn new(path: impl AsRef<Path>) -> crate::Result<Self> {
+impl OpenStore for DirectoryConfig {
+    type Store = DirectoryStore;
+
+    fn open(&self) -> crate::Result<Self::Store> {
         // Create the blocks directory in the data store.
-        create_dir_all(path.as_ref())
+        create_dir_all(&self.path)
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        create_dir_all(path.as_ref().join(BLOCKS_DIRECTORY))
+        create_dir_all(self.path.join(BLOCKS_DIRECTORY))
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        create_dir_all(path.as_ref().join(STAGING_DIRECTORY))
+        create_dir_all(self.path.join(STAGING_DIRECTORY))
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
-        let version_path = path.as_ref().join(VERSION_FILE);
+        let version_path = self.path.join(VERSION_FILE);
 
         if version_path.exists() {
             // Read the version ID file.
@@ -69,7 +64,7 @@ impl DirectoryStore {
 
             // Verify the version ID.
             if version_id != CURRENT_VERSION {
-                return Err(crate::Error::UnsupportedFormat);
+                return Err(crate::Error::UnsupportedStore);
             }
         } else {
             // Write the version ID file.
@@ -79,10 +74,24 @@ impl DirectoryStore {
         }
 
         Ok(DirectoryStore {
-            path: path.as_ref().to_owned(),
+            path: self.path.clone(),
         })
     }
+}
 
+/// A `DataStore` which stores data in a directory in the local file system.
+///
+/// You can use [`DirectoryConfig`] to open a data store of this type.
+///
+/// [`DirectoryConfig`]: crate::store::DirectoryConfig
+#[derive(Debug)]
+#[cfg_attr(docsrs, doc(cfg(feature = "store-directory")))]
+pub struct DirectoryStore {
+    /// The path of the store's root directory.
+    path: PathBuf,
+}
+
+impl DirectoryStore {
     /// Return the path where a block with the given `id` will be stored.
     fn block_path(&self, id: Uuid) -> PathBuf {
         let mut buffer = Uuid::encode_buffer();

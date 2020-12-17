@@ -15,10 +15,33 @@
  */
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use uuid::Uuid;
 
-use super::common::DataStore;
+use super::data_store::DataStore;
+use super::open_store::OpenStore;
+
+/// The configuration for opening a `MemoryStore`.
+#[derive(Debug, Clone)]
+pub struct MemoryConfig(Arc<Mutex<HashMap<Uuid, Vec<u8>>>>);
+
+impl MemoryConfig {
+    /// Create a new empty `MemoryConfig`.
+    pub fn new() -> Self {
+        MemoryConfig(Arc::new(Mutex::new(HashMap::new())))
+    }
+}
+
+impl OpenStore for MemoryConfig {
+    type Store = MemoryStore;
+
+    fn open(&self) -> crate::Result<Self::Store> {
+        Ok(MemoryStore {
+            blocks: Arc::clone(&self.0),
+        })
+    }
+}
 
 /// A `DataStore` which stores data in memory.
 ///
@@ -26,36 +49,39 @@ use super::common::DataStore;
 /// and is only accessible to the current process. This data store is useful for testing.
 ///
 /// None of the methods in this data store will ever return `Err`.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+///
+/// You can use [`MemoryConfig`] to open a data store of this type.
+///
+/// [`MemoryConfig`]: crate::store::MemoryConfig
+#[derive(Debug)]
 pub struct MemoryStore {
-    blocks: HashMap<Uuid, Vec<u8>>,
-}
-
-impl MemoryStore {
-    /// Create a new empty `MemoryStore`.
-    pub fn new() -> Self {
-        MemoryStore {
-            blocks: HashMap::new(),
-        }
-    }
+    blocks: Arc<Mutex<HashMap<Uuid, Vec<u8>>>>,
 }
 
 impl DataStore for MemoryStore {
     fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()> {
-        self.blocks.insert(id.to_owned(), data.to_owned());
+        self.blocks
+            .lock()
+            .unwrap()
+            .insert(id.to_owned(), data.to_owned());
         Ok(())
     }
 
     fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>> {
-        Ok(self.blocks.get(&id).map(|data| data.to_owned()))
+        Ok(self
+            .blocks
+            .lock()
+            .unwrap()
+            .get(&id)
+            .map(|data| data.to_owned()))
     }
 
     fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()> {
-        self.blocks.remove(&id);
+        self.blocks.lock().unwrap().remove(&id);
         Ok(())
     }
 
     fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>> {
-        Ok(self.blocks.keys().copied().collect())
+        Ok(self.blocks.lock().unwrap().keys().copied().collect())
     }
 }

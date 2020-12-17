@@ -24,7 +24,6 @@ use uuid::Uuid;
 use crate::repo::common::check_version;
 use crate::repo::object::{ObjectHandle, ObjectRepo};
 use crate::repo::{ConvertRepo, ReadOnlyObject, RepoInfo};
-use crate::store::DataStore;
 
 use super::hash::{HashAlgorithm, BUFFER_SIZE};
 
@@ -317,12 +316,5 @@ impl ContentRepo {
     /// Return information about the repository.
     pub fn info(&self) -> RepoInfo {
         self.repository.info()
-    }
-
-    /// Return information about the repository in `store` without opening it.
-    ///
-    /// See `ObjectRepo::peek_info` for details.
-    pub fn peek_info(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
-        ObjectRepo::peek_info(store)
     }
 }

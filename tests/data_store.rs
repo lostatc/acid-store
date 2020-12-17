@@ -26,7 +26,7 @@ use serial_test::serial;
 use tempfile::tempdir;
 use uuid::Uuid;
 
-use acid_store::store::{DataStore, MemoryStore};
+use acid_store::store::DataStore;
 #[cfg(feature = "store-directory")]
 use common::directory_store;
 #[cfg(feature = "store-rclone")]
@@ -39,7 +39,7 @@ use common::s3_store;
 use common::sftp_store;
 #[cfg(feature = "store-sqlite")]
 use common::sqlite_store;
-use common::{assert_contains_all, random_buffer};
+use common::{assert_contains_all, memory_store, random_buffer};
 
 mod common;
 
@@ -62,7 +62,7 @@ fn read_block(mut store: impl DataStore) -> anyhow::Result<()> {
 
 #[test]
 fn memory_read_block() -> anyhow::Result<()> {
-    read_block(MemoryStore::new())
+    read_block(memory_store()?)
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn overwrite_block(mut store: impl DataStore) -> anyhow::Result<()> {
 
 #[test]
 fn memory_overwrite_block() -> anyhow::Result<()> {
-    overwrite_block(MemoryStore::new())
+    overwrite_block(memory_store()?)
 }
 
 #[test]
@@ -192,7 +192,7 @@ fn remove_block(mut store: impl DataStore) -> anyhow::Result<()> {
 
 #[test]
 fn memory_remove_block() -> anyhow::Result<()> {
-    remove_block(MemoryStore::new())
+    remove_block(memory_store()?)
 }
 
 #[test]
@@ -264,7 +264,7 @@ fn list_blocks(mut store: impl DataStore) -> anyhow::Result<()> {
 
 #[test]
 fn memory_list_blocks() -> anyhow::Result<()> {
-    list_blocks(MemoryStore::new())
+    list_blocks(memory_store()?)
 }
 
 #[test]

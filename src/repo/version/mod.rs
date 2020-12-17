@@ -31,12 +31,13 @@
 //! ```
 //!     use std::io::{Read, Write};
 //!
-//!     use acid_store::repo::{OpenOptions, Object, version::VersionRepo, RepoConfig};
-//!     use acid_store::store::MemoryStore;
+//!     use acid_store::repo::{OpenMode, OpenOptions, Object, version::VersionRepo, RepoConfig};
+//!     use acid_store::store::MemoryConfig;
 //!
 //!     fn main() -> acid_store::Result<()> {
-//!         let mut repository = OpenOptions::new(MemoryStore::new())
-//!             .create_new::<VersionRepo<String>>()?;
+//!         let mut repository: VersionRepo<String> = OpenOptions::new()
+//!             .mode(OpenMode::CreateNew)
+//!             .open(&MemoryConfig::new())?;
 //!
 //!         // Insert a new object and write some data to it.
 //!         let mut object = repository.insert(String::from("Key")).unwrap();
