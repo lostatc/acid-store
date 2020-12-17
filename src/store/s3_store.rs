@@ -310,7 +310,9 @@ impl S3Credentials {
     }
 }
 
-/// The configuration for opening an `S3Store`.
+/// The configuration for opening an [`S3Store`].
+///
+/// [`S3Store`]: crate::store::S3Store
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(docsrs, doc(cfg(feature = "store-s3")))]
 pub struct S3Config {

@@ -51,9 +51,13 @@ pub struct Chunk {
 
 /// A handle for accessing data in a repository.
 ///
-/// An `ObjectHandle` is like an address for locating data stored in an `ObjectRepo`. It can't
-/// be used to read or write data directly, but it can be used with `ObjectRepo`to get an
-/// `Object` or a `ReadOnlyObject`.
+/// An `ObjectHandle` is like an address for locating data stored in an [`ObjectRepo`]. It can't
+/// be used to read or write data directly, but it can be used with [`ObjectRepo`] to get an
+/// [`Object`] or a [`ReadOnlyObject`].
+///
+/// [`ObjectRepo`]: crate::repo::object::ObjectRepo
+/// [`Object`]: crate::repo::Object
+/// [`ReadOnlyObject`]: crate::repo::ReadOnlyObject
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ObjectHandle {
     // We need both the `repo_id` and the `instance_id` to uniquely identify the instance an object
@@ -103,7 +107,9 @@ impl ObjectHandle {
 
     /// Return whether this object has the same contents as `other`.
     ///
-    /// See `ContentId::compare_contents` for details.
+    /// See [`ContentId::compare_contents`] for details.
+    ///
+    /// [`ContentId::compare_contents`]: crate::repo::ContentId::compare_contents
     pub fn compare_contents(&self, other: impl Read) -> crate::Result<bool> {
         self.content_id().compare_contents(other)
     }
@@ -115,10 +121,12 @@ impl ObjectHandle {
 /// A `ContentId` can be compared with other `ContentId` values to determine if the contents of two
 /// objects are equal. However, these comparisons are only valid within the same repository;
 /// content IDs from different repositories are never equal. To compare data between repositories,
-/// you should use `compare_contents`.
+/// you should use [`compare_contents`].
 ///
 /// `ContentId` is opaque, but it can be serialized and deserialized. The value of a `ContentId` is
 /// stable, meaning that they can be compared across invocations of the library.
+///
+/// [`compare_contents`]: crate::repo::ContentId::compare_contents
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct ContentId {
     // We can't compare content IDs from different repositories because those repositories may have
@@ -503,9 +511,12 @@ impl<'a> Write for ObjectWriter<'a> {
 /// An read-only view of data in a repository.
 ///
 /// A `ReadOnlyObject` is a view of data in a repository. It implements `Read` and `Seek` for
-/// reading data from the repository. You can think of this as a read-only counterpart to `Object`.
+/// reading data from the repository. You can think of this as a read-only counterpart to
+/// [`Object`].
 ///
-/// See `Object` for details.
+/// See [`Object`] for details.
+///
+/// [`Object`]: crate::repo::Object
 #[derive(Debug)]
 pub struct ReadOnlyObject<'a> {
     /// The state for the object repository.
@@ -538,7 +549,7 @@ impl<'a> ReadOnlyObject<'a> {
     /// Return the size of the object in bytes.
     ///
     /// Unflushed data is not accounted for when calculating the size, so you may want to explicitly
-    /// flush written data with `flush` before calling this method.
+    /// flush written data with `Write::flush` before calling this method.
     pub fn size(&self) -> u64 {
         self.handle.size()
     }
@@ -546,9 +557,11 @@ impl<'a> ReadOnlyObject<'a> {
     /// Return a `ContentId` representing the contents of this object.
     ///
     /// Unflushed data is not accounted for when generating a content ID, so you may want to
-    /// explicitly flush written data with `flush` before calling this method.
+    /// explicitly flush written data with `Write::flush` before calling this method.
     ///
-    /// See `ObjectHandle::content_id` for details.
+    /// See [`ObjectHandle::content_id`] for details.
+    ///
+    /// [`ObjectHandle::content_id`]: crate::repo::object::ObjectHandle::content_id
     pub fn content_id(&self) -> ContentId {
         self.handle.content_id()
     }
@@ -556,23 +569,30 @@ impl<'a> ReadOnlyObject<'a> {
     /// Return whether this object has the same contents as `other`.
     ///
     /// Unflushed data is not accounted for when comparing contents, so you may want to explicitly
-    /// flush written data with `flush` before calling this method.
+    /// flush written data with `Write::flush` before calling this method.
     ///
-    /// See `ContentId::compare_contents` for details.
+    /// See [`ContentId::compare_contents`] for details.
+    ///
+    /// [`ContentId::compare_contents`]: crate::repo::ContentId::compare_contents
     pub fn compare_contents(&self, other: impl Read) -> crate::Result<bool> {
         self.handle.compare_contents(other)
     }
 
     /// Verify the integrity of the data in this object.
     ///
-    /// See `Object::verify` for details.
+    /// See [`Object::verify`] for details.
+    ///
+    /// [`Object::verify`]: crate::repo::Object::verify
     pub fn verify(&mut self) -> crate::Result<bool> {
         self.object_reader().verify()
     }
 
-    /// Deserialize a value serialized with `Object::serialize`.
+    /// Deserialize a value serialized with [`Object::serialize`].
     ///
-    /// See `Object::deserialize` for details.
+    /// See [`Object::deserialize`] for details.
+    ///
+    /// [`Object::serialize`]: crate::repo::Object::serialize
+    /// [`Object::deserialize`]: crate::repo::Object::deserialize
     pub fn deserialize<T: DeserializeOwned>(&mut self) -> crate::Result<T> {
         self.object_reader().deserialize()
     }
@@ -600,15 +620,16 @@ impl<'a> Seek for ReadOnlyObject<'a> {
 ///
 /// Written data is automatically flushed when this value is dropped. If an error occurs while
 /// flushing data in the `Drop` implementation, it is ignored and unflushed data is discarded. If
-/// you need to handle these errors, you should call `flush` manually.
+/// you need to handle these errors, you should call `Write::flush` manually.
 ///
 /// If encryption is enabled for the repository, data integrity is automatically verified as it is
-/// read and methods will return an `Err` if corrupt data is found. The `verify` method can be used
-/// to check the integrity of all the data in the object whether encryption is enabled or not.
+/// read and methods will return an `Err` if corrupt data is found. The [`verify`] method can be
+/// used to check the integrity of all the data in the object whether encryption is enabled or not.
 ///
 /// The methods of `Read`, `Write`, and `Seek` return `io::Result`, but the returned `io::Error` can
-/// be converted `Into` an `acid_store::Error` to be consistent with the rest of the library. The
-/// implementations document which `acid_store::Error` values they can be converted into.
+/// be converted `Into` an `acid_store::Error` to be consistent with the rest of the library.
+///
+/// [`verify`]: crate::repo::Object::verify
 #[derive(Debug)]
 pub struct Object<'a> {
     /// The state for the object repository.
@@ -650,7 +671,7 @@ impl<'a> Object<'a> {
     /// Return the size of the object in bytes.
     ///
     /// Unflushed data is not accounted for when calculating the size, so you may want to explicitly
-    /// flush written data with `flush` before calling this method.
+    /// flush written data with `Write::flush` before calling this method.
     pub fn size(&self) -> u64 {
         self.handle.size()
     }
@@ -658,9 +679,11 @@ impl<'a> Object<'a> {
     /// Return a `ContentId` representing the contents of this object.
     ///
     /// Unflushed data is not accounted for when generating a content ID, so you may want to
-    /// explicitly flush written data with `flush` before calling this method.
+    /// explicitly flush written data with `Write::flush` before calling this method.
     ///
-    /// See `ObjectHandle::content_id` for details.
+    /// See [`ObjectHandle::content_id`] for details.
+    ///
+    /// [`ObjectHandle::content_id`]: crate::repo::object::ObjectHandle::content_id
     pub fn content_id(&self) -> ContentId {
         self.handle.content_id()
     }
@@ -668,9 +691,11 @@ impl<'a> Object<'a> {
     /// Return whether this object has the same contents as `other`.
     ///
     /// Unflushed data is not accounted for when comparing contents, so you may want to explicitly
-    /// flush written data with `flush` before calling this method.
+    /// flush written data with `Write::flush` before calling this method.
     ///
-    /// See `ContentId::compare_contents` for details.
+    /// See [`ContentId::compare_contents`] for details.
+    ///
+    /// [`ContentId::compare_contents`]: crate::repo::ContentId::compare_contents
     pub fn compare_contents(&self, other: impl Read) -> crate::Result<bool> {
         self.handle.compare_contents(other)
     }
@@ -680,7 +705,7 @@ impl<'a> Object<'a> {
     /// This returns `true` if the object is valid and `false` if it is corrupt.
     ///
     /// Unflushed data is not accounted for when verifying data integrity, so you may want to
-    /// explicitly flush written data with `flush` before calling this method.
+    /// explicitly flush written data with `Write::flush` before calling this method.
     ///
     /// # Errors
     /// - `Error::InvalidData`: Ciphertext verification failed.

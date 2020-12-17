@@ -34,7 +34,9 @@ use {
 
 /// The metadata for a file in the file system.
 ///
-/// This trait can be implemented to customize how `FileRepo` handles file metadata.
+/// This trait can be implemented to customize how [`FileRepo`] handles file metadata.
+///
+/// [`FileRepo`]: crate::repo::file::FileRepo
 pub trait FileMetadata: Serialize + DeserializeOwned {
     /// Read the metadata from the file at `path` and create a new instance.
     fn from_file(path: &Path) -> io::Result<Self>;
@@ -72,11 +74,14 @@ pub enum AccessQualifier {
 /// A `FileMetadata` for unix-like operating systems.
 ///
 /// Extended attributes and access control lists may not work on all platforms. If a platform is
-/// unsupported, `from_file` will acts as if files have no extended attributes or ACL entries and
-/// `write_metadata` will not attempt to write them.
+/// unsupported, [`from_file`] will acts as if files have no extended attributes or ACL entries and
+/// [`write_metadata`] will not attempt to write them.
 ///
 /// If the current user does not have the necessary permissions to set the UID/GID of the file,
-/// `write_metadata` will silently ignore the error and return `Ok`.
+/// [`write_metadata`] will silently ignore the error and return `Ok`.
+///
+/// [`from_file`]: crate::repo::file::FileMetadata::from_file
+/// [`write_metadata`]: crate::repo::file::FileMetadata::write_metadata
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]

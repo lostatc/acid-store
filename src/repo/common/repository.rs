@@ -104,8 +104,10 @@ impl ObjectRepo {
     /// This returns `true` if the object was removed and `false` if there is no unmanaged object
     /// in the repository associated with `handle`.
     ///
-    /// The space used by the given object isn't freed and made available for new objects until
-    /// `commit` is called.
+    /// The space used by the given object isn't reclaimed in the backing data store until changes
+    /// are committed and [`clean`] is called.
+    ///
+    /// [`clean`]: crate::repo::object::ObjectRepo::clean
     pub fn remove_unmanaged(&mut self, handle: &ObjectHandle) -> bool {
         if !self.contains_unmanaged(&handle) {
             return false;
@@ -134,7 +136,9 @@ impl ObjectRepo {
     /// `handle`.
     ///
     /// The returned object provides read-only access to the data. To get read-write access, use
-    /// `unmanaged_object_mut`.
+    /// [`unmanaged_object_mut`].
+    ///
+    /// [`unmanaged_object_mut`]: crate::repo::object::ObjectRepo::unmanaged_object_mut
     pub fn unmanaged_object<'a>(&'a self, handle: &'a ObjectHandle) -> Option<ReadOnlyObject<'a>> {
         if self.contains_unmanaged(handle) {
             Some(ReadOnlyObject::new(&self.state, handle))
@@ -152,7 +156,9 @@ impl ObjectRepo {
     /// point to the new data.
     ///
     /// The returned object provides read-write access to the data. To get read-only access, use
-    /// `unmanaged_object`.
+    /// [`unmanaged_object`].
+    ///
+    /// [`unmanaged_object`]: crate::repo::object::ObjectRepo::unmanaged_object
     pub fn unmanaged_object_mut<'a>(
         &'a mut self,
         handle: &'a mut ObjectHandle,
@@ -247,8 +253,10 @@ impl ObjectRepo {
     ///
     /// This returns `true` if the managed object was removed and `false` if it didn't exist.
     ///
-    /// The space used by the given object isn't freed and made available for new objects until
-    /// `commit` is called.
+    /// The space used by the given object isn't reclaimed in the backing data store until changes
+    /// are committed and [`clean`] is called.
+    ///
+    /// [`clean`]: crate::repo::object::ObjectRepo::clean
     pub fn remove_managed(&mut self, id: Uuid) -> bool {
         let handle = match self.managed_map_mut().remove(&id) {
             Some(handle) => handle,
@@ -263,7 +271,9 @@ impl ObjectRepo {
     /// This returns `None` if there is no managed object associated with `id`.
     ///
     /// The returned object provides read-only access to the data. To get read-write access, use
-    /// `managed_object_mut`.
+    /// [`managed_object_mut`].
+    ///
+    /// [`managed_object_mut`]: crate::repo::object::ObjectRepo::managed_object_mut
     pub fn managed_object(&self, id: Uuid) -> Option<ReadOnlyObject> {
         let handle = self.managed_map().get(&id)?;
         Some(ReadOnlyObject::new(&self.state, handle))
@@ -274,7 +284,9 @@ impl ObjectRepo {
     /// This returns `None` if there is no managed object associated with `id`.
     ///
     /// The returned object provides read-write access to the data. To get read-only access, use
-    /// `managed_object`.
+    /// [`managed_object`].
+    ///
+    /// [`managed_object`]: crate::repo::object::ObjectRepo::managed_object
     pub fn managed_object_mut(&mut self, id: Uuid) -> Option<Object> {
         let handle = self
             .managed
@@ -370,7 +382,8 @@ impl ObjectRepo {
     /// If this method returns `Ok`, changes have been committed. If this method returns `Err`,
     /// changes have not been committed.
     ///
-    /// Committing changes does not reclaim space in the backing data store until `clean` is called.
+    /// To reclaim space from deleted objects in the backing data store, you must call [`clean`]
+    /// after changes are committed.
     ///
     /// This method commits changes from all instances of the repository.
     ///
@@ -379,6 +392,8 @@ impl ObjectRepo {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`clean`]: crate::repo::object::ObjectRepo::clean
     pub fn commit(&mut self) -> crate::Result<()> {
         // Temporarily replace the values in the repository which need to be serialized so we can
         // put them into the `Header`. This avoids the need to clone them. We'll put them back
@@ -643,7 +658,7 @@ impl ObjectRepo {
     /// This verifies the integrity of all the data in the repository and returns an
     /// `IntegrityReport` containing the results.
     ///
-    /// If you just need to verify the integrity of one object, `Object::verify` is faster. If you
+    /// If you just need to verify the integrity of one object, [`Object::verify`] is faster. If you
     /// need to verify the integrity of all the data in the repository, however, this can be more
     /// efficient.
     ///
@@ -651,6 +666,8 @@ impl ObjectRepo {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`Object::verify`]: crate::repo::Object::verify
     pub fn verify(&self) -> crate::Result<IntegrityReport> {
         let mut report = IntegrityReport {
             corrupt_chunks: HashSet::new(),
@@ -704,8 +721,10 @@ impl ObjectRepo {
     /// Change the password for this repository.
     ///
     /// This replaces the existing password with `new_password`. Changing the password does not
-    /// require re-encrypting any data. The change does not take effect until `commit` is called.
+    /// require re-encrypting any data. The change does not take effect until [`commit`] is called.
     /// If encryption is disabled, this method does nothing.
+    ///
+    /// [`commit`]: crate::repo::object::ObjectRepo::commit
     pub fn change_password(&mut self, new_password: &[u8]) {
         let salt = KeySalt::generate();
         let user_key = EncryptionKey::derive(

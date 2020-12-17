@@ -65,13 +65,13 @@ pub enum OpenMode {
 /// Open or create a repository.
 ///
 /// This type is a builder used to open or create repositories. Typically, when using `OpenOptions`,
-/// you'll first call `new`, then chain method calls to configure how the repository will be opened,
-/// and then finally call `open`.
+/// you'll first call [`new`], then chain method calls to configure how the repository will be
+/// opened, and then finally call [`open`].
 ///
-/// To open or create a repository, you'll need a value which implements `OpenRepo` to pass to
-/// `open`. You can think of this value as the configuration necessary to open the backing data
+/// To open or create a repository, you'll need a value which implements [`OpenStore`] to pass to
+/// [`open`]. You can think of this value as the configuration necessary to open the backing data
 /// store. This builder can be used to open or create any repository type which implements
-/// `ConvertRepo`.
+/// [`ConvertRepo`].
 ///
 /// # Examples
 /// ```no_run
@@ -91,6 +91,11 @@ pub enum OpenMode {
 ///     .unwrap();
 /// # }
 /// ```
+///
+/// [`new`]: crate::repo::OpenOptions::new
+/// [`open`]: crate::repo::OpenOptions::open
+/// [`OpenStore`]: crate::store::OpenStore
+/// [`ConvertRepo`]: crate::repo::ConvertRepo
 pub struct OpenOptions {
     config: RepoConfig,
     mode: OpenMode,
@@ -126,55 +131,67 @@ impl OpenOptions {
         self
     }
 
-    /// Overwrite the chunking method specified in `RepoConfig::chunking`.
+    /// Overwrite the chunking method specified in [`RepoConfig::chunking`].
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
+    ///
+    /// [`RepoConfig::chunking`]: crate::repo::RepoConfig::chunking
     pub fn chunking(&mut self, method: Chunking) -> &mut Self {
         self.config.chunking = method;
         self
     }
 
-    /// Overwrite the packing method specified in `RepoConfig::packing`.
+    /// Overwrite the packing method specified in [`RepoConfig::packing`].
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
+    ///
+    /// [`RepoConfig::packing`]: crate::repo::RepoConfig::packing
     pub fn packing(&mut self, method: Packing) -> &mut Self {
         self.config.packing = method;
         self
     }
 
-    /// Overwrite the compression method specified in `RepoConfig::compression`.
+    /// Overwrite the compression method specified in [`RepoConfig::compression`].
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
+    ///
+    /// [`RepoConfig::compression`]: crate::repo::RepoConfig::compression
     pub fn compression(&mut self, method: Compression) -> &mut Self {
         self.config.compression = method;
         self
     }
 
-    /// Overwrite the encryption method specified in `RepoConfig::encryption`.
+    /// Overwrite the encryption method specified in [`RepoConfig::encryption`].
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
+    ///
+    /// [`RepoConfig::encryption`]: crate::repo::RepoConfig::encryption
     pub fn encryption(&mut self, method: Encryption) -> &mut Self {
         self.config.encryption = method;
         self
     }
 
-    /// Overwrite the memory limit method specified in `RepoConfig::memory_limit`.
+    /// Overwrite the memory limit method specified in [`RepoConfig::memory_limit`].
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
+    ///
+    /// [`RepoConfig::memory_limit`]: crate::repo::RepoConfig::memory_limit
     pub fn memory_limit(&mut self, limit: ResourceLimit) -> &mut Self {
         self.config.memory_limit = limit;
         self
     }
 
-    /// Overwrite the operations limit method specified in `RepoConfig::operations_limit`.
+    /// Overwrite the operations limit method specified in [`RepoConfig::operations_limit`].
     ///
     /// This is only applicable when creating a new repository. This is ignored when opening an
     /// existing repository.
+    ///
+    /// [`RepoConfig::operations_limit`]: crate::repo::RepoConfig::operations_limit
     pub fn operations_limit(&mut self, limit: ResourceLimit) -> &mut Self {
         self.config.operations_limit = limit;
         self

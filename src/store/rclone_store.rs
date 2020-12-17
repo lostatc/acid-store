@@ -94,7 +94,9 @@ fn wait_for_connection(port: u16) -> io::Result<()> {
     Ok(())
 }
 
-/// The configuration for opening an `RcloneStore`.
+/// The configuration for opening an [`RcloneStore`].
+///
+/// [`RcloneStore`]: crate::store::RcloneStore
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(docsrs, doc(cfg(feature = "store-rclone")))]
 pub struct RcloneConfig {

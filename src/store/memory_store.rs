@@ -22,7 +22,9 @@ use uuid::Uuid;
 use super::data_store::DataStore;
 use super::open_store::OpenStore;
 
-/// The configuration for opening a `MemoryStore`.
+/// The configuration for opening a [`MemoryStore`].
+///
+/// [`MemoryStore`]: crate::store::MemoryStore
 #[derive(Debug, Clone)]
 pub struct MemoryConfig(Arc<Mutex<HashMap<Uuid, Vec<u8>>>>);
 

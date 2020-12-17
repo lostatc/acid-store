@@ -33,7 +33,9 @@ const BLOCKS_DIRECTORY: &str = "blocks";
 const STAGING_DIRECTORY: &str = "stage";
 const VERSION_FILE: &str = "version";
 
-/// The configuration for opening a `DirectoryStore`.
+/// The configuration for opening a [`DirectoryStore`].
+///
+/// [`DirectoryStore`]: crate::store::DirectoryStore
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(docsrs, doc(cfg(feature = "store-directory")))]
 pub struct DirectoryConfig {

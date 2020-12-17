@@ -28,7 +28,9 @@ use super::open_store::OpenStore;
 /// A UUID which acts as the version ID of the store format.
 const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("08d14eb8 4156 11ea 8ec7 a31cc3dfe2e4"));
 
-/// The configuration for opening a `SqliteStore`.
+/// The configuration for opening a [`SqliteStore`].
+///
+/// [`SqliteStore`]: crate::store::SqliteStore
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(docsrs, doc(cfg(feature = "store-sqlite")))]
 pub struct SqliteConfig {

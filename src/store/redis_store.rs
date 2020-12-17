@@ -39,7 +39,9 @@ pub enum RedisAddr {
     Unix(PathBuf),
 }
 
-/// The configuration for opening a `RedisStore`.
+/// The configuration for opening a [`RedisStore`].
+///
+/// [`RedisStore`]: crate::store::RedisStore
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(docsrs, doc(cfg(feature = "store-redis")))]
 pub struct RedisConfig {
