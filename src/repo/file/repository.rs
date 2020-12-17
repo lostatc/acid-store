@@ -149,6 +149,7 @@ where
     ///
     /// Create a new symbolic link with no metadata.
     /// ```
+    /// # #[cfg(feature = "file-metadata")] {
     /// # use std::path::Path;
     /// # use acid_store::repo::{OpenOptions, OpenMode};
     /// # use acid_store::repo::file::{FileRepo, Entry, RelativePath, UnixSpecialType};
@@ -164,7 +165,7 @@ where
     ///     target: Path::new("target").to_owned()
     /// };
     /// repo.create(entry_path, &Entry::special(symbolic_link)).unwrap();
-    ///
+    /// # }
     /// ```
     ///
     /// # Errors

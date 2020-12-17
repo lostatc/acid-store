@@ -27,20 +27,17 @@ use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 
 use acid_store::repo::{Chunking, Compression, Encryption, Packing, RepoConfig};
+use acid_store::store::{DataStore, MemoryConfig, MemoryStore, OpenStore};
 #[cfg(feature = "store-directory")]
-use acid_store::store::DirectoryStore;
+use acid_store::store::{DirectoryConfig, DirectoryStore};
 #[cfg(feature = "store-sftp")]
-use acid_store::store::RcloneStore;
+use acid_store::store::{RcloneConfig, RcloneStore};
 #[cfg(feature = "store-redis")]
-use acid_store::store::RedisStore;
-#[cfg(feature = "store-sqlite")]
-use acid_store::store::SqliteStore;
-use acid_store::store::{
-    DataStore, DirectoryConfig, MemoryConfig, MemoryStore, OpenStore, RcloneConfig, RedisConfig,
-    SqliteConfig,
-};
+use acid_store::store::{RedisConfig, RedisStore};
 #[cfg(feature = "store-s3")]
 use acid_store::store::{S3Config, S3Credentials, S3Region, S3Store};
+#[cfg(feature = "store-sqlite")]
+use acid_store::store::{SqliteConfig, SqliteStore};
 #[cfg(feature = "store-sftp")]
 use {
     acid_store::store::{SftpAuth, SftpConfig, SftpStore},
