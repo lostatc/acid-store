@@ -23,6 +23,7 @@
     feature = "store_sftp",
 ))]
 use serial_test::serial;
+#[cfg(any(feature = "store-directory", feature = "store-sqlite"))]
 use tempfile::tempdir;
 use uuid::Uuid;
 
