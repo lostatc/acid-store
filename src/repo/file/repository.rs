@@ -22,7 +22,7 @@ use std::marker::PhantomData;
 use std::path::Path;
 
 use hex_literal::hex;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use relative_path::{RelativePath, RelativePathBuf};
 use uuid::Uuid;
 use walkdir::WalkDir;
@@ -36,10 +36,8 @@ use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
 use super::special::{NoSpecialType, SpecialType};
 
-lazy_static! {
-    /// The parent of a relative path with no parent.
-    static ref EMPTY_PARENT: &'static RelativePath = &RelativePath::new("");
-}
+/// The parent of a relative path with no parent.
+static EMPTY_PARENT: Lazy<RelativePathBuf> = Lazy::new(|| RelativePath::new("").to_owned());
 
 /// The ID of the managed object which stores the table of keys for the repository.
 const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("9c114e82 bd64 11ea 9872 ab55cbe7bb41"));

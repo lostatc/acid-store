@@ -16,15 +16,13 @@
 
 use std::collections::{HashMap, HashSet};
 
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use uuid::Uuid;
 
 use super::object::{ChunkHash, ObjectHandle};
 
-lazy_static! {
-    /// An empty set of managed object IDs
-    static ref EMPTY_SET: HashSet<Uuid> = HashSet::new();
-}
+/// An empty set of managed object IDs
+static EMPTY_SET: Lazy<HashSet<Uuid>> = Lazy::new(|| HashSet::new());
 
 /// A report of the integrity of the data in an `ObjectRepo`.
 #[derive(Debug)]
