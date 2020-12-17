@@ -488,6 +488,7 @@ fn unused_data_is_reclaimed_on_commit(repo_config: RepoConfig) -> anyhow::Result
     let mut repo: ObjectRepo = OpenOptions::new().open(&store_config)?;
     repo.remove_unmanaged(&handle);
     repo.commit()?;
+    repo.clean()?;
     drop(repo);
 
     let mut store = store_config.open()?;
