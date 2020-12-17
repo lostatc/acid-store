@@ -17,8 +17,8 @@
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
 use acid_store::repo::value::ValueRepo;
-use acid_store::repo::{ConvertRepo, OpenOptions};
-use acid_store::store::MemoryStore;
+use acid_store::repo::{OpenMode, OpenOptions};
+use acid_store::store::MemoryConfig;
 use common::assert_contains_all;
 
 mod common;
@@ -26,22 +26,24 @@ mod common;
 /// A serializable value to test with.
 const SERIALIZABLE_VALUE: (bool, i32) = (true, 42);
 
-fn create_repo() -> acid_store::Result<ValueRepo<String>> {
-    OpenOptions::new(MemoryStore::new()).create_new()
+fn create_repo(config: &MemoryConfig) -> acid_store::Result<ValueRepo<String>> {
+    OpenOptions::new().mode(OpenMode::CreateNew).open(config)
 }
 
 #[test]
 fn open_repository() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.commit()?;
-    let store = repository.into_repo()?.into_store();
-    OpenOptions::new(store).open::<ValueRepo<String>>()?;
+    drop(repository);
+    OpenOptions::new().open::<ValueRepo<String>, _>(&config)?;
     Ok(())
 }
 
 #[test]
 fn insert_value() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.insert("Key".into(), &SERIALIZABLE_VALUE)?;
     let actual: (bool, i32) = repository.get("Key")?;
     assert_eq!(actual, SERIALIZABLE_VALUE);
@@ -50,7 +52,8 @@ fn insert_value() -> anyhow::Result<()> {
 
 #[test]
 fn remove_value() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
 
     assert!(!repository.remove("Key"));
     assert!(!repository.contains("Key"));
@@ -66,7 +69,8 @@ fn remove_value() -> anyhow::Result<()> {
 
 #[test]
 fn deserializing_value_to_wrong_type_errs() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.insert("Key".into(), &SERIALIZABLE_VALUE)?;
     let actual = repository.get::<_, String>("Key");
     assert!(matches!(actual, Err(acid_store::Error::Deserialize)));
@@ -75,7 +79,8 @@ fn deserializing_value_to_wrong_type_errs() -> anyhow::Result<()> {
 
 #[test]
 fn list_keys() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.insert("Key1".into(), &SERIALIZABLE_VALUE)?;
     repository.insert("Key2".into(), &SERIALIZABLE_VALUE)?;
     repository.insert("Key3".into(), &SERIALIZABLE_VALUE)?;
@@ -89,7 +94,8 @@ fn list_keys() -> anyhow::Result<()> {
 
 #[test]
 fn values_removed_on_rollback() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.insert("test".into(), &SERIALIZABLE_VALUE)?;
 
     repository.rollback()?;
@@ -106,7 +112,8 @@ fn values_removed_on_rollback() -> anyhow::Result<()> {
 
 #[test]
 fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.insert("Test".into(), &SERIALIZABLE_VALUE)?;
 
     assert!(repository.verify()?.is_empty());

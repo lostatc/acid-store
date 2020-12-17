@@ -25,7 +25,8 @@ use anyhow::anyhow;
 use ssh2::{self, RenameFlags, Session, Sftp};
 use uuid::Uuid;
 
-use super::common::DataStore;
+use super::data_store::DataStore;
+use super::open_store::OpenStore;
 
 // A UUID which acts as the version ID of the directory store format.
 const CURRENT_VERSION: &str = "fc299876-c5ff-11ea-ada1-8b0ec1509cde";
@@ -76,7 +77,7 @@ pub enum SftpAuth {
     },
 }
 
-/// The configuration for an SSH connection.
+/// The configuration for opening an `SftpStore`.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(docsrs, doc(cfg(feature = "store-sftp")))]
 pub struct SftpConfig {
@@ -85,29 +86,17 @@ pub struct SftpConfig {
 
     /// The authentication for the connection.
     pub auth: SftpAuth,
+
+    /// The path of the store on the server.
+    pub path: PathBuf,
 }
 
-/// A `DataStore` which stores data on an SFTP server.
-#[cfg_attr(docsrs, doc(cfg(feature = "store-sftp")))]
-pub struct SftpStore {
-    sftp: Sftp,
-    path: PathBuf,
-}
+impl OpenStore for SftpConfig {
+    type Store = SftpStore;
 
-impl SftpStore {
-    /// Create or open an `SftpStore` from the given `config`.
-    ///
-    /// This accepts the `path` of the store on the server.
-    ///
-    /// # Errors
-    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
-    /// this is not a valid `SftpStore` or this repository format is no longer supported by the
-    /// library.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn new(config: &SftpConfig, path: impl AsRef<Path>) -> crate::Result<Self> {
+    fn open(&self) -> crate::Result<Self::Store> {
         // Connect to the SSH server.
-        let stream = TcpStream::connect(config.addr)
+        let stream = TcpStream::connect(&self.addr)
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
         let mut session =
             Session::new().map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
@@ -117,7 +106,7 @@ impl SftpStore {
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         // Perform authentication.
-        match &config.auth {
+        match &self.auth {
             SftpAuth::Password { username, password } => {
                 session
                     .userauth_password(username, password)
@@ -175,9 +164,9 @@ impl SftpStore {
 
         // Create the directories if they don't exist.
         let directories = &[
-            path.as_ref().to_owned(),
-            path.as_ref().join(BLOCKS_DIRECTORY),
-            path.as_ref().join(STAGING_DIRECTORY),
+            self.path.to_owned(),
+            self.path.join(BLOCKS_DIRECTORY),
+            self.path.join(STAGING_DIRECTORY),
         ];
         for directory in directories {
             if sftp.stat(&directory).is_err() {
@@ -186,7 +175,7 @@ impl SftpStore {
             }
         }
 
-        let version_path = path.as_ref().join(VERSION_FILE);
+        let version_path = self.path.join(VERSION_FILE);
 
         if sftp.stat(&version_path).is_ok() {
             // Read the version ID file.
@@ -198,7 +187,7 @@ impl SftpStore {
 
             // Verify the version ID.
             if version_id != CURRENT_VERSION {
-                return Err(crate::Error::UnsupportedFormat);
+                return Err(crate::Error::UnsupportedStore);
             }
         } else {
             // Write the version ID file.
@@ -210,10 +199,23 @@ impl SftpStore {
 
         Ok(SftpStore {
             sftp,
-            path: path.as_ref().to_owned(),
+            path: self.path.clone(),
         })
     }
+}
 
+/// A `DataStore` which stores data on an SFTP server.
+///
+/// You can use [`SftpConfig`] to open a data store of this type.
+///
+/// [`SftpConfig`]: crate::store::SftpConfig
+#[cfg_attr(docsrs, doc(cfg(feature = "store-sftp")))]
+pub struct SftpStore {
+    sftp: Sftp,
+    path: PathBuf,
+}
+
+impl SftpStore {
     /// Return the path where a block with the given `id` will be stored.
     fn block_path(&self, id: Uuid) -> PathBuf {
         let mut buffer = Uuid::encode_buffer();

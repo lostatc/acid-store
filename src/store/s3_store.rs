@@ -25,7 +25,8 @@ use s3::region::Region;
 use tokio::runtime::Runtime;
 use uuid::Uuid;
 
-use super::common::DataStore;
+use super::data_store::DataStore;
+use super::open_store::OpenStore;
 
 /// The separator to use in S3 object keys.
 const SEPARATOR: &str = "/";
@@ -309,7 +310,7 @@ impl S3Credentials {
     }
 }
 
-/// The configuration for an S3 connection.
+/// The configuration for opening an `S3Store`.
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(docsrs, doc(cfg(feature = "store-s3")))]
 pub struct S3Config {
@@ -321,6 +322,12 @@ pub struct S3Config {
 
     /// The credentials to connect with.
     pub credentials: S3Credentials,
+
+    /// The prefix to prepend to keys in the store.
+    ///
+    /// While keys in S3 are a flat namespace, you can think of this like the directory of the
+    /// bucket to create the store in. To create the store in the bucket root, use an empty string.
+    pub prefix: String,
 }
 
 impl S3Config {
@@ -358,30 +365,12 @@ impl S3Config {
     }
 }
 
-/// A `DataStore` which stores data in an Amazon S3 bucket.
-#[derive(Debug)]
-#[cfg_attr(docsrs, doc(cfg(feature = "store-s3")))]
-pub struct S3Store {
-    bucket: Bucket,
-    prefix: String,
-}
+impl OpenStore for S3Config {
+    type Store = S3Store;
 
-impl S3Store {
-    /// Open or create an `S3Store` from the given `config`.
-    ///
-    /// This accepts a `prefix` which is prepended to any keys created by the store. While keys
-    /// in S3 are a flat namespace, you can think of this like the directory to create the store in.
-    /// To create the store in the bucket root, pass an empty string.
-    ///
-    /// # Errors
-    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
-    /// this is not a valid `S3Store` or this repository format is no longer supported by the
-    /// library.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn new(config: &S3Config, prefix: &str) -> crate::Result<Self> {
-        let bucket = config.to_owned().into_bucket();
-        let prefix = prefix.trim_end_matches('/').to_owned();
+    fn open(&self) -> crate::Result<Self::Store> {
+        let bucket = self.clone().into_bucket();
+        let prefix = self.prefix.trim_end_matches('/').to_owned();
         let version_key = join_key!(prefix, VERSION_KEY);
         let mut runtime = Runtime::new().unwrap();
 
@@ -393,9 +382,9 @@ impl S3Store {
             }
             Ok((version_bytes, _)) => {
                 let version = Uuid::from_slice(version_bytes.as_slice())
-                    .map_err(|_| crate::Error::UnsupportedFormat)?;
+                    .map_err(|_| crate::Error::UnsupportedStore)?;
                 if version != CURRENT_VERSION {
-                    return Err(crate::Error::UnsupportedFormat);
+                    return Err(crate::Error::UnsupportedStore);
                 }
             }
             Err(error) => return Err(crate::Error::Store(anyhow::Error::from(error))),
@@ -403,7 +392,21 @@ impl S3Store {
 
         Ok(S3Store { bucket, prefix })
     }
+}
 
+/// A `DataStore` which stores data in an Amazon S3 bucket.
+///
+/// You can use [`S3Config`] to open a data store of this type.
+///
+/// [`S3Config`]: crate::store::S3Config
+#[derive(Debug)]
+#[cfg_attr(docsrs, doc(cfg(feature = "store-s3")))]
+pub struct S3Store {
+    bucket: Bucket,
+    prefix: String,
+}
+
+impl S3Store {
     /// Return the key of the block with the given `id`.
     fn block_path(&self, id: Uuid) -> String {
         join_key!(self.prefix, BLOCK_PREFIX, id.to_hyphenated().to_string())

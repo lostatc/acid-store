@@ -47,12 +47,14 @@
 //! # Examples
 //! ```
 //! use std::io::{Read, Seek, Write, SeekFrom};
-//! use acid_store::store::MemoryStore;
-//! use acid_store::repo::{OpenOptions, key::KeyRepo};
+//! use acid_store::store::MemoryConfig;
+//! use acid_store::repo::{OpenMode, OpenOptions, key::KeyRepo};
 //!
 //! fn main() -> acid_store::Result<()> {
 //!     // Create a `KeyRepo` with the default configuration that stores data in memory.
-//!     let mut repository = OpenOptions::new(MemoryStore::new()).create_new::<KeyRepo<String>>()?;
+//!     let mut repository: KeyRepo<String> = OpenOptions::new()
+//!         .mode(OpenMode::CreateNew)
+//!         .open(&MemoryConfig::new())?;
 //!
 //!     // Insert a key into the repository and get an object which can be used to read/write data.
 //!     let mut object = repository.insert(String::from("Key"));

@@ -28,7 +28,6 @@ use crate::repo::common::check_version;
 use crate::repo::key::Key;
 use crate::repo::object::{ObjectHandle, ObjectRepo};
 use crate::repo::{ConvertRepo, RepoInfo};
-use crate::store::DataStore;
 
 /// The ID of the managed object which stores the table of keys for the repository.
 const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("69f329d6 bd4e 11ea 980a 3f2f192c2e86"));
@@ -254,12 +253,5 @@ impl<K: Key> ValueRepo<K> {
     /// Return information about the repository.
     pub fn info(&self) -> RepoInfo {
         self.repository.info()
-    }
-
-    /// Return information about the repository in `store` without opening it.
-    ///
-    /// See `ObjectRepo::peek_info` for details.
-    pub fn peek_info(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
-        ObjectRepo::peek_info(store)
     }
 }

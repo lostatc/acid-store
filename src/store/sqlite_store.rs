@@ -16,36 +16,31 @@
 
 #![cfg(feature = "store-sqlite")]
 
-use std::path::Path;
+use std::path::PathBuf;
 
 use hex_literal::hex;
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
-use crate::store::common::DataStore;
+use super::data_store::DataStore;
+use super::open_store::OpenStore;
 
 /// A UUID which acts as the version ID of the store format.
 const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("08d14eb8 4156 11ea 8ec7 a31cc3dfe2e4"));
 
-/// A `DataStore` which stores data in a SQLite database.
-#[derive(Debug)]
+/// The configuration for opening a `SqliteStore`.
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(docsrs, doc(cfg(feature = "store-sqlite")))]
-pub struct SqliteStore {
-    /// The connection to the SQLite database.
-    connection: Connection,
+pub struct SqliteConfig {
+    /// The path of the SQLite database.
+    pub path: PathBuf,
 }
 
-impl SqliteStore {
-    /// Open or create a `SqliteStore` at the given `path`.
-    ///
-    /// # Errors
-    /// - `Error::UnsupportedFormat`: The repository is an unsupported format. This can mean that
-    /// this is not a valid `SqliteStore` or this repository format is no longer supported by the
-    /// library.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn new(path: impl AsRef<Path>) -> crate::Result<Self> {
-        let connection = Connection::open(path)
+impl OpenStore for SqliteConfig {
+    type Store = SqliteStore;
+
+    fn open(&self) -> crate::Result<Self::Store> {
+        let connection = Connection::open(&self.path)
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         connection
@@ -79,9 +74,9 @@ impl SqliteStore {
         match version_bytes {
             Some(bytes) => {
                 let version = Uuid::from_slice(bytes.as_slice())
-                    .map_err(|_| crate::Error::UnsupportedFormat)?;
+                    .map_err(|_| crate::Error::UnsupportedStore)?;
                 if version != CURRENT_VERSION {
-                    return Err(crate::Error::UnsupportedFormat);
+                    return Err(crate::Error::UnsupportedStore);
                 }
             }
             None => {
@@ -99,6 +94,18 @@ impl SqliteStore {
 
         Ok(SqliteStore { connection })
     }
+}
+
+/// A `DataStore` which stores data in a SQLite database.
+///
+/// You can use [`SqliteConfig`] to open a data store of this type.
+///
+/// [`SqliteConfig`]: crate::store::SqliteConfig
+#[derive(Debug)]
+#[cfg_attr(docsrs, doc(cfg(feature = "store-sqlite")))]
+pub struct SqliteStore {
+    /// The connection to the SQLite database.
+    connection: Connection,
 }
 
 impl DataStore for SqliteStore {

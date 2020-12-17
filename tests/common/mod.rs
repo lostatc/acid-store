@@ -27,7 +27,6 @@ use rand::rngs::SmallRng;
 use rand::{Rng, RngCore, SeedableRng};
 
 use acid_store::repo::{Chunking, Compression, Encryption, Packing, RepoConfig};
-use acid_store::store::DataStore;
 #[cfg(feature = "store-directory")]
 use acid_store::store::DirectoryStore;
 #[cfg(feature = "store-sftp")]
@@ -36,6 +35,10 @@ use acid_store::store::RcloneStore;
 use acid_store::store::RedisStore;
 #[cfg(feature = "store-sqlite")]
 use acid_store::store::SqliteStore;
+use acid_store::store::{
+    DataStore, DirectoryConfig, MemoryConfig, MemoryStore, OpenStore, RcloneConfig, RedisConfig,
+    SqliteConfig,
+};
 #[cfg(feature = "store-s3")]
 use acid_store::store::{S3Config, S3Credentials, S3Region, S3Store};
 #[cfg(feature = "store-sftp")]
@@ -108,16 +111,26 @@ pub fn truncate_store(store: &mut impl DataStore) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn memory_store() -> anyhow::Result<MemoryStore> {
+    Ok(MemoryConfig::new().open()?)
+}
+
 #[cfg(feature = "store-directory")]
 pub fn directory_store(directory: &Path) -> anyhow::Result<DirectoryStore> {
-    let mut store = DirectoryStore::new(directory.join("store"))?;
+    let config = DirectoryConfig {
+        path: directory.join("store"),
+    };
+    let mut store = config.open()?;
     truncate_store(&mut store)?;
     Ok(store)
 }
 
 #[cfg(feature = "store-sqlite")]
 pub fn sqlite_store(directory: &Path) -> anyhow::Result<SqliteStore> {
-    let mut store = SqliteStore::new(directory.join("store.db"))?;
+    let config = SqliteConfig {
+        path: directory.join("store.db"),
+    };
+    let mut store = config.open()?;
     truncate_store(&mut store)?;
     Ok(store)
 }
@@ -125,7 +138,8 @@ pub fn sqlite_store(directory: &Path) -> anyhow::Result<SqliteStore> {
 #[cfg(feature = "store-redis")]
 pub fn redis_store() -> anyhow::Result<RedisStore> {
     let url = dotenv::var("REDIS_URL").unwrap();
-    let mut store = RedisStore::from_url(&url)?;
+    let config = RedisConfig::from_url(&url).unwrap();
+    let mut store = config.open()?;
     truncate_store(&mut store)?;
     Ok(store)
 }
@@ -139,8 +153,9 @@ pub fn s3_store() -> anyhow::Result<S3Store> {
             access_key: dotenv::var("S3_ACCESS_KEY").unwrap(),
             secret_key: dotenv::var("S3_SECRET_KEY").unwrap(),
         },
+        prefix: String::from("test"),
     };
-    let mut store = S3Store::new(&config, "test")?;
+    let mut store = config.open()?;
     truncate_store(&mut store)?;
     Ok(store)
 }
@@ -158,16 +173,20 @@ pub fn sftp_store() -> anyhow::Result<SftpStore> {
             username: sftp_username,
             password: sftp_password,
         },
+        path: PathBuf::from(sftp_path),
     };
 
-    let mut store = SftpStore::new(&config, PathBuf::from(sftp_path))?;
+    let mut store = config.open()?;
     truncate_store(&mut store)?;
     Ok(store)
 }
 
 #[cfg(feature = "store-rclone")]
 pub fn rclone_store() -> anyhow::Result<RcloneStore> {
-    let mut store = RcloneStore::new(&dotenv::var("RCLONE_REMOTE").unwrap())?;
+    let config = RcloneConfig {
+        config: dotenv::var("RCLONE_REMOTE").unwrap(),
+    };
+    let mut store = config.open()?;
     truncate_store(&mut store)?;
     Ok(store)
 }

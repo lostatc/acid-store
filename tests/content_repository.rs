@@ -20,28 +20,30 @@ use std::collections::HashSet;
 use std::io::Read;
 
 use acid_store::repo::content::{ContentRepo, HashAlgorithm};
-use acid_store::repo::{ConvertRepo, OpenOptions};
-use acid_store::store::MemoryStore;
+use acid_store::repo::{OpenMode, OpenOptions};
+use acid_store::store::MemoryConfig;
 use common::random_buffer;
 
 mod common;
 
-fn create_repo() -> acid_store::Result<ContentRepo> {
-    OpenOptions::new(MemoryStore::new()).create_new()
+fn create_repo(config: &MemoryConfig) -> acid_store::Result<ContentRepo> {
+    OpenOptions::new().mode(OpenMode::CreateNew).open(config)
 }
 
 #[test]
 fn open_repository() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.commit()?;
-    let store = repository.into_repo()?.into_store();
-    OpenOptions::new(store).open::<ContentRepo>()?;
+    drop(repository);
+    OpenOptions::new().open::<ContentRepo, _>(&config)?;
     Ok(())
 }
 
 #[test]
 fn put_object() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     let data = random_buffer();
     let hash = repository.put(data.as_slice())?;
 
@@ -51,7 +53,8 @@ fn put_object() -> anyhow::Result<()> {
 
 #[test]
 fn remove_object() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     let data = random_buffer();
     let hash = repository.put(data.as_slice())?;
     repository.remove(&hash);
@@ -62,7 +65,8 @@ fn remove_object() -> anyhow::Result<()> {
 
 #[test]
 fn get_object() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     let expected_data = random_buffer();
     let hash = repository.put(expected_data.as_slice())?;
 
@@ -77,7 +81,8 @@ fn get_object() -> anyhow::Result<()> {
 
 #[test]
 fn list_objects() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     let hash1 = repository.put(random_buffer().as_slice())?;
     let hash2 = repository.put(random_buffer().as_slice())?;
     let expected_hashes = vec![hash1, hash2].into_iter().collect::<HashSet<_>>();
@@ -92,7 +97,8 @@ fn list_objects() -> anyhow::Result<()> {
 
 #[test]
 fn change_algorithm() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     let expected_data = b"Data";
     repository.put(&expected_data[..])?;
 
@@ -110,7 +116,8 @@ fn change_algorithm() -> anyhow::Result<()> {
 
 #[test]
 fn objects_removed_on_rollback() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     let hash = repository.put(random_buffer().as_slice())?;
 
     repository.rollback()?;
@@ -124,7 +131,8 @@ fn objects_removed_on_rollback() -> anyhow::Result<()> {
 
 #[test]
 fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
-    let mut repository = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
     repository.put(random_buffer().as_slice())?;
 
     assert!(repository.verify()?.is_empty());

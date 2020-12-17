@@ -16,8 +16,12 @@
 
 use std::collections::HashMap;
 
+use rmp_serde::from_read;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::repo::common::repository::METADATA_BLOCK_ID;
+use crate::store::{DataStore, OpenStore};
 
 use super::config::RepoConfig;
 use super::encryption::KeySalt;
@@ -68,6 +72,40 @@ impl RepoMetadata {
             config: self.config.clone(),
         }
     }
+}
+
+/// Return information about the repository in the given `store` without opening it.
+pub fn peek_info_store(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
+    // Read and deserialize the metadata.
+    let serialized_metadata = match store
+        .read_block(METADATA_BLOCK_ID)
+        .map_err(|error| crate::Error::Store(error))?
+    {
+        Some(data) => data,
+        None => return Err(crate::Error::NotFound),
+    };
+    let metadata: RepoMetadata =
+        from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
+
+    Ok(metadata.to_info())
+}
+
+/// Return information about the repository in a data store without opening it.
+///
+/// This accepts the `config` used to open the data store.
+///
+/// # Errors
+/// - `Error::NotFound`: There is no repository in the data store.
+/// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
+/// - `Error::UnsupportedStore`: The data store is an unsupported format. This can happen if
+/// the serialized data format changed or if the storage represented by this value does not
+/// contain a valid data store.
+/// - `Error::Store`: An error occurred with the data store.
+/// - `Error::Io`: An I/O error occurred.
+pub fn peek_info<C: OpenStore>(config: &C) -> crate::Result<RepoInfo> {
+    // Open the data store.
+    let mut store = config.open()?;
+    peek_info_store(&mut store)
 }
 
 /// Information about a repository.

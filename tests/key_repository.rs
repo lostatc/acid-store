@@ -19,33 +19,35 @@
 use std::io::Write;
 
 use acid_store::repo::key::KeyRepo;
-use acid_store::repo::{ConvertRepo, OpenOptions};
-use acid_store::store::MemoryStore;
+use acid_store::repo::{OpenMode, OpenOptions};
+use acid_store::store::MemoryConfig;
 use common::random_buffer;
 
 mod common;
 
-fn create_repo() -> acid_store::Result<KeyRepo<String>> {
-    OpenOptions::new(MemoryStore::new()).create_new()
+fn create_repo(config: &MemoryConfig) -> acid_store::Result<KeyRepo<String>> {
+    OpenOptions::new().mode(OpenMode::CreateNew).open(config)
 }
 
 #[test]
 fn open_repository() -> anyhow::Result<()> {
-    let mut repo = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
     repo.commit()?;
-    let store = repo.into_repo()?.into_store();
-    OpenOptions::new(store).open::<KeyRepo<String>>()?;
+    drop(repo);
+    OpenOptions::new().open::<KeyRepo<String>, _>(&config)?;
     Ok(())
 }
 
 #[test]
 fn opening_with_wrong_key_type_errs() -> anyhow::Result<()> {
-    let mut repo = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
     repo.insert("Test".into());
     repo.commit()?;
+    drop(repo);
 
-    let store = repo.into_repo()?.into_store();
-    let repo: Result<KeyRepo<isize>, _> = OpenOptions::new(store).open();
+    let repo: Result<KeyRepo<isize>, _> = OpenOptions::new().open(&config);
 
     assert!(matches!(repo, Err(acid_store::Error::Deserialize)));
     Ok(())
@@ -54,7 +56,8 @@ fn opening_with_wrong_key_type_errs() -> anyhow::Result<()> {
 #[test]
 fn inserted_key_replaces_existing_key() -> anyhow::Result<()> {
     // Insert an object and write data to it.
-    let mut repo = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
     let mut object = repo.insert("Test".into());
     object.write_all(random_buffer().as_slice())?;
     object.flush()?;
@@ -72,7 +75,8 @@ fn inserted_key_replaces_existing_key() -> anyhow::Result<()> {
 
 #[test]
 fn remove_object() -> anyhow::Result<()> {
-    let mut repo = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
     repo.insert("Test".into());
 
     assert!(repo.remove("Test"));
@@ -84,7 +88,8 @@ fn remove_object() -> anyhow::Result<()> {
 #[test]
 fn copied_object_has_same_contents() -> anyhow::Result<()> {
     // Write data to an object.
-    let mut repo = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
     let mut object = repo.insert("Source".into());
     object.write_all(random_buffer().as_slice())?;
     object.flush()?;
@@ -103,7 +108,8 @@ fn copied_object_has_same_contents() -> anyhow::Result<()> {
 
 #[test]
 fn copied_object_must_exist() -> anyhow::Result<()> {
-    let mut repo = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
     assert!(matches!(
         repo.copy("Nonexistent", "Dest".into()),
         Err(acid_store::Error::NotFound)
@@ -113,7 +119,8 @@ fn copied_object_must_exist() -> anyhow::Result<()> {
 
 #[test]
 fn copying_does_not_overwrite() -> anyhow::Result<()> {
-    let mut repo = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
     repo.insert("Source".into());
     repo.insert("Dest".into());
 
@@ -127,7 +134,8 @@ fn copying_does_not_overwrite() -> anyhow::Result<()> {
 
 #[test]
 fn objects_removed_on_rollback() -> anyhow::Result<()> {
-    let mut repo = create_repo()?;
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
 
     let mut object = repo.insert("test".into());
     object.write_all(random_buffer().as_slice())?;

@@ -104,8 +104,8 @@
 //! [`VersionRepo`]: crate::repo::version::VersionRepo
 
 pub use self::common::{
-    Chunking, Compression, ContentId, ConvertRepo, Encryption, Object, OpenOptions, Packing,
-    ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit,
+    peek_info, Chunking, Compression, ContentId, ConvertRepo, Encryption, Object, OpenMode,
+    OpenOptions, Packing, ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit,
 };
 
 /// A low-level repository type which provides more direct access to the underlying storage.
