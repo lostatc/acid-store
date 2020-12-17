@@ -340,6 +340,29 @@ impl ObjectRepo {
             .collect())
     }
 
+    /// Atomically write the given serialized and encoded `header` to the data store.
+    fn write_header_bytes(&mut self, header_bytes: &[u8]) -> crate::Result<()> {
+        // Write the new header to a new block.
+        let header_id = Uuid::new_v4();
+        self.state
+            .store
+            .lock()
+            .unwrap()
+            .write_block(header_id, header_bytes)
+            .map_err(|error| crate::Error::Store(error))?;
+        self.state.metadata.header_id = header_id;
+
+        // Atomically write the new repository metadata containing the new header ID.
+        let serialized_metadata =
+            to_vec(&self.state.metadata).expect("Could not serialize repository metadata.");
+        self.state
+            .store
+            .lock()
+            .unwrap()
+            .write_block(METADATA_BLOCK_ID, &serialized_metadata)
+            .map_err(|error| crate::Error::Store(error))
+    }
+
     /// Commit changes which have been made to the repository.
     ///
     /// No changes are saved persistently until this method is called. Committing a repository is an
@@ -373,10 +396,9 @@ impl ObjectRepo {
             handle_table: mem::replace(&mut self.handle_table, IdTable::new()),
         };
 
-        // Serialize and encode the header so we can write it to the data store.
+        // Serialize the header so we can write it to the data store.
         let serialized_header =
             to_vec(&header).expect("Could not serialize the repository header.");
-        let encoded_header = self.state.encode_data(serialized_header.as_slice())?;
 
         // Unpack the values from the `Header` and put them back where they originally were.
         let Header {
@@ -390,25 +412,9 @@ impl ObjectRepo {
         self.managed = managed;
         self.handle_table = handle_table;
 
-        // Write the serialized and encoded header to the data store.
-        let header_id = Uuid::new_v4();
-        self.state
-            .store
-            .lock()
-            .unwrap()
-            .write_block(header_id, &encoded_header)
-            .map_err(|error| crate::Error::Store(error))?;
-        self.state.metadata.header_id = header_id;
-
-        // Write the repository metadata, atomically completing the commit.
-        let serialized_metadata =
-            to_vec(&self.state.metadata).expect("Could not serialize repository metadata.");
-        self.state
-            .store
-            .lock()
-            .unwrap()
-            .write_block(METADATA_BLOCK_ID, &serialized_metadata)
-            .map_err(|error| crate::Error::Store(error))?;
+        // Encode the header and write it to the data store, atomically completing the commit.
+        let encoded_header = self.state.encode_data(serialized_header.as_slice())?;
+        self.write_header_bytes(encoded_header.as_slice())?;
 
         // Ignore errors cleaning the repository.
         self.clean().ok();
@@ -591,6 +597,39 @@ impl ObjectRepo {
                             .remove_block(pack_id)
                             .map_err(|error| crate::Error::Store(error))?;
                     }
+                }
+
+                // Once old packs have been removed from the data store, all unreferenced blocks
+                // have been removed from the data store. At this point, we can remove those
+                // blocks from the pack map. Because block IDs are random UUIDs and are
+                // never reused, having nonexistent blocks in the pack map won't cause problems.
+                // However, it may cause unnecessary repacking on subsequent calls to this method
+                // and it will consume additional memory. For this reason, it's beneficial to remove
+                // nonexistent blocks from the pack map, but if this method returns early or panics
+                // before this step can complete, the repository will not be in an inconsistent
+                // state.
+                self.state
+                    .packs
+                    .retain(|block_id, _| referenced_blocks.contains(block_id));
+
+                // Next we need to write the updated pack map to the data store. To do this, we have
+                // to write the entire header. Because this method does not commit any changes, it's
+                // important that we write the previous header, changing only the pack map.
+                {
+                    let mut previous_header = previous_header;
+
+                    // Temporarily move the pack map into the previous header just so that we can
+                    // serialize it. Once we're done, move it back. This avoids needing the clone
+                    // the pack map.
+                    previous_header.packs = mem::replace(&mut self.state.packs, HashMap::new());
+                    let serialized_header = to_vec(&previous_header)
+                        .expect("Could not serialize the repository header.");
+                    mem::swap(&mut previous_header.packs, &mut self.state.packs);
+                    drop(previous_header);
+
+                    // Encode the serialized header and write it to the data store.
+                    let encoded_header = self.state.encode_data(serialized_header.as_slice())?;
+                    self.write_header_bytes(encoded_header.as_slice())?;
                 }
             }
         }
