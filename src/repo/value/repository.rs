@@ -219,6 +219,16 @@ impl<K: Key> ValueRepo<K> {
         self.repository.clean()
     }
 
+    /// Delete all data in the current instance of the repository.
+    ///
+    /// See `KeyRepo::clear_instance` for details.
+    pub fn clear_instance(&mut self) {
+        for handle in self.key_table.values() {
+            self.repository.remove_unmanaged(handle);
+        }
+        self.key_table.clear();
+    }
+
     /// Verify the integrity of all the data in the repository.
     ///
     /// This returns the set of keys of values which are corrupt.

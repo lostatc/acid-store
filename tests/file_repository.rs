@@ -741,6 +741,49 @@ fn entries_removed_on_rollback() -> anyhow::Result<()> {
 }
 
 #[test]
+fn clear_instance_removes_paths() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    repo.create("test", &Entry::file())?;
+    let mut object = repo.open_mut("test")?;
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repo.clear_instance();
+
+    assert!(!repo.exists("test"));
+    assert!(matches!(
+        repo.open("test"),
+        Err(acid_store::Error::NotFound)
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn rollback_after_clear_instance() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    repo.create("test", &Entry::file())?;
+    let mut object = repo.open_mut("test")?;
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repo.commit()?;
+    repo.clear_instance();
+    repo.rollback()?;
+
+    assert!(repo.exists("test"));
+    assert!(repo.open("test").is_ok());
+
+    Ok(())
+}
+
+#[test]
 fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
     let config = MemoryConfig::new();
     let mut repository = create_repo(&config)?;

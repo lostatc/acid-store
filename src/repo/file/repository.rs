@@ -791,6 +791,19 @@ where
         self.repository.clean()
     }
 
+    /// Delete all data in the current instance of the repository.
+    ///
+    /// See `KeyRepo::clear_instance` for details.
+    pub fn clear_instance(&mut self) {
+        for (_, handle) in self.path_table.walk(&*EMPTY_PARENT).unwrap() {
+            if let EntryType::File(handle) = &handle.entry_type {
+                self.repository.remove_unmanaged(&handle);
+            }
+            self.repository.remove_unmanaged(&handle.entry);
+        }
+        self.path_table.clear()
+    }
+
     /// Verify the integrity of all the data in the repository.
     ///
     /// This returns the set of paths of files with corrupt data or metadata.

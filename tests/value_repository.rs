@@ -111,6 +111,41 @@ fn values_removed_on_rollback() -> anyhow::Result<()> {
 }
 
 #[test]
+fn clear_instance_removes_keys() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    repo.insert("test".into(), &SERIALIZABLE_VALUE)?;
+
+    repo.clear_instance();
+
+    assert!(!repo.contains("test"));
+    assert!(matches!(
+        repo.get::<_, (bool, u32)>("test"),
+        Err(acid_store::Error::NotFound)
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn rollback_after_clear_instance() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    repo.insert("test".into(), &SERIALIZABLE_VALUE)?;
+
+    repo.commit()?;
+    repo.clear_instance();
+    repo.rollback()?;
+
+    assert!(repo.contains("test"));
+    assert!(repo.get::<_, (bool, u32)>("test").is_ok());
+
+    Ok(())
+}
+
+#[test]
 fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
     let config = MemoryConfig::new();
     let mut repository = create_repo(&config)?;

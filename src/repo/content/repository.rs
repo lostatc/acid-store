@@ -278,6 +278,16 @@ impl ContentRepo {
         self.repository.clean()
     }
 
+    /// Delete all data in the current instance of the repository.
+    ///
+    /// See `KeyRepo::clear_instance` for details.
+    pub fn clear_instance(&mut self) {
+        for handle in self.hash_table.values() {
+            self.repository.remove_unmanaged(handle);
+        }
+        self.hash_table.clear();
+    }
+
     /// Verify the integrity of all the data in the repository.
     ///
     /// This returns the set of hashes of objects which are corrupt.

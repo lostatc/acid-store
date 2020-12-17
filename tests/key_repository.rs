@@ -150,3 +150,43 @@ fn objects_removed_on_rollback() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn clear_instance_removes_keys() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    let mut object = repo.insert("test".into());
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repo.clear_instance();
+
+    assert!(!repo.contains("test"));
+    assert!(repo.keys().next().is_none());
+    assert!(repo.object("test").is_none());
+
+    Ok(())
+}
+
+#[test]
+fn rollback_after_clear_instance() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    let mut object = repo.insert("test".into());
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repo.commit()?;
+    repo.clear_instance();
+    repo.rollback()?;
+
+    assert!(repo.contains("test"));
+    assert!(repo.keys().next().is_some());
+    assert!(repo.object("test").is_some());
+
+    Ok(())
+}
