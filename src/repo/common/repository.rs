@@ -365,18 +365,12 @@ impl ObjectRepo {
 
     /// Commit changes which have been made to the repository.
     ///
-    /// No changes are saved persistently until this method is called. Committing a repository is an
-    /// atomic and consistent operation; changes cannot be partially committed and interrupting a
-    /// commit will never leave the repository in an inconsistent state.
+    /// No changes are saved persistently until this method is called.
     ///
     /// If this method returns `Ok`, changes have been committed. If this method returns `Err`,
     /// changes have not been committed.
     ///
-    /// This method will attempt to call `clean` once changes are committed, but will ignore any
-    /// errors returned by it. This means that this method will always return `Ok` if changes have
-    /// been committed, even if cleaning the repository afterwards fails. If you need to ensure that
-    /// cleaning the repository succeeded or handle errors returned by that method, you should call
-    /// `clean` manually.
+    /// Committing changes does not reclaim space in the backing data store until `clean` is called.
     ///
     /// This method commits changes from all instances of the repository.
     ///
@@ -414,12 +408,7 @@ impl ObjectRepo {
 
         // Encode the header and write it to the data store, atomically completing the commit.
         let encoded_header = self.state.encode_data(serialized_header.as_slice())?;
-        self.write_header_bytes(encoded_header.as_slice())?;
-
-        // Ignore errors cleaning the repository.
-        self.clean().ok();
-
-        Ok(())
+        self.write_header_bytes(encoded_header.as_slice())
     }
 
     /// Roll back all changes made since the last commit.
@@ -478,10 +467,7 @@ impl ObjectRepo {
     /// Clean up the repository to reclaim space in the backing data store.
     ///
     /// When data in a repository is deleted, the space is not reclaimed in the backing data store
-    /// until those changes are committed and this method is called. This method is automatically
-    /// called when changes are committed, but any errors returned are ignored. You only need to
-    /// call this method manually if you need to handle these errors and ensure that all space in
-    /// the backing data store has been reclaimed.
+    /// until those changes are committed and this method is called.
     ///
     /// # Errors
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.

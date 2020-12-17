@@ -49,7 +49,11 @@
 //! back automatically.
 //!
 //! When data in a repository is deleted, the space is not reclaimed in the backing data store until
-//! those changes are committed. See [`ObjectRepo::commit`] and [`ObjectRepo::clean`] for details.
+//! those changes are committed and the repository is cleaned. Cleaning a repository can be an
+//! expensive operation, so these are kept as separate steps so that it is possible to commit
+//! changes without cleaning the repository.
+//!
+//! See [`ObjectRepo::commit`] and [`ObjectRepo::clean`] for details.
 //!
 //! # Encryption
 //! If encryption is enabled, the Argon2id key derivation function is used to derive a key from a
@@ -64,7 +68,7 @@
 //! data store at the cost of performance. See [`Packing`] for details.
 //!
 //! The information in [`RepoInfo`] is never encrypted, and can be read without decrypting the
-//! repository.
+//! repository using [`peek_info`].
 //!
 //! # Instances
 //! A repository can consist of multiple instances, each identified by a UUID. Each repository
@@ -99,6 +103,7 @@
 //! [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
 //! [`Packing`]: crate::repo::Packing
 //! [`RepoInfo`]: crate::repo::RepoInfo
+//! [`peek_info`]: crate::repo::peek_info
 //! [`ConvertRepo::switch_instance`]: crate::repo::ConvertRepo::switch_instance
 //! [`FileRepo`]: crate::repo::file::FileRepo
 //! [`VersionRepo`]: crate::repo::version::VersionRepo
