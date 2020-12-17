@@ -26,8 +26,8 @@ use uuid::Uuid;
 
 use acid_store::repo::key::KeyRepo;
 use acid_store::repo::object::ObjectRepo;
-use acid_store::repo::{Chunking, Encryption, OpenOptions, Packing};
-use acid_store::store::MemoryStore;
+use acid_store::repo::{Chunking, Encryption, OpenMode, OpenOptions, Packing};
+use acid_store::store::MemoryConfig;
 
 /// The ID of the managed object to write to for the bench test.
 const TEST_OBJECT_UUID: Uuid = Uuid::from_bytes(hex!("375e9f00 d476 4f2c a5db 1aec51c0a240"));
@@ -44,40 +44,44 @@ pub fn random_bytes(size: usize) -> Vec<u8> {
 }
 
 fn create_repo_fixed() -> ObjectRepo {
-    OpenOptions::new(MemoryStore::new())
+    OpenOptions::new()
         .chunking(Chunking::Fixed {
-            size: bytesize::mib(1u64) as usize,
+            size: bytesize::mib(1u64) as u32,
         })
-        .create_new()
+        .mode(OpenMode::CreateNew)
+        .open(&MemoryConfig::new())
         .unwrap()
 }
 
 fn create_repo_zpaq() -> ObjectRepo {
-    OpenOptions::new(MemoryStore::new())
+    OpenOptions::new()
         .chunking(Chunking::Zpaq { bits: 18 })
-        .create_new()
+        .mode(OpenMode::CreateNew)
+        .open(&MemoryConfig::new())
         .unwrap()
 }
 
 fn create_repo_fixed_encryption() -> ObjectRepo {
-    OpenOptions::new(MemoryStore::new())
+    OpenOptions::new()
         .chunking(Chunking::Fixed {
-            size: bytesize::mib(1u64) as usize,
+            size: bytesize::mib(1u64) as u32,
         })
         .encryption(Encryption::XChaCha20Poly1305)
         .packing(Packing::Fixed(bytesize::kib(64u64) as u32))
         .password(b"password")
-        .create_new()
+        .mode(OpenMode::CreateNew)
+        .open(&MemoryConfig::new())
         .unwrap()
 }
 
 fn create_repo_zpaq_encryption() -> ObjectRepo {
-    OpenOptions::new(MemoryStore::new())
+    OpenOptions::new()
         .chunking(Chunking::Zpaq { bits: 18 })
         .encryption(Encryption::XChaCha20Poly1305)
         .packing(Packing::Fixed(bytesize::kib(16u64) as u32))
         .password(b"password")
-        .create_new()
+        .mode(OpenMode::CreateNew)
+        .open(&MemoryConfig::new())
         .unwrap()
 }
 
@@ -111,8 +115,9 @@ pub fn insert_object(criterion: &mut Criterion) {
 
     for num_objects in [100, 1_000, 10_000].iter() {
         // Create a new repository.
-        let mut repo = OpenOptions::new(MemoryStore::new())
-            .create_new::<KeyRepo<String>>()
+        let mut repo: KeyRepo<String> = OpenOptions::new()
+            .mode(OpenMode::CreateNew)
+            .open(&MemoryConfig::new())
             .unwrap();
 
         // Insert objects and write to them but don't commit them.
@@ -143,8 +148,9 @@ pub fn insert_object_and_write(criterion: &mut Criterion) {
 
     for num_objects in [100, 1_000, 10_000].iter() {
         // Create a new repository.
-        let mut repo = OpenOptions::new(MemoryStore::new())
-            .create_new::<KeyRepo<String>>()
+        let mut repo: KeyRepo<String> = OpenOptions::new()
+            .mode(OpenMode::CreateNew)
+            .open(&MemoryConfig::new())
             .unwrap();
 
         // Insert objects and write to them but don't commit them.
