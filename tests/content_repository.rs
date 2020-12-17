@@ -130,6 +130,40 @@ fn objects_removed_on_rollback() -> anyhow::Result<()> {
 }
 
 #[test]
+fn clear_instance_removes_keys() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    let hash = repo.put(random_buffer().as_slice())?;
+
+    repo.clear_instance();
+
+    assert!(!repo.contains(&hash));
+    assert!(repo.list().next().is_none());
+    assert!(repo.object(&hash).is_none());
+
+    Ok(())
+}
+
+#[test]
+fn rollback_after_clear_instance() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    let hash = repo.put(random_buffer().as_slice())?;
+
+    repo.commit()?;
+    repo.clear_instance();
+    repo.rollback()?;
+
+    assert!(repo.contains(&hash));
+    assert!(repo.list().next().is_some());
+    assert!(repo.object(&hash).is_some());
+
+    Ok(())
+}
+
+#[test]
 fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
     let config = MemoryConfig::new();
     let mut repository = create_repo(&config)?;

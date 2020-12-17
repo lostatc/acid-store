@@ -225,6 +225,11 @@ impl<V> PathTree<V> {
             iter::once((path.as_ref().to_owned(), value)).chain(drain_nodes(path, children)),
         ))
     }
+
+    /// Remove all paths and values from the tree.
+    pub fn clear(&mut self) {
+        self.nodes.clear();
+    }
 }
 
 #[cfg(test)]
@@ -377,5 +382,18 @@ mod tests {
         tree.insert("a/b", 2);
 
         assert!(matches!(tree.walk("a/c"), None));
+    }
+
+    #[test]
+    fn clear_tree() {
+        let mut tree = PathTree::new();
+        tree.insert("a", 1u32);
+        tree.insert("a/b", 2u32);
+        tree.clear();
+
+        let actual = tree.walk("").unwrap().collect::<Vec<_>>();
+        let expected = Vec::<(RelativePathBuf, &u32)>::new();
+
+        assert_eq!(expected, actual);
     }
 }

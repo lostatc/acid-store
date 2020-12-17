@@ -229,6 +229,21 @@ impl<K: Key> KeyRepo<K> {
         self.repository.clean()
     }
 
+    /// Delete all data in the current instance of the repository.
+    ///
+    /// This does not delete data from other instances of the repository. To delete all data from
+    /// all instances of the repository, use `ConvertRepo::into_repo` to convert this repository to
+    /// an `ObjectRepo` and use `ObjectRepo::clear_repo` to delete data from all instances of the
+    /// repository.
+    ///
+    /// No data is reclaimed in the backing data store until changes are committed.
+    pub fn clear_instance(&mut self) {
+        for handle in self.key_table.values() {
+            self.repository.remove_unmanaged(handle);
+        }
+        self.key_table.clear()
+    }
+
     /// Verify the integrity of all the data in the repository.
     ///
     /// This returns the set of keys of objects which are corrupt.

@@ -359,6 +359,19 @@ impl<K: Key> VersionRepo<K> {
         self.repository.clean()
     }
 
+    /// Delete all data in the current instance of the repository.
+    ///
+    /// See `KeyRepo::clear_instance` for details.
+    pub fn clear_instance(&mut self) {
+        for key_info in self.key_table.values() {
+            self.repository.remove_unmanaged(&key_info.object);
+            for version_info in key_info.versions.values() {
+                self.repository.remove_unmanaged(&version_info.handle);
+            }
+        }
+        self.key_table.clear();
+    }
+
     /// Change the password for this repository.
     ///
     /// See `ObjectRepo::change_password` for details.
