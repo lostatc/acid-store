@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use hex_literal::hex;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
 use uuid::Uuid;
@@ -46,10 +46,8 @@ const GLOBAL_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92b 031
 /// format.
 const VERSION_ID: Uuid = Uuid::from_bytes(hex!("9070207d 98de 462f 91b8 68e73680ee18"));
 
-lazy_static! {
-    /// A table of locks on repositories.
-    static ref REPO_LOCKS: Mutex<LockTable> = Mutex::new(LockTable::new());
-}
+/// A table of locks on repositories.
+static REPO_LOCKS: Lazy<Mutex<LockTable>> = Lazy::new(|| Mutex::new(LockTable::new()));
 
 /// The mode to use to open a repository.
 #[derive(Debug, Clone, Copy)]
@@ -74,6 +72,24 @@ pub enum OpenMode {
 /// `open`. You can think of this value as the configuration necessary to open the backing data
 /// store. This builder can be used to open or create any repository type which implements
 /// `ConvertRepo`.
+///
+/// # Examples
+/// ```no_run
+/// use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo, Chunking, Compression, Encryption, Packing};
+/// use acid_store::store::DirectoryConfig;
+///
+/// let config = DirectoryConfig { path: "/path/to/store".into() };
+/// let mut repo: KeyRepo<String> = OpenOptions::new()
+///     .chunking(Chunking::Zpaq { bits: 18 })
+///     .compression(Compression::Lz4 { level: 1 })
+///     .encryption(Encryption::XChaCha20Poly1305)
+///     .packing(Packing::Fixed(1024 * 16))
+///     .password(b"password")
+///     .mode(OpenMode::Create)
+///     .open(&config)
+///     .unwrap();
+///         
+/// ```
 pub struct OpenOptions {
     config: RepoConfig,
     mode: OpenMode,

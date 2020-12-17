@@ -16,16 +16,13 @@
 
 use std::io::{Read, Write};
 
-use lazy_static::lazy_static;
+use hex_literal::hex;
 use uuid::Uuid;
 
 use crate::repo::object::ObjectRepo;
 
-lazy_static! {
-    /// The ID of the managed object which stores the version ID.
-    static ref VERSION_OBJECT_ID: Uuid =
-        Uuid::parse_str("ca1ff9a4-bffd-11ea-9b7d-bba0dbdf3e01").unwrap();
-}
+/// The ID of the managed object which stores the version ID.
+const VERSION_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("ca1ff9a4 bffd 11ea 9b7d bba0dbdf3e01"));
 
 /// Check if the given `repository` matches the given `version_id`.
 ///
@@ -39,7 +36,7 @@ lazy_static! {
 /// - `Error::Store`: An error occurred with the data store.
 /// - `Error::Io`: An I/O error occurred.
 pub fn check_version(repository: &mut ObjectRepo, version_id: Uuid) -> crate::Result<bool> {
-    match repository.managed_object(*VERSION_OBJECT_ID) {
+    match repository.managed_object(VERSION_OBJECT_ID) {
         Some(mut object) => {
             let mut version_buffer = Vec::new();
             object.read_to_end(&mut version_buffer)?;
@@ -55,7 +52,7 @@ pub fn check_version(repository: &mut ObjectRepo, version_id: Uuid) -> crate::Re
             }
         }
         None => {
-            let mut object = repository.add_managed(*VERSION_OBJECT_ID);
+            let mut object = repository.add_managed(VERSION_OBJECT_ID);
             object.write_all(version_id.as_bytes())?;
             Ok(false)
         }
