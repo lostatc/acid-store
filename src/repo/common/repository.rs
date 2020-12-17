@@ -637,6 +637,21 @@ impl ObjectRepo {
         Ok(())
     }
 
+    /// Delete all data in all instances of this repository.
+    ///
+    /// This deletes all managed and unmanaged objects in this repository.
+    ///
+    /// No data is reclaimed in the backing data store until changes are committed.
+    pub fn clear_repo(&mut self) {
+        // Because this method cannot return early, it doesn't matter which order we do these in.
+        self.handle_table = IdTable::new();
+        self.state.chunks.clear();
+        self.state.packs.clear();
+        for object_map in self.managed.values_mut() {
+            object_map.clear()
+        }
+    }
+
     /// Verify the integrity of all the data in every instance the repository.
     ///
     /// This verifies the integrity of all the data in the repository and returns an

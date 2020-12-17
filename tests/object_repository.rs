@@ -535,6 +535,65 @@ fn clean_before_commit_does_not_prevent_rollback(repo_config: RepoConfig) -> any
     Ok(())
 }
 
+#[test]
+fn clear_repo_deletes_managed_objects() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(RepoConfig::default(), &store_config)?;
+    let object_id = Uuid::new_v4();
+
+    let mut object = repo.add_managed(object_id);
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repo.clear_repo();
+
+    assert!(!repo.contains_managed(object_id));
+    assert!(repo.managed_object(object_id).is_none());
+
+    Ok(())
+}
+
+#[test]
+fn clear_repo_deletes_unmanaged_objects() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(RepoConfig::default(), &store_config)?;
+
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repo.clear_repo();
+
+    assert!(!repo.contains_unmanaged(&handle));
+    assert!(repo.unmanaged_object(&handle).is_none());
+
+    Ok(())
+}
+
+#[test]
+fn rollback_after_clear_repo() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(RepoConfig::default(), &store_config)?;
+    let object_id = Uuid::new_v4();
+
+    let mut object = repo.add_managed(object_id);
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repo.commit()?;
+    repo.clear_repo();
+    repo.rollback()?;
+
+    assert!(repo.contains_managed(object_id));
+    assert!(repo.managed_object(object_id).is_some());
+
+    Ok(())
+}
+
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
 #[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
 #[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
