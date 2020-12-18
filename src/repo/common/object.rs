@@ -160,7 +160,7 @@ impl ContentId {
     ///
     /// Because `other` only implements `Read`, this cannot compare the contents by size. If you
     /// need to compare this content ID with a file or some other source of data with a known size,
-    /// you should use `size` to query the size of this content ID so you can handle the trivial
+    /// you should use [`size`] to query the size of this content ID so you can handle the trivial
     /// case of the contents having different sizes.
     ///
     /// If you need to compare the contents of two objects from the same repository, it's cheaper to
@@ -168,6 +168,8 @@ impl ContentId {
     ///
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`size`]: crate::repo::ContentId::size
     pub fn compare_contents(&self, mut other: impl Read) -> crate::Result<bool> {
         let mut buffer = Vec::new();
 
