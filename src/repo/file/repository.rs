@@ -865,7 +865,6 @@ where
     /// See [`ObjectRepo::change_password`] for details.
     ///
     /// [`ObjectRepo::change_password`]: crate::repo::object::ObjectRepo::change_password
-    #[cfg(feature = "encryption")]
     pub fn change_password(&mut self, new_password: &[u8]) {
         self.repository.change_password(new_password);
     }
