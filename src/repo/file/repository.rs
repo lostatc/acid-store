@@ -24,12 +24,13 @@ use std::path::Path;
 use hex_literal::hex;
 use once_cell::sync::Lazy;
 use relative_path::{RelativePath, RelativePathBuf};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::repo::common::check_version;
 use crate::repo::object::ObjectRepo;
-use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepoInfo};
+use crate::repo::state_helpers::{commit, read_state, rollback, write_state};
+use crate::repo::{Object, OpenRepo, ReadOnlyObject, RepoInfo};
 
 use super::entry::{Entry, EntryHandle, EntryType, FileType};
 use super::metadata::{FileMetadata, NoMetadata};
@@ -39,11 +40,12 @@ use super::special::{NoSpecialType, SpecialType};
 /// The parent of a relative path with no parent.
 static EMPTY_PARENT: Lazy<RelativePathBuf> = Lazy::new(|| RelativePath::new("").to_owned());
 
-/// The ID of the managed object which stores the table of keys for the repository.
-const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("9c114e82 bd64 11ea 9872 ab55cbe7bb41"));
-
-/// The current repository format version ID.
-const VERSION_ID: Uuid = Uuid::from_bytes(hex!("36f6c626 d029 11ea 91e5 4f0aba7bed31"));
+/// The state for a `FileRepo`.
+#[derive(Debug, Serialize, Deserialize)]
+struct FileRepoState {
+    /// A map of relative file paths to the handles of the objects containing their entries.
+    path_table: PathTree<EntryHandle>,
+}
 
 /// A virtual file system.
 ///
@@ -54,46 +56,48 @@ where
     S: SpecialType,
     M: FileMetadata,
 {
-    /// The backing repository.
-    repository: ObjectRepo,
-
-    /// A map of relative file paths to the handles of the objects containing their entries.
-    path_table: PathTree<EntryHandle>,
-
-    /// Phantom data.
+    repo: ObjectRepo,
+    state: FileRepoState,
     marker: PhantomData<(S, M)>,
 }
 
-impl<S, M> ConvertRepo for FileRepo<S, M>
+impl<S, M> OpenRepo for FileRepo<S, M>
 where
     S: SpecialType,
     M: FileMetadata,
 {
-    fn from_repo(mut repository: ObjectRepo) -> crate::Result<Self> {
-        if check_version(&mut repository, VERSION_ID)? {
-            // Read and deserialize the table of entry paths.
-            let mut object = repository
-                .managed_object(TABLE_OBJECT_ID)
-                .ok_or(crate::Error::Corrupt)?;
-            let path_table = object.deserialize()?;
+    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("549cfd34 12c2 4ff6 942b e5d6893e3d6e"));
 
-            Ok(Self {
-                repository,
-                path_table,
-                marker: PhantomData,
-            })
-        } else {
-            Ok(Self {
-                repository,
-                path_table: PathTree::new(),
-                marker: PhantomData,
-            })
-        }
+    fn open_repo(mut repo: ObjectRepo) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let state = read_state(&mut repo)?;
+        Ok(Self {
+            repo,
+            state,
+            marker: PhantomData,
+        })
+    }
+
+    fn create_repo(mut repo: ObjectRepo) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let state = FileRepoState {
+            path_table: PathTree::new(),
+        };
+        write_state(&mut repo, &state)?;
+        Ok(Self {
+            repo,
+            state,
+            marker: PhantomData,
+        })
     }
 
     fn into_repo(mut self) -> crate::Result<ObjectRepo> {
-        self.write_state()?;
-        Ok(self.repository)
+        write_state(&mut self.repo, &self.state)?;
+        Ok(self.repo)
     }
 }
 
@@ -102,22 +106,15 @@ where
     S: SpecialType,
     M: FileMetadata,
 {
-    /// Write this repository's state to the backing repository.
-    fn write_state(&mut self) -> crate::Result<()> {
-        // Serialize and write the tree of entry paths.
-        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
-        object.serialize(&self.path_table)
-    }
-
     /// Return whether there is an entry at `path`.
     pub fn exists(&self, path: impl AsRef<RelativePath>) -> bool {
-        self.path_table.contains(path.as_ref())
+        self.state.path_table.contains(path.as_ref())
     }
 
     /// Return `true` if the given `path` has a parent directory in the repository.
     fn has_parent(&self, path: &RelativePath) -> bool {
         match path.parent() {
-            Some(parent) if parent != *EMPTY_PARENT => match self.path_table.get(parent) {
+            Some(parent) if parent != *EMPTY_PARENT => match self.state.path_table.get(parent) {
                 Some(handle) => matches!(handle.entry_type, EntryType::Directory),
                 None => false,
             },
@@ -187,16 +184,13 @@ where
         }
 
         // Write the entry for the file.
-        let mut entry_handle = self.repository.add_unmanaged();
-        let mut object = self
-            .repository
-            .unmanaged_object_mut(&mut entry_handle)
-            .unwrap();
+        let mut entry_handle = self.repo.add_unmanaged();
+        let mut object = self.repo.unmanaged_object_mut(&mut entry_handle).unwrap();
         object.serialize(entry)?;
         drop(object);
 
         let file_handle = match entry.file_type {
-            FileType::File => EntryType::File(self.repository.add_unmanaged()),
+            FileType::File => EntryType::File(self.repo.add_unmanaged()),
             FileType::Directory => EntryType::Directory,
             FileType::Special(_) => EntryType::Special,
         };
@@ -206,7 +200,7 @@ where
             entry_type: file_handle,
         };
 
-        self.path_table.insert(path.as_ref(), handle);
+        self.state.path_table.insert(path.as_ref(), handle);
 
         Ok(())
     }
@@ -256,7 +250,7 @@ where
     ///
     /// [`clean`]: crate::repo::file::FileRepo::clean
     pub fn remove(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<()> {
-        match self.path_table.list(&path) {
+        match self.state.path_table.list(&path) {
             Some(mut children) => {
                 if children.next().is_some() {
                     return Err(crate::Error::NotEmpty);
@@ -265,11 +259,11 @@ where
             None => return Err(crate::Error::NotFound),
         }
 
-        let entry_handle = self.path_table.remove(path.as_ref()).unwrap();
+        let entry_handle = self.state.path_table.remove(path.as_ref()).unwrap();
         if let EntryType::File(handle) = entry_handle.entry_type {
-            self.repository.remove_unmanaged(&handle);
+            self.repo.remove_unmanaged(&handle);
         }
-        self.repository.remove_unmanaged(&entry_handle.entry);
+        self.repo.remove_unmanaged(&entry_handle.entry);
 
         Ok(())
     }
@@ -285,14 +279,15 @@ where
     /// [`clean`]: crate::repo::file::FileRepo::clean
     pub fn remove_tree(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<()> {
         for (_, handles) in self
+            .state
             .path_table
             .drain(path.as_ref())
             .ok_or(crate::Error::NotFound)?
         {
             if let EntryType::File(handle) = &handles.entry_type {
-                self.repository.remove_unmanaged(&handle);
+                self.repo.remove_unmanaged(&handle);
             }
-            self.repository.remove_unmanaged(&handles.entry);
+            self.repo.remove_unmanaged(&handles.entry);
         }
 
         Ok(())
@@ -324,13 +319,11 @@ where
     /// - `Error::Io`: An I/O error occurred.
     pub fn entry(&self, path: impl AsRef<RelativePath>) -> crate::Result<Entry<S, M>> {
         let entry_handle = &self
+            .state
             .path_table
             .get(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
-        let mut object = self
-            .repository
-            .unmanaged_object(&entry_handle.entry)
-            .unwrap();
+        let mut object = self.repo.unmanaged_object(&entry_handle.entry).unwrap();
         object.deserialize()
     }
 
@@ -349,11 +342,12 @@ where
         metadata: Option<M>,
     ) -> crate::Result<()> {
         let entry_handle = &mut self
+            .state
             .path_table
             .get_mut(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
         let mut object = self
-            .repository
+            .repo
             .unmanaged_object_mut(&mut entry_handle.entry)
             .unwrap();
         let mut entry: Entry<S, M> = object.deserialize()?;
@@ -373,11 +367,12 @@ where
     /// [`open_mut`]: crate::repo::file::FileRepo::open_mut
     pub fn open(&self, path: impl AsRef<RelativePath>) -> crate::Result<ReadOnlyObject> {
         let entry_handle = self
+            .state
             .path_table
             .get(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
         if let EntryType::File(handle) = &entry_handle.entry_type {
-            Ok(self.repository.unmanaged_object(&handle).unwrap())
+            Ok(self.repo.unmanaged_object(&handle).unwrap())
         } else {
             Err(crate::Error::NotFile)
         }
@@ -395,13 +390,12 @@ where
     /// [`open`]: crate::repo::file::FileRepo::open
     pub fn open_mut(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<Object> {
         let entry_handle = self
+            .state
             .path_table
             .get_mut(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
         match entry_handle.entry_type {
-            EntryType::File(ref mut handle) => {
-                Ok(self.repository.unmanaged_object_mut(handle).unwrap())
-            }
+            EntryType::File(ref mut handle) => Ok(self.repo.unmanaged_object_mut(handle).unwrap()),
             _ => Err(crate::Error::NotFile),
         }
     }
@@ -437,18 +431,19 @@ where
         }
 
         let entry_handle = self
+            .state
             .path_table
             .get(source.as_ref())
             .ok_or(crate::Error::NotFound)?;
         let new_handle = EntryHandle {
-            entry: self.repository.copy_unmanaged(&entry_handle.entry),
+            entry: self.repo.copy_unmanaged(&entry_handle.entry),
             entry_type: match &entry_handle.entry_type {
-                EntryType::File(handle) => EntryType::File(self.repository.copy_unmanaged(&handle)),
+                EntryType::File(handle) => EntryType::File(self.repo.copy_unmanaged(&handle)),
                 EntryType::Directory => EntryType::Directory,
                 EntryType::Special => EntryType::Special,
             },
         };
-        self.path_table.insert(dest.as_ref(), new_handle);
+        self.state.path_table.insert(dest.as_ref(), new_handle);
 
         Ok(())
     }
@@ -485,13 +480,14 @@ where
 
         // Copy the root directory.
         let root_handle = self
+            .state
             .path_table
             .get(source.as_ref())
             .ok_or(crate::Error::NotFound)?;
         let new_root_handles = EntryHandle {
-            entry: self.repository.copy_unmanaged(&root_handle.entry),
+            entry: self.repo.copy_unmanaged(&root_handle.entry),
             entry_type: match &root_handle.entry_type {
-                EntryType::File(handle) => EntryType::File(self.repository.copy_unmanaged(&handle)),
+                EntryType::File(handle) => EntryType::File(self.repo.copy_unmanaged(&handle)),
                 EntryType::Directory => EntryType::Directory,
                 EntryType::Special => EntryType::Special,
             },
@@ -501,16 +497,14 @@ where
 
         // Because we can't walk the path tree and insert into it at the same time, we need to copy
         // the paths to a new `PathTree` first and then insert them back into the original.
-        for (path, entry_handle) in self.path_table.walk(source.as_ref()).unwrap() {
+        for (path, entry_handle) in self.state.path_table.walk(source.as_ref()).unwrap() {
             let relative_path = path.strip_prefix(&source).unwrap();
             let dest_path = dest.as_ref().join(relative_path);
 
             let new_handle = EntryHandle {
-                entry: self.repository.copy_unmanaged(&entry_handle.entry),
+                entry: self.repo.copy_unmanaged(&entry_handle.entry),
                 entry_type: match &entry_handle.entry_type {
-                    EntryType::File(handle) => {
-                        EntryType::File(self.repository.copy_unmanaged(&handle))
-                    }
+                    EntryType::File(handle) => EntryType::File(self.repo.copy_unmanaged(&handle)),
                     EntryType::Directory => EntryType::Directory,
                     EntryType::Special => EntryType::Special,
                 },
@@ -520,7 +514,7 @@ where
         }
 
         for (path, handles) in tree.drain(&dest).unwrap() {
-            self.path_table.insert(path, handles);
+            self.state.path_table.insert(path, handles);
         }
 
         Ok(())
@@ -536,6 +530,7 @@ where
         parent: impl AsRef<RelativePath> + 'a,
     ) -> crate::Result<impl Iterator<Item = RelativePathBuf> + 'a> {
         let entry_handle = self
+            .state
             .path_table
             .get(parent.as_ref())
             .ok_or(crate::Error::NotFound)?;
@@ -543,7 +538,12 @@ where
             return Err(crate::Error::NotDirectory);
         }
 
-        Ok(self.path_table.list(parent).unwrap().map(|(path, _)| path))
+        Ok(self
+            .state
+            .path_table
+            .list(parent)
+            .unwrap()
+            .map(|(path, _)| path))
     }
 
     /// Return an iterator of paths which are descendants of `parent`.
@@ -559,6 +559,7 @@ where
         parent: impl AsRef<RelativePath> + 'a,
     ) -> crate::Result<impl Iterator<Item = RelativePathBuf> + 'a> {
         let entry_handle = self
+            .state
             .path_table
             .get(parent.as_ref())
             .ok_or(crate::Error::NotFound)?;
@@ -566,7 +567,12 @@ where
             return Err(crate::Error::NotDirectory);
         }
 
-        Ok(self.path_table.walk(parent).unwrap().map(|(path, _)| path))
+        Ok(self
+            .state
+            .path_table
+            .walk(parent)
+            .unwrap()
+            .map(|(path, _)| path))
     }
 
     /// Copy a file from the file system into the repository.
@@ -613,9 +619,9 @@ where
         self.create(&dest, &entry)?;
 
         // Write the contents of the file entry if it's a file.
-        let entry_handle = self.path_table.get_mut(dest.as_ref()).unwrap();
+        let entry_handle = self.state.path_table.get_mut(dest.as_ref()).unwrap();
         if let EntryType::File(ref mut handle) = entry_handle.entry_type {
-            let mut object = self.repository.unmanaged_object_mut(handle).unwrap();
+            let mut object = self.repo.unmanaged_object_mut(handle).unwrap();
             let mut file = File::open(&source)?;
             copy(&mut file, &mut object)?;
             object.flush()?;
@@ -748,6 +754,7 @@ where
         dest: impl AsRef<Path>,
     ) -> crate::Result<()> {
         let relative_descendants = self
+            .state
             .path_table
             .walk(&source)
             .ok_or(crate::Error::NotFound)?
@@ -773,8 +780,7 @@ where
     ///
     /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
-        self.write_state()?;
-        self.repository.commit()
+        commit(&mut self.repo, &self.state)
     }
 
     /// Roll back all changes made since the last commit.
@@ -783,22 +789,7 @@ where
     ///
     /// [`ObjectRepo::rollback`]: crate::repo::object::ObjectRepo::rollback
     pub fn rollback(&mut self) -> crate::Result<()> {
-        // Read and deserialize the path table from the previous commit.
-        let mut object = self
-            .repository
-            .managed_object(TABLE_OBJECT_ID)
-            .ok_or(crate::Error::Corrupt)?;
-        let path_table = match object.deserialize() {
-            Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
-            Err(error) => return Err(error),
-            Ok(value) => value,
-        };
-        drop(object);
-
-        self.repository.rollback()?;
-
-        self.path_table = path_table;
-
+        self.state = rollback(&mut self.repo)?;
         Ok(())
     }
 
@@ -808,7 +799,7 @@ where
     ///
     /// [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
     pub fn clean(&mut self) -> crate::Result<()> {
-        self.repository.clean()
+        self.repo.clean()
     }
 
     /// Delete all data in the current instance of the repository.
@@ -817,13 +808,13 @@ where
     ///
     /// [`KeyRepo::clear_instance`]: crate::repo::key::KeyRepo::clear_instance
     pub fn clear_instance(&mut self) {
-        for (_, handle) in self.path_table.walk(&*EMPTY_PARENT).unwrap() {
+        for (_, handle) in self.state.path_table.walk(&*EMPTY_PARENT).unwrap() {
             if let EntryType::File(handle) = &handle.entry_type {
-                self.repository.remove_unmanaged(&handle);
+                self.repo.remove_unmanaged(&handle);
             }
-            self.repository.remove_unmanaged(&handle.entry);
+            self.repo.remove_unmanaged(&handle.entry);
         }
-        self.path_table.clear()
+        self.state.path_table.clear()
     }
 
     /// Verify the integrity of all the data in the repository.
@@ -841,10 +832,11 @@ where
     ///
     /// [`Object::verify`]: crate::repo::Object::verify
     pub fn verify(&self) -> crate::Result<HashSet<RelativePathBuf>> {
-        let report = self.repository.verify()?;
+        let report = self.repo.verify()?;
 
         // Check for corrupt metadata.
         Ok(self
+            .state
             .path_table
             .walk(RelativePathBuf::new())
             .unwrap()
@@ -866,16 +858,16 @@ where
     ///
     /// [`ObjectRepo::change_password`]: crate::repo::object::ObjectRepo::change_password
     pub fn change_password(&mut self, new_password: &[u8]) {
-        self.repository.change_password(new_password);
+        self.repo.change_password(new_password);
     }
 
     /// Return this repository's instance ID.
     pub fn instance(&self) -> Uuid {
-        self.repository.instance()
+        self.repo.instance()
     }
 
     /// Return information about the repository.
     pub fn info(&self) -> RepoInfo {
-        self.repository.info()
+        self.repo.info()
     }
 }

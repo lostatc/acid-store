@@ -77,7 +77,7 @@
 //!
 //! You can specify the ID of the instance you want to access when you open or create a repository
 //! using [`OpenOptions`]. You can also switch from one instance to another using
-//! [`ConvertRepo::switch_instance`].
+//! [`SwitchInstance::switch_instance`].
 //!
 //! Different repository instances share the same underlying storage, meaning that they share
 //! the same configuration, they are encrypted using the same password, and data is deduplicated
@@ -108,13 +108,14 @@
 //! [`Packing`]: crate::repo::Packing
 //! [`RepoInfo`]: crate::repo::RepoInfo
 //! [`peek_info`]: crate::repo::peek_info
-//! [`ConvertRepo::switch_instance`]: crate::repo::ConvertRepo::switch_instance
+//! [`SwitchInstance::switch_instance`]: crate::repo::SwitchInstance::switch_instance
 //! [`FileRepo`]: crate::repo::file::FileRepo
 //! [`VersionRepo`]: crate::repo::version::VersionRepo
 
 pub use self::common::{
-    peek_info, Chunking, Compression, ContentId, ConvertRepo, Encryption, Object, OpenMode,
-    OpenOptions, Packing, ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit, DEFAULT_INSTANCE,
+    peek_info, Chunking, Compression, ContentId, Encryption, Object, OpenMode, OpenOptions,
+    OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit, SwitchInstance,
+    DEFAULT_INSTANCE,
 };
 
 /// A low-level repository type which provides more direct access to the underlying storage.
@@ -126,7 +127,7 @@ pub use self::common::{
 /// API is more complicated than the other repository types, but it provides more control over how
 /// data is stored and how memory is managed.
 ///
-/// Repository types which are implemented on top of [`ObjectRepo`] can implement [`ConvertRepo`],
+/// Repository types which are implemented on top of [`ObjectRepo`] can implement [`OpenRepo`],
 /// which allows them to be opened or created using [`OpenOptions`] and also allows for easily
 /// switching between repository instances of different types.
 ///
@@ -156,7 +157,7 @@ pub use self::common::{
 /// object handles (and other data) with a predictable UUID, potentially set at compile time.
 ///
 /// [`ObjectRepo`]: crate::repo::object::ObjectRepo
-/// [`ConvertRepo`]: crate::repo::ConvertRepo
+/// [`OpenRepo`]: crate::repo::OpenRepo
 /// [`OpenOptions`]: crate::repo::OpenOptions
 /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
 /// [`ObjectHandle`]: crate::repo::object::ObjectHandle
@@ -168,5 +169,6 @@ mod common;
 pub mod content;
 pub mod file;
 pub mod key;
+mod state_helpers;
 pub mod value;
 pub mod version;

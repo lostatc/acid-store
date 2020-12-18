@@ -17,32 +17,70 @@
 use uuid::Uuid;
 
 use super::repository::ObjectRepo;
+use super::version_id::check_version;
 
-/// A repository which is backed by an [`ObjectRepo`].
+/// A repository which can be opened using [`OpenOptions`].
 ///
-/// Repository types which implement this trait can be opened or created using [`OpenOptions`].
+/// This trait represents a repository type which can be converted to and from an [`ObjectRepo`].
+/// This trait can be implemented by repository types so that they can be opened using
+/// [`OpenOptions`].
 ///
 /// [`ObjectRepo`]: crate::repo::object::ObjectRepo
 /// [`OpenOptions`]: crate::repo::OpenOptions
-pub trait ConvertRepo {
-    /// Convert the given `repository` to a repository of this type.
+pub trait OpenRepo {
+    /// The version ID for the serialized data format of this repository.
+    ///
+    /// This ID is used to distinguish between different repository types and to detect when the
+    /// serialized data format of a repository changes. All backwards-incompatible changes to a
+    /// repository's serialized data format must change this value.
+    const VERSION_ID: Uuid;
+
+    /// Open an existing repository of this type in the backing `repo`.
+    ///
+    /// **Users of this library should never call this method directly. Use
+    /// [`SwitchInstance::switch_instance`] instead.**
+    ///
+    /// Implementations of this method can safely assume that the given `repo` already contains a
+    /// repository of this type.
     ///
     /// This does not commit or roll back changes to the repository.
     ///
     /// # Errors
-    /// - `Error::UnsupportedFormat`: The backing repository is an unsupported format. This can
-    /// happen if the serialized data format changed or if the backing repository already contains a
-    /// different type of repository.
     /// - `Error::Deserialize`: Could not deserialize data in the repository.
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    fn from_repo(repository: ObjectRepo) -> crate::Result<Self>
+    ///
+    /// [`SwitchInstance::switch_instance`]: crate::repo::SwitchInstance::switch_instance
+    fn open_repo(repo: ObjectRepo) -> crate::Result<Self>
+    where
+        Self: Sized;
+
+    /// Create a new repository of this type in the backing `repo`.
+    ///
+    /// **Users of this library should never call this method directly. Use
+    /// [`SwitchInstance::switch_instance`] instead.**
+    ///
+    /// Implementations of this method can safely assume that a repository is not already stored in
+    /// the given `repo`.
+    ///
+    /// This does not commit or roll back changes to the repository.
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`SwitchInstance::switch_instance`]: crate::repo::SwitchInstance::switch_instance
+    fn create_repo(repo: ObjectRepo) -> crate::Result<Self>
     where
         Self: Sized;
 
     /// Consume this repository and return the backing `ObjectRepo`.
+    ///
+    /// **Users of this library should never call this method directly. Use
+    /// [`SwitchInstance::switch_instance`] instead.**
     ///
     /// This does not commit or roll back changes to the repository.
     ///
@@ -51,9 +89,14 @@ pub trait ConvertRepo {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`SwitchInstance::switch_instance`]: crate::repo::SwitchInstance::switch_instance
     fn into_repo(self) -> crate::Result<ObjectRepo>;
+}
 
-    /// Switch from one instance of a repository to another.
+/// A repository which supports switching between instances.
+pub trait SwitchInstance {
+    /// Switch from one instance of this repository to another.
     ///
     /// This method consumes this repository and returns a new repository of type `R`. This accepts
     /// the `id` of the new instance, which is the same instance ID you would provide to
@@ -67,17 +110,18 @@ pub trait ConvertRepo {
     /// # Examples
     /// ```
     /// use acid_store::uuid::Uuid;
-    /// use acid_store::repo::{ConvertRepo, OpenMode, OpenOptions, key::KeyRepo, value::ValueRepo};
+    /// use acid_store::repo::{SwitchInstance, OpenMode, OpenOptions, key::KeyRepo, value::ValueRepo};
     /// use acid_store::store::MemoryConfig;
     ///
-    /// let key_instance = Uuid::parse_str("9655cada-c6ae-4b98-89d1-7d4966dc4ae3").unwrap();
-    /// let value_instance = Uuid::parse_str("62118235-8bfc-4c04-8e61-527014840135").unwrap();
+    /// let key_instance = Uuid::new_v4();
+    /// let value_instance = Uuid::new_v4();
     ///
     /// // Open a repository, specifying an instance ID.
     /// let key_repo: KeyRepo<String> = OpenOptions::new()
     ///     .instance(key_instance)
     ///     .mode(OpenMode::CreateNew)
-    ///     .open(&MemoryConfig::new())?;
+    ///     .open(&MemoryConfig::new())
+    ///     .unwrap();
     ///
     /// // Switch the current instance to an instance of a different type.
     /// let mut value_repo: ValueRepo<u64> = key_repo.switch_instance(value_instance).unwrap();
@@ -99,11 +143,22 @@ pub trait ConvertRepo {
     /// [`OpenOptions::instance`]: crate::repo::OpenOptions::instance
     fn switch_instance<R>(self, id: Uuid) -> crate::Result<R>
     where
-        R: ConvertRepo,
+        R: OpenRepo,
+        Self: Sized;
+}
+
+impl<T: OpenRepo> SwitchInstance for T {
+    fn switch_instance<R>(self, id: Uuid) -> crate::Result<R>
+    where
+        R: OpenRepo,
         Self: Sized,
     {
         let mut repo = self.into_repo()?;
         repo.set_instance(id);
-        R::from_repo(repo)
+        if check_version(&mut repo, Self::VERSION_ID)? {
+            R::open_repo(repo)
+        } else {
+            R::create_repo(repo)
+        }
     }
 }

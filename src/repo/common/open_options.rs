@@ -28,14 +28,15 @@ use crate::store::{DataStore, OpenStore};
 use super::chunking::Chunking;
 use super::compression::Compression;
 use super::config::RepoConfig;
-use super::convert::ConvertRepo;
 use super::encryption::{Encryption, EncryptionKey, KeySalt, ResourceLimit};
 use super::id_table::IdTable;
 use super::lock::LockTable;
 use super::metadata::{peek_info_store, Header, RepoMetadata};
+use super::open_repo::OpenRepo;
 use super::packing::Packing;
 use super::repository::{ObjectRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
 use super::state::RepoState;
+use super::version_id::check_version;
 
 /// The default repository instance ID.
 ///
@@ -75,7 +76,7 @@ pub enum OpenMode {
 /// To open or create a repository, you'll need a value which implements [`OpenStore`] to pass to
 /// [`open`]. You can think of this value as the configuration necessary to open the backing data
 /// store. This builder can be used to open or create any repository type which implements
-/// [`ConvertRepo`].
+/// [`OpenRepo`].
 ///
 /// # Examples
 /// ```no_run
@@ -119,7 +120,7 @@ pub enum OpenMode {
 /// [`new`]: crate::repo::OpenOptions::new
 /// [`open`]: crate::repo::OpenOptions::open
 /// [`OpenStore`]: crate::store::OpenStore
-/// [`ConvertRepo`]: crate::repo::ConvertRepo
+/// [`OpenRepo`]: crate::repo::OpenRepo
 pub struct OpenOptions {
     config: RepoConfig,
     mode: OpenMode,
@@ -339,17 +340,12 @@ impl OpenOptions {
             lock,
         };
 
-        let mut repository = ObjectRepo {
+        Ok(ObjectRepo {
             state,
             instance_id: self.instance,
             managed,
             handle_table,
-        };
-
-        // Clean the repository in case changes were rolled back.
-        repository.clean()?;
-
-        Ok(repository)
+        })
     }
 
     /// Create a new repository, failing if one already exists.
@@ -501,12 +497,12 @@ impl OpenOptions {
     /// - `Error::Io`: An I/O error occurred.
     pub fn open<R, C>(&self, config: &C) -> crate::Result<R>
     where
-        R: ConvertRepo,
+        R: OpenRepo,
         C: OpenStore,
     {
         let mut store = config.open()?;
 
-        let repo = match self.mode {
+        let mut repo = match self.mode {
             OpenMode::Open => self.open_repo(store)?,
             OpenMode::Create => {
                 if store
@@ -522,6 +518,10 @@ impl OpenOptions {
             OpenMode::CreateNew => self.create_repo(store)?,
         };
 
-        R::from_repo(repo)
+        if check_version(&mut repo, R::VERSION_ID)? {
+            R::open_repo(repo)
+        } else {
+            R::create_repo(repo)
+        }
     }
 }
