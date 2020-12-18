@@ -74,7 +74,7 @@ impl ConvertRepo for ObjectRepo {
         Ok(repository)
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepo> {
+    fn into_repo(self) -> crate::Result<ObjectRepo> {
         Ok(self)
     }
 }

@@ -468,7 +468,7 @@ impl OpenOptions {
             lock,
         };
 
-        let mut repository = ObjectRepo {
+        let repository = ObjectRepo {
             state,
             instance_id: self.instance,
             managed,
