@@ -102,7 +102,7 @@ pub fn peek_info_store(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
 /// contain a valid data store.
 /// - `Error::Store`: An error occurred with the data store.
 /// - `Error::Io`: An I/O error occurred.
-pub fn peek_info<C: OpenStore>(config: &C) -> crate::Result<RepoInfo> {
+pub fn peek_info(config: &impl OpenStore) -> crate::Result<RepoInfo> {
     // Open the data store.
     let mut store = config.open()?;
     peek_info_store(&mut store)

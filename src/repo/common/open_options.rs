@@ -37,8 +37,12 @@ use super::packing::Packing;
 use super::repository::{ObjectRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
 use super::state::RepoState;
 
-/// The instance to use when an instance isn't supplied.
-const GLOBAL_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92b 031a9ad75c07"));
+/// The default repository instance ID.
+///
+/// This is the instance ID that is used by [`OpenOptions`] when an instance isn't specified.
+///
+/// [`OpenOptions`]: crate::repo::OpenOptions
+pub const DEFAULT_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92b 031a9ad75c07"));
 
 /// The current repository format version ID.
 ///
@@ -79,7 +83,7 @@ pub enum OpenMode {
 /// use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo, Chunking, Compression, Encryption, Packing};
 /// use acid_store::store::DirectoryConfig;
 ///
-/// let config = DirectoryConfig { path: "/path/to/store".into() };
+/// let store_config = DirectoryConfig { path: "/path/to/store".into() };
 /// let mut repo: KeyRepo<String> = OpenOptions::new()
 ///     .chunking(Chunking::Zpaq { bits: 18 })
 ///     .compression(Compression::Lz4 { level: 1 })
@@ -87,7 +91,27 @@ pub enum OpenMode {
 ///     .packing(Packing::Fixed(1024 * 16))
 ///     .password(b"password")
 ///     .mode(OpenMode::Create)
-///     .open(&config)
+///     .open(&store_config)
+///     .unwrap();
+/// # }
+/// ```
+/// ```no_run
+/// # #[cfg(feature = "store-directory")] {
+/// use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo, Chunking, Compression, Encryption, Packing, RepoConfig};
+/// use acid_store::store::DirectoryConfig;
+///
+/// let mut repo_config = RepoConfig::default();
+/// repo_config.chunking = Chunking::Zpaq { bits: 18 };
+/// repo_config.compression = Compression::Lz4 { level: 1 };
+/// repo_config.encryption = Encryption::XChaCha20Poly1305;
+/// repo_config.packing = Packing::Fixed(1024 * 16);
+///
+/// let store_config = DirectoryConfig { path: "/path/to/store".into() };
+/// let mut repo: KeyRepo<String> = OpenOptions::new()
+///     .config(repo_config)
+///     .password(b"password")
+///     .mode(OpenMode::Create)
+///     .open(&store_config)
 ///     .unwrap();
 /// # }
 /// ```
@@ -110,7 +134,7 @@ impl OpenOptions {
             config: RepoConfig::default(),
             mode: OpenMode::Open,
             password: None,
-            instance: GLOBAL_INSTANCE,
+            instance: DEFAULT_INSTANCE,
         }
     }
 
@@ -205,12 +229,14 @@ impl OpenOptions {
         self
     }
 
-    /// Open the instance of the repository with the given `id` instead of the global instance.
+    /// Open the instance of the repository with the given `id`.
     ///
-    /// Opening a repository without specifying an instance ID will always open the same global
-    /// instance.
+    /// Opening a repository without specifying an instance ID will always open the same default
+    /// instance. The ID of this default instance is [`DEFAULT_INSTANCE`].
     ///
     /// See the module-level documentation for [`crate::repo`] for details.
+    ///
+    /// [`DEFAULT_INSTANCE`]: crate::repo::DEFAULT_INSTANCE
     pub fn instance(&mut self, id: Uuid) -> &mut Self {
         self.instance = id;
         self
