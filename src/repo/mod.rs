@@ -93,6 +93,10 @@
 //! split your data between multiple repository instances, only the currently open instance will
 //! need to store data in memory.
 //!
+//! Switching repository instances does not commit or roll back changes. Committing changes to a
+//! repository commits changes for all instances of that repository; it is not possible to commit
+//! changes to only a single instance. The same goes for rolling back changes.
+//!
 //! [`DataStore`]: crate::store::DataStore
 //! [`Object`]: crate::repo::Object
 //! [`ReadOnlyObject`]: crate::repo::ReadOnlyObject

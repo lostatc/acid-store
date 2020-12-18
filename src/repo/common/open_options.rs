@@ -234,7 +234,8 @@ impl OpenOptions {
     /// Opening a repository without specifying an instance ID will always open the same default
     /// instance. The ID of this default instance is [`DEFAULT_INSTANCE`].
     ///
-    /// See the module-level documentation for [`crate::repo`] for details.
+    /// See the module-level documentation for [`crate::repo`] for more information on repository
+    /// instances.
     ///
     /// [`DEFAULT_INSTANCE`]: crate::repo::DEFAULT_INSTANCE
     pub fn instance(&mut self, id: Uuid) -> &mut Self {
@@ -473,9 +474,6 @@ impl OpenOptions {
             managed,
             handle_table,
         };
-
-        // Clean the repository in case changes were rolled back.
-        repository.clean()?;
 
         Ok(repository)
     }

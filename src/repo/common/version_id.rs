@@ -30,8 +30,7 @@ const VERSION_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("ca1ff9a4 bffd 11ea 9b7d b
 /// written to the repository.
 ///
 /// # Errors
-/// - `Error::UnsupportedFormat`: The version ID does not match.
-/// - `Error::Corrupt` The repository is corrupt.
+/// - `Error::UnsupportedRepo`: The version ID does not match.
 /// - `Error::InvalidData`: Ciphertext verification failed.
 /// - `Error::Store`: An error occurred with the data store.
 /// - `Error::Io`: An I/O error occurred.
@@ -42,8 +41,8 @@ pub fn check_version(repository: &mut ObjectRepo, version_id: Uuid) -> crate::Re
             object.read_to_end(&mut version_buffer)?;
             drop(object);
 
-            let version =
-                Uuid::from_slice(version_buffer.as_slice()).map_err(|_| crate::Error::Corrupt)?;
+            let version = Uuid::from_slice(version_buffer.as_slice())
+                .map_err(|_| crate::Error::UnsupportedRepo)?;
 
             if version == version_id {
                 Ok(true)

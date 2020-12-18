@@ -64,28 +64,26 @@ impl<K: Key> ConvertRepo for VersionRepo<K> {
                 key_table,
             })
         } else {
-            // Create and write the table of keys.
-            let mut object = repository.add_managed(TABLE_OBJECT_ID);
-            let key_table = HashMap::new();
-            object.serialize(&key_table)?;
-            drop(object);
-
-            repository.commit()?;
-
             Ok(Self {
                 repository,
-                key_table,
+                key_table: HashMap::new(),
             })
         }
     }
 
     fn into_repo(mut self) -> crate::Result<ObjectRepo> {
-        self.repository.rollback()?;
+        self.write_state()?;
         Ok(self.repository)
     }
 }
 
 impl<K: Key> VersionRepo<K> {
+    fn write_state(&mut self) -> crate::Result<()> {
+        // Serialize and write the table of keys.
+        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
+        object.serialize(&self.key_table)
+    }
+
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
@@ -328,12 +326,7 @@ impl<K: Key> VersionRepo<K> {
     ///
     /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
-        // Serialize and write the table of keys.
-        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
-        object.serialize(&self.key_table)?;
-        drop(object);
-
-        // Commit the underlying repository.
+        self.write_state()?;
         self.repository.commit()
     }
 
