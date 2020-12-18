@@ -65,28 +65,27 @@ impl<K: Key> ConvertRepo for KeyRepo<K> {
                 key_table: table,
             })
         } else {
-            // Create and write a key table.
-            let mut object = repository.add_managed(TABLE_OBJECT_ID);
-            let table = HashMap::new();
-            object.serialize(&table)?;
-            drop(object);
-
-            repository.commit()?;
-
             Ok(Self {
                 repository,
-                key_table: table,
+                key_table: HashMap::new(),
             })
         }
     }
 
     fn into_repo(mut self) -> crate::Result<ObjectRepo> {
-        self.repository.rollback()?;
+        self.write_state()?;
         Ok(self.repository)
     }
 }
 
 impl<K: Key> KeyRepo<K> {
+    /// Write this repository's state to the backing repository.
+    fn write_state(&mut self) -> crate::Result<()> {
+        // Serialize and write the key table.
+        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
+        object.serialize(&self.key_table)
+    }
+
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
@@ -198,12 +197,7 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
-        // Serialize and write the key table.
-        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
-        object.serialize(&self.key_table)?;
-        drop(object);
-
-        // Commit the underlying repository.
+        self.write_state()?;
         self.repository.commit()
     }
 

@@ -83,24 +83,16 @@ where
                 marker: PhantomData,
             })
         } else {
-            // Create and write the table of entry paths.
-            let mut object = repository.add_managed(TABLE_OBJECT_ID);
-            let path_table = PathTree::new();
-            object.serialize(&path_table)?;
-            drop(object);
-
-            repository.commit()?;
-
             Ok(Self {
                 repository,
-                path_table,
+                path_table: PathTree::new(),
                 marker: PhantomData,
             })
         }
     }
 
     fn into_repo(mut self) -> crate::Result<ObjectRepo> {
-        self.repository.rollback()?;
+        self.write_state()?;
         Ok(self.repository)
     }
 }
@@ -110,6 +102,13 @@ where
     S: SpecialType,
     M: FileMetadata,
 {
+    /// Write this repository's state to the backing repository.
+    fn write_state(&mut self) -> crate::Result<()> {
+        // Serialize and write the tree of entry paths.
+        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
+        object.serialize(&self.path_table)
+    }
+
     /// Return whether there is an entry at `path`.
     pub fn exists(&self, path: impl AsRef<RelativePath>) -> bool {
         self.path_table.contains(path.as_ref())
@@ -774,12 +773,7 @@ where
     ///
     /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
-        // Serialize and write the tree of entry paths.
-        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
-        object.serialize(&self.path_table)?;
-        drop(object);
-
-        // Commit the underlying repository.
+        self.write_state()?;
         self.repository.commit()
     }
 

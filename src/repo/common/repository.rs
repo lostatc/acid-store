@@ -75,7 +75,6 @@ impl ConvertRepo for ObjectRepo {
     }
 
     fn into_repo(mut self) -> crate::Result<ObjectRepo> {
-        self.rollback()?;
         Ok(self)
     }
 }
@@ -325,6 +324,9 @@ impl ObjectRepo {
     }
 
     /// Set this repository's instance `id`.
+    ///
+    /// See the module-level documentation for [`crate::repo`] for more information on repository
+    /// instances.
     pub fn set_instance(&mut self, id: Uuid) {
         // If the given instance ID is not in the managed object map, add it.
         self.managed.entry(id).or_insert_with(HashMap::new);
@@ -385,7 +387,7 @@ impl ObjectRepo {
     /// To reclaim space from deleted objects in the backing data store, you must call [`clean`]
     /// after changes are committed.
     ///
-    /// This method commits changes from all instances of the repository.
+    /// This method commits changes for all instances of the repository.
     ///
     /// # Errors
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
@@ -435,6 +437,8 @@ impl ObjectRepo {
     /// If this method returns `Ok`, changes have been rolled back. If this method returns `Err`,
     /// the repository is unchanged.
     ///
+    /// This method rolls back changes for all instances of the repository.
+    ///
     /// # Errors
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::InvalidData`: Ciphertext verification failed.
@@ -462,19 +466,10 @@ impl ObjectRepo {
         } = header;
 
         // Replace the current header values with the ones from the previous commit.
-        let current_chunks = mem::replace(&mut self.state.chunks, old_chunks);
-        let current_packs = mem::replace(&mut self.state.packs, old_packs);
-        let current_managed = mem::replace(&mut self.managed, old_managed);
-        let current_handle_table = mem::replace(&mut self.handle_table, old_handle_table);
-
-        if let Err(error) = self.clean() {
-            // If cleaning the repository did not succeed, undo the rollback.
-            self.state.chunks = current_chunks;
-            self.state.packs = current_packs;
-            self.managed = current_managed;
-            self.handle_table = current_handle_table;
-            return Err(error);
-        }
+        self.state.chunks = old_chunks;
+        self.state.packs = old_packs;
+        self.managed = old_managed;
+        self.handle_table = old_handle_table;
 
         Ok(())
     }

@@ -79,34 +79,33 @@ impl ConvertRepo for ContentRepo {
                 hash_algorithm,
             })
         } else {
-            // Create and write the table of content hashes.
-            let mut object = repository.add_managed(TABLE_OBJECT_ID);
-            let hash_table = HashMap::new();
-            object.serialize(&hash_table)?;
-            drop(object);
-
-            // Write the hash algorithm.
-            let mut object = repository.add_managed(ALGORITHM_OBJECT_ID);
-            object.serialize(&DEFAULT_ALGORITHM)?;
-            drop(object);
-
-            repository.commit()?;
-
             Ok(Self {
                 repository,
-                hash_table,
+                hash_table: HashMap::new(),
                 hash_algorithm: DEFAULT_ALGORITHM,
             })
         }
     }
 
     fn into_repo(mut self) -> crate::Result<ObjectRepo> {
-        self.repository.rollback()?;
+        self.write_state()?;
         Ok(self.repository)
     }
 }
 
 impl ContentRepo {
+    /// Write this repository's state to the backing repository.
+    fn write_state(&mut self) -> crate::Result<()> {
+        // Serialize and write the table of content hashes.
+        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
+        object.serialize(&self.hash_table)?;
+        drop(object);
+
+        // Serialize and write the new hash algorithm.
+        let mut object = self.repository.add_managed(ALGORITHM_OBJECT_ID);
+        object.serialize(&self.hash_algorithm)
+    }
+
     /// Return whether the repository contains an object with the given `hash`.
     pub fn contains(&self, hash: &[u8]) -> bool {
         self.hash_table.contains_key(hash)
@@ -225,17 +224,7 @@ impl ContentRepo {
     ///
     /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
-        // Serialize and write the table of content hashes.
-        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
-        object.serialize(&self.hash_table)?;
-        drop(object);
-
-        // Serialize and write the new hash algorithm.
-        let mut object = self.repository.add_managed(ALGORITHM_OBJECT_ID);
-        object.serialize(&self.hash_algorithm)?;
-        drop(object);
-
-        // Commit the underlying repository.
+        self.write_state()?;
         self.repository.commit()
     }
 
