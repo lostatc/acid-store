@@ -17,8 +17,9 @@
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
 use acid_store::repo::value::ValueRepo;
-use acid_store::repo::{OpenMode, OpenOptions};
+use acid_store::repo::{OpenMode, OpenOptions, SwitchInstance, DEFAULT_INSTANCE};
 use acid_store::store::MemoryConfig;
+use acid_store::uuid::Uuid;
 use common::assert_contains_all;
 
 mod common;
@@ -37,6 +38,42 @@ fn open_repository() -> anyhow::Result<()> {
     repository.commit()?;
     drop(repository);
     OpenOptions::new().open::<ValueRepo<String>, _>(&config)?;
+    Ok(())
+}
+
+#[test]
+fn switching_instance_does_not_roll_back() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    repo.insert("test".to_string(), &SERIALIZABLE_VALUE)?;
+
+    let repo: ValueRepo<String> = repo.switch_instance(Uuid::new_v4())?;
+    let repo: ValueRepo<String> = repo.switch_instance(DEFAULT_INSTANCE)?;
+
+    assert!(repo.contains("test"));
+    assert!(repo.get::<_, (bool, i32)>("test").is_ok());
+
+    Ok(())
+}
+
+#[test]
+fn switching_instance_does_not_commit() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    repo.insert("test".to_string(), &SERIALIZABLE_VALUE)?;
+
+    let repo: ValueRepo<String> = repo.switch_instance(Uuid::new_v4())?;
+    let mut repo: ValueRepo<String> = repo.switch_instance(DEFAULT_INSTANCE)?;
+    repo.rollback()?;
+
+    assert!(!repo.contains("test"));
+    assert!(matches!(
+        repo.get::<_, (bool, i32)>("test"),
+        Err(acid_store::Error::NotFound)
+    ));
+
     Ok(())
 }
 

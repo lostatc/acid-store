@@ -22,7 +22,7 @@ use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
 use uuid::Uuid;
 
-use crate::repo::{ConvertRepo, Packing};
+use crate::repo::{OpenRepo, Packing};
 use crate::store::DataStore;
 
 use super::chunk_store::{
@@ -66,12 +66,21 @@ pub struct ObjectRepo {
     pub(super) handle_table: IdTable,
 }
 
-impl ConvertRepo for ObjectRepo {
-    fn from_repo(repository: ObjectRepo) -> crate::Result<Self>
+impl OpenRepo for ObjectRepo {
+    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("989a6a76 9d8b 46b7 9c05 d1c5e0d9471a"));
+
+    fn open_repo(repo: ObjectRepo) -> crate::Result<Self>
     where
         Self: Sized,
     {
-        Ok(repository)
+        Ok(repo)
+    }
+
+    fn create_repo(repo: ObjectRepo) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        Ok(repo)
     }
 
     fn into_repo(self) -> crate::Result<ObjectRepo> {
@@ -311,11 +320,6 @@ impl ObjectRepo {
         self.managed_map_mut().insert(source, old_handle);
         self.managed_map_mut().insert(dest, new_handle);
         true
-    }
-
-    /// Return an iterator of the IDs of managed objects stored in the repository.
-    pub fn list_managed<'a>(&'a self) -> impl Iterator<Item = Uuid> + 'a {
-        self.managed[&self.instance_id].keys().copied()
     }
 
     /// Return this repository's instance ID.

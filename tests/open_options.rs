@@ -16,12 +16,9 @@
 
 #![cfg(feature = "encryption")]
 
-use acid_store::repo::content::ContentRepo;
-use acid_store::repo::file::FileRepo;
 use acid_store::repo::key::KeyRepo;
 use acid_store::repo::object::ObjectRepo;
 use acid_store::repo::value::ValueRepo;
-use acid_store::repo::version::VersionRepo;
 use acid_store::repo::{
     Chunking, Compression, Encryption, OpenMode, OpenOptions, RepoConfig, ResourceLimit,
 };
@@ -171,80 +168,6 @@ fn opening_locked_repo_errs() -> anyhow::Result<()> {
 }
 
 #[test]
-fn opening_existing_repo_of_different_type_errs() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    OpenOptions::new()
-        .mode(OpenMode::CreateNew)
-        .open::<KeyRepo<String>, _>(&config)?;
-    let new_repo = OpenOptions::new().open::<ContentRepo, _>(&config);
-    assert!(matches!(new_repo, Err(acid_store::Error::UnsupportedRepo)));
-
-    let config = MemoryConfig::new();
-    OpenOptions::new()
-        .mode(OpenMode::CreateNew)
-        .open::<KeyRepo<String>, _>(&config)?;
-    let new_repo = OpenOptions::new().open::<VersionRepo<String>, _>(&config);
-    assert!(matches!(new_repo, Err(acid_store::Error::UnsupportedRepo)));
-
-    let config = MemoryConfig::new();
-    OpenOptions::new()
-        .mode(OpenMode::CreateNew)
-        .open::<KeyRepo<String>, _>(&config)?;
-    let new_repo = OpenOptions::new().open::<FileRepo, _>(&config);
-    assert!(matches!(new_repo, Err(acid_store::Error::UnsupportedRepo)));
-
-    let config = MemoryConfig::new();
-    OpenOptions::new()
-        .mode(OpenMode::CreateNew)
-        .open::<KeyRepo<String>, _>(&config)?;
-    let new_repo = OpenOptions::new().open::<ValueRepo<String>, _>(&config);
-    assert!(matches!(new_repo, Err(acid_store::Error::UnsupportedRepo)));
-
-    Ok(())
-}
-
-#[test]
-fn opening_or_creating_existing_repo_of_different_type_errs() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    OpenOptions::new()
-        .mode(OpenMode::CreateNew)
-        .open::<KeyRepo<String>, _>(&config)?;
-    let new_repo = OpenOptions::new()
-        .mode(OpenMode::Create)
-        .open::<ContentRepo, _>(&config);
-    assert!(matches!(new_repo, Err(acid_store::Error::UnsupportedRepo)));
-
-    let config = MemoryConfig::new();
-    OpenOptions::new()
-        .mode(OpenMode::CreateNew)
-        .open::<KeyRepo<String>, _>(&config)?;
-    let new_repo = OpenOptions::new()
-        .mode(OpenMode::Create)
-        .open::<VersionRepo<String>, _>(&config);
-    assert!(matches!(new_repo, Err(acid_store::Error::UnsupportedRepo)));
-
-    let config = MemoryConfig::new();
-    OpenOptions::new()
-        .mode(OpenMode::CreateNew)
-        .open::<KeyRepo<String>, _>(&config)?;
-    let new_repo = OpenOptions::new()
-        .mode(OpenMode::Create)
-        .open::<FileRepo, _>(&config);
-    assert!(matches!(new_repo, Err(acid_store::Error::UnsupportedRepo)));
-
-    let config = MemoryConfig::new();
-    OpenOptions::new()
-        .mode(OpenMode::CreateNew)
-        .open::<KeyRepo<String>, _>(&config)?;
-    let new_repo = OpenOptions::new()
-        .mode(OpenMode::Create)
-        .open::<ValueRepo<String>, _>(&config);
-    assert!(matches!(new_repo, Err(acid_store::Error::UnsupportedRepo)));
-
-    Ok(())
-}
-
-#[test]
 fn open_or_create_existing_repo() -> anyhow::Result<()> {
     let config = MemoryConfig::new();
     OpenOptions::new()
@@ -262,5 +185,16 @@ fn open_or_create_nonexistent_repo() -> anyhow::Result<()> {
     OpenOptions::new()
         .mode(OpenMode::Create)
         .open::<ObjectRepo, _>(&config)?;
+    Ok(())
+}
+
+#[test]
+fn opening_existing_repo_of_different_type_errs() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo: ValueRepo<String> = OpenOptions::new().mode(OpenMode::CreateNew).open(&config)?;
+    repo.commit()?;
+    drop(repo);
+    let result = OpenOptions::new().open::<KeyRepo<String>, _>(&config);
+    assert!(matches!(result, Err(acid_store::Error::UnsupportedRepo)));
     Ok(())
 }

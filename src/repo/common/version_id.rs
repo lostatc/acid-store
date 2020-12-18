@@ -53,6 +53,7 @@ pub fn check_version(repository: &mut ObjectRepo, version_id: Uuid) -> crate::Re
         None => {
             let mut object = repository.add_managed(VERSION_OBJECT_ID);
             object.write_all(version_id.as_bytes())?;
+            object.flush()?;
             Ok(false)
         }
     }

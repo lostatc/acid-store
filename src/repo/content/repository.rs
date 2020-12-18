@@ -19,96 +19,67 @@ use std::io::{Read, Write};
 use std::mem;
 
 use hex_literal::hex;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::repo::common::check_version;
 use crate::repo::object::{ObjectHandle, ObjectRepo};
-use crate::repo::{ConvertRepo, ReadOnlyObject, RepoInfo};
+use crate::repo::state_helpers::{commit, read_state, rollback, write_state};
+use crate::repo::{OpenRepo, ReadOnlyObject, RepoInfo};
 
 use super::hash::{HashAlgorithm, BUFFER_SIZE};
 
-/// The ID of the managed object which stores the table of keys for the repository.
-const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("c5319b76 bd43 11ea 90d4 971a5898591d"));
-
-/// The ID of the managed object which stores the hash algorithm.
-const ALGORITHM_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("0e4d5b00 bd45 11ea 9fe3 b3eccafb5a4b"));
-
-/// The current repository format version ID.
-const VERSION_ID: Uuid = Uuid::from_bytes(hex!("e94d5a1e bd42 11ea bbec ebbbc536f7fb"));
-
 /// The default hash algorithm to use for `ContentRepo`.
 const DEFAULT_ALGORITHM: HashAlgorithm = HashAlgorithm::Blake3;
+
+/// The state for a `ContentRepo`.
+#[derive(Debug, Serialize, Deserialize)]
+struct ContentRepoState {
+    hash_table: HashMap<Vec<u8>, ObjectHandle>,
+    hash_algorithm: HashAlgorithm,
+}
 
 /// A content-addressable storage.
 ///
 /// See [`crate::repo::content`] for more information.
 #[derive(Debug)]
 pub struct ContentRepo {
-    repository: ObjectRepo,
-    hash_table: HashMap<Vec<u8>, ObjectHandle>,
-    hash_algorithm: HashAlgorithm,
+    repo: ObjectRepo,
+    state: ContentRepoState,
 }
 
-impl ConvertRepo for ContentRepo {
-    fn from_repo(mut repository: ObjectRepo) -> crate::Result<Self> {
-        if check_version(&mut repository, VERSION_ID)? {
-            // Read and deserialize the table of content hashes.
-            let mut object = repository
-                .managed_object(TABLE_OBJECT_ID)
-                .ok_or(crate::Error::Corrupt)?;
-            let hash_table = match object.deserialize() {
-                Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
-                Err(error) => return Err(error),
-                Ok(value) => value,
-            };
+impl OpenRepo for ContentRepo {
+    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("a5994919 e6b7 4d88 9d7c 7d2c55e398b5"));
 
-            // Read and deserialize the hash algorithm.
-            let mut object = repository
-                .managed_object(ALGORITHM_OBJECT_ID)
-                .ok_or(crate::Error::Corrupt)?;
-            let hash_algorithm = match object.deserialize() {
-                Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
-                Err(error) => return Err(error),
-                Ok(value) => value,
-            };
-            drop(object);
+    fn open_repo(mut repo: ObjectRepo) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let state = read_state(&mut repo)?;
+        Ok(Self { repo, state })
+    }
 
-            Ok(Self {
-                repository,
-                hash_table,
-                hash_algorithm,
-            })
-        } else {
-            Ok(Self {
-                repository,
-                hash_table: HashMap::new(),
-                hash_algorithm: DEFAULT_ALGORITHM,
-            })
-        }
+    fn create_repo(mut repo: ObjectRepo) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let state = ContentRepoState {
+            hash_table: HashMap::new(),
+            hash_algorithm: DEFAULT_ALGORITHM,
+        };
+        write_state(&mut repo, &state)?;
+        Ok(Self { repo, state })
     }
 
     fn into_repo(mut self) -> crate::Result<ObjectRepo> {
-        self.write_state()?;
-        Ok(self.repository)
+        write_state(&mut self.repo, &self.state)?;
+        Ok(self.repo)
     }
 }
 
 impl ContentRepo {
-    /// Write this repository's state to the backing repository.
-    fn write_state(&mut self) -> crate::Result<()> {
-        // Serialize and write the table of content hashes.
-        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
-        object.serialize(&self.hash_table)?;
-        drop(object);
-
-        // Serialize and write the new hash algorithm.
-        let mut object = self.repository.add_managed(ALGORITHM_OBJECT_ID);
-        object.serialize(&self.hash_algorithm)
-    }
-
     /// Return whether the repository contains an object with the given `hash`.
     pub fn contains(&self, hash: &[u8]) -> bool {
-        self.hash_table.contains_key(hash)
+        self.state.hash_table.contains_key(hash)
     }
 
     /// Add the given `data` to the repository as a new object and return its hash.
@@ -119,15 +90,12 @@ impl ContentRepo {
     /// - `Error::Io`: An I/O error occurred.
     pub fn put(&mut self, mut data: impl Read) -> crate::Result<Vec<u8>> {
         let mut buffer = [0u8; BUFFER_SIZE];
-        let mut digest = self.hash_algorithm.digest();
+        let mut digest = self.state.hash_algorithm.digest();
         let mut bytes_read;
 
         // Create an object to write the data to.
-        let mut stage_handle = self.repository.add_unmanaged();
-        let mut stage_object = self
-            .repository
-            .unmanaged_object_mut(&mut stage_handle)
-            .unwrap();
+        let mut stage_handle = self.repo.add_unmanaged();
+        let mut stage_object = self.repo.unmanaged_object_mut(&mut stage_handle).unwrap();
 
         // Calculate the hash and write to the repository simultaneously so the `data` is only read
         // once.
@@ -145,11 +113,11 @@ impl ContentRepo {
 
         // Now that we know the hash, we can associate the object with its hash.
         let hash = digest.result();
-        if self.hash_table.contains_key(&hash) {
+        if self.state.hash_table.contains_key(&hash) {
             // The data is already in the repository. Delete the object.
-            self.repository.remove_unmanaged(&stage_handle);
+            self.repo.remove_unmanaged(&stage_handle);
         } else {
-            self.hash_table.insert(hash.clone(), stage_handle);
+            self.state.hash_table.insert(hash.clone(), stage_handle);
         }
 
         Ok(hash)
@@ -164,11 +132,11 @@ impl ContentRepo {
     ///
     /// [`clean`]: crate::repo::content::ContentRepo::clean
     pub fn remove(&mut self, hash: &[u8]) -> bool {
-        let handle = match self.hash_table.remove(hash) {
+        let handle = match self.state.hash_table.remove(hash) {
             Some(handle) => handle,
             None => return false,
         };
-        self.repository.remove_unmanaged(&handle);
+        self.repo.remove_unmanaged(&handle);
         true
     }
 
@@ -176,18 +144,18 @@ impl ContentRepo {
     ///
     /// This returns `None` if there is no data with the given `hash` in the repository.
     pub fn object(&self, hash: &[u8]) -> Option<ReadOnlyObject> {
-        let handle = self.hash_table.get(hash)?;
-        self.repository.unmanaged_object(handle)
+        let handle = self.state.hash_table.get(hash)?;
+        self.repo.unmanaged_object(handle)
     }
 
     /// Return an iterator of hashes of all the objects in this repository.
     pub fn list(&self) -> impl Iterator<Item = &[u8]> {
-        self.hash_table.keys().map(|hash| hash.as_slice())
+        self.state.hash_table.keys().map(|hash| hash.as_slice())
     }
 
     /// Return the hash algorithm used by this repository.
     pub fn algorithm(&self) -> HashAlgorithm {
-        self.hash_algorithm
+        self.state.hash_algorithm
     }
 
     /// Change the hash algorithm used by this repository.
@@ -200,19 +168,19 @@ impl ContentRepo {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn change_algorithm(&mut self, new_algorithm: HashAlgorithm) -> crate::Result<()> {
-        if new_algorithm == self.hash_algorithm {
+        if new_algorithm == self.state.hash_algorithm {
             return Ok(());
         }
 
-        self.hash_algorithm = new_algorithm;
+        self.state.hash_algorithm = new_algorithm;
 
         // Re-compute the hashes of the objects in the repository.
-        let old_table = mem::replace(&mut self.hash_table, HashMap::new());
+        let old_table = mem::replace(&mut self.state.hash_table, HashMap::new());
         for (_, object_handle) in old_table {
-            let mut object = self.repository.unmanaged_object(&object_handle).unwrap();
+            let mut object = self.repo.unmanaged_object(&object_handle).unwrap();
             let new_hash = new_algorithm.hash(&mut object)?;
             drop(object);
-            self.hash_table.insert(new_hash, object_handle);
+            self.state.hash_table.insert(new_hash, object_handle);
         }
 
         Ok(())
@@ -224,8 +192,7 @@ impl ContentRepo {
     ///
     /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
-        self.write_state()?;
-        self.repository.commit()
+        commit(&mut self.repo, &self.state)
     }
 
     /// Roll back all changes made since the last commit.
@@ -234,35 +201,7 @@ impl ContentRepo {
     ///
     /// [`ObjectRepo::rollback`]: crate::repo::object::ObjectRepo::rollback
     pub fn rollback(&mut self) -> crate::Result<()> {
-        // Read and deserialize the table of content hashes from the previous commit.
-        let mut object = self
-            .repository
-            .managed_object(TABLE_OBJECT_ID)
-            .ok_or(crate::Error::Corrupt)?;
-        let hash_table = match object.deserialize() {
-            Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
-            Err(error) => return Err(error),
-            Ok(value) => value,
-        };
-        drop(object);
-
-        // Read and deserialize the hash algorithm from the previous commit.
-        let mut object = self
-            .repository
-            .managed_object(ALGORITHM_OBJECT_ID)
-            .ok_or(crate::Error::Corrupt)?;
-        let hash_algorithm = match object.deserialize() {
-            Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
-            Err(error) => return Err(error),
-            Ok(value) => value,
-        };
-        drop(object);
-
-        self.repository.rollback()?;
-
-        self.hash_table = hash_table;
-        self.hash_algorithm = hash_algorithm;
-
+        self.state = rollback(&mut self.repo)?;
         Ok(())
     }
 
@@ -272,7 +211,7 @@ impl ContentRepo {
     ///
     /// [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
     pub fn clean(&mut self) -> crate::Result<()> {
-        self.repository.clean()
+        self.repo.clean()
     }
 
     /// Delete all data in the current instance of the repository.
@@ -281,10 +220,10 @@ impl ContentRepo {
     ///
     /// [`KeyRepo::clear_instance`]: crate::repo::key::KeyRepo::clear_instance
     pub fn clear_instance(&mut self) {
-        for handle in self.hash_table.values() {
-            self.repository.remove_unmanaged(handle);
+        for handle in self.state.hash_table.values() {
+            self.repo.remove_unmanaged(handle);
         }
-        self.hash_table.clear();
+        self.state.hash_table.clear();
     }
 
     /// Verify the integrity of all the data in the repository.
@@ -302,8 +241,9 @@ impl ContentRepo {
     ///
     /// [`Object::verify`]: crate::repo::Object::verify
     pub fn verify(&self) -> crate::Result<HashSet<&[u8]>> {
-        let report = self.repository.verify()?;
+        let report = self.repo.verify()?;
         Ok(self
+            .state
             .hash_table
             .iter()
             .filter(|(_, handle)| !report.check_unmanaged(handle))
@@ -317,16 +257,16 @@ impl ContentRepo {
     ///
     /// [`ObjectRepo::change_password`]: crate::repo::object::ObjectRepo::change_password
     pub fn change_password(&mut self, new_password: &[u8]) {
-        self.repository.change_password(new_password)
+        self.repo.change_password(new_password)
     }
 
     /// Return this repository's instance ID.
     pub fn instance(&self) -> Uuid {
-        self.repository.instance()
+        self.repo.instance()
     }
 
     /// Return information about the repository.
     pub fn info(&self) -> RepoInfo {
-        self.repository.info()
+        self.repo.info()
     }
 }

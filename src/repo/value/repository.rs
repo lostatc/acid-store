@@ -21,73 +21,65 @@ use std::hash::Hash;
 
 use hex_literal::hex;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::repo::common::check_version;
 use crate::repo::key::Key;
 use crate::repo::object::{ObjectHandle, ObjectRepo};
-use crate::repo::{ConvertRepo, RepoInfo};
+use crate::repo::state_helpers::{commit, read_state, rollback, write_state};
+use crate::repo::{OpenRepo, RepoInfo};
 
-/// The ID of the managed object which stores the table of keys for the repository.
-const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("69f329d6 bd4e 11ea 980a 3f2f192c2e86"));
-
-/// The current repository format version ID.
-///
-/// This must be changed any time a backwards-incompatible change is made to the repository
-/// format.
-const VERSION_ID: Uuid = Uuid::from_bytes(hex!("7457459c bd4e 11ea 8dad 67ac9eea7160"));
+/// The state for a `ValueRepo`.
+#[derive(Debug, Serialize, Deserialize)]
+struct ValueRepoState<K: Eq + Hash> {
+    key_table: HashMap<K, ObjectHandle>,
+}
 
 /// A persistent, heterogeneous, map-like collection.
 ///
 /// See [`crate::repo::value`] for more information.
 #[derive(Debug)]
 pub struct ValueRepo<K: Key> {
-    repository: ObjectRepo,
-    key_table: HashMap<K, ObjectHandle>,
+    repo: ObjectRepo,
+    state: ValueRepoState<K>,
 }
 
-impl<K: Key> ConvertRepo for ValueRepo<K> {
-    fn from_repo(mut repository: ObjectRepo) -> crate::Result<Self> {
-        if check_version(&mut repository, VERSION_ID)? {
-            // Read and deserialize the table of keys.
-            let mut object = repository
-                .managed_object(TABLE_OBJECT_ID)
-                .ok_or(crate::Error::Corrupt)?;
-            let key_table = object.deserialize()?;
+impl<K: Key> OpenRepo for ValueRepo<K> {
+    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("d68364ec 4a2a 4a3d 9e80 2832b5dc92c1"));
 
-            Ok(Self {
-                repository,
-                key_table,
-            })
-        } else {
-            Ok(Self {
-                repository,
-                key_table: HashMap::new(),
-            })
-        }
+    fn open_repo(mut repo: ObjectRepo) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let state = read_state(&mut repo)?;
+        Ok(Self { repo, state })
+    }
+
+    fn create_repo(mut repo: ObjectRepo) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let state = ValueRepoState {
+            key_table: HashMap::new(),
+        };
+        write_state(&mut repo, &state)?;
+        Ok(Self { repo, state })
     }
 
     fn into_repo(mut self) -> crate::Result<ObjectRepo> {
-        self.write_state()?;
-        Ok(self.repository)
+        write_state(&mut self.repo, &self.state)?;
+        Ok(self.repo)
     }
 }
 
 impl<K: Key> ValueRepo<K> {
-    fn write_state(&mut self) -> crate::Result<()> {
-        // Serialize and write the table of keys.
-        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
-        object.serialize(&self.key_table)
-    }
-
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        self.key_table.contains_key(key)
+        self.state.key_table.contains_key(key)
     }
 
     /// Insert a new key-value pair.
@@ -101,10 +93,11 @@ impl<K: Key> ValueRepo<K> {
     /// - `Error::Io`: An I/O error occurred.
     pub fn insert<V: Serialize>(&mut self, key: K, value: &V) -> crate::Result<()> {
         let mut handle = self
+            .state
             .key_table
             .entry(key)
-            .or_insert(self.repository.add_unmanaged());
-        let mut object = self.repository.unmanaged_object_mut(&mut handle).unwrap();
+            .or_insert(self.repo.add_unmanaged());
+        let mut object = self.repo.unmanaged_object_mut(&mut handle).unwrap();
         object.serialize(value)?;
         Ok(())
     }
@@ -122,9 +115,9 @@ impl<K: Key> ValueRepo<K> {
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        match self.key_table.remove(key) {
+        match self.state.key_table.remove(key) {
             Some(handle) => {
-                self.repository.remove_unmanaged(&handle);
+                self.repo.remove_unmanaged(&handle);
                 true
             }
             None => false,
@@ -145,14 +138,18 @@ impl<K: Key> ValueRepo<K> {
         Q: Hash + Eq + ?Sized,
         V: DeserializeOwned,
     {
-        let handle = self.key_table.get(key).ok_or(crate::Error::NotFound)?;
-        let mut object = self.repository.unmanaged_object(&handle).unwrap();
+        let handle = self
+            .state
+            .key_table
+            .get(key)
+            .ok_or(crate::Error::NotFound)?;
+        let mut object = self.repo.unmanaged_object(&handle).unwrap();
         object.deserialize()
     }
 
     /// Return an iterator of all the keys in this repository.
     pub fn keys(&self) -> impl Iterator<Item = &K> {
-        self.key_table.keys()
+        self.state.key_table.keys()
     }
 
     /// Copy the value at `source` to `dest`.
@@ -167,12 +164,16 @@ impl<K: Key> ValueRepo<K> {
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        if self.key_table.contains_key(dest.borrow()) {
+        if self.state.key_table.contains_key(dest.borrow()) {
             return Err(crate::Error::AlreadyExists);
         }
-        let handle = self.key_table.get(source).ok_or(crate::Error::NotFound)?;
-        let new_handle = self.repository.copy_unmanaged(&handle);
-        self.key_table.insert(dest, new_handle);
+        let handle = self
+            .state
+            .key_table
+            .get(source)
+            .ok_or(crate::Error::NotFound)?;
+        let new_handle = self.repo.copy_unmanaged(&handle);
+        self.state.key_table.insert(dest, new_handle);
         Ok(())
     }
 
@@ -182,8 +183,7 @@ impl<K: Key> ValueRepo<K> {
     ///
     /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
-        self.write_state()?;
-        self.repository.commit()
+        commit(&mut self.repo, &self.state)
     }
 
     /// Roll back all changes made since the last commit.
@@ -192,22 +192,7 @@ impl<K: Key> ValueRepo<K> {
     ///
     /// [`ObjectRepo::rollback`]: crate::repo::object::ObjectRepo::rollback
     pub fn rollback(&mut self) -> crate::Result<()> {
-        // Read and deserialize the key table from the previous commit.
-        let mut object = self
-            .repository
-            .managed_object(TABLE_OBJECT_ID)
-            .ok_or(crate::Error::Corrupt)?;
-        let key_table = match object.deserialize() {
-            Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
-            Err(error) => return Err(error),
-            Ok(value) => value,
-        };
-        drop(object);
-
-        self.repository.rollback()?;
-
-        self.key_table = key_table;
-
+        self.state = rollback(&mut self.repo)?;
         Ok(())
     }
 
@@ -217,7 +202,7 @@ impl<K: Key> ValueRepo<K> {
     ///
     /// [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
     pub fn clean(&mut self) -> crate::Result<()> {
-        self.repository.clean()
+        self.repo.clean()
     }
 
     /// Delete all data in the current instance of the repository.
@@ -226,10 +211,10 @@ impl<K: Key> ValueRepo<K> {
     ///
     /// [`KeyRepo::clear_instance`]: crate::repo::key::KeyRepo::clear_instance
     pub fn clear_instance(&mut self) {
-        for handle in self.key_table.values() {
-            self.repository.remove_unmanaged(handle);
+        for handle in self.state.key_table.values() {
+            self.repo.remove_unmanaged(handle);
         }
-        self.key_table.clear();
+        self.state.key_table.clear();
     }
 
     /// Verify the integrity of all the data in the repository.
@@ -241,8 +226,9 @@ impl<K: Key> ValueRepo<K> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn verify(&self) -> crate::Result<HashSet<&K>> {
-        let report = self.repository.verify()?;
+        let report = self.repo.verify()?;
         Ok(self
+            .state
             .key_table
             .iter()
             .filter(|(_, handle)| !report.check_unmanaged(handle))
@@ -256,16 +242,16 @@ impl<K: Key> ValueRepo<K> {
     ///
     /// [`ObjectRepo::change_password`]: crate::repo::object::ObjectRepo::change_password
     pub fn change_password(&mut self, new_password: &[u8]) {
-        self.repository.change_password(new_password);
+        self.repo.change_password(new_password);
     }
 
     /// Return this repository's instance ID.
     pub fn instance(&self) -> Uuid {
-        self.repository.instance()
+        self.repo.instance()
     }
 
     /// Return information about the repository.
     pub fn info(&self) -> RepoInfo {
-        self.repository.info()
+        self.repo.info()
     }
 }

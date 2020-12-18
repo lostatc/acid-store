@@ -21,90 +21,82 @@ use std::hash::Hash;
 
 use hex_literal::hex;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::repo::common::check_version;
 use crate::repo::object::{ObjectHandle, ObjectRepo};
-use crate::repo::{ConvertRepo, Object, ReadOnlyObject, RepoInfo};
-
-/// The ID of the managed object which stores the table of keys for the repository.
-const TABLE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("9db2a036 bd2a 11ea 872b c308cda3d138"));
-
-/// The current repository format version ID.
-///
-/// This must be changed any time a backwards-incompatible change is made to the repository
-/// format.
-const VERSION_ID: Uuid = Uuid::from_bytes(hex!("5dca8ec4 bd3a 11ea bedd 1f70522414fd"));
+use crate::repo::state_helpers::{commit, read_state, rollback, write_state};
+use crate::repo::{Object, OpenRepo, ReadOnlyObject, RepoInfo};
 
 /// A type which can be used as a key in a `KeyRepo`.
 pub trait Key: Eq + Hash + Clone + Serialize + DeserializeOwned {}
 
 impl<T> Key for T where T: Eq + Hash + Clone + Serialize + DeserializeOwned {}
 
+/// The state for a `KeyRepo`.
+#[derive(Debug, Serialize, Deserialize)]
+struct KeyRepoState<K: Eq + Hash> {
+    key_table: HashMap<K, ObjectHandle>,
+}
+
 /// An object store which maps keys to seekable binary blobs.
 ///
 /// See [`crate::repo::key`] for more information.
 #[derive(Debug)]
 pub struct KeyRepo<K: Key> {
-    repository: ObjectRepo,
-    key_table: HashMap<K, ObjectHandle>,
+    repo: ObjectRepo,
+    state: KeyRepoState<K>,
 }
 
-impl<K: Key> ConvertRepo for KeyRepo<K> {
-    fn from_repo(mut repository: ObjectRepo) -> crate::Result<Self> {
-        if check_version(&mut repository, VERSION_ID)? {
-            // Read and deserialize the key table.
-            let mut object = repository
-                .managed_object(TABLE_OBJECT_ID)
-                .ok_or(crate::Error::Corrupt)?;
-            let table = object.deserialize()?;
+impl<K: Key> OpenRepo for KeyRepo<K> {
+    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("2a48cbfe 458b 433d ad20 4573e72a33ad"));
 
-            Ok(Self {
-                repository,
-                key_table: table,
-            })
-        } else {
-            Ok(Self {
-                repository,
-                key_table: HashMap::new(),
-            })
-        }
+    fn open_repo(mut repo: ObjectRepo) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let state = read_state(&mut repo)?;
+        Ok(Self { repo, state })
+    }
+
+    fn create_repo(mut repo: ObjectRepo) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let state = KeyRepoState {
+            key_table: HashMap::new(),
+        };
+        write_state(&mut repo, &state)?;
+        Ok(Self { repo, state })
     }
 
     fn into_repo(mut self) -> crate::Result<ObjectRepo> {
-        self.write_state()?;
-        Ok(self.repository)
+        write_state(&mut self.repo, &self.state)?;
+        Ok(self.repo)
     }
 }
 
 impl<K: Key> KeyRepo<K> {
-    /// Write this repository's state to the backing repository.
-    fn write_state(&mut self) -> crate::Result<()> {
-        // Serialize and write the key table.
-        let mut object = self.repository.add_managed(TABLE_OBJECT_ID);
-        object.serialize(&self.key_table)
-    }
-
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
         K: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        self.key_table.contains_key(key)
+        self.state.key_table.contains_key(key)
     }
 
     /// Insert the given `key` into the repository and return a new object.
     ///
     /// If the given `key` already exists in the repository, its object is replaced.
     pub fn insert(&mut self, key: K) -> Object {
-        self.key_table.remove(&key);
+        self.state.key_table.remove(&key);
         let handle = self
+            .state
             .key_table
             .entry(key)
-            .or_insert(self.repository.add_unmanaged());
-        self.repository.unmanaged_object_mut(handle).unwrap()
+            .or_insert(self.repo.add_unmanaged());
+        self.repo.unmanaged_object_mut(handle).unwrap()
     }
 
     /// Remove the object associated with `key` from the repository.
@@ -120,9 +112,9 @@ impl<K: Key> KeyRepo<K> {
         K: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        match self.key_table.remove(key) {
+        match self.state.key_table.remove(key) {
             Some(handle) => {
-                self.repository.remove_unmanaged(&handle);
+                self.repo.remove_unmanaged(&handle);
                 true
             }
             None => false,
@@ -142,8 +134,8 @@ impl<K: Key> KeyRepo<K> {
         K: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        let handle = self.key_table.get(key)?;
-        self.repository.unmanaged_object(handle)
+        let handle = self.state.key_table.get(key)?;
+        self.repo.unmanaged_object(handle)
     }
 
     /// Return an `Object` for reading and writing the data associated with `key`.
@@ -159,13 +151,13 @@ impl<K: Key> KeyRepo<K> {
         K: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        let handle = self.key_table.get_mut(key)?;
-        self.repository.unmanaged_object_mut(handle)
+        let handle = self.state.key_table.get_mut(key)?;
+        self.repo.unmanaged_object_mut(handle)
     }
 
     /// Return an iterator over all the keys in this repository.
     pub fn keys<'a>(&'a self) -> impl Iterator<Item = &'a K> + 'a {
-        self.key_table.keys()
+        self.state.key_table.keys()
     }
 
     /// Copy the object at `source` to `dest`.
@@ -180,13 +172,17 @@ impl<K: Key> KeyRepo<K> {
         K: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        if self.key_table.contains_key(dest.borrow()) {
+        if self.state.key_table.contains_key(dest.borrow()) {
             return Err(crate::Error::AlreadyExists);
         }
 
-        let handle = self.key_table.get(source).ok_or(crate::Error::NotFound)?;
-        let new_handle = self.repository.copy_unmanaged(handle);
-        self.key_table.insert(dest, new_handle);
+        let handle = self
+            .state
+            .key_table
+            .get(source)
+            .ok_or(crate::Error::NotFound)?;
+        let new_handle = self.repo.copy_unmanaged(handle);
+        self.state.key_table.insert(dest, new_handle);
 
         Ok(())
     }
@@ -197,8 +193,7 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
-        self.write_state()?;
-        self.repository.commit()
+        commit(&mut self.repo, &self.state)
     }
 
     /// Roll back all changes made since the last commit.
@@ -207,22 +202,7 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// [`ObjectRepo::rollback`]: crate::repo::object::ObjectRepo::rollback
     pub fn rollback(&mut self) -> crate::Result<()> {
-        // Read and deserialize the key table from the previous commit.
-        let mut object = self
-            .repository
-            .managed_object(TABLE_OBJECT_ID)
-            .ok_or(crate::Error::Corrupt)?;
-        let key_table = match object.deserialize() {
-            Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
-            Err(error) => return Err(error),
-            Ok(value) => value,
-        };
-        drop(object);
-
-        self.repository.rollback()?;
-
-        self.key_table = key_table;
-
+        self.state = rollback(&mut self.repo)?;
         Ok(())
     }
 
@@ -232,28 +212,22 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
     pub fn clean(&mut self) -> crate::Result<()> {
-        self.repository.clean()
+        self.repo.clean()
     }
 
     /// Delete all data in the current instance of the repository.
     ///
-    /// This does not delete data from other instances of the repository. To delete all data from
-    /// all instances of the repository, use [`ConvertRepo::into_repo`] to convert this repository
-    /// to an [`ObjectRepo`] and use [`ObjectRepo::clear_repo`] to delete data from all instances of
-    /// the repository.
+    /// This does not delete data from other instances of the repository.
     ///
     /// No data is reclaimed in the backing data store until changes are committed and [`clean`] is
     /// called.
     ///
-    /// [`ConvertRepo::into_repo`]: crate::repo::ConvertRepo::into_repo
-    /// [`ObjectRepo`]: crate::repo::object::ObjectRepo
-    /// [`ObjectRepo::clear_repo`]: crate::repo::object::ObjectRepo::clear_repo
     /// [`clean`]: crate::repo::key::KeyRepo::clean
     pub fn clear_instance(&mut self) {
-        for handle in self.key_table.values() {
-            self.repository.remove_unmanaged(handle);
+        for handle in self.state.key_table.values() {
+            self.repo.remove_unmanaged(handle);
         }
-        self.key_table.clear()
+        self.state.key_table.clear()
     }
 
     /// Verify the integrity of all the data in the repository.
@@ -266,9 +240,10 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// [`Object::verify`]: crate::repo::Object::verify
     pub fn verify(&self) -> crate::Result<HashSet<&K>> {
-        let report = self.repository.verify()?;
+        let report = self.repo.verify()?;
 
         Ok(self
+            .state
             .key_table
             .iter()
             .filter(|(_, handle)| !report.check_unmanaged(handle))
@@ -282,16 +257,16 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// [`ObjectRepo::change_password`]: crate::repo::object::ObjectRepo::change_password
     pub fn change_password(&mut self, new_password: &[u8]) {
-        self.repository.change_password(new_password)
+        self.repo.change_password(new_password)
     }
 
     /// Return this repository's instance ID.
     pub fn instance(&self) -> Uuid {
-        self.repository.instance()
+        self.repo.instance()
     }
 
     /// Return information about the repository.
     pub fn info(&self) -> RepoInfo {
-        self.repository.info()
+        self.repo.info()
     }
 }

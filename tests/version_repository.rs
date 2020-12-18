@@ -19,8 +19,9 @@
 use std::io::{Read, Write};
 
 use acid_store::repo::version::VersionRepo;
-use acid_store::repo::{OpenMode, OpenOptions};
+use acid_store::repo::{OpenMode, OpenOptions, SwitchInstance, DEFAULT_INSTANCE};
 use acid_store::store::MemoryConfig;
+use acid_store::uuid::Uuid;
 use common::{assert_contains_all, random_buffer};
 
 mod common;
@@ -36,6 +37,45 @@ fn open_repository() -> anyhow::Result<()> {
     repository.commit()?;
     drop(repository);
     OpenOptions::new().open::<VersionRepo<String>, _>(&config)?;
+    Ok(())
+}
+
+#[test]
+fn switching_instance_does_not_roll_back() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    let mut object = repo.insert("test".to_string()).unwrap();
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    let repo: VersionRepo<String> = repo.switch_instance(Uuid::new_v4())?;
+    let repo: VersionRepo<String> = repo.switch_instance(DEFAULT_INSTANCE)?;
+
+    assert!(repo.contains("test"));
+    assert!(repo.object("test").is_some());
+
+    Ok(())
+}
+
+#[test]
+fn switching_instance_does_not_commit() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    let mut object = repo.insert("test".to_string()).unwrap();
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    let repo: VersionRepo<String> = repo.switch_instance(Uuid::new_v4())?;
+    let mut repo: VersionRepo<String> = repo.switch_instance(DEFAULT_INSTANCE)?;
+    repo.rollback()?;
+
+    assert!(!repo.contains("test"));
+    assert!(repo.object("test").is_none());
+
     Ok(())
 }
 

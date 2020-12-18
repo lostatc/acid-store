@@ -27,8 +27,9 @@ use relative_path::RelativePathBuf;
 use tempfile::tempdir;
 
 use acid_store::repo::file::{Entry, FileRepo, NoMetadata, NoSpecialType};
-use acid_store::repo::{OpenMode, OpenOptions};
+use acid_store::repo::{OpenMode, OpenOptions, SwitchInstance, DEFAULT_INSTANCE};
 use acid_store::store::MemoryConfig;
+use acid_store::uuid::Uuid;
 use common::{assert_contains_all, random_buffer};
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
@@ -56,6 +57,50 @@ fn open_repository() -> anyhow::Result<()> {
     repo.commit()?;
     drop(repo);
     OpenOptions::new().open::<FileRepo, _>(&config)?;
+    Ok(())
+}
+
+#[test]
+fn switching_instance_does_not_roll_back() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    repo.create("file", &Entry::file())?;
+    let mut object = repo.open_mut("file")?;
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    let repo: FileRepo = repo.switch_instance(Uuid::new_v4())?;
+    let repo: FileRepo = repo.switch_instance(DEFAULT_INSTANCE)?;
+
+    assert!(repo.exists("file"));
+    assert!(repo.open("file").is_ok());
+
+    Ok(())
+}
+
+#[test]
+fn switching_instance_does_not_commit() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    repo.create("file", &Entry::file())?;
+    let mut object = repo.open_mut("file")?;
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    let repo: FileRepo = repo.switch_instance(Uuid::new_v4())?;
+    let mut repo: FileRepo = repo.switch_instance(DEFAULT_INSTANCE)?;
+    repo.rollback()?;
+
+    assert!(!repo.exists("file"));
+    assert!(matches!(
+        repo.open("file"),
+        Err(acid_store::Error::NotFound)
+    ));
+
     Ok(())
 }
 

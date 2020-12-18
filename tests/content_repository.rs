@@ -20,8 +20,9 @@ use std::collections::HashSet;
 use std::io::Read;
 
 use acid_store::repo::content::{ContentRepo, HashAlgorithm};
-use acid_store::repo::{OpenMode, OpenOptions};
+use acid_store::repo::{OpenMode, OpenOptions, SwitchInstance, DEFAULT_INSTANCE};
 use acid_store::store::MemoryConfig;
+use acid_store::uuid::Uuid;
 use common::random_buffer;
 
 mod common;
@@ -37,6 +38,39 @@ fn open_repository() -> anyhow::Result<()> {
     repository.commit()?;
     drop(repository);
     OpenOptions::new().open::<ContentRepo, _>(&config)?;
+    Ok(())
+}
+
+#[test]
+fn switching_instance_does_not_roll_back() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    let hash = repo.put(random_buffer().as_slice())?;
+
+    let repo: ContentRepo = repo.switch_instance(Uuid::new_v4())?;
+    let repo: ContentRepo = repo.switch_instance(DEFAULT_INSTANCE)?;
+
+    assert!(repo.contains(&hash));
+    assert!(repo.object(&hash).is_some());
+
+    Ok(())
+}
+
+#[test]
+fn switching_instance_does_not_commit() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    let hash = repo.put(random_buffer().as_slice())?;
+
+    let repo: ContentRepo = repo.switch_instance(Uuid::new_v4())?;
+    let mut repo: ContentRepo = repo.switch_instance(DEFAULT_INSTANCE)?;
+    repo.rollback()?;
+
+    assert!(!repo.contains(&hash));
+    assert!(repo.object(&hash).is_none());
+
     Ok(())
 }
 

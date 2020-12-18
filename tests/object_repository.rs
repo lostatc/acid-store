@@ -24,7 +24,7 @@ use uuid::Uuid;
 use acid_store::repo::object::ObjectRepo;
 use acid_store::repo::{peek_info, Encryption, OpenMode, OpenOptions, RepoConfig};
 use acid_store::store::{DataStore, MemoryConfig, OpenStore};
-use common::{assert_contains_all, random_buffer};
+use common::random_buffer;
 
 mod common;
 
@@ -203,27 +203,6 @@ fn managed_copy_has_same_contents(repo_config: RepoConfig) -> anyhow::Result<()>
 }
 
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn list_managed_objects(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-
-    let id_1 = Uuid::new_v4();
-    let id_2 = Uuid::new_v4();
-    let id_3 = Uuid::new_v4();
-
-    repo.add_managed(id_1);
-    repo.add_managed(id_2);
-    repo.add_managed(id_3);
-
-    let expected = vec![id_1, id_2, id_3];
-    let actual = repo.list_managed();
-
-    assert_contains_all(actual, expected);
-
-    Ok(())
-}
-
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
 fn unmanaged_object_is_not_accessible_from_another_instance(
     repo_config: RepoConfig,
 ) -> anyhow::Result<()> {
@@ -255,35 +234,6 @@ fn managed_object_is_not_accessible_from_another_instance(
     repo.set_instance(Uuid::new_v4());
 
     assert!(repo.managed_object(id).is_none());
-
-    Ok(())
-}
-
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn list_managed_objects_in_different_instance(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-    let instance_id = repo.instance();
-
-    let id_1 = Uuid::new_v4();
-    let id_2 = Uuid::new_v4();
-    repo.add_managed(id_1);
-    repo.add_managed(id_2);
-
-    repo.set_instance(Uuid::new_v4());
-
-    let id_3 = Uuid::new_v4();
-    repo.add_managed(id_3);
-
-    let expected = vec![id_3];
-    let actual = repo.list_managed();
-    assert_contains_all(actual, expected);
-
-    repo.set_instance(instance_id);
-
-    let expected = vec![id_1, id_2];
-    let actual = repo.list_managed();
-    assert_contains_all(actual, expected);
 
     Ok(())
 }
@@ -458,7 +408,6 @@ fn managed_objects_are_removed_on_rollaback(repo_config: RepoConfig) -> anyhow::
 
     assert!(!repo.contains_managed(id));
     assert!(repo.managed_object(id).is_none());
-    assert!(repo.list_managed().next().is_none());
 
     Ok(())
 }
