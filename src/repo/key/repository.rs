@@ -248,11 +248,13 @@ impl<K: Key> KeyRepo<K> {
     /// to an [`ObjectRepo`] and use [`ObjectRepo::clear_repo`] to delete data from all instances of
     /// the repository.
     ///
-    /// No data is reclaimed in the backing data store until changes are committed.
+    /// No data is reclaimed in the backing data store until changes are committed and [`clean`] is
+    /// called.
     ///
     /// [`ConvertRepo::into_repo`]: crate::repo::ConvertRepo::into_repo
     /// [`ObjectRepo`]: crate::repo::object::ObjectRepo
     /// [`ObjectRepo::clear_repo`]: crate::repo::object::ObjectRepo::clear_repo
+    /// [`clean`]: crate::repo::key::KeyRepo::clean
     pub fn clear_instance(&mut self) {
         for handle in self.key_table.values() {
             self.repository.remove_unmanaged(handle);

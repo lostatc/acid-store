@@ -642,7 +642,10 @@ impl ObjectRepo {
     ///
     /// This deletes all managed and unmanaged objects in this repository.
     ///
-    /// No data is reclaimed in the backing data store until changes are committed.
+    /// No data is reclaimed in the backing data store until changes are committed and [`clean`] is
+    /// called.
+    ///
+    /// [`clean`]: crate::repo::object::ObjectRepo::clean
     pub fn clear_repo(&mut self) {
         // Because this method cannot return early, it doesn't matter which order we do these in.
         self.handle_table = IdTable::new();
