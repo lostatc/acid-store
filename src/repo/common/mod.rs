@@ -21,7 +21,7 @@ pub use self::convert::ConvertRepo;
 pub use self::encryption::{Encryption, ResourceLimit};
 pub use self::metadata::{peek_info, RepoInfo};
 pub use self::object::{ContentId, Object, ObjectHandle, ReadOnlyObject};
-pub use self::open_options::{OpenMode, OpenOptions};
+pub use self::open_options::{OpenMode, OpenOptions, DEFAULT_INSTANCE};
 pub use self::packing::Packing;
 pub use self::report::IntegrityReport;
 pub use self::repository::ObjectRepo;
