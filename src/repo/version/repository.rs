@@ -353,6 +353,16 @@ impl<K: Key> VersionRepo<K> {
         self.state.key_table.clear();
     }
 
+    /// Delete all data in all instances of the repository.
+    ///
+    /// See [`ObjectRepo::clear_repo`] for details.
+    ///
+    /// [`ObjectRepo::clear_repo`]: crate::repo::object::ObjectRepo::clear_repo
+    pub fn clear_repo(&mut self) {
+        self.repo.clear_repo();
+        self.state.key_table.clear();
+    }
+
     /// Change the password for this repository.
     ///
     /// See [`ObjectRepo::change_password`] for details.

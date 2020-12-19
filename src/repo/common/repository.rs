@@ -637,9 +637,7 @@ impl ObjectRepo {
         Ok(())
     }
 
-    /// Delete all data in all instances of this repository.
-    ///
-    /// This deletes all managed and unmanaged objects in this repository.
+    /// Delete all data in all instances of the repository.
     ///
     /// No data is reclaimed in the backing data store until changes are committed and [`clean`] is
     /// called.
