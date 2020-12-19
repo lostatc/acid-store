@@ -226,6 +226,16 @@ impl ContentRepo {
         self.state.hash_table.clear();
     }
 
+    /// Delete all data in all instances of the repository.
+    ///
+    /// See [`ObjectRepo::clear_repo`] for details.
+    ///
+    /// [`ObjectRepo::clear_repo`]: crate::repo::object::ObjectRepo::clear_repo
+    pub fn clear_repo(&mut self) {
+        self.repo.clear_repo();
+        self.state.hash_table.clear();
+    }
+
     /// Verify the integrity of all the data in the repository.
     ///
     /// This returns the set of hashes of objects which are corrupt.
