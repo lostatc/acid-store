@@ -15,7 +15,7 @@
  */
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use hex_literal::hex;
 use once_cell::sync::Lazy;
@@ -345,6 +345,7 @@ impl OpenOptions {
             instance_id: self.instance,
             managed,
             handle_table,
+            transaction_id: Arc::new(Uuid::new_v4()),
         })
     }
 
@@ -469,6 +470,7 @@ impl OpenOptions {
             instance_id: self.instance,
             managed,
             handle_table,
+            transaction_id: Arc::new(Uuid::new_v4()),
         };
 
         Ok(repository)

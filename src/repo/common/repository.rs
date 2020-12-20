@@ -16,6 +16,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::sync::Arc;
 
 use hex_literal::hex;
 use rmp_serde::{from_read, to_vec};
@@ -33,6 +34,7 @@ use super::id_table::IdTable;
 use super::metadata::{Header, RepoInfo};
 use super::object::{chunk_hash, Object, ObjectHandle, ReadOnlyObject};
 use super::report::IntegrityReport;
+use super::savepoint::Savepoint;
 use super::state::RepoState;
 
 /// The block ID of the block which stores the repository metadata.
@@ -64,6 +66,11 @@ pub struct ObjectRepo {
     /// We use this to determine whether a handle is contained in the repository without actually
     /// storing it.
     pub(super) handle_table: IdTable,
+
+    /// A unique ID which represents the current transaction.
+    ///
+    /// This ID changes each time `commit` is called and it is used to invalidate savepoints.
+    pub(super) transaction_id: Arc<Uuid>,
 }
 
 impl OpenRepo for ObjectRepo {
@@ -183,10 +190,12 @@ impl ObjectRepo {
         // the handles, the repository will remove that handle ID from the `handle_table` and
         // prevent the data associated with any clones from being removed.
         //
-        // `ObjectHandle` does not implement `Clone` for this reason, but it could still happen
-        // since `ObjectHandle` is serializable. As an added precaution in case this happens, we
-        // change the handle's handle ID every time we modify it so that we never end up with two
-        // different handles with the same ID.
+        // To get around this, we just change the handle ID every time we modify it so that we never
+        // end up with two different handles with the same ID. This is the "copy-on-write" behavior
+        // explained in the API documentation.
+        //
+        // We could disallow cloning object handles, but it would still be possible to run into this
+        // behavior, through serializing and deserializing them.
         let old_handle_id = mem::replace(&mut handle.handle_id, self.handle_table.next());
         self.handle_table.recycle(old_handle_id);
         for chunk in &handle.chunks {
@@ -316,7 +325,7 @@ impl ObjectRepo {
             Some(handle) => handle,
             None => return false,
         };
-        let new_handle = self.copy_unmanaged(&old_handle);
+        let new_handle = old_handle.clone();
         self.managed_map_mut().insert(source, old_handle);
         self.managed_map_mut().insert(dest, new_handle);
         true
@@ -388,6 +397,9 @@ impl ObjectRepo {
     /// If this method returns `Ok`, changes have been committed. If this method returns `Err`,
     /// changes have not been committed.
     ///
+    /// If changes are committed, this method invalidates all savepoints which are associated with
+    /// this repository.
+    ///
     /// To reclaim space from deleted objects in the backing data store, you must call [`clean`]
     /// after changes are committed.
     ///
@@ -429,7 +441,13 @@ impl ObjectRepo {
 
         // Encode the header and write it to the data store, atomically completing the commit.
         let encoded_header = self.state.encode_data(serialized_header.as_slice())?;
-        self.write_header_bytes(encoded_header.as_slice())
+        self.write_header_bytes(encoded_header.as_slice())?;
+
+        // Update the transaction ID to invalidate any savepoints which were created since the last
+        // commit.
+        self.transaction_id = Arc::new(Uuid::new_v4());
+
+        Ok(())
     }
 
     /// Roll back all changes made since the last commit.
@@ -476,6 +494,68 @@ impl ObjectRepo {
         self.handle_table = old_handle_table;
 
         Ok(())
+    }
+
+    /// Create a new `Savepoint` representing the current state of the repository.
+    ///
+    /// You can restore the repository to this savepoint using [`restore`].
+    ///
+    /// Creating a savepoint does not commit changes to the repository; if the repository is
+    /// dropped, it will revert to the previous commit and not the most recent savepoint.
+    ///
+    /// See [`Savepoint`] for details.
+    ///
+    /// [`restore`]: crate::repo::object::ObjectRepo::restore
+    /// [`Savepoint`]: crate::repo::Savepoint
+    pub fn savepoint(&self) -> Savepoint {
+        Savepoint {
+            // The header could be quite large, so we box it to avoid storing it on the stack.
+            header: Box::new(Header {
+                chunks: self.state.chunks.clone(),
+                packs: self.state.packs.clone(),
+                managed: self.managed.clone(),
+                handle_table: self.handle_table.clone(),
+            }),
+            transaction_id: Arc::downgrade(&self.transaction_id),
+        }
+    }
+
+    /// Restore the repository to the given `savepoint`.
+    ///
+    /// This method functions similarly to [`rollback`], but instead of restoring the repository to
+    /// the previous commit, it restores the repository to the given `savepoint`.
+    ///
+    /// This returns `true` if the repository was restored or `false` if the given savepoint was
+    /// invalid or not associated with this repository.
+    ///
+    /// This method affects all instances of the repository.
+    ///
+    /// See [`Savepoint`] for details.
+    ///
+    /// [`rollback`]: crate::repo::object::ObjectRepo::rollback
+    /// [`Savepoint`]: crate::repo::Savepoint
+    pub fn restore(&mut self, savepoint: Savepoint) -> bool {
+        // Check if the savepoint is valid and this is the repository associated with it.
+        match savepoint.transaction_id.upgrade() {
+            None => return false,
+            Some(transaction_id) if transaction_id != self.transaction_id => return false,
+            _ => (),
+        }
+
+        let Header {
+            chunks: old_chunks,
+            packs: old_packs,
+            managed: old_managed,
+            handle_table: old_handle_table,
+        } = *savepoint.header;
+
+        // Replace the current header values with the ones from the savepoint.
+        self.state.chunks = old_chunks;
+        self.state.packs = old_packs;
+        self.managed = old_managed;
+        self.handle_table = old_handle_table;
+
+        true
     }
 
     /// Clean up the repository to reclaim space in the backing data store.

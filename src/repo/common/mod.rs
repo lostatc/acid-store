@@ -25,6 +25,7 @@ pub use self::open_repo::{OpenRepo, SwitchInstance};
 pub use self::packing::Packing;
 pub use self::report::IntegrityReport;
 pub use self::repository::ObjectRepo;
+pub use self::savepoint::Savepoint;
 pub use self::version_id::check_version;
 
 mod chunk_store;
@@ -41,5 +42,6 @@ mod open_repo;
 mod packing;
 mod report;
 mod repository;
+mod savepoint;
 mod state;
 mod version_id;

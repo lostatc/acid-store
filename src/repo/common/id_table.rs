@@ -14,15 +14,16 @@
  * limitations under the License.
  */
 
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+
+use serde::{Deserialize, Serialize};
 
 /// An ID value which is unique within the same `IdTable`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct UniqueId(u32);
 
 /// A table for allocating `UniqueId` values.
-#[derive(Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
 pub struct IdTable {
     /// The highest used ID value (the high water mark).
     highest: u32,

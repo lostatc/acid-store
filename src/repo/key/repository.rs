@@ -26,7 +26,7 @@ use uuid::Uuid;
 
 use crate::repo::object::{ObjectHandle, ObjectRepo};
 use crate::repo::state_helpers::{commit, read_state, rollback, write_state};
-use crate::repo::{Object, OpenRepo, ReadOnlyObject, RepoInfo};
+use crate::repo::{Object, OpenRepo, ReadOnlyObject, RepoInfo, Savepoint};
 
 /// A type which can be used as a key in a `KeyRepo`.
 pub trait Key: Eq + Hash + Clone + Serialize + DeserializeOwned {}
@@ -204,6 +204,37 @@ impl<K: Key> KeyRepo<K> {
     pub fn rollback(&mut self) -> crate::Result<()> {
         self.state = rollback(&mut self.repo)?;
         Ok(())
+    }
+
+    /// Create a new `Savepoint` representing the current state of the repository.
+    ///
+    /// See [`ObjectRepo::savepoint`] for details.
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`ObjectRepo::savepoint`]: crate::repo::object::ObjectRepo::savepoint
+    pub fn savepoint(&mut self) -> crate::Result<Savepoint> {
+        write_state(&mut self.repo, &self.state)?;
+        Ok(self.repo.savepoint())
+    }
+
+    /// Restore the repository to the given `savepoint`.
+    ///
+    /// See [`ObjectRepo::restore`] for details.
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`ObjectRepo::restore`]: crate::repo::object::ObjectRepo::restore
+    pub fn restore(&mut self, savepoint: Savepoint) -> crate::Result<bool> {
+        let result = self.repo.restore(savepoint);
+        self.state = read_state(&mut self.repo)?;
+        Ok(result)
     }
 
     /// Clean up the repository to reclaim space in the backing data store.
