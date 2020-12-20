@@ -29,11 +29,6 @@ const STATE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("649b5a8c 8da6 4faf 811b 848
 /// This is necessary to support rolling back changes atomically.
 const PREV_STATE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("c995cd36 61ee 49f9 ae51 2ae0c706f6ce"));
 
-/// The ID of the managed object which is used to temporarily store the repository state.
-///
-/// This is necessary to support rolling back changes atomically.
-const TEMP_STATE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("256cc7c0 4f9a 47a1 b9b2 8968ae4e94c8"));
-
 /// Read the current state from the backing `repo`.
 pub fn read_state<S: DeserializeOwned>(repo: &mut ObjectRepo) -> crate::Result<S> {
     let mut object = repo
@@ -62,24 +57,22 @@ pub fn commit<S: Serialize>(repo: &mut ObjectRepo, state: &S) -> crate::Result<(
     object.serialize(state)?;
     drop(object);
 
-    // Copy the previous repository state to a temporary object so we can restore it if
-    // committing the backing repository fails.
-    repo.copy_managed(PREV_STATE_OBJECT_ID, TEMP_STATE_OBJECT_ID);
+    // Create a savepoint in case the commit fails.
+    let savepoint = repo.savepoint();
 
     // Overwrite the previous repository state with the current repository state so that if the
     // commit succeeds, future rollbacks will restore to this point.
     repo.copy_managed(STATE_OBJECT_ID, PREV_STATE_OBJECT_ID);
 
     // Attempt to commit changes to the backing repository.
-    match repo.commit() {
-        Ok(_) => Ok(()),
-        Err(error) => {
-            // If the commit fails, restore the previous repository state from the temporary
-            // object so we can still roll back the changes.
-            repo.copy_managed(TEMP_STATE_OBJECT_ID, PREV_STATE_OBJECT_ID);
-            Err(error)
-        }
+    let commit_result = repo.commit();
+
+    // If the commit fails, restore to the savepoint so that we can still roll back changes.
+    if commit_result.is_err() {
+        repo.restore(savepoint);
     }
+
+    commit_result
 }
 
 /// Roll back all changes made since the last commit.

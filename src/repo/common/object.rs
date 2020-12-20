@@ -34,7 +34,7 @@ use super::state::{ChunkLocation, ObjectState};
 /// A checksum used for uniquely identifying a chunk.
 pub type ChunkHash = [u8; blake3::OUT_LEN];
 
-/// Compute the BLAKE2 checksum of the given `data` and return the result.
+/// Compute the BLAKE3 checksum of the given `data` and return the result.
 pub fn chunk_hash(data: &[u8]) -> ChunkHash {
     blake3::hash(data).into()
 }
@@ -55,10 +55,69 @@ pub struct Chunk {
 /// be used to read or write data directly, but it can be used with [`ObjectRepo`] to get an
 /// [`Object`] or a [`ReadOnlyObject`].
 ///
+/// Two object handles are equal if they reference the same object. Object handles which reference
+/// different objects that have the same contents are not equal. To compare objects by contents,
+/// use [`content_id`].
+///
+/// An object handle can be cloned to get a new object handle which initially references the same
+/// object. However, modifying the object (via [`ObjectRepo::unmanaged_object_mut`]) will trigger a
+/// copy-on-write, creating a new object. At this point, the two object handles will no longer
+/// reference the same object. If you want two object handles which reference different objects with
+/// the same contents, you can use [`ObjectRepo::copy_unmanaged`] to copy an object.
+///
+/// # Examples
+/// This example demonstrates the copy-on-write behavior of object handles when they are cloned.
+/// ```
+/// # use std::io::Write;
+/// # use acid_store::repo::{OpenOptions, OpenMode, object::ObjectRepo};
+/// # use acid_store::store::MemoryConfig;
+/// #
+/// # let mut repo: ObjectRepo = OpenOptions::new()
+/// #     .mode(OpenMode::CreateNew)
+/// #     .open(&MemoryConfig::new())
+/// #     .unwrap();
+/// let mut handle = repo.add_unmanaged();
+/// let handle_clone = handle.clone();
+///
+/// // The two handles initially reference the same object.
+/// assert_eq!(handle, handle_clone);
+///
+/// let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+/// object.write_all(b"making some changes").unwrap();
+/// object.flush().unwrap();
+/// drop(object);
+///
+/// // The two handles no longer reference the same object.
+/// assert_ne!(handle, handle_clone);
+/// ```
+///
+/// This example demonstrates the difference between two handles which reference the same object and
+/// two handles which reference different objects with the same contents.
+/// ```
+/// # use acid_store::repo::{OpenOptions, OpenMode, object::ObjectRepo};
+/// # use acid_store::store::MemoryConfig;
+/// #
+/// # let mut repo: ObjectRepo = OpenOptions::new()
+/// #     .mode(OpenMode::CreateNew)
+/// #     .open(&MemoryConfig::new())
+/// #     .unwrap();
+/// let mut first_handle = repo.add_unmanaged();
+/// let mut second_handle = repo.copy_unmanaged(&first_handle);
+///
+/// // The two handles do not reference the same object.
+/// assert_ne!(first_handle, second_handle);
+///
+/// // The two objects have the same contents.
+/// assert_eq!(first_handle.content_id(), second_handle.content_id());
+/// ```
+///
 /// [`ObjectRepo`]: crate::repo::object::ObjectRepo
 /// [`Object`]: crate::repo::Object
 /// [`ReadOnlyObject`]: crate::repo::ReadOnlyObject
-#[derive(Debug, Serialize, Deserialize)]
+/// [`content_id`]: crate::repo::object::ObjectHandle::content_id
+/// [`ObjectRepo::unmanaged_object_mut`]: crate::repo::object::ObjectRepo::unmanaged_object_mut
+/// [`ObjectRepo::copy_unmanaged`]: crate::repo::object::ObjectRepo::copy_unmanaged
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectHandle {
     // We need both the `repo_id` and the `instance_id` to uniquely identify the instance an object
     // handle is associated with because a user could give two instances from different repositories
@@ -83,6 +142,14 @@ pub struct ObjectHandle {
 
     /// The checksums of the chunks which make up the data.
     pub(super) chunks: Vec<Chunk>,
+}
+
+impl PartialEq for ObjectHandle {
+    fn eq(&self, other: &Self) -> bool {
+        self.repo_id == other.repo_id
+            && self.instance_id == other.instance_id
+            && self.handle_id == other.handle_id
+    }
 }
 
 impl ObjectHandle {

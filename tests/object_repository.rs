@@ -412,6 +412,106 @@ fn managed_objects_are_removed_on_rollaback(repo_config: RepoConfig) -> anyhow::
     Ok(())
 }
 
+#[test]
+fn objects_are_removed_on_restore() -> anyhow::Result<()> {
+    let mut repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
+    let id = Uuid::new_v4();
+
+    let savepoint = repo.savepoint();
+
+    let mut object = repo.add_managed(id);
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    let mut handle = repo.add_unmanaged();
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    assert!(savepoint.is_valid());
+    assert!(repo.restore(savepoint));
+
+    assert!(!repo.contains_managed(id));
+    assert!(repo.managed_object(id).is_none());
+    assert!(!repo.contains_unmanaged(&handle));
+    assert!(repo.unmanaged_object(&handle).is_none());
+
+    Ok(())
+}
+
+#[test]
+fn restore_can_redo_changes() -> anyhow::Result<()> {
+    let mut repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
+    let id = Uuid::new_v4();
+
+    let mut object = repo.add_managed(id);
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    let before_savepoint = repo.savepoint();
+
+    repo.remove_managed(id);
+
+    let after_savepoint = repo.savepoint();
+
+    assert!(repo.restore(before_savepoint));
+    assert!(repo.contains_managed(id));
+    assert!(repo.managed_object(id).is_some());
+
+    assert!(repo.restore(after_savepoint));
+    assert!(!repo.contains_managed(id));
+    assert!(repo.managed_object(id).is_none());
+
+    Ok(())
+}
+
+#[test]
+fn committing_repo_invalidates_savepoint() -> anyhow::Result<()> {
+    let mut repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
+
+    let before_savepoint = repo.savepoint();
+    repo.commit()?;
+
+    assert!(!before_savepoint.is_valid());
+    assert!(!repo.restore(before_savepoint));
+
+    let after_savepoint = repo.savepoint();
+
+    assert!(after_savepoint.is_valid());
+    assert!(repo.restore(after_savepoint));
+
+    Ok(())
+}
+
+#[test]
+fn dropping_repo_invalidates_savepoint() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let repo = create_repo(RepoConfig::default(), &store_config)?;
+
+    let savepoint = repo.savepoint();
+    drop(repo);
+
+    assert!(!savepoint.is_valid());
+
+    Ok(())
+}
+
+#[test]
+fn savepoint_must_be_associated_with_repo() -> anyhow::Result<()> {
+    let first_repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
+    let mut second_repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
+
+    let savepoint = first_repo.savepoint();
+
+    assert!(savepoint.is_valid());
+    assert!(!second_repo.restore(savepoint));
+
+    Ok(())
+}
+
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
 #[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
 #[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]

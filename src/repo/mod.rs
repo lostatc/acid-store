@@ -114,8 +114,8 @@
 
 pub use self::common::{
     peek_info, Chunking, Compression, ContentId, Encryption, Object, OpenMode, OpenOptions,
-    OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit, SwitchInstance,
-    DEFAULT_INSTANCE,
+    OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit, Savepoint,
+    SwitchInstance, DEFAULT_INSTANCE,
 };
 
 /// A low-level repository type which provides more direct access to the underlying storage.
