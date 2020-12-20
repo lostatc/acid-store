@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 
 /// An ID value which is unique within the same `IdTable`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct UniqueId(u32);
 
 /// A table for allocating `UniqueId` values.
