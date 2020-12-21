@@ -30,7 +30,7 @@ use super::object::{Chunk, ObjectHandle};
 use super::state::{ChunkInfo, PackIndex};
 
 /// The repository state which is persisted to the data store on each commit.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Header {
     /// The map of chunks to information about them.
     pub chunks: HashMap<Chunk, ChunkInfo>,

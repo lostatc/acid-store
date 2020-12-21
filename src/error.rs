@@ -54,10 +54,6 @@ pub enum Error {
     #[error("This repository is an unsupported format.")]
     UnsupportedRepo,
 
-    /// The given savepoint is invalid.
-    #[error("The given savepoint is invalid.")]
-    InvalidSavepoint,
-
     /// This file type is not supported.
     #[error("This file type is not supported.")]
     FileType,
