@@ -18,17 +18,14 @@ use std::sync::Weak;
 
 use uuid::Uuid;
 
-use super::metadata::Header;
-
 /// A target for rolling back changes in a repository.
 ///
 /// Repositories support creating savepoints and later restoring to those savepoints, undoing any
 /// changes made since they were created. You can use [`ObjectRepo::savepoint`] to create a
 /// savepoint and [`ObjectRepo::restore`] to restore to a savepoint.
 ///
-/// Savepoints aren't just used to "undo" changes; they can also be used to "redo" changes. If you
-/// create a savepoint `A` and then later create a savepoint `B`, you can restore to `A` and *then*
-/// restore to `B`, even though `B` was created after `A`.
+/// Restoring to a savepoint will invalidate any savepoints created after them. If you create a
+/// savepoint `A` and then later create a savepoint `B`, restoring to `A` will invalidate `B`.
 ///
 /// You can only restore to savepoints created since the last commit; once changes in a repository
 /// are committed, all savepoints associated with that repository are invalidated. A savepoint is
@@ -38,22 +35,19 @@ use super::metadata::Header;
 /// [`ObjectRepo::savepoint`]: crate::repo::object::ObjectRepo::savepoint
 /// [`ObjectRepo::restore`]: crate::repo::object::ObjectRepo::restore
 /// [`is_valid`]: crate::repo::Savepoint::is_valid
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Savepoint {
-    /// The header at the point when this savepoint was created.
+    /// A weak reference to the UUID of this savepoint.
     ///
-    /// Restoring from this savepoint will replace the repository's current header with this value.
-    pub(super) header: Box<Header>,
-
-    /// A weak reference to the ID of the transaction this savepoint is associated with.
-    ///
-    /// This value is used to invalidate the savepoint once the repository is committed.
-    pub(super) transaction_id: Weak<Uuid>,
+    /// This ID is a weak reference so that `is_valid` can determine whether the savepoint is valid
+    /// without having to call a method on the repository. If the savepoint ID has been dropped,
+    /// that means the savepoint has been invalidated.
+    pub(super) savepoint_id: Weak<Uuid>,
 }
 
 impl Savepoint {
     /// Return whether this savepoint is valid.
     pub fn is_valid(&self) -> bool {
-        self.transaction_id.upgrade().is_some()
+        self.savepoint_id.upgrade().is_some()
     }
 }

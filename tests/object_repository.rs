@@ -417,7 +417,7 @@ fn objects_are_removed_on_restore() -> anyhow::Result<()> {
     let mut repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
     let id = Uuid::new_v4();
 
-    let savepoint = repo.savepoint();
+    let savepoint = repo.savepoint()?;
 
     let mut object = repo.add_managed(id);
     object.write_all(random_buffer().as_slice())?;
@@ -431,7 +431,7 @@ fn objects_are_removed_on_restore() -> anyhow::Result<()> {
     drop(object);
 
     assert!(savepoint.is_valid());
-    assert!(repo.restore(savepoint));
+    assert!(repo.restore(&savepoint).is_ok());
 
     assert!(!repo.contains_managed(id));
     assert!(repo.managed_object(id).is_none());
@@ -451,17 +451,17 @@ fn restore_can_redo_changes() -> anyhow::Result<()> {
     object.flush()?;
     drop(object);
 
-    let before_savepoint = repo.savepoint();
+    let before_savepoint = repo.savepoint()?;
 
     repo.remove_managed(id);
 
-    let after_savepoint = repo.savepoint();
+    let after_savepoint = repo.savepoint()?;
 
-    assert!(repo.restore(before_savepoint));
+    assert!(repo.restore(&before_savepoint).is_ok());
     assert!(repo.contains_managed(id));
     assert!(repo.managed_object(id).is_some());
 
-    assert!(repo.restore(after_savepoint));
+    assert!(repo.restore(&after_savepoint).is_ok());
     assert!(!repo.contains_managed(id));
     assert!(repo.managed_object(id).is_none());
 
@@ -472,16 +472,19 @@ fn restore_can_redo_changes() -> anyhow::Result<()> {
 fn committing_repo_invalidates_savepoint() -> anyhow::Result<()> {
     let mut repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
 
-    let before_savepoint = repo.savepoint();
+    let before_savepoint = repo.savepoint()?;
     repo.commit()?;
 
     assert!(!before_savepoint.is_valid());
-    assert!(!repo.restore(before_savepoint));
+    assert!(matches!(
+        repo.restore(&before_savepoint),
+        Err(acid_store::Error::InvalidSavepoint)
+    ));
 
-    let after_savepoint = repo.savepoint();
+    let after_savepoint = repo.savepoint()?;
 
     assert!(after_savepoint.is_valid());
-    assert!(repo.restore(after_savepoint));
+    assert!(repo.restore(&after_savepoint).is_ok());
 
     Ok(())
 }
@@ -489,9 +492,9 @@ fn committing_repo_invalidates_savepoint() -> anyhow::Result<()> {
 #[test]
 fn dropping_repo_invalidates_savepoint() -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
-    let repo = create_repo(RepoConfig::default(), &store_config)?;
+    let mut repo = create_repo(RepoConfig::default(), &store_config)?;
 
-    let savepoint = repo.savepoint();
+    let savepoint = repo.savepoint()?;
     drop(repo);
 
     assert!(!savepoint.is_valid());
@@ -501,13 +504,16 @@ fn dropping_repo_invalidates_savepoint() -> anyhow::Result<()> {
 
 #[test]
 fn savepoint_must_be_associated_with_repo() -> anyhow::Result<()> {
-    let first_repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
+    let mut first_repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
     let mut second_repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
 
-    let savepoint = first_repo.savepoint();
+    let savepoint = first_repo.savepoint()?;
 
     assert!(savepoint.is_valid());
-    assert!(!second_repo.restore(savepoint));
+    assert!(matches!(
+        second_repo.restore(&savepoint),
+        Err(acid_store::Error::InvalidSavepoint)
+    ));
 
     Ok(())
 }
