@@ -15,7 +15,6 @@
  */
 
 use std::collections::{HashMap, HashSet};
-use std::io::Write;
 use std::mem;
 use std::sync::Arc;
 
@@ -68,11 +67,11 @@ pub struct ObjectRepo {
     /// storing it.
     pub(super) handle_table: IdTable,
 
-    /// A map of savepoint IDs to object handles.
+    /// The unique ID for the current transaction.
     ///
-    /// Each object stores the serialized `Header` of the repository at the point the savepoint was
-    /// created.
-    pub(super) savepoints: HashMap<Arc<Uuid>, ObjectHandle>,
+    /// This ID changes each time the repository is opened or committed. It is used to invalidate
+    /// savepoints.
+    pub(super) transaction_id: Arc<Uuid>,
 }
 
 impl OpenRepo for ObjectRepo {
@@ -469,31 +468,16 @@ impl ObjectRepo {
     ///
     /// [`clean`]: crate::repo::object::ObjectRepo::clean
     pub fn commit(&mut self) -> crate::Result<()> {
-        // Save a backup of the header in case we need to abort the commit.
-        let backup_header = self.clone_header();
-
-        // Remove the unmanaged objects which store the serialized header for each savepoint.
-        // We must do this before we commit changes so that this change is included in the commit.
-        let savepoint_handles = self.savepoints.values().cloned().collect::<Vec<_>>();
-        for handle in &savepoint_handles {
-            self.remove_unmanaged(&handle);
-        }
-
         // Serialize the header.
         let serialized_header = self.serialize_header();
 
         // Write the serialized header to the data store, atomically completing the commit. If this
         // completes successfully, changes have been committed and this method MUST return `Ok`.
-        if let Err(error) = self.write_serialized_header(serialized_header.as_slice()) {
-            // Restore from the backup header so that the savepoints are not removed. Savepoints
-            // should only be removed if the commit succeeds.
-            self.restore_header(backup_header);
-            return Err(error);
-        }
+        self.write_serialized_header(serialized_header.as_slice())?;
 
         // Now that the commit has succeeded, we must invalidate all savepoints associated with this
         // repository.
-        self.savepoints.clear();
+        self.transaction_id = Arc::new(Uuid::new_v4());
 
         Ok(())
     }
@@ -544,33 +528,13 @@ impl ObjectRepo {
     ///
     /// See [`Savepoint`] for details.
     ///
-    /// # Errors
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    ///
     /// [`restore`]: crate::repo::object::ObjectRepo::restore
     /// [`Savepoint`]: crate::repo::Savepoint
-    pub fn savepoint(&mut self) -> crate::Result<Savepoint> {
-        // Because we're storing this in an object and not directly in a block in the backing data
-        // store, we don't need to encode it.
-        let serialized_header = self.serialize_header();
-
-        // Write the serialized header to an object.
-        let mut handle = self.add_unmanaged();
-        let mut object = self.unmanaged_object_mut(&mut handle).unwrap();
-        object.write_all(serialized_header.as_slice())?;
-        object.flush()?;
-        drop(object);
-
-        let savepoint_id = Arc::new(Uuid::new_v4());
-        let weak_savepoint_id = Arc::downgrade(&savepoint_id);
-
-        self.savepoints.insert(savepoint_id, handle);
-
-        Ok(Savepoint {
-            savepoint_id: weak_savepoint_id,
-        })
+    pub fn savepoint(&self) -> Savepoint {
+        Savepoint {
+            header: Arc::new(self.clone_header()),
+            transaction_id: Arc::downgrade(&self.transaction_id),
+        }
     }
 
     /// Restore the repository to the given `savepoint`.
@@ -578,44 +542,31 @@ impl ObjectRepo {
     /// This method functions similarly to [`rollback`], but instead of restoring the repository to
     /// the previous commit, it restores the repository to the given `savepoint`.
     ///
-    /// If this method returns `Ok`, the repository has been restored. If this method returns `Err`,
-    /// the repository is unchanged.
+    /// This returns `true` if the repository was restored or `false` if the given `savepoint` was
+    /// invalid or not associated with this repository.
     ///
     /// This method affects all instances of the repository.
     ///
     /// See [`Savepoint`] for details.
     ///
-    /// # Errors
-    /// - `Error::InvalidSavepoint`: The given savepoint is invalid or not associated with this
-    /// repository.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    ///
     /// [`rollback`]: crate::repo::object::ObjectRepo::rollback
     /// [`Savepoint`]: crate::repo::Savepoint
-    pub fn restore(&mut self, savepoint: &Savepoint) -> crate::Result<()> {
-        // Check if the savepoint is valid and get the handle associated with it.
-        let savepoint_id = savepoint
-            .savepoint_id
-            .upgrade()
-            .ok_or(crate::Error::InvalidSavepoint)?;
-        let handle = self
-            .savepoints
-            .get(&savepoint_id)
-            .ok_or(crate::Error::InvalidSavepoint)?;
+    pub fn restore(&mut self, savepoint: &Savepoint) -> bool {
+        match savepoint.transaction_id.upgrade() {
+            // The savepoint is invalid.
+            None => return false,
+            // The savepoint is valid but not associated with this repository.
+            Some(transaction_id) if transaction_id != self.transaction_id => return false,
+            _ => (),
+        }
 
-        // Read and deserialize the header associated with this savepoint.
-        let mut object = self
-            .unmanaged_object(&handle)
-            .ok_or(crate::Error::InvalidSavepoint)?;
-        let header = object.deserialize()?;
+        // Clone the repository header itself, not the pointer.
+        let header = (*savepoint.header).clone();
 
-        // Restore the repository from the header. Once this completes, the repository has been
-        // restored successfully and this method MUST return `Ok`.
+        // Restore the repository from the header.
         self.restore_header(header);
 
-        Ok(())
+        true
     }
 
     /// Clean up the repository to reclaim space in the backing data store.

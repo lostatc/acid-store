@@ -210,21 +210,33 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// See [`ObjectRepo::savepoint`] for details.
     ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    ///
     /// [`ObjectRepo::savepoint`]: crate::repo::object::ObjectRepo::savepoint
     pub fn savepoint(&mut self) -> crate::Result<Savepoint> {
         write_state(&mut self.repo, &self.state)?;
-        self.repo.savepoint()
+        Ok(self.repo.savepoint())
     }
 
     /// Restore the repository to the given `savepoint`.
     ///
     /// See [`ObjectRepo::restore`] for details.
     ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    ///
     /// [`ObjectRepo::restore`]: crate::repo::object::ObjectRepo::restore
-    pub fn restore(&mut self, savepoint: &Savepoint) -> crate::Result<()> {
-        self.repo.restore(savepoint)?;
+    pub fn restore(&mut self, savepoint: &Savepoint) -> crate::Result<bool> {
+        if !self.repo.restore(savepoint) {
+            return Ok(false);
+        }
         self.state = read_state(&mut self.repo)?;
-        Ok(())
+        Ok(true)
     }
 
     /// Clean up the repository to reclaim space in the backing data store.
