@@ -226,17 +226,17 @@ impl<K: Key> KeyRepo<K> {
     /// See [`ObjectRepo::restore`] for details.
     ///
     /// # Errors
+    /// - `Error::NotFound`: The given savepoint is not associated with this repository.
+    /// - `Error::InvalidSavepoint`: The given savepoint is invalid.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     ///
     /// [`ObjectRepo::restore`]: crate::repo::object::ObjectRepo::restore
-    pub fn restore(&mut self, savepoint: &Savepoint) -> crate::Result<bool> {
-        if !self.repo.restore(savepoint) {
-            return Ok(false);
-        }
+    pub fn restore(&mut self, savepoint: &Savepoint) -> crate::Result<()> {
+        self.repo.restore(savepoint)?;
         self.state = read_state(&mut self.repo)?;
-        Ok(true)
+        Ok(())
     }
 
     /// Clean up the repository to reclaim space in the backing data store.

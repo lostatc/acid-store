@@ -542,21 +542,25 @@ impl ObjectRepo {
     /// This method functions similarly to [`rollback`], but instead of restoring the repository to
     /// the previous commit, it restores the repository to the given `savepoint`.
     ///
-    /// This returns `true` if the repository was restored or `false` if the given `savepoint` was
-    /// invalid or not associated with this repository.
+    /// If this method returns `Ok`, the repository has been restored. If this method returns `Err`,
+    /// the repository is unchanged.
     ///
     /// This method affects all instances of the repository.
     ///
     /// See [`Savepoint`] for details.
     ///
+    /// # Errors
+    /// - `Error::NotFound`: The given savepoint is not associated with this repository.
+    /// - `Error::InvalidSavepoint`: The given savepoint is invalid.
+    ///
     /// [`rollback`]: crate::repo::object::ObjectRepo::rollback
     /// [`Savepoint`]: crate::repo::Savepoint
-    pub fn restore(&mut self, savepoint: &Savepoint) -> bool {
+    pub fn restore(&mut self, savepoint: &Savepoint) -> crate::Result<()> {
         match savepoint.transaction_id.upgrade() {
-            // The savepoint is invalid.
-            None => return false,
-            // The savepoint is valid but not associated with this repository.
-            Some(transaction_id) if transaction_id != self.transaction_id => return false,
+            None => return Err(crate::Error::InvalidSavepoint),
+            Some(transaction_id) if transaction_id != self.transaction_id => {
+                return Err(crate::Error::NotFound)
+            }
             _ => (),
         }
 
@@ -566,7 +570,7 @@ impl ObjectRepo {
         // Restore the repository from the header.
         self.restore_header(header);
 
-        true
+        Ok(())
     }
 
     /// Clean up the repository to reclaim space in the backing data store.

@@ -54,6 +54,10 @@ pub enum Error {
     #[error("This repository is an unsupported format.")]
     UnsupportedRepo,
 
+    /// The given savepoint is invalid.
+    #[error("The given savepoint is invalid.")]
+    InvalidSavepoint,
+
     /// This file type is not supported.
     #[error("This file type is not supported.")]
     FileType,
@@ -92,7 +96,7 @@ pub enum Error {
 
     /// An error occurred with the data store.
     ///
-    /// This wraps the `DataStore::Error` provided by the data store.
+    /// This wraps the error provided by the data store.
     #[error("{0}")]
     Store(anyhow::Error),
 }
