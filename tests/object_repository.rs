@@ -431,7 +431,7 @@ fn objects_are_removed_on_restore() -> anyhow::Result<()> {
     drop(object);
 
     assert!(savepoint.is_valid());
-    assert!(repo.restore(&savepoint));
+    assert!(repo.restore(&savepoint).is_ok());
 
     assert!(!repo.contains_managed(id));
     assert!(repo.managed_object(id).is_none());
@@ -457,11 +457,11 @@ fn restore_can_redo_changes() -> anyhow::Result<()> {
 
     let after_savepoint = repo.savepoint();
 
-    assert!(repo.restore(&before_savepoint));
+    assert!(repo.restore(&before_savepoint).is_ok());
     assert!(repo.contains_managed(id));
     assert!(repo.managed_object(id).is_some());
 
-    assert!(repo.restore(&after_savepoint));
+    assert!(repo.restore(&after_savepoint).is_ok());
     assert!(!repo.contains_managed(id));
     assert!(repo.managed_object(id).is_none());
 
@@ -476,12 +476,15 @@ fn committing_repo_invalidates_savepoint() -> anyhow::Result<()> {
     repo.commit()?;
 
     assert!(!before_savepoint.is_valid());
-    assert!(!repo.restore(&before_savepoint));
+    assert!(matches!(
+        repo.restore(&before_savepoint),
+        Err(acid_store::Error::InvalidSavepoint)
+    ));
 
     let after_savepoint = repo.savepoint();
 
     assert!(after_savepoint.is_valid());
-    assert!(repo.restore(&after_savepoint));
+    assert!(repo.restore(&after_savepoint).is_ok());
 
     Ok(())
 }
@@ -507,7 +510,10 @@ fn savepoint_must_be_associated_with_repo() -> anyhow::Result<()> {
     let savepoint = first_repo.savepoint();
 
     assert!(savepoint.is_valid());
-    assert!(!second_repo.restore(&savepoint));
+    assert!(matches!(
+        second_repo.restore(&savepoint),
+        Err(acid_store::Error::NotFound)
+    ));
 
     Ok(())
 }
