@@ -549,6 +549,34 @@ impl ObjectRepo {
     ///
     /// See [`Savepoint`] for details.
     ///
+    /// # Examples
+    /// This example demonstrates restoring from a savepoint to undo a change to the repository.
+    /// ```
+    /// # use std::io::Write;
+    /// # use acid_store::store::MemoryConfig;
+    /// # use acid_store::repo::{OpenOptions, OpenMode, object::ObjectRepo};
+    /// #
+    /// # let mut repo: ObjectRepo = OpenOptions::new()
+    /// #     .mode(OpenMode::CreateNew)
+    /// #     .open(&MemoryConfig::new())
+    /// #     .unwrap();
+    /// let mut handle = repo.add_unmanaged();
+    ///
+    /// // Create a new savepoint.
+    /// let savepoint = repo.savepoint();
+    ///
+    /// // Write data to the repository.
+    /// let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    /// object.write_all(b"Some data").unwrap();
+    /// object.flush().unwrap();
+    /// drop(object);
+    ///
+    /// // Restore to the savepoint.
+    /// repo.restore(&savepoint).unwrap();
+    ///
+    /// assert_eq!(handle.size(), 0);
+    /// ```
+    ///
     /// # Errors
     /// - `Error::NotFound`: The given savepoint is not associated with this repository.
     /// - `Error::InvalidSavepoint`: The given savepoint is invalid.

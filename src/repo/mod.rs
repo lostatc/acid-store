@@ -51,9 +51,13 @@
 //! When data in a repository is deleted, the space is not reclaimed in the backing data store until
 //! those changes are committed and the repository is cleaned. Cleaning a repository can be an
 //! expensive operation, so these are kept as separate steps so that it is possible to commit
-//! changes without cleaning the repository.
+//! changes without cleaning the repository. See [`ObjectRepo::commit`] and [`ObjectRepo::clean`]
+//! for details.
 //!
-//! See [`ObjectRepo::commit`] and [`ObjectRepo::clean`] for details.
+//! Repositories support creating savepoints and then later restoring to those savepoints to
+//! atomically undo or redo individual changes to a repository without rolling back all changes made
+//! since the last commit. See [`ObjectRepo::savepoint`], [`ObjectRepo::restore`], and [`Savepoint`]
+//! for details.
 //!
 //! # Encryption
 //! If encryption is enabled, the Argon2id key derivation function is used to derive a key from a
@@ -105,6 +109,9 @@
 //! [`Chunking`]: crate::repo::Chunking
 //! [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
 //! [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
+//! [`ObjectRepo::savepoint`]: crate::repo::object::ObjectRepo::savepoint
+//! [`ObjectRepo::restore`]: crate::repo::object::ObjectRepo::restore
+//! [`Savepoint`]: crate::repo::Savepoint
 //! [`Packing`]: crate::repo::Packing
 //! [`RepoInfo`]: crate::repo::RepoInfo
 //! [`peek_info`]: crate::repo::peek_info
