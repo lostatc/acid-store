@@ -152,6 +152,8 @@ impl PartialEq for ObjectHandle {
     }
 }
 
+impl Eq for ObjectHandle {}
+
 impl ObjectHandle {
     /// Return a `ContentId` representing the contents of the object.
     ///
