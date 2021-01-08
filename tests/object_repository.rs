@@ -412,6 +412,36 @@ fn managed_objects_are_removed_on_rollaback(repo_config: RepoConfig) -> anyhow::
     Ok(())
 }
 
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn unmanaged_objects_are_modified_on_rollback(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
+    let mut handle = repo.add_unmanaged();
+
+    repo.commit()?;
+
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repo.rollback()?;
+
+    let mut object = repo.unmanaged_object(&handle).unwrap();
+    let mut actual_data = Vec::new();
+    object.read_to_end(&mut actual_data)?;
+
+    assert_eq!(object.size(), 0);
+    assert!(actual_data.is_empty());
+
+    Ok(())
+}
+
 #[test]
 fn objects_are_removed_on_restore() -> anyhow::Result<()> {
     let mut repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
@@ -437,6 +467,36 @@ fn objects_are_removed_on_restore() -> anyhow::Result<()> {
     assert!(repo.managed_object(id).is_none());
     assert!(!repo.contains_unmanaged(&handle));
     assert!(repo.unmanaged_object(&handle).is_none());
+
+    Ok(())
+}
+
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn unmanaged_objects_are_modified_on_restore(repo_config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo = create_repo(repo_config, &store_config)?;
+    let mut handle = repo.add_unmanaged();
+
+    let savepoint = repo.savepoint();
+
+    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repo.restore(&savepoint)?;
+
+    let mut object = repo.unmanaged_object(&handle).unwrap();
+    let mut actual_data = Vec::new();
+    object.read_to_end(&mut actual_data)?;
+
+    assert_eq!(object.size(), 0);
+    assert!(actual_data.is_empty());
 
     Ok(())
 }
