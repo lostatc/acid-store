@@ -50,8 +50,8 @@ fn switching_instance_does_not_roll_back() -> anyhow::Result<()> {
     object.flush()?;
     drop(object);
 
-    let repo: KeyRepo<String> = repo.switch_instance(Uuid::new_v4())?;
-    let repo: KeyRepo<String> = repo.switch_instance(DEFAULT_INSTANCE)?;
+    let repo: KeyRepo<String> = repo.set_instance(Uuid::new_v4())?;
+    let repo: KeyRepo<String> = repo.set_instance(DEFAULT_INSTANCE)?;
 
     assert!(repo.contains("test"));
     assert!(repo.object("test").is_some());
@@ -69,8 +69,8 @@ fn switching_instance_does_not_commit() -> anyhow::Result<()> {
     object.flush()?;
     drop(object);
 
-    let repo: KeyRepo<String> = repo.switch_instance(Uuid::new_v4())?;
-    let mut repo: KeyRepo<String> = repo.switch_instance(DEFAULT_INSTANCE)?;
+    let repo: KeyRepo<String> = repo.set_instance(Uuid::new_v4())?;
+    let mut repo: KeyRepo<String> = repo.set_instance(DEFAULT_INSTANCE)?;
     repo.rollback()?;
 
     assert!(!repo.contains("test"));

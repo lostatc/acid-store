@@ -24,6 +24,7 @@ use secrecy::ExposeSecret;
 use uuid::Uuid;
 
 use crate::repo::common::object::ObjectHandle;
+use crate::repo::common::state::InstanceInfo;
 use crate::repo::key::Key;
 use crate::repo::Object;
 use crate::store::{DataStore, OpenStore};
@@ -52,13 +53,13 @@ pub const DEFAULT_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92
 ///
 /// This must be changed any time a backwards-incompatible change is made to the repository
 /// format.
-const VERSION_ID: Uuid = Uuid::from_bytes(hex!("a693cdbd-6ec8-4aa6-995b-e558480f7211"));
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("2f7c9a99-a861-4e90-941b-cae591ddd848"));
 
 /// A table of locks on repositories.
 static REPO_LOCKS: Lazy<Mutex<LockTable>> = Lazy::new(|| Mutex::new(LockTable::new()));
 
 /// The mode to use to open a repository.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum OpenMode {
     /// Open an existing repository, failing if it doesn't exist.
     Open,
@@ -248,7 +249,7 @@ impl OpenOptions {
     }
 
     /// Open the repository, failing if it doesn't exist.
-    fn open_repo<K: Key>(&self, mut store: impl DataStore + 'static) -> crate::Result<KeyRepo<K>> {
+    fn open_repo<R: OpenRepo>(&self, mut store: impl DataStore + 'static) -> crate::Result<R> {
         // Acquire a lock on the repository.
         let repository_id = peek_info_store(&mut store)?.id();
         let lock = REPO_LOCKS
@@ -327,8 +328,8 @@ impl OpenOptions {
         let Header {
             chunks,
             packs,
-            instances,
-            handle_table,
+            mut instances,
+            mut handle_table,
         } = header;
 
         let mut state = RepoState {
@@ -349,16 +350,11 @@ impl OpenOptions {
             transaction_id: Arc::new(Uuid::new_v4()),
         };
 
-        repo.read_object_map()?;
-
-        Ok(repo)
+        repo.set_instance(self.instance)
     }
 
     /// Create a new repository, failing if one already exists.
-    fn create_repo<K: Key>(
-        &self,
-        mut store: impl DataStore + 'static,
-    ) -> crate::Result<KeyRepo<K>> {
+    fn create_repo<R: OpenRepo>(&self, mut store: impl DataStore + 'static) -> crate::Result<R> {
         let password = match self.password.clone() {
             Some(password) if self.config.encryption != Encryption::None => Some(password),
             // Return an error if a password was required but not provided.
@@ -471,7 +467,7 @@ impl OpenOptions {
             lock,
         };
 
-        let repository = KeyRepo {
+        let repo = KeyRepo {
             state,
             instance_id: self.instance,
             objects: HashMap::new(),
@@ -480,7 +476,7 @@ impl OpenOptions {
             transaction_id: Arc::new(Uuid::new_v4()),
         };
 
-        Ok(repository)
+        repo.set_instance(self.instance)
     }
 
     /// Open or create the repository.
@@ -511,26 +507,20 @@ impl OpenOptions {
     {
         let mut store = config.open()?;
 
-        let mut repo = match self.mode {
-            OpenMode::Open => self.open_repo(store)?,
+        match self.mode {
+            OpenMode::Open => self.open_repo(store),
             OpenMode::Create => {
                 if store
                     .read_block(VERSION_BLOCK_ID)
                     .map_err(|error| crate::Error::Store(error))?
                     .is_some()
                 {
-                    self.open_repo(store)?
+                    self.open_repo(store)
                 } else {
-                    self.create_repo(store)?
+                    self.create_repo(store)
                 }
             }
-            OpenMode::CreateNew => self.create_repo(store)?,
-        };
-
-        if check_version(&mut repo, R::VERSION_ID)? {
-            R::open_repo(repo)
-        } else {
-            R::create_repo(repo)
+            OpenMode::CreateNew => self.create_repo(store),
         }
     }
 }

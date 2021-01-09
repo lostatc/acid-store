@@ -27,7 +27,7 @@ use super::config::RepoConfig;
 use super::encryption::KeySalt;
 use super::id_table::IdTable;
 use super::object::{Chunk, ObjectHandle};
-use super::state::{ChunkInfo, PackIndex};
+use super::state::{ChunkInfo, InstanceInfo, PackIndex};
 
 /// The repository state which is persisted to the data store on each commit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,7 +39,7 @@ pub struct Header {
     pub packs: HashMap<Uuid, Vec<PackIndex>>,
 
     /// A map of object IDs to their object handles for the current instance.
-    pub instances: HashMap<Uuid, ObjectHandle>,
+    pub instances: HashMap<Uuid, InstanceInfo>,
 
     /// The table of object handle IDs.
     pub handle_table: IdTable,

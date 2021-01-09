@@ -38,7 +38,7 @@ use super::key::Key;
 use super::metadata::{Header, RepoInfo};
 use super::object::{chunk_hash, Object, ObjectHandle, ReadOnlyObject};
 use super::savepoint::Savepoint;
-use super::state::RepoState;
+use super::state::{InstanceInfo, RepoState};
 
 /// The block ID of the block which stores the repository metadata.
 pub(super) const METADATA_BLOCK_ID: Uuid =
@@ -62,12 +62,8 @@ pub struct KeyRepo<K: Key> {
     /// A map of object keys to their object handles for the current instance.
     pub(super) objects: HashMap<K, ObjectHandle>,
 
-    /// A map of instance IDs to the object handles which store their object maps.
-    ///
-    /// Each object handle in this map contains a serialized map of object IDs to object handles for
-    /// that instance. When switching repository instances, that map is read from the object,
-    /// deserialized, and moved to `objects`.
-    pub(super) instances: HashMap<Uuid, ObjectHandle>,
+    /// A map of instance IDs to information about those instances.
+    pub(super) instances: HashMap<Uuid, InstanceInfo>,
 
     /// A table of unique IDs of existing handles.
     ///
@@ -274,13 +270,11 @@ impl<K: Key> KeyRepo<K> {
 
     /// Write the map of objects for the current instance to the data store.
     pub(super) fn write_object_map(&mut self) -> crate::Result<()> {
-        let handle = self
+        let handle = &mut self
             .instances
-            .entry(self.instance_id)
-            .or_insert_with(|| ObjectHandle {
-                id: self.handle_table.next(),
-                chunks: Vec::new(),
-            });
+            .get_mut(&self.instance_id)
+            .expect("There is no instance with the given ID.")
+            .objects;
         let mut object = Object::new(&mut self.state, handle);
         object.serialize(&self.objects)
     }
@@ -292,43 +286,73 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// This does not commit or roll back changes.
     pub(super) fn read_object_map(&mut self) -> crate::Result<()> {
-        self.objects = match self.instances.get_mut(&self.instance_id) {
-            Some(handle) => {
-                let mut instance_object = Object::new(&mut state, handle);
-                instance_object.deserialize()?
-            }
-            None => HashMap::new(),
-        };
+        let handle = &mut self
+            .instances
+            .get_mut(&self.instance_id)
+            .expect("There is no instance with the given ID.")
+            .objects;
+        let mut instance_object = Object::new(&mut state, handle);
+        self.objects = instance_object.deserialize()?;
         Ok(())
     }
 
-    /// Read the object map for the given `instance_id` and return a new `KeyRepo`.
+    /// Set the current instance of the repository.
     ///
-    /// This does not write the object map for the old instance first. To do that, use
-    /// `write_object_map`.
-    ///
-    /// This does not commit or roll back changes.
-    pub(super) fn change_object_map<Q: Key>(
-        mut self,
-        instance_id: Uuid,
-    ) -> crate::Result<KeyRepo<Q>> {
-        // Read and deserialize the map of object handles for the new instance.
-        let new_objects: HashMap<Q, ObjectHandle> = match self.instances.get_mut(&instance_id) {
-            Some(handle) => {
-                let mut instance_object = Object::new(&mut state, handle);
-                instance_object.deserialize()?
+    /// This does not write the object map for the current instance before switching to the new
+    /// instance.
+    pub(super) fn set_instance<R: OpenRepo>(mut self, instance_id: Uuid) -> crate::Result<R> {
+        let is_new_instance = !self.instances.contains_key(&instance_id);
+
+        let new_objects = if is_new_instance {
+            // Create the object handle for the object which will store the object map for the new
+            // instance.
+            let mut handle = ObjectHandle {
+                id: self.handle_table.next(),
+                chunks: Vec::new(),
+            };
+
+            // Because this is a new instance, we return an empty object map.
+            let objects = HashMap::<R::Key, ObjectHandle>::new();
+
+            // Write an empty object map to the object.
+            let mut object = Object::new(&mut self.state, &mut handle);
+            object.serialize(&objects)?;
+            drop(object);
+
+            // Insert the instance info into the instance map.
+            let instance_info = InstanceInfo {
+                version_id: R::VERSION_ID,
+                objects: handle,
+            };
+            self.instances.insert(instance_id, instance_info);
+
+            objects
+        } else {
+            let instance_info = self.instances.get_mut(&instance_id).unwrap();
+
+            if instance_info.version_id != R::VERSION_ID {
+                return Err(crate::Error::UnsupportedRepo);
             }
-            None => HashMap::new(),
+
+            // Deserialize the object map for this instance.
+            let mut object = Object::new(&mut self.state, &mut instance_info.objects);
+            object.deserialize()?
         };
 
-        Ok(KeyRepo {
+        let repo = KeyRepo {
             state: self.state,
             instance_id,
             objects: new_objects,
             instances: self.instances,
             handle_table: self.handle_table,
             transaction_id: self.transaction_id,
-        })
+        };
+
+        if is_new_instance {
+            R::create_repo(repo)
+        } else {
+            R::open_repo(repo)
+        }
     }
 
     /// Atomically encode and write the given serialized `header` to the data store.
