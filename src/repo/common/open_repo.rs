@@ -14,20 +14,31 @@
  * limitations under the License.
  */
 
+use std::collections::HashMap;
+
+use rmp_serde::to_vec;
 use uuid::Uuid;
 
-use super::repository::ObjectRepo;
+use super::key::Key;
+use super::object::Object;
+use super::object::ObjectHandle;
+use super::repository::KeyRepo;
 use super::version_id::check_version;
 
 /// A repository which can be opened using [`OpenOptions`].
 ///
-/// This trait represents a repository type which can be converted to and from an [`ObjectRepo`].
+/// This trait represents a repository type which can be converted to and from a [`KeyRepo`].
 /// This trait can be implemented by repository types so that they can be opened using
 /// [`OpenOptions`].
 ///
-/// [`ObjectRepo`]: crate::repo::object::ObjectRepo
+/// [`KeyRepo`]: crate::repo::key::KeyRepo
 /// [`OpenOptions`]: crate::repo::OpenOptions
 pub trait OpenRepo {
+    /// The type of the key used in the backing [`KeyRepo`].
+    ///
+    /// [`KeyRepo`]: crate::repo::key::KeyRepo
+    type Key: Key;
+
     /// The version ID for the serialized data format of this repository.
     ///
     /// This ID is used to distinguish between different repository types and to detect when the
@@ -53,7 +64,7 @@ pub trait OpenRepo {
     /// - `Error::Io`: An I/O error occurred.
     ///
     /// [`SwitchInstance::switch_instance`]: crate::repo::SwitchInstance::switch_instance
-    fn open_repo(repo: ObjectRepo) -> crate::Result<Self>
+    fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized;
 
@@ -73,11 +84,11 @@ pub trait OpenRepo {
     /// - `Error::Io`: An I/O error occurred.
     ///
     /// [`SwitchInstance::switch_instance`]: crate::repo::SwitchInstance::switch_instance
-    fn create_repo(repo: ObjectRepo) -> crate::Result<Self>
+    fn create_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized;
 
-    /// Consume this repository and return the backing `ObjectRepo`.
+    /// Consume this repository and return the backing `KeyRepo`.
     ///
     /// **Users of this library should never call this method directly. Use
     /// [`SwitchInstance::switch_instance`] instead.**
@@ -91,10 +102,14 @@ pub trait OpenRepo {
     /// - `Error::Io`: An I/O error occurred.
     ///
     /// [`SwitchInstance::switch_instance`]: crate::repo::SwitchInstance::switch_instance
-    fn into_repo(self) -> crate::Result<ObjectRepo>;
+    fn into_repo(self) -> crate::Result<KeyRepo<Self::Key>>;
 }
 
 /// A repository which supports switching between instances.
+///
+/// This trait is automatically implemented for all types which implement [`OpenRepo`].
+///
+/// [`OpenRepo`]: crate::repo::OpenRepo
 pub trait SwitchInstance {
     /// Switch from one instance of this repository to another.
     ///
@@ -131,7 +146,7 @@ pub trait SwitchInstance {
     /// ```
     ///
     /// # Errors
-    /// - `Error::UnsupportedFormat`: The backing repository is an unsupported format. This can
+    /// - `Error::UnsupportedRepo`: The backing repository is an unsupported format. This can
     /// happen if the serialized data format changed or if the backing repository already contains a
     /// different type of repository.
     /// - `Error::Deserialize`: Could not deserialize data in the repository.
@@ -154,7 +169,13 @@ impl<T: OpenRepo> SwitchInstance for T {
         Self: Sized,
     {
         let mut repo = self.into_repo()?;
-        repo.set_instance(id);
+
+        // Write the map of object handles for the current instance to the data store.
+        repo.write_object_map()?;
+
+        // Read the map of object handles for the new instance from the data store.
+        let mut repo = repo.change_object_map::<R::Key>(id)?;
+
         if check_version(&mut repo, Self::VERSION_ID)? {
             R::open_repo(repo)
         } else {

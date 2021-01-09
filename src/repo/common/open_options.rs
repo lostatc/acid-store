@@ -23,6 +23,9 @@ use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
 use uuid::Uuid;
 
+use crate::repo::common::object::ObjectHandle;
+use crate::repo::key::Key;
+use crate::repo::Object;
 use crate::store::{DataStore, OpenStore};
 
 use super::chunking::Chunking;
@@ -34,7 +37,7 @@ use super::lock::LockTable;
 use super::metadata::{peek_info_store, Header, RepoMetadata};
 use super::open_repo::OpenRepo;
 use super::packing::Packing;
-use super::repository::{ObjectRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
+use super::repository::{KeyRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
 use super::state::RepoState;
 use super::version_id::check_version;
 
@@ -49,7 +52,7 @@ pub const DEFAULT_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92
 ///
 /// This must be changed any time a backwards-incompatible change is made to the repository
 /// format.
-const VERSION_ID: Uuid = Uuid::from_bytes(hex!("65465794 627d 4b86 be29 d23bc333bb4e"));
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("a693cdbd-6ec8-4aa6-995b-e558480f7211"));
 
 /// A table of locks on repositories.
 static REPO_LOCKS: Lazy<Mutex<LockTable>> = Lazy::new(|| Mutex::new(LockTable::new()));
@@ -245,7 +248,7 @@ impl OpenOptions {
     }
 
     /// Open the repository, failing if it doesn't exist.
-    fn open_repo(&self, mut store: impl DataStore + 'static) -> crate::Result<ObjectRepo> {
+    fn open_repo<K: Key>(&self, mut store: impl DataStore + 'static) -> crate::Result<KeyRepo<K>> {
         // Acquire a lock on the repository.
         let repository_id = peek_info_store(&mut store)?.id();
         let lock = REPO_LOCKS
@@ -324,14 +327,11 @@ impl OpenOptions {
         let Header {
             chunks,
             packs,
-            mut managed,
+            instances,
             handle_table,
         } = header;
 
-        // If the given instance ID is not in the managed object map, add it.
-        managed.entry(self.instance).or_insert_with(HashMap::new);
-
-        let state = RepoState {
+        let mut state = RepoState {
             store: Mutex::new(Box::new(store)),
             metadata,
             chunks,
@@ -340,17 +340,25 @@ impl OpenOptions {
             lock,
         };
 
-        Ok(ObjectRepo {
+        let mut repo = KeyRepo {
             state,
             instance_id: self.instance,
-            managed,
+            objects: HashMap::new(),
+            instances,
             handle_table,
             transaction_id: Arc::new(Uuid::new_v4()),
-        })
+        };
+
+        repo.read_object_map()?;
+
+        Ok(repo)
     }
 
     /// Create a new repository, failing if one already exists.
-    fn create_repo(&self, mut store: impl DataStore + 'static) -> crate::Result<ObjectRepo> {
+    fn create_repo<K: Key>(
+        &self,
+        mut store: impl DataStore + 'static,
+    ) -> crate::Result<KeyRepo<K>> {
         let password = match self.password.clone() {
             Some(password) if self.config.encryption != Encryption::None => Some(password),
             // Return an error if a password was required but not provided.
@@ -406,12 +414,10 @@ impl OpenOptions {
         };
 
         // Generate the header.
-        let mut managed = HashMap::new();
-        managed.insert(self.instance, HashMap::new());
         let header = Header {
             chunks: HashMap::new(),
             packs: HashMap::new(),
-            managed,
+            instances: HashMap::new(),
             handle_table: IdTable::new(),
         };
 
@@ -452,7 +458,7 @@ impl OpenOptions {
         let Header {
             chunks,
             packs,
-            managed,
+            instances,
             handle_table,
         } = header;
 
@@ -465,10 +471,11 @@ impl OpenOptions {
             lock,
         };
 
-        let repository = ObjectRepo {
+        let repository = KeyRepo {
             state,
             instance_id: self.instance,
-            managed,
+            objects: HashMap::new(),
+            instances,
             handle_table,
             transaction_id: Arc::new(Uuid::new_v4()),
         };

@@ -19,7 +19,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use uuid::Uuid;
 
-use super::common::ObjectRepo;
+use super::common::KeyRepo;
 
 /// The ID of the managed object which stores the current repository state.
 const STATE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("649b5a8c 8da6 4faf 811b 848402e64e8b"));
@@ -35,7 +35,7 @@ const PREV_STATE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("c995cd36 61ee 49f9 ae5
 const BACKUP_STATE_OBJECT_ID: Uuid = Uuid::from_bytes(hex!("256cc7c0 4f9a 47a1 b9b2 8968ae4e94c8"));
 
 /// Read the current state from the backing `repo`.
-pub fn read_state<S: DeserializeOwned>(repo: &mut ObjectRepo) -> crate::Result<S> {
+pub fn read_state<S: DeserializeOwned>(repo: &mut KeyRepo) -> crate::Result<S> {
     let mut object = repo
         .managed_object(STATE_OBJECT_ID)
         .ok_or(crate::Error::Corrupt)?;
@@ -43,7 +43,7 @@ pub fn read_state<S: DeserializeOwned>(repo: &mut ObjectRepo) -> crate::Result<S
 }
 
 /// Write the current state to the backing `repo`.
-pub fn write_state<S: Serialize>(repo: &mut ObjectRepo, state: &S) -> crate::Result<()> {
+pub fn write_state<S: Serialize>(repo: &mut KeyRepo, state: &S) -> crate::Result<()> {
     let mut object = repo.add_managed(STATE_OBJECT_ID);
     object.serialize(&state)?;
     drop(object);
@@ -56,7 +56,7 @@ pub fn write_state<S: Serialize>(repo: &mut ObjectRepo, state: &S) -> crate::Res
 }
 
 /// Commit changes which have been made to the repository.
-pub fn commit<S: Serialize>(repo: &mut ObjectRepo, state: &S) -> crate::Result<()> {
+pub fn commit<S: Serialize>(repo: &mut KeyRepo, state: &S) -> crate::Result<()> {
     // Serialize and write the repository state to the backing repository.
     let mut object = repo.add_managed(STATE_OBJECT_ID);
     object.serialize(state)?;
@@ -83,7 +83,7 @@ pub fn commit<S: Serialize>(repo: &mut ObjectRepo, state: &S) -> crate::Result<(
 }
 
 /// Roll back all changes made since the last commit.
-pub fn rollback<S: DeserializeOwned>(repo: &mut ObjectRepo) -> crate::Result<S> {
+pub fn rollback<S: DeserializeOwned>(repo: &mut KeyRepo) -> crate::Result<S> {
     // Read and deserialize the repository state as of the previous commit.
     let mut object = repo
         .managed_object(PREV_STATE_OBJECT_ID)

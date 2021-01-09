@@ -25,7 +25,8 @@
 //! to read data from them and write data to them.
 //!
 //! Each sub-module of this module contains a different repository type. If you're not sure which
-//! one you should use, [`KeyRepo`] has the most general use-case.
+//! one you should use, [`KeyRepo`] has the most general use-case. All the other repository types in
+//! this module are implemented on top of [`KeyRepo`].
 //!
 //! You can open or create a repository using [`OpenOptions`].
 //!
@@ -51,12 +52,12 @@
 //! When data in a repository is deleted, the space is not reclaimed in the backing data store until
 //! those changes are committed and the repository is cleaned. Cleaning a repository can be an
 //! expensive operation, so these are kept as separate steps so that it is possible to commit
-//! changes without cleaning the repository. See [`ObjectRepo::commit`] and [`ObjectRepo::clean`]
+//! changes without cleaning the repository. See [`KeyRepo::commit`] and [`KeyRepo::clean`]
 //! for details.
 //!
 //! Repositories support creating savepoints and then later restoring to those savepoints to
 //! atomically undo or redo individual changes to a repository without rolling back all changes made
-//! since the last commit. See [`ObjectRepo::savepoint`], [`ObjectRepo::restore`], and [`Savepoint`]
+//! since the last commit. See [`KeyRepo::savepoint`], [`KeyRepo::restore`], and [`Savepoint`]
 //! for details.
 //!
 //! # Encryption
@@ -68,8 +69,8 @@
 //! Data in a data store is identified by random UUIDs and not hashes, so data hashes are not
 //! leaked. By default, the repository does not attempt to hide the size of chunks produced by the
 //! chunking algorithm, which is a form of metadata leakage which may be undesirable in some cases.
-//! You can configure the repository to pack data into fixed-size blocks before writing it to the
-//! data store at the cost of performance. See [`Packing`] for details.
+//! To fix this, you can configure the repository to pack data into fixed-size blocks before writing
+//! it to the data store at the cost of performance. See [`Packing`] for details.
 //!
 //! The information in [`RepoInfo`] is never encrypted, and can be read without decrypting the
 //! repository using [`peek_info`].
@@ -107,10 +108,10 @@
 //! [`KeyRepo`]: crate::repo::key::KeyRepo
 //! [`OpenOptions`]: crate::repo::OpenOptions
 //! [`Chunking`]: crate::repo::Chunking
-//! [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
-//! [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
-//! [`ObjectRepo::savepoint`]: crate::repo::object::ObjectRepo::savepoint
-//! [`ObjectRepo::restore`]: crate::repo::object::ObjectRepo::restore
+//! [`KeyRepo::commit`]: crate::repo::key::KeyRepo::commit
+//! [`KeyRepo::clean`]: crate::repo::key::KeyRepo::clean
+//! [`KeyRepo::savepoint`]: crate::repo::key::KeyRepo::savepoint
+//! [`KeyRepo::restore`]: crate::repo::key::KeyRepo::restore
 //! [`Savepoint`]: crate::repo::Savepoint
 //! [`Packing`]: crate::repo::Packing
 //! [`RepoInfo`]: crate::repo::RepoInfo
@@ -125,57 +126,36 @@ pub use self::common::{
     SwitchInstance, DEFAULT_INSTANCE,
 };
 
-/// A low-level repository type which provides more direct access to the underlying storage.
+/// An object store which maps keys to seekable binary blobs.
 ///
-/// This module contains the [`ObjectRepo`] repository type.
+/// This module contains the [`KeyRepo`] repository type.
 ///
-/// This repository type is mostly intended to be used to create other, higher-level repository
-/// types. All the other repository types in [`crate::repo`] are implemented on top of it. Its
-/// API is more complicated than the other repository types, but it provides more control over how
-/// data is stored and how memory is managed.
+/// A [`KeyRepo`] maps keys to seekable binary blobs called objects and stores them persistently in
+/// a [`DataStore`]. A key is any type which implements [`Key`].
 ///
-/// Repository types which are implemented on top of [`ObjectRepo`] can implement [`OpenRepo`],
-/// which allows them to be opened or created using [`OpenOptions`] and also allows for easily
-/// switching between repository instances of different types.
+/// All the other repository types provided in the [`crate::repo`] module are implemented on top of
+/// [`KeyRepo`]. Repository types which are implemented on top of [`KeyRepo`] can implement
+/// [`OpenRepo`], which allows them to be opened or created using [`OpenOptions`] and also allows
+/// for switching between repository instances of different types using [`SwitchInstance`].
 ///
 /// Like other repositories, changes made to the repository are not persisted to the data store
-/// until [`ObjectRepo::commit`] is called. For details about deduplication, compression,
-/// encryption, and locking, see the module-level documentation for [`crate::repo`].
+/// until [`KeyRepo::commit`] is called. For details about deduplication, compression, encryption,
+/// and locking, see the module-level documentation for [`crate::repo`].
 ///
-/// # Managed and unmanaged objects
-/// An [`ObjectRepo`] has two modes for storing data, *managed* objects and *unmanaged* objects.
-///
-/// Unmanaged objects are accessed via an [`ObjectHandle`]. Object handles are not stored in the
-/// repository, and it's the user's responsibility to keep track of them. Without an object handle,
-/// you cannot access or remove the data associated with it.
-///
-/// Under the hood, managed objects are also accessed via object handles, but these object handles
-/// are stored in the repository and the user doesn't have to worry about keeping track of them.
-/// Each managed object is associated with a UUID which can be used to access or remove the data.
-///
-/// If your repository has many objects, you may not want to store all the object handles in memory,
-/// since they take up a non-trivial amount of space. Object handles are always stored in memory for
-/// managed objects, but not necessarily for unmanaged objects. [`ObjectHandle`] is serializable, so
-/// it can be stored in other managed or unmanaged objects.
-///
-/// However, if [`ObjectRepo`] only had unmanaged objects, and all the object handles were
-/// stored in other unmanaged objects, you would have a chicken-and-egg problem and wouldn't be able
-/// to access any data! This is where managed objects are useful. They can be used to store
-/// object handles (and other data) with a predictable UUID, potentially set at compile time.
-///
-/// [`ObjectRepo`]: crate::repo::object::ObjectRepo
+/// [`KeyRepo`]: crate::repo::key::KeyRepo
+/// [`DataStore`]: crate::store::DataStore
+/// [`Key`]: crate::repo::key::Key
 /// [`OpenRepo`]: crate::repo::OpenRepo
 /// [`OpenOptions`]: crate::repo::OpenOptions
-/// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
-/// [`ObjectHandle`]: crate::repo::object::ObjectHandle
-pub mod object {
-    pub use super::common::{IntegrityReport, ObjectHandle, ObjectRepo};
+/// [`SwitchInstance`]: crate::repo::SwitchInstance
+/// [`KeyRepo::commit`]: crate::repo::key::KeyRepo::commit
+pub mod key {
+    pub use super::common::{Key, KeyRepo};
 }
 
 mod common;
 pub mod content;
 pub mod file;
-pub mod key;
 mod state_helpers;
 pub mod value;
 pub mod version;
