@@ -169,17 +169,7 @@ impl<T: OpenRepo> SwitchInstance for T {
         Self: Sized,
     {
         let mut repo = self.into_repo()?;
-
-        // Write the map of object handles for the current instance to the data store.
         repo.write_object_map()?;
-
-        // Read the map of object handles for the new instance from the data store.
-        let mut repo = repo.change_object_map::<R::Key>(id)?;
-
-        if check_version(&mut repo, Self::VERSION_ID)? {
-            R::open_repo(repo)
-        } else {
-            R::create_repo(repo)
-        }
+        repo.set_instance(id)
     }
 }

@@ -27,7 +27,6 @@ pub use self::packing::Packing;
 pub use self::report::IntegrityReport;
 pub use self::repository::KeyRepo;
 pub use self::savepoint::Savepoint;
-pub use self::version_id::check_version;
 
 mod chunk_store;
 mod chunking;
@@ -45,4 +44,3 @@ mod packing;
 mod repository;
 mod savepoint;
 mod state;
-mod version_id;

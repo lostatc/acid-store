@@ -22,6 +22,7 @@ use cdchunking::ChunkerImpl;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::repo::common::object::ObjectHandle;
 use crate::store::DataStore;
 
 use super::chunk_store::StoreState;
@@ -84,6 +85,22 @@ impl Pack {
         padded.resize(pack_size as usize, 0u8);
         padded
     }
+}
+
+/// Information about an instance of a repository.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstanceInfo {
+    /// The version ID for the repository type stored in this instance.
+    ///
+    /// This corresponds to the `OpenRepo::VERSION_ID` of the repository which was created in this
+    /// instance.
+    pub version_id: Uuid,
+
+    /// The object handle used to store the serialized object map.
+    ///
+    /// This object handle contains a serialized map of object IDs to object handles for that
+    /// instance.
+    pub objects: ObjectHandle,
 }
 
 /// The state associated with an `ObjectRepo`.
