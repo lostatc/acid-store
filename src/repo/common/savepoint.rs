@@ -23,8 +23,8 @@ use super::metadata::Header;
 /// A target for rolling back changes in a repository.
 ///
 /// Repositories support creating savepoints and later restoring to those savepoints, undoing any
-/// changes made since they were created. You can use [`ObjectRepo::savepoint`] to create a
-/// savepoint and [`ObjectRepo::restore`] to restore to a savepoint.
+/// changes made since they were created. You can use [`KeyRepo::savepoint`] to create a
+/// savepoint and [`KeyRepo::restore`] to restore to a savepoint.
 ///
 /// Savepoints aren't just used to "undo" changes; they can also be used to "redo" changes. If you
 /// create a savepoint `A` and then later create a savepoint `B`, you can restore to `A` and *then*
@@ -35,8 +35,8 @@ use super::metadata::Header;
 /// also invalidated if the repository it is associated with is dropped. You can use [`is_valid`] to
 /// determine whether the current savepoint is valid.
 ///
-/// [`ObjectRepo::savepoint`]: crate::repo::object::ObjectRepo::savepoint
-/// [`ObjectRepo::restore`]: crate::repo::object::ObjectRepo::restore
+/// [`KeyRepo::savepoint`]: crate::repo::key::KeyRepo::savepoint
+/// [`KeyRepo::restore`]: crate::repo::key::KeyRepo::restore
 /// [`is_valid`]: crate::repo::Savepoint::is_valid
 #[derive(Debug, Clone)]
 pub struct Savepoint {

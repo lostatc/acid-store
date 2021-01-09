@@ -51,7 +51,7 @@ pub struct Chunk {
 
 /// A handle for accessing data in a repository.
 ///
-/// An `ObjectHandle` is like an address for locating data stored in an `ObjectRepo`.
+/// An `ObjectHandle` is like an address for locating data stored in a `KeyRepo`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectHandle {
     /// The ID of this handle which is unique within its repository.

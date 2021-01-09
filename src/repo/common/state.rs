@@ -103,7 +103,7 @@ pub struct InstanceInfo {
     pub objects: ObjectHandle,
 }
 
-/// The state associated with an `ObjectRepo`.
+/// The state associated with a `KeyRepo`.
 #[derive(Debug)]
 pub struct RepoState {
     /// The data store which backs this repository.
