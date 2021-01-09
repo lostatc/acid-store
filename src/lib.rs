@@ -29,8 +29,6 @@
 //! - [`VersionRepo`] is an object store with support for content versioning.
 //! - [`ContentRepo`] is a content-addressable storage which allows for accessing data by its
 //! cryptographic hash.
-//! - [`ObjectRepo`] is a low-level repository type which provides more direct access to the
-//! underlying storage.
 //!
 //! A repository stores its data in a [`DataStore`], which is a small trait that can be implemented
 //! to create new storage backends. The following data stores are provided out of the box. They can
@@ -52,12 +50,12 @@
 //!
 //! fn main() -> acid_store::Result<()> {
 //!     // Create a `KeyRepo` with the default configuration that stores data in memory.
-//!     let mut repository: KeyRepo<String> = OpenOptions::new()
+//!     let mut repo: KeyRepo<String> = OpenOptions::new()
 //!         .mode(OpenMode::CreateNew)
 //!         .open(&MemoryConfig::new())?;
 //!
 //!     // Insert a key into the repository and get an object which can be used to read/write data.
-//!     let mut object = repository.insert(String::from("Key"));
+//!     let mut object = repo.insert(String::from("Key"));
 //!
 //!     // Write data to the repository via `std::io::Write`.
 //!     object.write_all(b"Data")?;
@@ -65,7 +63,7 @@
 //!     drop(object);
 //!
 //!     // Get the object associated with a key.
-//!     let mut object = repository.object("Key").unwrap();
+//!     let mut object = repo.object("Key").unwrap();
 //!
 //!     // Read data from the repository via `std::io::Read`.
 //!     let mut data = Vec::new();
@@ -75,7 +73,7 @@
 //!     assert_eq!(data, b"Data");
 //!
 //!     // Commit changes to the repository.
-//!     repository.commit()?;
+//!     repo.commit()?;
 //!
 //!     Ok(())
 //! }
@@ -106,7 +104,6 @@
 //! [`ValueRepo`]: crate::repo::value::ValueRepo
 //! [`VersionRepo`]: crate::repo::version::VersionRepo
 //! [`ContentRepo`]: crate::repo::content::ContentRepo
-//! [`ObjectRepo`]: crate::repo::object::ObjectRepo
 //!
 //! [`DataStore`]: crate::store::DataStore
 //! [`DirectoryStore`]: crate::store::DirectoryStore

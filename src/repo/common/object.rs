@@ -51,136 +51,22 @@ pub struct Chunk {
 
 /// A handle for accessing data in a repository.
 ///
-/// An `ObjectHandle` is like an address for locating data stored in an [`ObjectRepo`]. It can't
-/// be used to read or write data directly, but it can be used with [`ObjectRepo`] to get an
-/// [`Object`] or a [`ReadOnlyObject`].
-///
-/// Two object handles are equal if they reference the same object. Object handles which reference
-/// different objects that have the same contents are not equal. To compare objects by contents,
-/// use [`content_id`].
-///
-/// An object handle can be cloned to get a new object handle which initially references the same
-/// object. However, modifying the object (via [`ObjectRepo::unmanaged_object_mut`]) will trigger a
-/// copy-on-write, creating a new object. At this point, the two object handles will no longer
-/// reference the same object. If you want two object handles which reference different objects with
-/// the same contents, you can use [`ObjectRepo::copy_unmanaged`] to copy an object.
-///
-/// # Examples
-/// This example demonstrates the copy-on-write behavior of object handles when they are cloned.
-/// ```
-/// # use std::io::Write;
-/// # use acid_store::repo::{OpenOptions, OpenMode, object::ObjectRepo};
-/// # use acid_store::store::MemoryConfig;
-/// #
-/// # let mut repo: ObjectRepo = OpenOptions::new()
-/// #     .mode(OpenMode::CreateNew)
-/// #     .open(&MemoryConfig::new())
-/// #     .unwrap();
-/// let mut handle = repo.add_unmanaged();
-/// let handle_clone = handle.clone();
-///
-/// // The two handles initially reference the same object.
-/// assert_eq!(handle, handle_clone);
-///
-/// let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
-/// object.write_all(b"making some changes").unwrap();
-/// object.flush().unwrap();
-/// drop(object);
-///
-/// // The two handles no longer reference the same object.
-/// assert_ne!(handle, handle_clone);
-/// ```
-///
-/// This example demonstrates the difference between two handles which reference the same object and
-/// two handles which reference different objects with the same contents.
-/// ```
-/// # use acid_store::repo::{OpenOptions, OpenMode, object::ObjectRepo};
-/// # use acid_store::store::MemoryConfig;
-/// #
-/// # let mut repo: ObjectRepo = OpenOptions::new()
-/// #     .mode(OpenMode::CreateNew)
-/// #     .open(&MemoryConfig::new())
-/// #     .unwrap();
-/// let mut first_handle = repo.add_unmanaged();
-/// let mut second_handle = repo.copy_unmanaged(&first_handle);
-///
-/// // The two handles do not reference the same object.
-/// assert_ne!(first_handle, second_handle);
-///
-/// // The two objects have the same contents.
-/// assert_eq!(first_handle.content_id(), second_handle.content_id());
-/// ```
-///
-/// [`ObjectRepo`]: crate::repo::object::ObjectRepo
-/// [`Object`]: crate::repo::Object
-/// [`ReadOnlyObject`]: crate::repo::ReadOnlyObject
-/// [`content_id`]: crate::repo::object::ObjectHandle::content_id
-/// [`ObjectRepo::unmanaged_object_mut`]: crate::repo::object::ObjectRepo::unmanaged_object_mut
-/// [`ObjectRepo::copy_unmanaged`]: crate::repo::object::ObjectRepo::copy_unmanaged
+/// An `ObjectHandle` is like an address for locating data stored in an `ObjectRepo`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectHandle {
-    // We need both the `repo_id` and the `instance_id` to uniquely identify the instance an object
-    // handle is associated with because a user could give two instances from different repositories
-    // the same instance ID.
-    /// The UUID of the repository this handle is associated with.
-    pub(super) repo_id: Uuid,
-
-    /// The UUID of the repository instance this handle is associated with.
-    pub(super) instance_id: Uuid,
-
-    // We could just give each handle a unique UUID instead of having the repository ID, instance
-    // ID, *and* handle ID, but using `UniqueId` instead of `Uuid` uses less memory in the
-    // `ObjectRepo`. If we used UUIDs, the repository would have to store a UUID in memory for
-    // every object, whereas `IdTable` is much more memory efficient.
     /// The ID of this handle which is unique within its repository.
     ///
     /// Handle IDs are only guaranteed to be unique within the same repository.
-    pub(super) handle_id: UniqueId,
-
-    /// The original size of the data in bytes.
-    pub(super) size: u64,
+    pub id: UniqueId,
 
     /// The checksums of the chunks which make up the data.
-    pub(super) chunks: Vec<Chunk>,
+    pub chunks: Vec<Chunk>,
 }
-
-impl PartialEq for ObjectHandle {
-    fn eq(&self, other: &Self) -> bool {
-        self.repo_id == other.repo_id
-            && self.instance_id == other.instance_id
-            && self.handle_id == other.handle_id
-    }
-}
-
-impl Eq for ObjectHandle {}
 
 impl ObjectHandle {
-    /// Return a `ContentId` representing the contents of the object.
-    ///
-    /// Calculating a content ID is cheap. This method does not read any data from the data store.
-    ///
-    /// The returned `ContentId` represents the contents of the object at the time this method was
-    /// called. It is not updated when the object is modified.
-    pub fn content_id(&self) -> ContentId {
-        ContentId {
-            repo_id: self.repo_id,
-            size: self.size,
-            chunks: self.chunks.clone(),
-        }
-    }
-
     /// The size of the object in bytes.
     pub fn size(&self) -> u64 {
-        self.size
-    }
-
-    /// Return whether this object has the same contents as `other`.
-    ///
-    /// See [`ContentId::compare_contents`] for details.
-    ///
-    /// [`ContentId::compare_contents`]: crate::repo::ContentId::compare_contents
-    pub fn compare_contents(&self, other: impl Read) -> crate::Result<bool> {
-        self.content_id().compare_contents(other)
+        self.chunks.iter().map(|chunk| chunk.size as u64).sum()
     }
 }
 
@@ -204,9 +90,6 @@ pub struct ContentId {
     /// The ID of the repository the object is associated with.
     pub(super) repo_id: Uuid,
 
-    /// The original size of the data in bytes.
-    pub(super) size: u64,
-
     /// The checksums of the chunks which make up the data.
     pub(super) chunks: Vec<Chunk>,
 }
@@ -214,7 +97,7 @@ pub struct ContentId {
 impl ContentId {
     /// The size of the contents represented by this content ID in bytes.
     pub fn size(&self) -> u64 {
-        self.size
+        self.chunks.iter().map(|chunk| chunk.size as u64).sum()
     }
 
     /// Return whether this content ID has the same contents as `other`.
@@ -439,7 +322,7 @@ impl<'a> ObjectWriter<'a> {
         };
         let last_chunk = self.store_writer().read_chunk(end_location.chunk)?;
         let new_last_chunk = &last_chunk[..end_location.relative_position()];
-        let handle_id = self.handle.handle_id;
+        let handle_id = self.handle.id;
         let new_last_chunk = self
             .store_writer()
             .write_chunk(&new_last_chunk, handle_id)?;
@@ -473,7 +356,7 @@ impl<'a> ObjectWriter<'a> {
     /// Write chunks stored in the chunker to the repository.
     fn write_chunks(&mut self) -> crate::Result<()> {
         for chunk_data in self.object_state.chunker.chunks() {
-            let handle_id = self.handle.handle_id;
+            let handle_id = self.handle.id;
             let chunk = self.store_writer().write_chunk(&chunk_data, handle_id)?;
             self.object_state.new_chunks.push(chunk);
         }
@@ -619,34 +502,32 @@ impl<'a> ReadOnlyObject<'a> {
 
     /// Return the size of the object in bytes.
     ///
-    /// Unflushed data is not accounted for when calculating the size, so you may want to explicitly
-    /// flush written data with `Write::flush` before calling this method.
+    /// See [`Object::size`] for details.
+    ///
+    /// [`Object::size`]: crate::repo::Object::size
     pub fn size(&self) -> u64 {
         self.handle.size()
     }
 
     /// Return a `ContentId` representing the contents of this object.
     ///
-    /// Unflushed data is not accounted for when generating a content ID, so you may want to
-    /// explicitly flush written data with `Write::flush` before calling this method.
+    /// See [`Object::content_id`] for details.
     ///
-    /// See [`ObjectHandle::content_id`] for details.
-    ///
-    /// [`ObjectHandle::content_id`]: crate::repo::object::ObjectHandle::content_id
+    /// [`Object::content_id`]: crate::repo::Object::content_id
     pub fn content_id(&self) -> ContentId {
-        self.handle.content_id()
+        ContentId {
+            repo_id: self.repo_state.metadata.id,
+            chunks: self.handle.chunks.clone(),
+        }
     }
 
     /// Return whether this object has the same contents as `other`.
     ///
-    /// Unflushed data is not accounted for when comparing contents, so you may want to explicitly
-    /// flush written data with `Write::flush` before calling this method.
+    /// See [`Object::compare_contents`] for details.
     ///
-    /// See [`ContentId::compare_contents`] for details.
-    ///
-    /// [`ContentId::compare_contents`]: crate::repo::ContentId::compare_contents
+    /// [`Object::compare_contents`]: crate::repo::Object::compare_contents
     pub fn compare_contents(&self, other: impl Read) -> crate::Result<bool> {
-        self.handle.compare_contents(other)
+        self.content_id().compare_contents(other)
     }
 
     /// Verify the integrity of the data in this object.
@@ -747,16 +628,20 @@ impl<'a> Object<'a> {
         self.handle.size()
     }
 
-    /// Return a `ContentId` representing the contents of this object.
+    /// Return a `ContentId` representing the contents of the object.
+    ///
+    /// Calculating a content ID is cheap. This method does not read any data from the data store.
+    ///
+    /// The returned `ContentId` represents the contents of the object at the time this method was
+    /// called. It is not updated when the object is modified.
     ///
     /// Unflushed data is not accounted for when generating a content ID, so you may want to
     /// explicitly flush written data with `Write::flush` before calling this method.
-    ///
-    /// See [`ObjectHandle::content_id`] for details.
-    ///
-    /// [`ObjectHandle::content_id`]: crate::repo::object::ObjectHandle::content_id
     pub fn content_id(&self) -> ContentId {
-        self.handle.content_id()
+        ContentId {
+            repo_id: self.repo_state.metadata.id,
+            chunks: self.handle.chunks.clone(),
+        }
     }
 
     /// Return whether this object has the same contents as `other`.
@@ -768,7 +653,7 @@ impl<'a> Object<'a> {
     ///
     /// [`ContentId::compare_contents`]: crate::repo::ContentId::compare_contents
     pub fn compare_contents(&self, other: impl Read) -> crate::Result<bool> {
-        self.handle.compare_contents(other)
+        self.content_id().compare_contents(other)
     }
 
     /// Verify the integrity of the data in this object.
