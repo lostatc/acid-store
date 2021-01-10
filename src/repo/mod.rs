@@ -122,7 +122,7 @@
 
 pub use self::common::{
     peek_info, Chunking, Compression, ContentId, Encryption, Object, OpenMode, OpenOptions,
-    OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit, Savepoint,
+    OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit, Restore, Savepoint,
     SwitchInstance, DEFAULT_INSTANCE,
 };
 
@@ -157,6 +157,5 @@ mod common;
 pub mod content;
 pub mod file;
 mod id_table;
-mod state_helpers;
 pub mod value;
 pub mod version;

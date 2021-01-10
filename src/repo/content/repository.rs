@@ -22,9 +22,9 @@ use hex_literal::hex;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::repo::object::{ObjectHandle, ObjectRepo};
-use crate::repo::state_helpers::{commit, read_state, rollback, write_state};
-use crate::repo::{OpenRepo, ReadOnlyObject, RepoInfo, Savepoint};
+use crate::repo::id_table::{IdTable, UniqueId};
+use crate::repo::{key::KeyRepo, OpenRepo, ReadOnlyObject, RepoInfo, Restore, Savepoint};
+use crate::Error;
 
 use super::hash::{HashAlgorithm, BUFFER_SIZE};
 
@@ -32,10 +32,52 @@ use super::hash::{HashAlgorithm, BUFFER_SIZE};
 const DEFAULT_ALGORITHM: HashAlgorithm = HashAlgorithm::Blake3;
 
 /// The state for a `ContentRepo`.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ContentRepoState {
-    hash_table: HashMap<Vec<u8>, ObjectHandle>,
+    /// A map of content hashes to IDs for the objects in the backing `KeyRepo`.
+    hash_table: HashMap<Vec<u8>, UniqueId>,
+
+    /// The table which allocated unique IDs.
+    id_table: IdTable,
+
+    /// The currently selected hash algorithm.
     hash_algorithm: HashAlgorithm,
+}
+
+impl ContentRepoState {
+    /// Return a new empty `ContentRepoState`.
+    fn new() -> Self {
+        ContentRepoState {
+            hash_table: HashMap::new(),
+            id_table: IdTable::new(),
+            hash_algorithm: DEFAULT_ALGORITHM,
+        }
+    }
+
+    /// Clear the `ContentRepoState` in place.
+    fn clear(&mut self) {
+        self.hash_table.clear();
+        self.id_table = IdTable::new();
+    }
+}
+
+/// The key for the `KeyRepo` which backs a `ContentRepo`.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
+enum ContentRepoKey {
+    /// The object which contains the serialized current repository state.
+    CurrentState,
+
+    /// The object which contains the serialized repository state as of the previous commit.
+    PreviousState,
+
+    /// The object which is used to temporarily store the object state.
+    TempState,
+
+    /// The object we write the data to before the hash is fully calculated.
+    Stage,
+
+    /// An object which stores data by its cryptographic hash.
+    Object(UniqueId),
 }
 
 /// A content-addressable storage.
@@ -43,40 +85,70 @@ struct ContentRepoState {
 /// See [`crate::repo::content`] for more information.
 #[derive(Debug)]
 pub struct ContentRepo {
-    repo: ObjectRepo,
+    repo: KeyRepo<ContentRepoKey>,
     state: ContentRepoState,
 }
 
 impl OpenRepo for ContentRepo {
-    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("a5994919 e6b7 4d88 9d7c 7d2c55e398b5"));
+    type Key = ContentRepoKey;
 
-    fn open_repo(mut repo: ObjectRepo) -> crate::Result<Self>
+    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("9a659ef2 b9d9 4d54 a8ce 57b1ceb66c93"));
+
+    fn open_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized,
     {
-        let state = read_state(&mut repo)?;
-        Ok(Self { repo, state })
-    }
-
-    fn create_repo(mut repo: ObjectRepo) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let state = ContentRepoState {
-            hash_table: HashMap::new(),
-            hash_algorithm: DEFAULT_ALGORITHM,
+        let mut content_repo = Self {
+            repo,
+            state: ContentRepoState::new(),
         };
-        write_state(&mut repo, &state)?;
-        Ok(Self { repo, state })
+        content_repo.read_state()?;
+        Ok(content_repo)
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepo> {
-        write_state(&mut self.repo, &self.state)?;
+    fn create_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut content_repo = Self {
+            repo,
+            state: ContentRepoState::new(),
+        };
+        content_repo.write_state()?;
+        Ok(content_repo)
+    }
+
+    fn into_repo(mut self) -> crate::Result<KeyRepo<Self::Key>> {
+        self.write_state()?;
         Ok(self.repo)
     }
 }
 
 impl ContentRepo {
+    /// Read the current repository state from the backing repository.
+    fn read_state(&mut self) -> crate::Result<()> {
+        let mut object = self.repo.object(&ContentRepoKey::CurrentState).unwrap();
+        self.state = object.deserialize()?;
+        Ok(())
+    }
+
+    /// Write the current repository state to the backing repository.
+    fn write_state(&mut self) -> crate::Result<()> {
+        let mut object = self.repo.insert(ContentRepoKey::TempState);
+        object.serialize(&self.state)?;
+        drop(object);
+
+        self.repo
+            .copy(&ContentRepoKey::TempState, ContentRepoKey::CurrentState);
+
+        if !self.repo.contains(&ContentRepoKey::PreviousState) {
+            self.repo
+                .copy(&ContentRepoKey::CurrentState, ContentRepoKey::PreviousState);
+        }
+
+        Ok(())
+    }
+
     /// Return whether the repository contains an object with the given `hash`.
     pub fn contains(&self, hash: &[u8]) -> bool {
         self.state.hash_table.contains_key(hash)
@@ -94,8 +166,7 @@ impl ContentRepo {
         let mut bytes_read;
 
         // Create an object to write the data to.
-        let mut stage_handle = self.repo.add_unmanaged();
-        let mut stage_object = self.repo.unmanaged_object_mut(&mut stage_handle).unwrap();
+        let mut stage_object = self.repo.insert(ContentRepoKey::Stage);
 
         // Calculate the hash and write to the repository simultaneously so the `data` is only read
         // once.
@@ -113,12 +184,15 @@ impl ContentRepo {
 
         // Now that we know the hash, we can associate the object with its hash.
         let hash = digest.result();
-        if self.state.hash_table.contains_key(&hash) {
-            // The data is already in the repository. Delete the object.
-            self.repo.remove_unmanaged(&stage_handle);
-        } else {
-            self.state.hash_table.insert(hash.clone(), stage_handle);
+        if !self.state.hash_table.contains_key(&hash) {
+            let object_id = self.state.id_table.next();
+            self.state.hash_table.insert(hash.clone(), object_id);
+            self.repo
+                .copy(&ContentRepoKey::Stage, ContentRepoKey::Object(object_id));
         }
+
+        // Remove the temporary object.
+        self.repo.remove(&ContentRepoKey::Stage);
 
         Ok(hash)
     }
@@ -132,11 +206,11 @@ impl ContentRepo {
     ///
     /// [`clean`]: crate::repo::content::ContentRepo::clean
     pub fn remove(&mut self, hash: &[u8]) -> bool {
-        let handle = match self.state.hash_table.remove(hash) {
-            Some(handle) => handle,
+        let object_id = match self.state.hash_table.remove(hash) {
+            Some(object_id) => object_id,
             None => return false,
         };
-        self.repo.remove_unmanaged(&handle);
+        self.repo.remove(&ContentRepoKey::Object(object_id));
         true
     }
 
@@ -144,8 +218,8 @@ impl ContentRepo {
     ///
     /// This returns `None` if there is no data with the given `hash` in the repository.
     pub fn object(&self, hash: &[u8]) -> Option<ReadOnlyObject> {
-        let handle = self.state.hash_table.get(hash)?;
-        self.repo.unmanaged_object(handle)
+        let object_id = self.state.hash_table.get(hash)?;
+        self.repo.object(&ContentRepoKey::Object(*object_id))
     }
 
     /// Return an iterator of hashes of all the objects in this repository.
@@ -176,11 +250,14 @@ impl ContentRepo {
 
         // Re-compute the hashes of the objects in the repository.
         let old_table = mem::replace(&mut self.state.hash_table, HashMap::new());
-        for (_, object_handle) in old_table {
-            let mut object = self.repo.unmanaged_object(&object_handle).unwrap();
+        for (_, object_id) in old_table {
+            let mut object = self
+                .repo
+                .object(&ContentRepoKey::Object(object_id))
+                .unwrap();
             let new_hash = new_algorithm.hash(&mut object)?;
             drop(object);
-            self.state.hash_table.insert(new_hash, object_handle);
+            self.state.hash_table.insert(new_hash, object_id);
         }
 
         Ok(())
@@ -188,61 +265,101 @@ impl ContentRepo {
 
     /// Commit changes which have been made to the repository.
     ///
-    /// See [`ObjectRepo::commit`] for details.
+    /// See [`KeyRepo::commit`] for details.
     ///
-    /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
+    /// [`KeyRepo::commit`]: crate::repo::key::KeyRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
-        commit(&mut self.repo, &self.state)
+        // Write the current repository state.
+        self.write_state()?;
+
+        // Copy the previous repository state to a temporary object so we can restore it if
+        // committing the backing repository fails.
+        self.repo
+            .copy(&ContentRepoKey::PreviousState, ContentRepoKey::TempState);
+
+        // Overwrite the previous repository state with the current repository state so that if the
+        // commit succeeds, future rollbacks will restore to this point.
+        self.repo
+            .copy(&ContentRepoKey::CurrentState, ContentRepoKey::PreviousState);
+
+        // Attempt to commit changes to the backing repository.
+        let result = self.repo.commit();
+
+        // If the commit fails, restore the previous repository state from the temporary
+        // object so we can still roll back the changes.
+        if result.is_err() {
+            self.repo
+                .copy(&ContentRepoKey::TempState, ContentRepoKey::PreviousState);
+        }
+
+        result
     }
 
     /// Roll back all changes made since the last commit.
     ///
-    /// See [`ObjectRepo::rollback`] for details.
+    /// See [`KeyRepo::rollback`] for details.
     ///
-    /// [`ObjectRepo::rollback`]: crate::repo::object::ObjectRepo::rollback
+    /// [`KeyRepo::rollback`]: crate::repo::key::KeyRepo::rollback
     pub fn rollback(&mut self) -> crate::Result<()> {
-        self.state = rollback(&mut self.repo)?;
+        let mut object = self
+            .repo
+            .object(&ContentRepoKey::PreviousState)
+            .ok_or(crate::Error::Corrupt)?;
+        let state = match object.deserialize() {
+            Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
+            Err(error) => return Err(error),
+            Ok(value) => value,
+        };
+        drop(object);
+
+        self.repo.rollback()?;
+
+        self.state = state;
+
         Ok(())
     }
 
     /// Create a new `Savepoint` representing the current state of the repository.
     ///
-    /// See [`ObjectRepo::savepoint`] for details.
+    /// See [`KeyRepo::savepoint`] for details.
     ///
-    /// # Errors
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    ///
-    /// [`ObjectRepo::savepoint`]: crate::repo::object::ObjectRepo::savepoint
+    /// [`KeyRepo::savepoint`]: crate::repo::key::KeyRepo::savepoint
     pub fn savepoint(&mut self) -> crate::Result<Savepoint> {
-        write_state(&mut self.repo, &self.state)?;
-        Ok(self.repo.savepoint())
+        self.write_state()?;
+        self.repo.savepoint()
     }
 
     /// Restore the repository to the given `savepoint`.
     ///
-    /// See [`ObjectRepo::restore`] for details.
+    /// See [`KeyRepo::restore`] for details.
     ///
-    /// # Errors
-    /// - `Error::NotFound`: The given savepoint is not associated with this repository.
-    /// - `Error::InvalidSavepoint`: The given savepoint is invalid.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    ///
-    /// [`ObjectRepo::restore`]: crate::repo::object::ObjectRepo::restore
-    pub fn restore(&mut self, savepoint: &Savepoint) -> crate::Result<()> {
-        self.repo.restore(savepoint)?;
-        self.state = read_state(&mut self.repo)?;
-        Ok(())
+    /// [`KeyRepo::restore`]: crate::repo::key::KeyRepo::restore
+    pub fn restore<T>(
+        &mut self,
+        savepoint: &Savepoint,
+        block: impl FnOnce(&mut Self) -> crate::Result<T>,
+    ) -> crate::Result<T> {
+        // TODO: What happens if restoring the backing repo succeeds but reading the state does not?
+        self.repo.restore(savepoint, |repo| {
+            let old_state = self.state.clone();
+
+            let mut object = repo.object(&ContentRepoKey::CurrentState).unwrap();
+            self.state = object.deserialize()?;
+            drop(object);
+
+            let result = block(&mut self);
+            if result.is_err() {
+                self.state = old_state;
+            }
+            result
+        })
     }
 
     /// Clean up the repository to reclaim space in the backing data store.
     ///
-    /// See [`ObjectRepo::clean`] for details.
+    /// See [`KeyRepo::clean`] for details.
     ///
-    /// [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
+    /// [`KeyRepo::clean`]: crate::repo::key::KeyRepo::clean
     pub fn clean(&mut self) -> crate::Result<()> {
         self.repo.clean()
     }
@@ -253,20 +370,18 @@ impl ContentRepo {
     ///
     /// [`KeyRepo::clear_instance`]: crate::repo::key::KeyRepo::clear_instance
     pub fn clear_instance(&mut self) {
-        for handle in self.state.hash_table.values() {
-            self.repo.remove_unmanaged(handle);
-        }
-        self.state.hash_table.clear();
+        self.repo.clear_instance();
+        self.state.clear();
     }
 
     /// Delete all data in all instances of the repository.
     ///
-    /// See [`ObjectRepo::clear_repo`] for details.
+    /// See [`KeyRepo::clear_repo`] for details.
     ///
-    /// [`ObjectRepo::clear_repo`]: crate::repo::object::ObjectRepo::clear_repo
+    /// [`KeyRepo::clear_repo`]: crate::repo::key::KeyRepo::clear_repo
     pub fn clear_repo(&mut self) {
         self.repo.clear_repo();
-        self.state.hash_table.clear();
+        self.state.clear();
     }
 
     /// Verify the integrity of all the data in the repository.
@@ -284,21 +399,21 @@ impl ContentRepo {
     ///
     /// [`Object::verify`]: crate::repo::Object::verify
     pub fn verify(&self) -> crate::Result<HashSet<&[u8]>> {
-        let report = self.repo.verify()?;
+        let corrupt_keys = self.repo.verify()?;
         Ok(self
             .state
             .hash_table
             .iter()
-            .filter(|(_, handle)| !report.check_unmanaged(handle))
+            .filter(|(_, object_id)| corrupt_keys.contains(&ContentRepoKey::Object(**object_id)))
             .map(|(hash, _)| hash.as_slice())
             .collect::<HashSet<_>>())
     }
 
     /// Change the password for this repository.
     ///
-    /// See [`ObjectRepo::change_password`] for details.
+    /// See [`KeyRepo::change_password`] for details.
     ///
-    /// [`ObjectRepo::change_password`]: crate::repo::object::ObjectRepo::change_password
+    /// [`KeyRepo::change_password`]: crate::repo::key::KeyRepo::change_password
     pub fn change_password(&mut self, new_password: &[u8]) {
         self.repo.change_password(new_password)
     }
