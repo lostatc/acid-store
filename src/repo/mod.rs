@@ -122,7 +122,7 @@
 
 pub use self::common::{
     peek_info, Chunking, Compression, ContentId, Encryption, Object, OpenMode, OpenOptions,
-    OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit, Restore, Savepoint,
+    OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit, Savepoint,
     SwitchInstance, DEFAULT_INSTANCE,
 };
 
@@ -150,7 +150,7 @@ pub use self::common::{
 /// [`SwitchInstance`]: crate::repo::SwitchInstance
 /// [`KeyRepo::commit`]: crate::repo::key::KeyRepo::commit
 pub mod key {
-    pub use super::common::{Key, KeyRepo};
+    pub use super::common::{Key, KeyRepo, Restore};
 }
 
 mod common;

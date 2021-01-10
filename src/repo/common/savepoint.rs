@@ -14,17 +14,24 @@
  * limitations under the License.
  */
 
+use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::sync::{Arc, Weak};
 
 use uuid::Uuid;
 
 use super::metadata::Header;
+use super::object::ObjectHandle;
+use super::repository::KeyRepo;
 
 /// A target for rolling back changes in a repository.
 ///
 /// Repositories support creating savepoints and later restoring to those savepoints, undoing any
-/// changes made since they were created. You can use [`KeyRepo::savepoint`] to create a
-/// savepoint and [`KeyRepo::restore`] to restore to a savepoint.
+/// changes made since they were created.
+///
+/// You can use [`KeyRepo::savepoint`] to create a savepoint and you can use
+/// [`KeyRepo::start_restore`] and [`KeyRepo::finish_restore`] to restore the repository to a
+/// savepoint.
 ///
 /// Savepoints aren't just used to "undo" changes; they can also be used to "redo" changes. If you
 /// create a savepoint `A` and then later create a savepoint `B`, you can restore to `A` and *then*
@@ -36,7 +43,8 @@ use super::metadata::Header;
 /// determine whether the current savepoint is valid.
 ///
 /// [`KeyRepo::savepoint`]: crate::repo::key::KeyRepo::savepoint
-/// [`KeyRepo::restore`]: crate::repo::key::KeyRepo::restore
+/// [`KeyRepo::start_restore`]: crate::repo::key::KeyRepo::start_restore
+/// [`KeyRepo::finish_restore`]: crate::repo::key::KeyRepo::finish_restore
 /// [`is_valid`]: crate::repo::Savepoint::is_valid
 #[derive(Debug, Clone)]
 pub struct Savepoint {
@@ -56,6 +64,39 @@ pub struct Savepoint {
 
 impl Savepoint {
     /// Return whether this savepoint is valid.
+    pub fn is_valid(&self) -> bool {
+        self.transaction_id.upgrade().is_some()
+    }
+}
+
+/// An in-progress operation to restore a [`KeyRepo`] to a [`Savepoint`].
+///
+/// This value is returned by [`KeyRepo::start_restore`] and can be passed to
+/// [`KeyRepo::finish_restore`] to atomically complete the restore.
+///
+/// Unlike a [`Savepoint`], a `Restore` cannot outlive the repository it's associated with, meaning
+/// that it is not possible to start a restore, switch repository instances, and then finish the
+/// restore.
+///
+/// If this value is dropped, the restore is cancelled.
+///
+/// [`KeyRepo`]: crate::repo::key::KeyRepo
+/// [`Savepoint`]: crate::repo::Savepoint
+/// [`KeyRepo::start_restore`]: crate::repo::key::KeyRepo::start_restore
+/// [`KeyRepo::finish_restore`]: crate::repo::key::KeyRepo::finish_restore
+#[derive(Debug, Clone)]
+pub struct Restore<'a, K> {
+    pub(super) objects: HashMap<K, ObjectHandle>,
+    pub(super) header: Header,
+    pub(super) transaction_id: Weak<Uuid>,
+    // We need this lifetime parameter to ensure that it is not possible to complete this restore if
+    // the user switches instances. This value contains the object map for the current instance
+    // only, so switching instances should invalidate it.
+    pub(super) marker: PhantomData<&'a ()>,
+}
+
+impl<'a, K> Restore<'a, K> {
+    /// Return whether the savepoint used to start this restore is valid.
     pub fn is_valid(&self) -> bool {
         self.transaction_id.upgrade().is_some()
     }

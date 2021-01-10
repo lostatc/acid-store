@@ -31,6 +31,9 @@
 //! [`ContentRepo::commit`]: crate::repo::content::ContentRepo::commit
 pub use hash::HashAlgorithm;
 pub use repository::ContentRepo;
+pub use restore::Restore;
 
 mod hash;
 mod repository;
+mod restore;
+mod state;
