@@ -156,6 +156,7 @@ pub mod key {
 mod common;
 pub mod content;
 pub mod file;
+mod id_table;
 mod state_helpers;
 pub mod value;
 pub mod version;

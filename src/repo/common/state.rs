@@ -23,12 +23,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::repo::common::object::ObjectHandle;
+use crate::repo::id_table::UniqueId;
 use crate::store::DataStore;
 
 use super::chunk_store::StoreState;
 use super::chunking::IncrementalChunker;
 use super::encryption::EncryptionKey;
-use super::id_table::UniqueId;
 use super::lock::Lock;
 use super::metadata::RepoMetadata;
 use super::object::Chunk;

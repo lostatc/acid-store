@@ -21,11 +21,11 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::repo::common::repository::METADATA_BLOCK_ID;
+use crate::repo::id_table::IdTable;
 use crate::store::{DataStore, OpenStore};
 
 use super::config::RepoConfig;
 use super::encryption::KeySalt;
-use super::id_table::IdTable;
 use super::object::{Chunk, ObjectHandle};
 use super::state::{ChunkInfo, InstanceInfo, PackIndex};
 
