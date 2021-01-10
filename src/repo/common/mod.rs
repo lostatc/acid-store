@@ -24,7 +24,6 @@ pub use self::object::{ContentId, Object, ReadOnlyObject};
 pub use self::open_options::{OpenMode, OpenOptions, DEFAULT_INSTANCE};
 pub use self::open_repo::{OpenRepo, SwitchInstance};
 pub use self::packing::Packing;
-pub use self::report::IntegrityReport;
 pub use self::repository::KeyRepo;
 pub use self::savepoint::Savepoint;
 
@@ -33,7 +32,6 @@ mod chunking;
 mod compression;
 mod config;
 mod encryption;
-mod id_table;
 mod key;
 mod lock;
 mod metadata;

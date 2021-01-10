@@ -26,8 +26,9 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::repo::id_table::UniqueId;
+
 use super::chunk_store::{ReadChunk, StoreReader, StoreWriter, WriteChunk};
-use super::id_table::UniqueId;
 use super::state::RepoState;
 use super::state::{ChunkLocation, ObjectState};
 

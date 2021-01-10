@@ -25,6 +25,7 @@ use uuid::Uuid;
 
 use crate::repo::common::object::ObjectHandle;
 use crate::repo::common::state::InstanceInfo;
+use crate::repo::id_table::IdTable;
 use crate::repo::key::Key;
 use crate::repo::Object;
 use crate::store::{DataStore, OpenStore};
@@ -33,7 +34,6 @@ use super::chunking::Chunking;
 use super::compression::Compression;
 use super::config::RepoConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt, ResourceLimit};
-use super::id_table::IdTable;
 use super::lock::LockTable;
 use super::metadata::{peek_info_store, Header, RepoMetadata};
 use super::open_repo::OpenRepo;
@@ -53,7 +53,7 @@ pub const DEFAULT_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92
 ///
 /// This must be changed any time a backwards-incompatible change is made to the repository
 /// format.
-const VERSION_ID: Uuid = Uuid::from_bytes(hex!("2f7c9a99-a861-4e90-941b-cae591ddd848"));
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("25df72b4 8368 4409 910b fef908e1cf90"));
 
 /// A table of locks on repositories.
 static REPO_LOCKS: Lazy<Mutex<LockTable>> = Lazy::new(|| Mutex::new(LockTable::new()));

@@ -21,16 +21,16 @@ use serde::{Deserialize, Serialize};
 /// An ID value which is unique within the same `IdTable`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct UniqueId(u32);
+pub struct UniqueId(u64);
 
 /// A table for allocating `UniqueId` values.
 #[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
 pub struct IdTable {
     /// The highest used ID value (the high water mark).
-    highest: u32,
+    highest: u64,
 
     /// A set of unused ID values below the high water mark.
-    unused: HashSet<u32>,
+    unused: HashSet<u64>,
 }
 
 impl IdTable {

@@ -26,6 +26,7 @@ use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
 use uuid::Uuid;
 
+use crate::repo::id_table::IdTable;
 use crate::repo::{OpenRepo, Packing};
 use crate::store::DataStore;
 
@@ -33,7 +34,6 @@ use super::chunk_store::{
     EncodeBlock, ReadBlock, ReadChunk, StoreReader, StoreState, StoreWriter, WriteBlock,
 };
 use super::encryption::{EncryptionKey, KeySalt};
-use super::id_table::IdTable;
 use super::key::Key;
 use super::metadata::{Header, RepoInfo};
 use super::object::{chunk_hash, Object, ObjectHandle, ReadOnlyObject};

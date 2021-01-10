@@ -20,8 +20,8 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::repo::common::packing::Packing;
+use crate::repo::id_table::UniqueId;
 
-use super::id_table::UniqueId;
 use super::object::{chunk_hash, Chunk};
 use super::state::{ChunkInfo, Pack, PackIndex, RepoState};
 
