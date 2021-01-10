@@ -25,7 +25,7 @@ pub use self::open_options::{OpenMode, OpenOptions, DEFAULT_INSTANCE};
 pub use self::open_repo::{OpenRepo, SwitchInstance};
 pub use self::packing::Packing;
 pub use self::repository::KeyRepo;
-pub use self::savepoint::Savepoint;
+pub use self::savepoint::{Restore, Savepoint};
 
 mod chunk_store;
 mod chunking;

@@ -27,8 +27,9 @@ use secrecy::ExposeSecret;
 use uuid::Uuid;
 
 use crate::repo::id_table::IdTable;
-use crate::repo::{OpenRepo, Packing};
+use crate::repo::{OpenRepo, Packing, Restore};
 use crate::store::DataStore;
+use crate::Error;
 
 use super::chunk_store::{
     EncodeBlock, ReadBlock, ReadChunk, StoreReader, StoreState, StoreWriter, WriteBlock,
@@ -431,25 +432,46 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// If this returns `Ok`, the repository's state has been restored. If this returns `Err`, the
     /// repository is unchanged.
-    fn restore_header(&mut self, header: Header) -> crate::Result<()> {
+    fn restore_header<T>(
+        &mut self,
+        header: Header,
+        block: impl FnOnce(&mut Self) -> crate::Result<T>,
+    ) -> crate::Result<T> {
         // We need to restore the repository state before we can read the object map.
         let old_chunks = mem::replace(&mut self.state.chunks, header.chunks);
         let old_packs = mem::replace(&mut self.state.packs, header.packs);
         let old_instances = mem::replace(&mut self.instances, header.instances);
         let old_handle_table = mem::replace(&mut self.handle_table, header.handle_table);
 
-        let result = self.read_object_map();
+        let old_objects = self.objects.clone();
 
-        // If restoring the object map failed, we need to undo the changes we made to the repository
-        // state so that the repository is unchanged.
-        if result.is_err() {
-            self.state.chunks = old_chunks;
-            self.state.packs = old_packs;
-            self.instances = old_instances;
-            self.handle_table = old_handle_table;
+        match self.read_object_map() {
+            Ok(_) => {
+                let result = block(&mut self);
+                if result.is_err() {
+                    // If the provided closure returned `Restore::Cancel`, we need to undo the
+                    // changes we made to the repository state so that the repository is unchanged.
+                    self.state.chunks = old_chunks;
+                    self.state.packs = old_packs;
+                    self.instances = old_instances;
+                    self.handle_table = old_handle_table;
+
+                    // Because `read_object_map` returned `Ok`, we also need to undo the changes we
+                    // made to the object map.
+                    self.objects = old_objects;
+                }
+                result
+            }
+            Err(error) => {
+                // If restoring the object map failed, we need to undo the changes we made to the
+                // repository state so that the repository is unchanged.
+                self.state.chunks = old_chunks;
+                self.state.packs = old_packs;
+                self.instances = old_instances;
+                self.handle_table = old_handle_table;
+                Err(error)
+            }
         }
-
-        result
     }
 
     /// Commit changes which have been made to the repository.
@@ -523,7 +545,7 @@ impl<K: Key> KeyRepo<K> {
             from_read(serialized_header.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
         // Atomically restore from the deserialized header.
-        self.restore_header(header)
+        self.restore_header(header, |_| Ok(()))
     }
 
     /// Create a new `Savepoint` representing the current state of the repository.
@@ -556,8 +578,11 @@ impl<K: Key> KeyRepo<K> {
     /// This method functions similarly to [`rollback`], but instead of restoring the repository to
     /// the previous commit, it restores the repository to the given `savepoint`.
     ///
-    /// If this method returns `Ok`, the repository has been restored. If this method returns `Err`,
-    /// the repository is unchanged.
+    /// This method accepts a `block` closure which is passed a mutable reference to the restored
+    /// repository. This closure returns a [`crate::Result`] which determines whether the restore
+    /// will complete or not. If the closure returns `Ok`, this method will return `Ok` and the
+    /// repository will be restored. If the closure returns `Err`, this method will return `Err` and
+    /// the repository will be unchanged.
     ///
     /// This method affects all instances of the repository.
     ///
@@ -568,7 +593,7 @@ impl<K: Key> KeyRepo<K> {
     /// ```
     /// # use std::io::Write;
     /// # use acid_store::store::MemoryConfig;
-    /// # use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo};
+    /// # use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo, Restore};
     /// #
     /// # let mut repo: KeyRepo<String> = OpenOptions::new()
     /// #     .mode(OpenMode::CreateNew)
@@ -584,7 +609,7 @@ impl<K: Key> KeyRepo<K> {
     /// drop(object);
     ///
     /// // Restore to the savepoint.
-    /// repo.restore(&savepoint).unwrap();
+    /// repo.restore(&savepoint, |_| Ok(())).unwrap();
     ///
     /// assert!(!repo.contains("test"));
     /// ```
@@ -597,8 +622,13 @@ impl<K: Key> KeyRepo<K> {
     /// - `Error::Io`: An I/O error occurred.
     ///
     /// [`rollback`]: crate::repo::key::KeyRepo::rollback
+    /// [`Restore`]: crate::repo::Restore
     /// [`Savepoint`]: crate::repo::Savepoint
-    pub fn restore(&mut self, savepoint: &Savepoint) -> crate::Result<()> {
+    pub fn restore<T>(
+        &mut self,
+        savepoint: &Savepoint,
+        block: impl FnOnce(&mut Self) -> crate::Result<T>,
+    ) -> crate::Result<T> {
         match savepoint.transaction_id.upgrade() {
             None => return Err(crate::Error::InvalidSavepoint),
             Some(transaction_id) if transaction_id != self.transaction_id => {
@@ -611,7 +641,7 @@ impl<K: Key> KeyRepo<K> {
         let header = (*savepoint.header).clone();
 
         // Atomically restore from the header.
-        self.restore_header(header)
+        self.restore_header(header, block)
     }
 
     /// Clean up the repository to reclaim space in the backing data store.
