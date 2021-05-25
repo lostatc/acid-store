@@ -22,7 +22,6 @@ use uuid::Uuid;
 
 use super::metadata::Header;
 use super::object::ObjectHandle;
-use super::repository::KeyRepo;
 
 /// A target for rolling back changes in a repository.
 ///

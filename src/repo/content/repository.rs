@@ -16,22 +16,14 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
-use std::mem;
 
 use hex_literal::hex;
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::repo::id_table::{IdTable, UniqueId};
-use crate::repo::{key::KeyRepo, OpenRepo, ReadOnlyObject, RepoInfo, Restore, Savepoint};
-use crate::Error;
+use crate::repo::{key::KeyRepo, state_repo, OpenRepo, ReadOnlyObject, RepoInfo, Savepoint};
 
 use super::hash::{HashAlgorithm, BUFFER_SIZE};
-use super::restore::Restore;
-use super::state::{ContentRepoKey, ContentRepoState};
-
-/// The default hash algorithm to use for `ContentRepo`.
-const DEFAULT_ALGORITHM: HashAlgorithm = HashAlgorithm::Blake3;
+use super::state::{ContentRepoKey, ContentRepoState, Restore, STATE_KEYS};
 
 /// A content-addressable storage.
 ///
@@ -80,25 +72,12 @@ impl OpenRepo for ContentRepo {
 impl ContentRepo {
     /// Read the current repository state from the backing repository and return it.
     fn read_state(&mut self) -> crate::Result<ContentRepoState> {
-        let mut object = self.repo.object(&ContentRepoKey::CurrentState).unwrap();
-        object.deserialize()
+        state_repo::read_state(&mut self.repo, STATE_KEYS)
     }
 
     /// Write the current repository state to the backing repository.
     fn write_state(&mut self) -> crate::Result<()> {
-        let mut object = self.repo.insert(ContentRepoKey::TempState);
-        object.serialize(&self.state)?;
-        drop(object);
-
-        self.repo
-            .copy(&ContentRepoKey::TempState, ContentRepoKey::CurrentState);
-
-        if !self.repo.contains(&ContentRepoKey::PreviousState) {
-            self.repo
-                .copy(&ContentRepoKey::CurrentState, ContentRepoKey::PreviousState);
-        }
-
-        Ok(())
+        state_repo::write_state(&mut self.repo, STATE_KEYS, &self.state)
     }
 
     /// Return whether the repository contains an object with the given `hash`.
@@ -222,30 +201,7 @@ impl ContentRepo {
     ///
     /// [`KeyRepo::commit`]: crate::repo::key::KeyRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
-        // Write the current repository state.
-        self.write_state()?;
-
-        // Copy the previous repository state to a temporary object so we can restore it if
-        // committing the backing repository fails.
-        self.repo
-            .copy(&ContentRepoKey::PreviousState, ContentRepoKey::TempState);
-
-        // Overwrite the previous repository state with the current repository state so that if the
-        // commit succeeds, future rollbacks will restore to this point.
-        self.repo
-            .copy(&ContentRepoKey::CurrentState, ContentRepoKey::PreviousState);
-
-        // Attempt to commit changes to the backing repository.
-        let result = self.repo.commit();
-
-        // If the commit fails, restore the previous repository state from the temporary
-        // object so we can still roll back the changes.
-        if result.is_err() {
-            self.repo
-                .copy(&ContentRepoKey::TempState, ContentRepoKey::PreviousState);
-        }
-
-        result
+        state_repo::commit(&mut self.repo, STATE_KEYS, &self.state)
     }
 
     /// Roll back all changes made since the last commit.
@@ -254,22 +210,7 @@ impl ContentRepo {
     ///
     /// [`KeyRepo::rollback`]: crate::repo::key::KeyRepo::rollback
     pub fn rollback(&mut self) -> crate::Result<()> {
-        let mut object = self
-            .repo
-            .object(&ContentRepoKey::PreviousState)
-            .ok_or(crate::Error::Corrupt)?;
-        let state = match object.deserialize() {
-            Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
-            Err(error) => return Err(error),
-            Ok(value) => value,
-        };
-        drop(object);
-
-        self.repo.rollback()?;
-
-        self.state = state;
-
-        Ok(())
+        state_repo::rollback(&mut self.repo, STATE_KEYS, &mut self.state)
     }
 
     /// Create a new `Savepoint` representing the current state of the repository.
@@ -278,8 +219,7 @@ impl ContentRepo {
     ///
     /// [`KeyRepo::savepoint`]: crate::repo::key::KeyRepo::savepoint
     pub fn savepoint(&mut self) -> crate::Result<Savepoint> {
-        self.write_state()?;
-        self.repo.savepoint()
+        state_repo::savepoint(&mut self.repo, STATE_KEYS, &self.state)
     }
 
     /// Start the process of restoring the repository to the given `savepoint`.
@@ -288,34 +228,11 @@ impl ContentRepo {
     ///
     /// [`KeyRepo::start_restore`]: crate::repo::key::KeyRepo::start_restore
     pub fn start_restore(&mut self, savepoint: &Savepoint) -> crate::Result<Restore> {
-        // Create a savepoint on the backing repository that we can restore to to undo any changes
-        // we make to the repository in this method. This is necessary to uphold the contract that
-        // the repository is unchanged when this method returns. It's important that we start the
-        // restore process here so that it can be completed infallibly.
-        let backup_restore = self.repo.start_restore(&self.repo.savepoint()?)?;
-
-        // Temporarily restore the backing repository to the given `savepoint` so we can read the
-        // repository state from when the savepoint was created.
-        let restore = self.repo.start_restore(savepoint)?;
-
-        // Note that we clone the `restore` value so that we can also use it in the returned
-        // `Restore` value. This is more efficient than calling `start_restore` twice.
-        self.repo.finish_restore(restore.clone())?;
-
-        // Read the repository state from the backing repository and then restore it to the state it
-        // was in before this method was called.
-        let state = match self.read_state() {
-            Ok(state) => {
-                self.repo.finish_restore(backup_restore);
-                state
-            }
-            Err(error) => {
-                self.repo.finish_restore(backup_restore);
-                return Err(error);
-            }
-        };
-
-        Ok(Restore { state, restore })
+        Ok(Restore(state_repo::start_restore(
+            &mut self.repo,
+            STATE_KEYS,
+            savepoint,
+        )?))
     }
 
     /// Finish the process of restoring the repository to a [`Savepoint`].
@@ -325,11 +242,7 @@ impl ContentRepo {
     /// [`Savepoint`]: crate::repo::Savepoint
     /// [`KeyRepo::finish_restore`]: crate::repo::key::KeyRepo::finish_restore
     pub fn finish_restore(&mut self, restore: Restore) -> bool {
-        if !self.repo.finish_restore(restore.restore) {
-            return false;
-        }
-        self.state = restore.state;
-        true
+        state_repo::finish_restore(&mut self.repo, &mut self.state, restore.0)
     }
 
     /// Clean up the repository to reclaim space in the backing data store.
