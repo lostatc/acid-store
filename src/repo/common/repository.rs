@@ -39,7 +39,6 @@ use super::metadata::{Header, RepoInfo};
 use super::object::{chunk_hash, Object, ObjectHandle, ReadOnlyObject};
 use super::open_repo::OpenRepo;
 use super::packing::Packing;
-use super::savepoint::RestoreState;
 use super::savepoint::{Restore, Savepoint};
 use super::state::{InstanceInfo, RepoState};
 
@@ -228,7 +227,7 @@ impl<K: Key> KeyRepo<K> {
             None => return false,
         };
 
-        self.remove(&dest);
+        self.remove(dest.borrow());
 
         let dest_handle = ObjectHandle {
             id: self.handle_table.next(),
@@ -294,7 +293,7 @@ impl<K: Key> KeyRepo<K> {
             .get_mut(&self.instance_id)
             .expect("There is no instance with the given ID.")
             .objects;
-        let mut instance_object = Object::new(&mut state, handle);
+        let mut instance_object = Object::new(&mut self.state, handle);
         instance_object.deserialize()
     }
 
