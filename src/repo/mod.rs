@@ -56,9 +56,8 @@
 //! for details.
 //!
 //! Repositories support creating savepoints and then later restoring to those savepoints to
-//! atomically undo or redo individual changes to a repository without rolling back all changes made
-//! since the last commit. See [`KeyRepo::savepoint`], [`KeyRepo::restore`], and [`Savepoint`]
-//! for details.
+//! atomically undo or redo changes to a repository without rolling back all changes made since the
+//! last commit. See [`Savepoint`] for details.
 //!
 //! # Encryption
 //! If encryption is enabled, the Argon2id key derivation function is used to derive a key from a
@@ -110,8 +109,6 @@
 //! [`Chunking`]: crate::repo::Chunking
 //! [`KeyRepo::commit`]: crate::repo::key::KeyRepo::commit
 //! [`KeyRepo::clean`]: crate::repo::key::KeyRepo::clean
-//! [`KeyRepo::savepoint`]: crate::repo::key::KeyRepo::savepoint
-//! [`KeyRepo::restore`]: crate::repo::key::KeyRepo::restore
 //! [`Savepoint`]: crate::repo::Savepoint
 //! [`Packing`]: crate::repo::Packing
 //! [`RepoInfo`]: crate::repo::RepoInfo

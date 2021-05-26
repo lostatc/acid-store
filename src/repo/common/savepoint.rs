@@ -73,9 +73,9 @@ impl Savepoint {
 /// This value is returned by [`KeyRepo::start_restore`] and can be passed to
 /// [`KeyRepo::finish_restore`] to atomically complete the restore.
 ///
-/// Unlike a [`Savepoint`], a `Restore` cannot outlive the repository it's associated with, meaning
-/// that it is not possible to start a restore, switch repository instances, and then finish the
-/// restore.
+/// Unlike a [`Savepoint`], a `Restore` cannot outlive the lifetime of the [`KeyRepo`] it's
+/// associated with, meaning that it is not possible to start a restore, switch repository
+/// instances, and then finish the restore.
 ///
 /// If this value is dropped, the restore is cancelled.
 ///
