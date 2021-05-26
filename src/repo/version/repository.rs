@@ -15,6 +15,7 @@
  */
 
 use std::borrow::Borrow;
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -25,58 +26,81 @@ use hex_literal::hex;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::repo::key::Key;
-use crate::repo::object::ObjectRepo;
-use crate::repo::state_helpers::{commit, read_state, rollback, write_state};
-use crate::repo::version::version::VersionInfo;
-use crate::repo::{Object, OpenRepo, ReadOnlyObject, RepoInfo, Savepoint};
+use crate::repo::id_table::UniqueId;
+use crate::repo::{
+    key::{Key, KeyRepo},
+    state_repo, Object, OpenRepo, ReadOnlyObject, RepoInfo, Savepoint,
+};
 
-use super::version::{KeyInfo, Version};
-
-/// The state for a `VersionRepo`.
-#[derive(Debug, Serialize, Deserialize)]
-struct VersionRepoState<K: Eq + Hash> {
-    key_table: HashMap<K, KeyInfo>,
-}
+use super::state::{Restore, VersionRepoKey, VersionRepoState, STATE_KEYS};
+use super::version::{KeyInfo, Version, VersionInfo};
 
 /// An object store with support for content versioning.
 ///
 /// See [`crate::repo::version`] for more information.
 #[derive(Debug)]
 pub struct VersionRepo<K: Key> {
-    repo: ObjectRepo,
+    repo: KeyRepo<VersionRepoKey>,
     state: VersionRepoState<K>,
 }
 
 impl<K: Key> OpenRepo for VersionRepo<K> {
-    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("9a09fd31 cd63 4267 a173 f53009956ab9"));
+    type Key = VersionRepoKey;
 
-    fn open_repo(mut repo: ObjectRepo) -> crate::Result<Self>
+    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("590bd584 be86 11eb b54d c32102ab5ae4"));
+
+    fn open_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized,
     {
-        let state = read_state(&mut repo)?;
-        Ok(Self { repo, state })
-    }
-
-    fn create_repo(mut repo: ObjectRepo) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let state = VersionRepoState {
-            key_table: HashMap::new(),
+        let mut version_repo = Self {
+            repo,
+            state: VersionRepoState::new(),
         };
-        write_state(&mut repo, &state)?;
-        Ok(Self { repo, state })
+        version_repo.state = version_repo.read_state()?;
+        Ok(version_repo)
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepo> {
-        write_state(&mut self.repo, &self.state)?;
+    fn create_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut version_repo = Self {
+            repo,
+            state: VersionRepoState::new(),
+        };
+        version_repo.write_state()?;
+        Ok(version_repo)
+    }
+
+    fn into_repo(mut self) -> crate::Result<KeyRepo<Self::Key>> {
+        self.write_state()?;
         Ok(self.repo)
     }
 }
 
 impl<K: Key> VersionRepo<K> {
+    /// Read the current repository state from the backing repository and return it.
+    fn read_state(&mut self) -> crate::Result<VersionRepoState<K>> {
+        state_repo::read_state(&mut self.repo, STATE_KEYS)
+    }
+
+    /// Write the current repository state to the backing repository.
+    fn write_state(&mut self) -> crate::Result<()> {
+        state_repo::write_state(&mut self.repo, STATE_KEYS, &self.state)
+    }
+
+    /// Remove the object with the given `object_id` from the backing repository.
+    fn remove_id(&mut self, object_id: UniqueId) -> bool {
+        if !self.state.id_table.recycle(object_id) {
+            return false;
+        }
+        if !self.repo.remove(&VersionRepoKey::Version(object_id)) {
+            panic!("Object ID was in use but not found in backing repository.");
+        }
+        true
+    }
+
     /// Return whether the given `key` exists in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
@@ -95,13 +119,13 @@ impl<K: Key> VersionRepo<K> {
             return None;
         }
 
-        let handles = KeyInfo {
+        let key_info = KeyInfo {
             versions: BTreeMap::new(),
-            object: self.repo.add_unmanaged(),
+            object: self.state.id_table.next(),
         };
 
-        let object_handle = &mut self.state.key_table.entry(key).or_insert(handles).object;
-        Some(self.repo.unmanaged_object_mut(object_handle).unwrap())
+        let object_id = &mut self.state.key_table.entry(key).or_insert(key_info).object;
+        Some(self.repo.insert(VersionRepoKey::Version(*object_id)))
     }
 
     /// Remove the given `key` and all its versions from the repository.
@@ -123,10 +147,10 @@ impl<K: Key> VersionRepo<K> {
         };
 
         for (_, info) in key_info.versions.iter() {
-            self.repo.remove_unmanaged(&info.handle);
+            self.remove_id(info.id);
         }
 
-        self.repo.remove_unmanaged(&key_info.object);
+        self.remove_id(key_info.object);
 
         true
     }
@@ -144,8 +168,12 @@ impl<K: Key> VersionRepo<K> {
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let handle = &self.state.key_table.get(key)?.object;
-        self.repo.unmanaged_object(handle)
+        let object_id = &self.state.key_table.get(key)?.object;
+        Some(
+            self.repo
+                .object(&VersionRepoKey::Version(*object_id))
+                .unwrap(),
+        )
     }
 
     /// Return an `Object` for reading and writing the current version of `key`.
@@ -161,8 +189,12 @@ impl<K: Key> VersionRepo<K> {
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let handle = &mut self.state.key_table.get_mut(key)?.object;
-        self.repo.unmanaged_object_mut(handle)
+        let object_id = &self.state.key_table.get(key)?.object;
+        Some(
+            self.repo
+                .object_mut(&VersionRepoKey::Version(*object_id))
+                .unwrap(),
+        )
     }
 
     /// Return an iterator of all the keys in this repository.
@@ -182,14 +214,26 @@ impl<K: Key> VersionRepo<K> {
         let key_info = self.state.key_table.get_mut(key)?;
 
         let version_id = key_info.versions.keys().rev().next().map_or(1, |id| id + 1);
+
+        let new_object_id = self.state.id_table.next();
+        self.repo.copy(
+            &VersionRepoKey::Version(key_info.object),
+            VersionRepoKey::Version(new_object_id),
+        );
+
         let version_info = VersionInfo {
             created: SystemTime::now(),
-            handle: self.repo.copy_unmanaged(&key_info.object),
+            id: new_object_id,
         };
+
         let version = Version {
             id: version_id,
             created: version_info.created,
-            content_id: version_info.handle.content_id(),
+            content_id: self
+                .repo
+                .object(&VersionRepoKey::Version(version_info.id))
+                .unwrap()
+                .content_id(),
         };
 
         key_info.versions.insert(version_id, version_info);
@@ -215,7 +259,7 @@ impl<K: Key> VersionRepo<K> {
             None => return false,
         };
 
-        self.repo.remove_unmanaged(&version_info.handle);
+        self.remove_id(version_info.id);
 
         true
     }
@@ -237,7 +281,11 @@ impl<K: Key> VersionRepo<K> {
     {
         let key_info = self.state.key_table.get(key)?;
         let version_info = key_info.versions.get(&version_id)?;
-        Some(self.repo.unmanaged_object(&version_info.handle).unwrap())
+        Some(
+            self.repo
+                .object(&VersionRepoKey::Version(version_info.id))
+                .unwrap(),
+        )
     }
 
     /// Return the version of `key` with the given `version_id`.
@@ -252,7 +300,11 @@ impl<K: Key> VersionRepo<K> {
         Some(Version {
             id: version_id,
             created: version_info.created,
-            content_id: version_info.handle.content_id(),
+            content_id: self
+                .repo
+                .object(&VersionRepoKey::Version(version_info.id))
+                .unwrap()
+                .content_id(),
         })
     }
 
@@ -267,18 +319,18 @@ impl<K: Key> VersionRepo<K> {
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        Some(
-            self.state
-                .key_table
-                .get(key)?
-                .versions
-                .iter()
-                .map(|(id, info)| Version {
-                    id: *id,
-                    created: info.created,
-                    content_id: info.handle.content_id(),
-                }),
-        )
+        let versions = &self.state.key_table.get(key)?.versions;
+        Some(versions.iter().map(move |(id, info)| {
+            Version {
+                id: *id,
+                created: info.created,
+                content_id: self
+                    .repo
+                    .object(&VersionRepoKey::Version(info.id))
+                    .unwrap()
+                    .content_id(),
+            }
+        }))
     }
 
     /// Replace the current version of `key` with the version with the given `version_id`.
@@ -303,70 +355,72 @@ impl<K: Key> VersionRepo<K> {
             None => return false,
         };
 
-        let new_handle = self.repo.copy_unmanaged(&version_info.handle);
-        let old_handle = mem::replace(&mut key_info.object, new_handle);
-        self.repo.remove_unmanaged(&old_handle);
+        let new_object_id = self.state.id_table.next();
+        self.repo.copy(
+            &VersionRepoKey::Version(version_info.id),
+            VersionRepoKey::Version(new_object_id),
+        );
+        let old_object_id = mem::replace(&mut key_info.object, new_object_id);
+        self.remove_id(old_object_id);
 
         true
     }
 
     /// Commit changes which have been made to the repository.
     ///
-    /// See [`ObjectRepo::commit`] for details.
+    /// See [`KeyRepo::commit`] for details.
     ///
-    /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
+    /// [`KeyRepo::commit`]: crate::repo::key::KeyRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
-        commit(&mut self.repo, &self.state)
+        state_repo::commit(&mut self.repo, STATE_KEYS, &self.state)
     }
 
     /// Roll back all changes made since the last commit.
     ///
-    /// See [`ObjectRepo::rollback`] for details.
+    /// See [`KeyRepo::rollback`] for details.
     ///
-    /// [`ObjectRepo::rollback`]: crate::repo::object::ObjectRepo::rollback
+    /// [`KeyRepo::rollback`]: crate::repo::key::KeyRepo::rollback
     pub fn rollback(&mut self) -> crate::Result<()> {
-        self.state = rollback(&mut self.repo)?;
-        Ok(())
+        state_repo::rollback(&mut self.repo, STATE_KEYS, &mut self.state)
     }
 
     /// Create a new `Savepoint` representing the current state of the repository.
     ///
-    /// See [`ObjectRepo::savepoint`] for details.
+    /// See [`KeyRepo::savepoint`] for details.
     ///
-    /// # Errors
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    ///
-    /// [`ObjectRepo::savepoint`]: crate::repo::object::ObjectRepo::savepoint
+    /// [`KeyRepo::savepoint`]: crate::repo::key::KeyRepo::savepoint
     pub fn savepoint(&mut self) -> crate::Result<Savepoint> {
-        write_state(&mut self.repo, &self.state)?;
-        Ok(self.repo.savepoint())
+        state_repo::savepoint(&mut self.repo, STATE_KEYS, &self.state)
     }
 
-    /// Restore the repository to the given `savepoint`.
+    /// Start the process of restoring the repository to the given `savepoint`.
     ///
-    /// See [`ObjectRepo::restore`] for details.
+    /// See [`KeyRepo::start_restore`] for details.
     ///
-    /// # Errors
-    /// - `Error::NotFound`: The given savepoint is not associated with this repository.
-    /// - `Error::InvalidSavepoint`: The given savepoint is invalid.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
+    /// [`KeyRepo::start_restore`]: crate::repo::key::KeyRepo::start_restore
+    pub fn start_restore(&mut self, savepoint: &Savepoint) -> crate::Result<Restore<K>> {
+        Ok(Restore(state_repo::start_restore(
+            &mut self.repo,
+            STATE_KEYS,
+            savepoint,
+        )?))
+    }
+
+    /// Finish the process of restoring the repository to a [`Savepoint`].
     ///
-    /// [`ObjectRepo::restore`]: crate::repo::object::ObjectRepo::restore
-    pub fn restore(&mut self, savepoint: &Savepoint) -> crate::Result<()> {
-        self.repo.restore(savepoint)?;
-        self.state = read_state(&mut self.repo)?;
-        Ok(())
+    /// See [`KeyRepo::finish_restore`] for details.
+    ///
+    /// [`Savepoint`]: crate::repo::Savepoint
+    /// [`KeyRepo::finish_restore`]: crate::repo::key::KeyRepo::finish_restore
+    pub fn finish_restore(&mut self, restore: Restore<K>) -> bool {
+        state_repo::finish_restore(&mut self.repo, &mut self.state, restore.0)
     }
 
     /// Clean up the repository to reclaim space in the backing data store.
     ///
-    /// See [`ObjectRepo::clean`] for details.
+    /// See [`KeyRepo::clean`] for details.
     ///
-    /// [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
+    /// [`KeyRepo::clean`]: crate::repo::object::KeyRepo::clean
     pub fn clean(&mut self) -> crate::Result<()> {
         self.repo.clean()
     }
@@ -377,30 +431,25 @@ impl<K: Key> VersionRepo<K> {
     ///
     /// [`KeyRepo::clear_instance`]: crate::repo::key::KeyRepo::clear_instance
     pub fn clear_instance(&mut self) {
-        for key_info in self.state.key_table.values() {
-            self.repo.remove_unmanaged(&key_info.object);
-            for version_info in key_info.versions.values() {
-                self.repo.remove_unmanaged(&version_info.handle);
-            }
-        }
-        self.state.key_table.clear();
+        self.repo.clear_instance();
+        self.state.clear();
     }
 
     /// Delete all data in all instances of the repository.
     ///
-    /// See [`ObjectRepo::clear_repo`] for details.
+    /// See [`KeyRepo::clear_repo`] for details.
     ///
-    /// [`ObjectRepo::clear_repo`]: crate::repo::object::ObjectRepo::clear_repo
+    /// [`KeyRepo::clear_repo`]: crate::repo::key::KeyRepo::clear_repo
     pub fn clear_repo(&mut self) {
         self.repo.clear_repo();
-        self.state.key_table.clear();
+        self.state.clear();
     }
 
     /// Change the password for this repository.
     ///
-    /// See [`ObjectRepo::change_password`] for details.
+    /// See [`KeyRepo::change_password`] for details.
     ///
-    /// [`ObjectRepo::change_password`]: crate::repo::object::ObjectRepo::change_password
+    /// [`KeyRepo::change_password`]: crate::repo::key::KeyRepo::change_password
     pub fn change_password(&mut self, new_password: &[u8]) {
         self.repo.change_password(new_password);
     }

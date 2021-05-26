@@ -504,7 +504,7 @@ impl<K: Key> KeyRepo<K> {
 
     /// Roll back all changes made since the last commit.
     ///
-    /// Uncommitted changes in repository are automatically rolled back when the repository is
+    /// Uncommitted changes in a repository are automatically rolled back when the repository is
     /// dropped. This method can be used to manually roll back changes without dropping and
     /// re-opening the repository.
     ///
