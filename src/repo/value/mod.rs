@@ -29,5 +29,7 @@
 //! [`ValueRepo::commit`]: crate::repo::value::ValueRepo::commit
 
 pub use self::repository::ValueRepo;
+pub use self::state::Restore;
 
 mod repository;
+mod state;
