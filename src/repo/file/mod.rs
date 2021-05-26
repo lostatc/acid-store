@@ -84,9 +84,11 @@ pub use self::metadata::CommonMetadata;
 pub use self::metadata::{FileMetadata, NoMetadata};
 pub use self::repository::FileRepo;
 pub use self::special::{NoSpecialType, SpecialType};
+pub use self::state::Restore;
 
 mod entry;
 mod metadata;
 mod path_tree;
 mod repository;
 mod special;
+mod state;

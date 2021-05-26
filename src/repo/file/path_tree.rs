@@ -44,7 +44,7 @@ fn drain_nodes<'a, V: 'a>(
 }
 
 /// A node in a `PathTree`.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct PathNode<V> {
     /// The file's children.
     children: HashMap<String, PathNode<V>>,
@@ -63,7 +63,7 @@ impl<V> PathNode<V> {
 }
 
 /// A tree that associates file paths with values of type `V`.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PathTree<V> {
     nodes: HashMap<String, PathNode<V>>,
 }

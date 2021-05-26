@@ -26,7 +26,7 @@ use crate::store::{DataStore, OpenStore};
 
 use super::config::RepoConfig;
 use super::encryption::KeySalt;
-use super::object::{Chunk, ObjectHandle};
+use super::object::Chunk;
 use super::state::{ChunkInfo, InstanceInfo, PackIndex};
 
 /// The repository state which is persisted to the data store on each commit.

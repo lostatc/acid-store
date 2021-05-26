@@ -24,28 +24,22 @@ use std::path::Path;
 use hex_literal::hex;
 use once_cell::sync::Lazy;
 use relative_path::{RelativePath, RelativePathBuf};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-use crate::repo::object::ObjectRepo;
-use crate::repo::state_helpers::{commit, read_state, rollback, write_state};
-use crate::repo::{Object, OpenRepo, ReadOnlyObject, RepoInfo, Savepoint};
+use crate::repo::id_table::UniqueId;
+use crate::repo::{
+    key::KeyRepo, state_repo, Object, OpenRepo, ReadOnlyObject, RepoInfo, Savepoint,
+};
 
 use super::entry::{Entry, EntryHandle, EntryType, FileType};
 use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
 use super::special::{NoSpecialType, SpecialType};
+use super::state::{FileRepoKey, FileRepoState, Restore, STATE_KEYS};
 
 /// The parent of a relative path with no parent.
 static EMPTY_PARENT: Lazy<RelativePathBuf> = Lazy::new(|| RelativePath::new("").to_owned());
-
-/// The state for a `FileRepo`.
-#[derive(Debug, Serialize, Deserialize)]
-struct FileRepoState {
-    /// A map of relative file paths to the handles of the objects containing their entries.
-    path_table: PathTree<EntryHandle>,
-}
 
 /// A virtual file system.
 ///
@@ -56,7 +50,7 @@ where
     S: SpecialType,
     M: FileMetadata,
 {
-    repo: ObjectRepo,
+    repo: KeyRepo<FileRepoKey>,
     state: FileRepoState,
     marker: PhantomData<(S, M)>,
 }
@@ -66,37 +60,38 @@ where
     S: SpecialType,
     M: FileMetadata,
 {
-    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("549cfd34 12c2 4ff6 942b e5d6893e3d6e"));
+    type Key = FileRepoKey;
 
-    fn open_repo(mut repo: ObjectRepo) -> crate::Result<Self>
+    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("ea34b5c4 be47 11eb b4c3 0fc0fea79bb3"));
+
+    fn open_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized,
     {
-        let state = read_state(&mut repo)?;
-        Ok(Self {
+        let mut file_repo = Self {
             repo,
-            state,
+            state: FileRepoState::new(),
             marker: PhantomData,
-        })
-    }
-
-    fn create_repo(mut repo: ObjectRepo) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let state = FileRepoState {
-            path_table: PathTree::new(),
         };
-        write_state(&mut repo, &state)?;
-        Ok(Self {
-            repo,
-            state,
-            marker: PhantomData,
-        })
+        file_repo.state = file_repo.read_state()?;
+        Ok(file_repo)
     }
 
-    fn into_repo(mut self) -> crate::Result<ObjectRepo> {
-        write_state(&mut self.repo, &self.state)?;
+    fn create_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut file_repo = Self {
+            repo,
+            state: FileRepoState::new(),
+            marker: PhantomData,
+        };
+        file_repo.write_state()?;
+        Ok(file_repo)
+    }
+
+    fn into_repo(mut self) -> crate::Result<KeyRepo<Self::Key>> {
+        self.write_state()?;
         Ok(self.repo)
     }
 }
@@ -106,6 +101,27 @@ where
     S: SpecialType,
     M: FileMetadata,
 {
+    /// Read the current repository state from the backing repository and return it.
+    fn read_state(&mut self) -> crate::Result<FileRepoState> {
+        state_repo::read_state(&mut self.repo, STATE_KEYS)
+    }
+
+    /// Write the current repository state to the backing repository.
+    fn write_state(&mut self) -> crate::Result<()> {
+        state_repo::write_state(&mut self.repo, STATE_KEYS, &self.state)
+    }
+
+    /// Remove the object with the given `object_id` from the backing repository.
+    fn remove_id(&mut self, object_id: UniqueId) -> bool {
+        if !self.state.id_table.recycle(object_id) {
+            return false;
+        }
+        if !self.repo.remove(&FileRepoKey::Object(object_id)) {
+            panic!("Object ID was in use but not found in backing repository.");
+        }
+        true
+    }
+
     /// Return whether there is an entry at `path`.
     pub fn exists(&self, path: impl AsRef<RelativePath>) -> bool {
         self.state.path_table.contains(path.as_ref())
@@ -184,20 +200,20 @@ where
         }
 
         // Write the entry for the file.
-        let mut entry_handle = self.repo.add_unmanaged();
-        let mut object = self.repo.unmanaged_object_mut(&mut entry_handle).unwrap();
+        let entry_id = self.state.id_table.next();
+        let mut object = self.repo.insert(FileRepoKey::Object(entry_id));
         object.serialize(entry)?;
         drop(object);
 
-        let file_handle = match entry.file_type {
-            FileType::File => EntryType::File(self.repo.add_unmanaged()),
+        let entry_type = match entry.file_type {
+            FileType::File => EntryType::File(self.state.id_table.next()),
             FileType::Directory => EntryType::Directory,
             FileType::Special(_) => EntryType::Special,
         };
 
         let handle = EntryHandle {
-            entry: entry_handle,
-            entry_type: file_handle,
+            entry: entry_id,
+            entry_type,
         };
 
         self.state.path_table.insert(path.as_ref(), handle);
@@ -260,10 +276,10 @@ where
         }
 
         let entry_handle = self.state.path_table.remove(path.as_ref()).unwrap();
-        if let EntryType::File(handle) = entry_handle.entry_type {
-            self.repo.remove_unmanaged(&handle);
+        if let EntryType::File(object_id) = entry_handle.entry_type {
+            self.remove_id(object_id);
         }
-        self.repo.remove_unmanaged(&entry_handle.entry);
+        self.remove_id(entry_handle.entry);
 
         Ok(())
     }
@@ -278,16 +294,16 @@ where
     ///
     /// [`clean`]: crate::repo::file::FileRepo::clean
     pub fn remove_tree(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<()> {
-        for (_, handles) in self
+        for (_, handle) in self
             .state
             .path_table
             .drain(path.as_ref())
             .ok_or(crate::Error::NotFound)?
         {
-            if let EntryType::File(handle) = &handles.entry_type {
-                self.repo.remove_unmanaged(&handle);
+            if let EntryType::File(object_id) = &handle.entry_type {
+                self.remove_id(*object_id);
             }
-            self.repo.remove_unmanaged(&handles.entry);
+            self.remove_id(handle.entry);
         }
 
         Ok(())
@@ -323,7 +339,10 @@ where
             .path_table
             .get(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
-        let mut object = self.repo.unmanaged_object(&entry_handle.entry).unwrap();
+        let mut object = self
+            .repo
+            .object(&FileRepoKey::Object(entry_handle.entry))
+            .unwrap();
         object.deserialize()
     }
 
@@ -348,7 +367,7 @@ where
             .ok_or(crate::Error::NotFound)?;
         let mut object = self
             .repo
-            .unmanaged_object_mut(&mut entry_handle.entry)
+            .object_mut(&FileRepoKey::Object(entry_handle.entry))
             .unwrap();
         let mut entry: Entry<S, M> = object.deserialize()?;
         entry.metadata = metadata;
@@ -371,8 +390,8 @@ where
             .path_table
             .get(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
-        if let EntryType::File(handle) = &entry_handle.entry_type {
-            Ok(self.repo.unmanaged_object(&handle).unwrap())
+        if let EntryType::File(object_id) = &entry_handle.entry_type {
+            Ok(self.repo.object(&FileRepoKey::Object(*object_id)).unwrap())
         } else {
             Err(crate::Error::NotFile)
         }
@@ -395,8 +414,35 @@ where
             .get_mut(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
         match entry_handle.entry_type {
-            EntryType::File(ref mut handle) => Ok(self.repo.unmanaged_object_mut(handle).unwrap()),
+            EntryType::File(object_id) => Ok(self
+                .repo
+                .object_mut(&FileRepoKey::Object(object_id))
+                .unwrap()),
             _ => Err(crate::Error::NotFile),
+        }
+    }
+
+    /// Create and return a copy of the given `EntryHandle`.
+    fn copy_entry_handle(&mut self, handle: &EntryHandle) -> EntryHandle {
+        let new_entry_id = self.state.id_table.next();
+        self.repo.copy(
+            &FileRepoKey::Object(handle.entry),
+            FileRepoKey::Object(new_entry_id),
+        );
+        EntryHandle {
+            entry: new_entry_id,
+            entry_type: match &handle.entry_type {
+                EntryType::File(file_id) => {
+                    let new_file_id = self.state.id_table.next();
+                    self.repo.copy(
+                        &FileRepoKey::Object(*file_id),
+                        FileRepoKey::Object(new_file_id),
+                    );
+                    EntryType::File(new_file_id)
+                }
+                EntryType::Directory => EntryType::Directory,
+                EntryType::Special => EntryType::Special,
+            },
         }
     }
 
@@ -435,14 +481,8 @@ where
             .path_table
             .get(source.as_ref())
             .ok_or(crate::Error::NotFound)?;
-        let new_handle = EntryHandle {
-            entry: self.repo.copy_unmanaged(&entry_handle.entry),
-            entry_type: match &entry_handle.entry_type {
-                EntryType::File(handle) => EntryType::File(self.repo.copy_unmanaged(&handle)),
-                EntryType::Directory => EntryType::Directory,
-                EntryType::Special => EntryType::Special,
-            },
-        };
+
+        let new_handle = self.copy_entry_handle(entry_handle);
         self.state.path_table.insert(dest.as_ref(), new_handle);
 
         Ok(())
@@ -484,37 +524,21 @@ where
             .path_table
             .get(source.as_ref())
             .ok_or(crate::Error::NotFound)?;
-        let new_root_handles = EntryHandle {
-            entry: self.repo.copy_unmanaged(&root_handle.entry),
-            entry_type: match &root_handle.entry_type {
-                EntryType::File(handle) => EntryType::File(self.repo.copy_unmanaged(&handle)),
-                EntryType::Directory => EntryType::Directory,
-                EntryType::Special => EntryType::Special,
-            },
-        };
+        let new_root_handle = self.copy_entry_handle(root_handle);
         let mut tree = PathTree::new();
-        tree.insert(&dest, new_root_handles);
+        tree.insert(&dest, new_root_handle);
 
         // Because we can't walk the path tree and insert into it at the same time, we need to copy
         // the paths to a new `PathTree` first and then insert them back into the original.
         for (path, entry_handle) in self.state.path_table.walk(source.as_ref()).unwrap() {
             let relative_path = path.strip_prefix(&source).unwrap();
             let dest_path = dest.as_ref().join(relative_path);
-
-            let new_handle = EntryHandle {
-                entry: self.repo.copy_unmanaged(&entry_handle.entry),
-                entry_type: match &entry_handle.entry_type {
-                    EntryType::File(handle) => EntryType::File(self.repo.copy_unmanaged(&handle)),
-                    EntryType::Directory => EntryType::Directory,
-                    EntryType::Special => EntryType::Special,
-                },
-            };
-
+            let new_handle = self.copy_entry_handle(entry_handle);
             tree.insert(dest_path, new_handle);
         }
 
-        for (path, handles) in tree.drain(&dest).unwrap() {
-            self.state.path_table.insert(path, handles);
+        for (path, handle) in tree.drain(&dest).unwrap() {
+            self.state.path_table.insert(path, handle);
         }
 
         Ok(())
@@ -620,8 +644,11 @@ where
 
         // Write the contents of the file entry if it's a file.
         let entry_handle = self.state.path_table.get_mut(dest.as_ref()).unwrap();
-        if let EntryType::File(ref mut handle) = entry_handle.entry_type {
-            let mut object = self.repo.unmanaged_object_mut(handle).unwrap();
+        if let EntryType::File(object_id) = entry_handle.entry_type {
+            let mut object = self
+                .repo
+                .object_mut(&FileRepoKey::Object(object_id))
+                .unwrap();
             let mut file = File::open(&source)?;
             copy(&mut file, &mut object)?;
             object.flush()?;
@@ -776,61 +803,64 @@ where
 
     /// Commit changes which have been made to the repository.
     ///
-    /// See [`ObjectRepo::commit`] for details.
+    /// See [`KeyRepo::commit`] for details.
     ///
-    /// [`ObjectRepo::commit`]: crate::repo::object::ObjectRepo::commit
+    /// [`KeyRepo::commit`]: crate::repo::key::KeyRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
-        commit(&mut self.repo, &self.state)
+        state_repo::commit(&mut self.repo, STATE_KEYS, &self.state)
     }
 
     /// Roll back all changes made since the last commit.
     ///
-    /// See [`ObjectRepo::rollback`] for details.
+    /// See [`KeyRepo::rollback`] for details.
     ///
-    /// [`ObjectRepo::rollback`]: crate::repo::object::ObjectRepo::rollback
+    /// [`KeyRepo::rollback`]: crate::repo::key::KeyRepo::rollback
     pub fn rollback(&mut self) -> crate::Result<()> {
-        self.state = rollback(&mut self.repo)?;
-        Ok(())
+        state_repo::rollback(&mut self.repo, STATE_KEYS, &mut self.state)
     }
 
     /// Create a new `Savepoint` representing the current state of the repository.
     ///
-    /// See [`ObjectRepo::savepoint`] for details.
+    /// See [`KeyRepo::savepoint`] for details.
     ///
     /// # Errors
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     ///
-    /// [`ObjectRepo::savepoint`]: crate::repo::object::ObjectRepo::savepoint
+    /// [`KeyRepo::savepoint`]: crate::repo::key::KeyRepo::savepoint
     pub fn savepoint(&mut self) -> crate::Result<Savepoint> {
-        write_state(&mut self.repo, &self.state)?;
-        Ok(self.repo.savepoint())
+        state_repo::savepoint(&mut self.repo, STATE_KEYS, &self.state)
     }
 
-    /// Restore the repository to the given `savepoint`.
+    /// Start the process of restoring the repository to the given `savepoint`.
     ///
-    /// See [`ObjectRepo::restore`] for details.
+    /// See [`KeyRepo::start_restore`] for details.
     ///
-    /// # Errors
-    /// - `Error::NotFound`: The given savepoint is not associated with this repository.
-    /// - `Error::InvalidSavepoint`: The given savepoint is invalid.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
+    /// [`KeyRepo::start_restore`]: crate::repo::key::KeyRepo::start_restore
+    pub fn start_restore(&mut self, savepoint: &Savepoint) -> crate::Result<Restore> {
+        Ok(Restore(state_repo::start_restore(
+            &mut self.repo,
+            STATE_KEYS,
+            savepoint,
+        )?))
+    }
+
+    /// Finish the process of restoring the repository to a [`Savepoint`].
     ///
-    /// [`ObjectRepo::restore`]: crate::repo::object::ObjectRepo::restore
-    pub fn restore(&mut self, savepoint: &Savepoint) -> crate::Result<()> {
-        self.repo.restore(savepoint)?;
-        self.state = read_state(&mut self.repo)?;
-        Ok(())
+    /// See [`KeyRepo::finish_restore`] for details.
+    ///
+    /// [`Savepoint`]: crate::repo::Savepoint
+    /// [`KeyRepo::finish_restore`]: crate::repo::key::KeyRepo::finish_restore
+    pub fn finish_restore(&mut self, restore: Restore) -> bool {
+        state_repo::finish_restore(&mut self.repo, &mut self.state, restore.0)
     }
 
     /// Clean up the repository to reclaim space in the backing data store.
     ///
-    /// See [`ObjectRepo::clean`] for details.
+    /// See [`KeyRepo::clean`] for details.
     ///
-    /// [`ObjectRepo::clean`]: crate::repo::object::ObjectRepo::clean
+    /// [`KeyRepo::clean`]: crate::repo::key::KeyRepo::clean
     pub fn clean(&mut self) -> crate::Result<()> {
         self.repo.clean()
     }
@@ -841,23 +871,18 @@ where
     ///
     /// [`KeyRepo::clear_instance`]: crate::repo::key::KeyRepo::clear_instance
     pub fn clear_instance(&mut self) {
-        for (_, handle) in self.state.path_table.walk(&*EMPTY_PARENT).unwrap() {
-            if let EntryType::File(handle) = &handle.entry_type {
-                self.repo.remove_unmanaged(&handle);
-            }
-            self.repo.remove_unmanaged(&handle.entry);
-        }
-        self.state.path_table.clear()
+        self.repo.clear_instance();
+        self.state.clear();
     }
 
     /// Delete all data in all instances of the repository.
     ///
-    /// See [`ObjectRepo::clear_repo`] for details.
+    /// See [`KeyRepo::clear_repo`] for details.
     ///
-    /// [`ObjectRepo::clear_repo`]: crate::repo::object::ObjectRepo::clear_repo
+    /// [`KeyRepo::clear_repo`]: crate::repo::key::KeyRepo::clear_repo
     pub fn clear_repo(&mut self) {
         self.repo.clear_repo();
-        self.state.path_table.clear();
+        self.state.clear();
     }
 
     /// Verify the integrity of all the data in the repository.
@@ -875,18 +900,18 @@ where
     ///
     /// [`Object::verify`]: crate::repo::Object::verify
     pub fn verify(&self) -> crate::Result<HashSet<RelativePathBuf>> {
-        let report = self.repo.verify()?;
-
-        // Check for corrupt metadata.
+        let corrupt_keys = self.repo.verify()?;
         Ok(self
             .state
             .path_table
             .walk(RelativePathBuf::new())
             .unwrap()
             .filter(|(_, entry_handle)| {
-                let entry_valid = report.check_unmanaged(&entry_handle.entry);
+                let entry_valid = corrupt_keys.contains(&FileRepoKey::Object(entry_handle.entry));
                 let file_valid = match &entry_handle.entry_type {
-                    EntryType::File(handle) => report.check_unmanaged(&handle),
+                    EntryType::File(object_id) => {
+                        corrupt_keys.contains(&FileRepoKey::Object(*object_id))
+                    }
                     _ => true,
                 };
                 !entry_valid || !file_valid
@@ -897,9 +922,9 @@ where
 
     /// Change the password for this repository.
     ///
-    /// See [`ObjectRepo::change_password`] for details.
+    /// See [`KeyRepo::change_password`] for details.
     ///
-    /// [`ObjectRepo::change_password`]: crate::repo::object::ObjectRepo::change_password
+    /// [`KeyRepo::change_password`]: crate::repo::key::KeyRepo::change_password
     pub fn change_password(&mut self, new_password: &[u8]) {
         self.repo.change_password(new_password);
     }

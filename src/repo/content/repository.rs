@@ -37,7 +37,7 @@ pub struct ContentRepo {
 impl OpenRepo for ContentRepo {
     type Key = ContentRepoKey;
 
-    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("9a659ef2 b9d9 4d54 a8ce 57b1ceb66c93"));
+    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("f45f7aa2 be47 11eb aff1 634ee34a5453"));
 
     fn open_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
@@ -141,6 +141,7 @@ impl ContentRepo {
             Some(object_id) => object_id,
             None => return false,
         };
+        self.state.id_table.recycle(object_id);
         self.repo.remove(&ContentRepoKey::Object(object_id));
         true
     }
