@@ -823,11 +823,6 @@ where
     ///
     /// See [`KeyRepo::savepoint`] for details.
     ///
-    /// # Errors
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    ///
     /// [`KeyRepo::savepoint`]: crate::repo::key::KeyRepo::savepoint
     pub fn savepoint(&mut self) -> crate::Result<Savepoint> {
         state_repo::savepoint(&mut self.repo, STATE_KEYS, &self.state)
