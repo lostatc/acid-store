@@ -16,10 +16,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::repo::file::special::SpecialType;
-use crate::repo::object::ObjectHandle;
+use crate::repo::id_table::UniqueId;
 
 use super::metadata::FileMetadata;
+use super::special::SpecialType;
 
 /// A type of file in a `FileRepo`.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,16 +107,16 @@ impl<S: SpecialType, M: FileMetadata> Entry<S, M> {
 }
 
 /// A type of entry handle.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum EntryType {
-    File(ObjectHandle),
+    File(UniqueId),
     Directory,
     Special,
 }
 
 /// A handle for accessing the data associated with each entry.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntryHandle {
-    pub entry: ObjectHandle,
+    pub entry: UniqueId,
     pub entry_type: EntryType,
 }
