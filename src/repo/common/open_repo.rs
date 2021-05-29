@@ -14,16 +14,10 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
-
-use rmp_serde::to_vec;
 use uuid::Uuid;
 
 use super::key::Key;
-use super::object::Object;
-use super::object::ObjectHandle;
 use super::repository::KeyRepo;
-use super::version_id::check_version;
 
 /// A repository which can be opened using [`OpenOptions`].
 ///
