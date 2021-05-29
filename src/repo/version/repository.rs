@@ -47,7 +47,7 @@ impl<K: Key> OpenRepo for VersionRepo<K> {
 
     const VERSION_ID: Uuid = Uuid::from_bytes(hex!("590bd584 be86 11eb b54d c32102ab5ae4"));
 
-    fn open_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized,
     {
@@ -59,7 +59,7 @@ impl<K: Key> OpenRepo for VersionRepo<K> {
         Ok(version_repo)
     }
 
-    fn create_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    fn create_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized,
     {

@@ -220,8 +220,8 @@ impl<K: Key> KeyRepo<K> {
         K: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        let source_handle = match self.objects.get(source) {
-            Some(handle) => handle,
+        let source_chunks = match self.objects.get(source) {
+            Some(handle) => handle.chunks.clone(),
             None => return false,
         };
 
@@ -229,7 +229,7 @@ impl<K: Key> KeyRepo<K> {
 
         let dest_handle = ObjectHandle {
             id: self.handle_table.next(),
-            chunks: source_handle.chunks.clone(),
+            chunks: source_chunks,
         };
 
         // Update the chunk map to include the new handle in the list of references for each chunk.
@@ -835,10 +835,14 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// [`clean`]: crate::repo::key::KeyRepo::clean
     pub fn clear_instance(&mut self) {
-        for handle in self.objects.values() {
-            self.remove_handle(handle);
+        let handles = self
+            .objects
+            .drain()
+            .map(|(_, handle)| handle)
+            .collect::<Vec<_>>();
+        for handle in handles {
+            self.remove_handle(&handle);
         }
-        self.objects.clear();
     }
 
     /// Delete all data in all instances of the repository.

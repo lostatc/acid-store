@@ -64,7 +64,7 @@ where
 
     const VERSION_ID: Uuid = Uuid::from_bytes(hex!("ea34b5c4 be47 11eb b4c3 0fc0fea79bb3"));
 
-    fn open_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized,
     {
@@ -77,7 +77,7 @@ where
         Ok(file_repo)
     }
 
-    fn create_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    fn create_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized,
     {
@@ -294,12 +294,15 @@ where
     ///
     /// [`clean`]: crate::repo::file::FileRepo::clean
     pub fn remove_tree(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<()> {
-        for (_, handle) in self
+        let handles = self
             .state
             .path_table
             .drain(path.as_ref())
             .ok_or(crate::Error::NotFound)?
-        {
+            .map(|(_, handle)| handle)
+            .collect::<Vec<_>>();
+
+        for handle in handles {
             if let EntryType::File(object_id) = &handle.entry_type {
                 self.remove_id(*object_id);
             }
@@ -480,9 +483,10 @@ where
             .state
             .path_table
             .get(source.as_ref())
-            .ok_or(crate::Error::NotFound)?;
+            .ok_or(crate::Error::NotFound)?
+            .clone();
 
-        let new_handle = self.copy_entry_handle(entry_handle);
+        let new_handle = self.copy_entry_handle(&entry_handle);
         self.state.path_table.insert(dest.as_ref(), new_handle);
 
         Ok(())
@@ -518,27 +522,35 @@ where
             return Err(crate::Error::InvalidPath);
         }
 
-        // Copy the root directory.
-        let root_handle = self
+        // Because we can't walk the path tree and insert into it at the same time, we need to
+        // construct a tree of the destination paths before inserting them back into the path table.
+        // Using this prefix tree type should consume less memory than collecting the paths into a
+        // vector.
+        let mut dest_tree = PathTree::new();
+
+        // Copy the root path into the destination tree.
+        let source_root_handle = self
             .state
             .path_table
             .get(source.as_ref())
-            .ok_or(crate::Error::NotFound)?;
-        let new_root_handle = self.copy_entry_handle(root_handle);
-        let mut tree = PathTree::new();
-        tree.insert(&dest, new_root_handle);
+            .ok_or(crate::Error::NotFound)?
+            .clone();
+        let dest_root_handle = self.copy_entry_handle(&source_root_handle);
+        self.state.path_table.insert(&dest, dest_root_handle);
+        dest_tree.insert(&dest, source_root_handle);
 
-        // Because we can't walk the path tree and insert into it at the same time, we need to copy
-        // the paths to a new `PathTree` first and then insert them back into the original.
-        for (path, entry_handle) in self.state.path_table.walk(source.as_ref()).unwrap() {
+        // Get the destination paths for each path in the path table and insert them into the
+        // destination tree.
+        for (path, source_handle) in self.state.path_table.walk(source.as_ref()).unwrap() {
             let relative_path = path.strip_prefix(&source).unwrap();
             let dest_path = dest.as_ref().join(relative_path);
-            let new_handle = self.copy_entry_handle(entry_handle);
-            tree.insert(dest_path, new_handle);
+            dest_tree.insert(dest_path, source_handle.clone());
         }
 
-        for (path, handle) in tree.drain(&dest).unwrap() {
-            self.state.path_table.insert(path, handle);
+        // Move the rest of the paths from the destination tree into the path table.
+        for (dest_path, source_handle) in dest_tree.drain(&dest).unwrap() {
+            let dest_handle = self.copy_entry_handle(&source_handle);
+            self.state.path_table.insert(dest_path, dest_handle);
         }
 
         Ok(())

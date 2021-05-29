@@ -46,7 +46,7 @@ impl<K: Key> OpenRepo for ValueRepo<K> {
 
     const VERSION_ID: Uuid = Uuid::from_bytes(hex!("49d1da00 be54 11eb 83e7 ab73adcf2dc4"));
 
-    fn open_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized,
     {
@@ -58,7 +58,7 @@ impl<K: Key> OpenRepo for ValueRepo<K> {
         Ok(value_repo)
     }
 
-    fn create_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    fn create_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized,
     {
@@ -117,7 +117,7 @@ impl<K: Key> ValueRepo<K> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn insert<V: Serialize>(&mut self, key: K, value: &V) -> crate::Result<()> {
-        let mut object_id = self
+        let object_id = self
             .state
             .key_table
             .entry(key)
