@@ -240,7 +240,7 @@ impl<'a> ObjectReader<'a> {
 
 impl<'a> Seek for ObjectReader<'a> {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        let object_size = self.handle.size;
+        let object_size = self.handle.size();
 
         let new_position = match pos {
             SeekFrom::Start(offset) => min(object_size, offset),
@@ -308,7 +308,7 @@ impl<'a> ObjectWriter<'a> {
 
     fn truncate(&mut self, length: u64) -> crate::Result<()> {
         self.flush()?;
-        if length >= self.handle.size {
+        if length >= self.handle.size() {
             return Ok(());
         }
 
@@ -333,10 +333,6 @@ impl<'a> ObjectWriter<'a> {
 
         // Append the new final chunk which has been sliced.
         self.handle.chunks.push(new_last_chunk);
-
-        // Update the object size.
-        let current_size = self.handle.size;
-        self.handle.size = min(length, current_size);
 
         // Restore the seek position.
         self.object_state.position = min(original_position, length);
@@ -446,14 +442,6 @@ impl<'a> Write for ObjectWriter<'a> {
             self.handle
                 .chunks
                 .splice(start_index..end_index, new_chunks);
-
-            // Update the size of the object in the object handle to reflect changes.
-            self.handle.size = self
-                .handle
-                .chunks
-                .iter()
-                .map(|chunk| chunk.size as u64)
-                .sum();
         }
 
         self.object_state.start_location = None;

@@ -66,11 +66,11 @@ pub fn write_state<K: Key, S: Serialize>(
     keys: StateKeys<K>,
     state: &S,
 ) -> crate::Result<()> {
-    let mut object = repo.insert(keys.temp);
+    let mut object = repo.insert(keys.temp.clone());
     object.serialize(state)?;
     drop(object);
 
-    repo.copy(&keys.temp, keys.current);
+    repo.copy(&keys.temp, keys.current.clone());
 
     if !repo.contains(&keys.previous) {
         repo.copy(&keys.current, keys.previous);
@@ -173,7 +173,8 @@ pub fn start_restore<'a, K: Key, S: DeserializeOwned>(
     // we make to the repository in this method. This is necessary to uphold the contract that
     // the repository is unchanged when this method returns. It's important that we start the
     // restore process here so that it can be completed infallibly.
-    let backup_restore = repo.start_restore(&repo.savepoint()?)?;
+    let backup_savepoint = repo.savepoint()?;
+    let backup_restore = repo.start_restore(&backup_savepoint)?;
 
     // Temporarily restore the backing repository to the given `savepoint` so we can read the
     // repository state from when the savepoint was created.

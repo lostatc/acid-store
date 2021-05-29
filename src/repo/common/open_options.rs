@@ -23,11 +23,7 @@ use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
 use uuid::Uuid;
 
-use crate::repo::common::object::ObjectHandle;
-use crate::repo::common::state::InstanceInfo;
 use crate::repo::id_table::IdTable;
-use crate::repo::key::Key;
-use crate::repo::Object;
 use crate::store::{DataStore, OpenStore};
 
 use super::chunking::Chunking;
@@ -40,7 +36,6 @@ use super::open_repo::OpenRepo;
 use super::packing::Packing;
 use super::repository::{KeyRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
 use super::state::RepoState;
-use super::version_id::check_version;
 
 /// The default repository instance ID.
 ///
@@ -341,7 +336,7 @@ impl OpenOptions {
             lock,
         };
 
-        let mut repo = KeyRepo {
+        let mut repo: KeyRepo<R::Key> = KeyRepo {
             state,
             instance_id: self.instance,
             objects: HashMap::new(),
@@ -467,7 +462,7 @@ impl OpenOptions {
             lock,
         };
 
-        let repo = KeyRepo {
+        let repo: KeyRepo<R::Key> = KeyRepo {
             state,
             instance_id: self.instance,
             objects: HashMap::new(),

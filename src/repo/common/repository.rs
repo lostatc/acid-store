@@ -15,7 +15,6 @@
  */
 
 use std::borrow::Borrow;
-use std::collections::hash_map::Entry as HashMapEntry;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::marker::PhantomData;

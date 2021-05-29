@@ -15,15 +15,13 @@
  */
 
 use std::borrow::Borrow;
-use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::mem;
 use std::time::SystemTime;
 
 use hex_literal::hex;
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::repo::id_table::UniqueId;
