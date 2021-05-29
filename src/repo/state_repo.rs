@@ -16,6 +16,7 @@
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use uuid::Uuid;
 
 use super::common::{Key, KeyRepo, Restore as KeyRestore, Savepoint};
 
@@ -35,15 +36,20 @@ pub struct StateKeys<K> {
 ///
 /// [`Savepoint`]: crate::repo::Savepoint
 #[derive(Debug, Clone)]
-pub struct Restore<'a, K, S> {
+pub struct Restore<K, S> {
     state: S,
-    restore: KeyRestore<'a, K>,
+    restore: KeyRestore<K>,
 }
 
-impl<'a, K, S> Restore<'a, K, S> {
+impl<K, S> Restore<K, S> {
     /// Return whether the savepoint used to start this restore is valid.
     pub fn is_valid(&self) -> bool {
         self.restore.is_valid()
+    }
+
+    /// The ID of the repository instance this `Restore` is associated with.
+    pub fn instance(&self) -> Uuid {
+        self.restore.instance()
     }
 }
 
@@ -164,11 +170,11 @@ pub fn savepoint<K: Key, S: Serialize>(
 ///
 /// [`KeyRepo`]: crate::repo::key::KeyRepo
 /// [`KeyRepo::start_restore`]: crate::repo::key::KeyRepo::start_restore
-pub fn start_restore<'a, K: Key, S: DeserializeOwned>(
-    repo: &'a mut KeyRepo<K>,
+pub fn start_restore<K: Key, S: DeserializeOwned>(
+    repo: &mut KeyRepo<K>,
     keys: StateKeys<K>,
     savepoint: &Savepoint,
-) -> crate::Result<Restore<'a, K, S>> {
+) -> crate::Result<Restore<K, S>> {
     // Create a savepoint on the backing repository that we can restore to to undo any changes
     // we make to the repository in this method. This is necessary to uphold the contract that
     // the repository is unchanged when this method returns. It's important that we start the

@@ -17,7 +17,6 @@
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::marker::PhantomData;
 use std::mem;
 use std::sync::Arc;
 
@@ -569,7 +568,7 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// Restoring to a savepoint affects all instances of the repository.
     ///
-    /// See [`Savepoint`] for details.
+    /// See [`Savepoint`] and [`Restore`] for details.
     ///
     /// # Examples
     /// This example demonstrates restoring from a savepoint to undo a change to the repository.
@@ -624,7 +623,7 @@ impl<K: Key> KeyRepo<K> {
                 objects,
                 header: self.replace_header(old_header),
                 transaction_id: savepoint.transaction_id.clone(),
-                marker: PhantomData,
+                instance_id: self.instance_id,
             }),
             Err(error) => {
                 self.replace_header(old_header);
@@ -639,19 +638,25 @@ impl<K: Key> KeyRepo<K> {
     /// [`start_restore`].
     ///
     /// If this method returns `true`, the repository has been restored. If this method returns
-    /// `false`, the savepoint which was used to start the restore process is invalid.
+    /// `false`, the savepoint which was used to start the restore process is invalid or the given
+    /// [`Restore`] is not associated with the current instance of the repository.
     ///
     /// Restoring to a savepoint affects all instances of the repository.
     ///
-    /// See [`Savepoint`] for details.
+    /// See [`Savepoint`] and [`Restore`] for details.
     ///
     /// [`Savepoint`]: crate::repo::Savepoint
     /// [`start_restore`]: crate::repo::key::KeyRepo::start_restore
+    /// [`Restore`]: crate::repo::key::Restore
     pub fn finish_restore(&mut self, restore: Restore<K>) -> bool {
         match restore.transaction_id.upgrade() {
             None => return false,
             Some(transaction_id) if transaction_id != self.transaction_id => return false,
             _ => (),
+        }
+
+        if restore.instance_id != self.instance_id {
+            return false;
         }
 
         self.replace_header(restore.header);

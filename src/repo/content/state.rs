@@ -17,6 +17,7 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::repo::id_table::{IdTable, UniqueId};
 use crate::repo::state_repo::{Restore as StateRestore, StateKeys};
@@ -89,11 +90,16 @@ pub enum ContentRepoKey {
 /// [`Savepoint`]: crate::repo::Savepoint
 /// [`Restore`]: crate::repo::key::Restore
 #[derive(Debug, Clone)]
-pub struct Restore<'a>(pub(super) StateRestore<'a, ContentRepoKey, ContentRepoState>);
+pub struct Restore(pub(super) StateRestore<ContentRepoKey, ContentRepoState>);
 
-impl<'a> Restore<'a> {
+impl Restore {
     /// Return whether the savepoint used to start this restore is valid.
     pub fn is_valid(&self) -> bool {
         self.0.is_valid()
+    }
+
+    /// The ID of the repository instance this `Restore` is associated with.
+    pub fn instance(&self) -> Uuid {
+        self.0.instance()
     }
 }
