@@ -15,7 +15,6 @@
  */
 
 use std::collections::HashMap;
-use std::marker::PhantomData;
 use std::sync::{Arc, Weak};
 
 use uuid::Uuid;
@@ -28,7 +27,7 @@ use super::object::ObjectHandle;
 /// Repositories support creating savepoints and later restoring to those savepoints, undoing any
 /// changes made since they were created.
 ///
-/// You can use [`KeyRepo::savepoint`] to create a savepoint and you can use
+/// You can use [`KeyRepo::savepoint`] to create a savepoint, and you can use
 /// [`KeyRepo::start_restore`] and [`KeyRepo::finish_restore`] to restore the repository to a
 /// savepoint.
 ///
@@ -73,9 +72,9 @@ impl Savepoint {
 /// This value is returned by [`KeyRepo::start_restore`] and can be passed to
 /// [`KeyRepo::finish_restore`] to atomically complete the restore.
 ///
-/// Unlike a [`Savepoint`], a `Restore` cannot outlive the lifetime of the [`KeyRepo`] it's
-/// associated with, meaning that it is not possible to start a restore, switch repository
-/// instances, and then finish the restore.
+/// Unlike a [`Savepoint`], a `Restore` is associated with a specific instance of a [`KeyRepo`].
+/// This means it is not possible to start a restore on one instance and complete it on another. To
+/// see the ID of the instance this `Restore` is associated with, use [`instance`].
 ///
 /// If this value is dropped, the restore is cancelled.
 ///
@@ -83,20 +82,26 @@ impl Savepoint {
 /// [`Savepoint`]: crate::repo::Savepoint
 /// [`KeyRepo::start_restore`]: crate::repo::key::KeyRepo::start_restore
 /// [`KeyRepo::finish_restore`]: crate::repo::key::KeyRepo::finish_restore
+/// [`instance`]: crate::repo::key::Restore::instance
 #[derive(Debug, Clone)]
-pub struct Restore<'a, K> {
+pub struct Restore<K> {
     pub(super) objects: HashMap<K, ObjectHandle>,
     pub(super) header: Header,
     pub(super) transaction_id: Weak<Uuid>,
-    // We need this lifetime parameter to ensure that it is not possible to complete this restore if
-    // the user switches instances. This value contains the object map for the current instance
+    // We need to store the instance ID because it should not be possible to complete this restore
+    // if the user switches instances. This value contains the object map for the current instance
     // only, so switching instances should invalidate it.
-    pub(super) marker: PhantomData<&'a ()>,
+    pub(super) instance_id: Uuid,
 }
 
-impl<'a, K> Restore<'a, K> {
+impl<K> Restore<K> {
     /// Return whether the savepoint used to start this restore is valid.
     pub fn is_valid(&self) -> bool {
         self.transaction_id.upgrade().is_some()
+    }
+
+    /// The ID of the repository instance this `Restore` is associated with.
+    pub fn instance(&self) -> Uuid {
+        self.instance_id
     }
 }
