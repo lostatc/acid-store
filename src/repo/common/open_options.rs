@@ -323,11 +323,11 @@ impl OpenOptions {
         let Header {
             chunks,
             packs,
-            mut instances,
-            mut handle_table,
+            instances,
+            handle_table,
         } = header;
 
-        let mut state = RepoState {
+        let state = RepoState {
             store: Mutex::new(Box::new(store)),
             metadata,
             chunks,
@@ -336,7 +336,7 @@ impl OpenOptions {
             lock,
         };
 
-        let mut repo: KeyRepo<R::Key> = KeyRepo {
+        let repo: KeyRepo<R::Key> = KeyRepo {
             state,
             instance_id: self.instance,
             objects: HashMap::new(),

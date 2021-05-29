@@ -39,7 +39,7 @@ impl OpenRepo for ContentRepo {
 
     const VERSION_ID: Uuid = Uuid::from_bytes(hex!("f45f7aa2 be47 11eb aff1 634ee34a5453"));
 
-    fn open_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized,
     {
@@ -51,7 +51,7 @@ impl OpenRepo for ContentRepo {
         Ok(content_repo)
     }
 
-    fn create_repo(mut repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    fn create_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized,
     {
