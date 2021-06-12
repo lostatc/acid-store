@@ -20,8 +20,9 @@ use std::hash::Hash;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::repo::common::Key;
 use crate::repo::id_table::{IdTable, UniqueId};
-use crate::repo::state_repo::{Restore as StateRestore, StateKeys};
+use crate::repo::state_repo::{RepoState, Restore as StateRestore, StateKeys};
 
 use super::version::KeyInfo;
 
@@ -38,17 +39,17 @@ pub struct VersionRepoState<K: Eq + Hash> {
     pub id_table: IdTable,
 }
 
-impl<K: Eq + Hash> VersionRepoState<K> {
-    /// Return a new empty `ContentRepoState`.
-    pub fn new() -> Self {
+impl<K: Eq + Hash> Default for VersionRepoState<K> {
+    fn default() -> Self {
         VersionRepoState {
             key_table: HashMap::new(),
             id_table: IdTable::new(),
         }
     }
+}
 
-    /// Clear the `ContentRepoState` in place.
-    pub fn clear(&mut self) {
+impl<K: Key> RepoState for VersionRepoState<K> {
+    fn clear(&mut self) {
         self.key_table.clear();
         self.id_table = IdTable::new();
     }

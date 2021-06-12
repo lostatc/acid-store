@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::repo::id_table::{IdTable, UniqueId};
-use crate::repo::state_repo::{Restore as StateRestore, StateKeys};
+use crate::repo::state_repo::{RepoState, Restore as StateRestore, StateKeys};
 
 use super::entry::EntryHandle;
 use super::path_tree::PathTree;
@@ -39,17 +39,17 @@ pub struct FileRepoState {
     pub id_table: IdTable,
 }
 
-impl FileRepoState {
-    /// Return a new empty `FileRepoState`.
-    pub fn new() -> Self {
+impl Default for FileRepoState {
+    fn default() -> Self {
         FileRepoState {
             path_table: PathTree::new(),
             id_table: IdTable::new(),
         }
     }
+}
 
-    /// Clear the `FileRepoState` in place.
-    pub fn clear(&mut self) {
+impl RepoState for FileRepoState {
+    fn clear(&mut self) {
         self.path_table.clear();
         self.id_table = IdTable::new();
     }

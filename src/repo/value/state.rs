@@ -21,7 +21,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::repo::id_table::{IdTable, UniqueId};
-use crate::repo::state_repo::{Restore as StateRestore, StateKeys};
+use crate::repo::key::Key;
+use crate::repo::state_repo::{RepoState, Restore as StateRestore, StateKeys};
 
 pub const STATE_KEYS: StateKeys<ValueRepoKey> = StateKeys {
     current: ValueRepoKey::CurrentState,
@@ -36,17 +37,17 @@ pub struct ValueRepoState<K: Eq + Hash> {
     pub id_table: IdTable,
 }
 
-impl<K: Eq + Hash> ValueRepoState<K> {
-    /// Return a new empty `ContentRepoState`.
-    pub fn new() -> Self {
+impl<K: Eq + Hash> Default for ValueRepoState<K> {
+    fn default() -> Self {
         ValueRepoState {
             key_table: HashMap::new(),
             id_table: IdTable::new(),
         }
     }
+}
 
-    /// Clear the `ContentRepoState` in place.
-    pub fn clear(&mut self) {
+impl<K: Key> RepoState for ValueRepoState<K> {
+    fn clear(&mut self) {
         self.key_table.clear();
         self.id_table = IdTable::new();
     }

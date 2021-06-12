@@ -36,7 +36,6 @@ use super::open_repo::OpenRepo;
 use super::packing::Packing;
 use super::repository::{KeyRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
 use super::state::RepoState;
-use crate::repo::common::state::InstanceInfo;
 
 /// The default repository instance ID.
 ///
