@@ -198,6 +198,24 @@ fn rollback_after_clear_instance() -> anyhow::Result<()> {
 }
 
 #[test]
+fn rollback_after_clear_repo() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    let hash = repo.put(random_buffer().as_slice())?;
+
+    repo.commit()?;
+    repo.clear_repo();
+    repo.rollback()?;
+
+    assert!(repo.contains(&hash));
+    assert!(repo.list().next().is_some());
+    assert!(repo.object(&hash).is_some());
+
+    Ok(())
+}
+
+#[test]
 fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
     let config = MemoryConfig::new();
     let mut repository = create_repo(&config)?;

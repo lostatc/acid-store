@@ -20,7 +20,11 @@ use std::io::{Read, Write};
 use hex_literal::hex;
 use uuid::Uuid;
 
-use crate::repo::{key::KeyRepo, state_repo, OpenRepo, ReadOnlyObject, RepoInfo, Savepoint};
+use crate::repo::state_repo::StateKeys;
+use crate::repo::{
+    state_repo::{OpenStateRepo, StateRepo},
+    ReadOnlyObject, RepoInfo, Savepoint,
+};
 
 use super::hash::{HashAlgorithm, BUFFER_SIZE};
 use super::state::{ContentRepoKey, ContentRepoState, Restore, STATE_KEYS};
@@ -29,60 +33,27 @@ use super::state::{ContentRepoKey, ContentRepoState, Restore, STATE_KEYS};
 ///
 /// See [`crate::repo::content`] for more information.
 #[derive(Debug)]
-pub struct ContentRepo {
-    repo: KeyRepo<ContentRepoKey>,
-    state: ContentRepoState,
-}
+pub struct ContentRepo(StateRepo<ContentRepoKey, ContentRepoState>);
 
-impl OpenRepo for ContentRepo {
+impl OpenStateRepo for ContentRepo {
     type Key = ContentRepoKey;
-
+    type State = ContentRepoState;
     const VERSION_ID: Uuid = Uuid::from_bytes(hex!("f45f7aa2 be47 11eb aff1 634ee34a5453"));
+    const STATE_KEYS: StateKeys<Self::Key> = STATE_KEYS;
 
-    fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let mut content_repo = Self {
-            repo,
-            state: ContentRepoState::new(),
-        };
-        content_repo.state = content_repo.read_state()?;
-        Ok(content_repo)
+    fn from_repo(repo: StateRepo<Self::Key, Self::State>) -> Self {
+        ContentRepo(repo)
     }
 
-    fn create_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let mut content_repo = Self {
-            repo,
-            state: ContentRepoState::new(),
-        };
-        content_repo.write_state()?;
-        Ok(content_repo)
-    }
-
-    fn into_repo(mut self) -> crate::Result<KeyRepo<Self::Key>> {
-        self.write_state()?;
-        Ok(self.repo)
+    fn into_repo(self) -> StateRepo<Self::Key, Self::State> {
+        self.0
     }
 }
 
 impl ContentRepo {
-    /// Read the current repository state from the backing repository and return it.
-    fn read_state(&mut self) -> crate::Result<ContentRepoState> {
-        state_repo::read_state(&mut self.repo, STATE_KEYS)
-    }
-
-    /// Write the current repository state to the backing repository.
-    fn write_state(&mut self) -> crate::Result<()> {
-        state_repo::write_state(&mut self.repo, STATE_KEYS, &self.state)
-    }
-
     /// Return whether the repository contains an object with the given `hash`.
     pub fn contains(&self, hash: &[u8]) -> bool {
-        self.state.hash_table.contains_key(hash)
+        self.0.state.hash_table.contains_key(hash)
     }
 
     /// Add the given `data` to the repository as a new object and return its hash.
@@ -93,11 +64,11 @@ impl ContentRepo {
     /// - `Error::Io`: An I/O error occurred.
     pub fn put(&mut self, mut data: impl Read) -> crate::Result<Vec<u8>> {
         let mut buffer = [0u8; BUFFER_SIZE];
-        let mut digest = self.state.hash_algorithm.digest();
+        let mut digest = self.0.state.hash_algorithm.digest();
         let mut bytes_read;
 
         // Create an object to write the data to.
-        let mut stage_object = self.repo.insert(ContentRepoKey::Stage);
+        let mut stage_object = self.0.repo.insert(ContentRepoKey::Stage);
 
         // Calculate the hash and write to the repository simultaneously so the `data` is only read
         // once.
@@ -115,15 +86,16 @@ impl ContentRepo {
 
         // Now that we know the hash, we can associate the object with its hash.
         let hash = digest.result();
-        if !self.state.hash_table.contains_key(&hash) {
-            let object_id = self.state.id_table.next();
-            self.state.hash_table.insert(hash.clone(), object_id);
-            self.repo
+        if !self.0.state.hash_table.contains_key(&hash) {
+            let object_id = self.0.state.id_table.next();
+            self.0.state.hash_table.insert(hash.clone(), object_id);
+            self.0
+                .repo
                 .copy(&ContentRepoKey::Stage, ContentRepoKey::Object(object_id));
         }
 
         // Remove the temporary object.
-        self.repo.remove(&ContentRepoKey::Stage);
+        self.0.repo.remove(&ContentRepoKey::Stage);
 
         Ok(hash)
     }
@@ -137,12 +109,12 @@ impl ContentRepo {
     ///
     /// [`clean`]: crate::repo::content::ContentRepo::clean
     pub fn remove(&mut self, hash: &[u8]) -> bool {
-        let object_id = match self.state.hash_table.remove(hash) {
+        let object_id = match self.0.state.hash_table.remove(hash) {
             Some(object_id) => object_id,
             None => return false,
         };
-        self.state.id_table.recycle(object_id);
-        self.repo.remove(&ContentRepoKey::Object(object_id));
+        self.0.state.id_table.recycle(object_id);
+        self.0.repo.remove(&ContentRepoKey::Object(object_id));
         true
     }
 
@@ -150,18 +122,18 @@ impl ContentRepo {
     ///
     /// This returns `None` if there is no data with the given `hash` in the repository.
     pub fn object(&self, hash: &[u8]) -> Option<ReadOnlyObject> {
-        let object_id = self.state.hash_table.get(hash)?;
-        self.repo.object(&ContentRepoKey::Object(*object_id))
+        let object_id = self.0.state.hash_table.get(hash)?;
+        self.0.repo.object(&ContentRepoKey::Object(*object_id))
     }
 
     /// Return an iterator of hashes of all the objects in this repository.
     pub fn list(&self) -> impl Iterator<Item = &[u8]> {
-        self.state.hash_table.keys().map(|hash| hash.as_slice())
+        self.0.state.hash_table.keys().map(|hash| hash.as_slice())
     }
 
     /// Return the hash algorithm used by this repository.
     pub fn algorithm(&self) -> HashAlgorithm {
-        self.state.hash_algorithm
+        self.0.state.hash_algorithm
     }
 
     /// Change the hash algorithm used by this repository.
@@ -174,14 +146,15 @@ impl ContentRepo {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn change_algorithm(&mut self, new_algorithm: HashAlgorithm) -> crate::Result<()> {
-        if new_algorithm == self.state.hash_algorithm {
+        if new_algorithm == self.0.state.hash_algorithm {
             return Ok(());
         }
 
         // Re-compute the hashes of the objects in the repository.
         let mut new_table = HashMap::new();
-        for (_, object_id) in &self.state.hash_table {
+        for (_, object_id) in &self.0.state.hash_table {
             let mut object = self
+                .0
                 .repo
                 .object(&ContentRepoKey::Object(*object_id))
                 .unwrap();
@@ -190,8 +163,8 @@ impl ContentRepo {
             new_table.insert(new_hash, *object_id);
         }
 
-        self.state.hash_algorithm = new_algorithm;
-        self.state.hash_table = new_table;
+        self.0.state.hash_algorithm = new_algorithm;
+        self.0.state.hash_table = new_table;
 
         Ok(())
     }
@@ -202,7 +175,7 @@ impl ContentRepo {
     ///
     /// [`KeyRepo::commit`]: crate::repo::key::KeyRepo::commit
     pub fn commit(&mut self) -> crate::Result<()> {
-        state_repo::commit(&mut self.repo, STATE_KEYS, &self.state)
+        self.0.commit()
     }
 
     /// Roll back all changes made since the last commit.
@@ -211,7 +184,7 @@ impl ContentRepo {
     ///
     /// [`KeyRepo::rollback`]: crate::repo::key::KeyRepo::rollback
     pub fn rollback(&mut self) -> crate::Result<()> {
-        state_repo::rollback(&mut self.repo, STATE_KEYS, &mut self.state)
+        self.0.rollback()
     }
 
     /// Create a new `Savepoint` representing the current state of the repository.
@@ -220,7 +193,7 @@ impl ContentRepo {
     ///
     /// [`KeyRepo::savepoint`]: crate::repo::key::KeyRepo::savepoint
     pub fn savepoint(&mut self) -> crate::Result<Savepoint> {
-        state_repo::savepoint(&mut self.repo, STATE_KEYS, &self.state)
+        self.0.savepoint()
     }
 
     /// Start the process of restoring the repository to the given `savepoint`.
@@ -229,11 +202,7 @@ impl ContentRepo {
     ///
     /// [`KeyRepo::start_restore`]: crate::repo::key::KeyRepo::start_restore
     pub fn start_restore(&mut self, savepoint: &Savepoint) -> crate::Result<Restore> {
-        Ok(Restore(state_repo::start_restore(
-            &mut self.repo,
-            STATE_KEYS,
-            savepoint,
-        )?))
+        Ok(Restore(self.0.start_restore(savepoint)?))
     }
 
     /// Finish the process of restoring the repository to a [`Savepoint`].
@@ -243,7 +212,7 @@ impl ContentRepo {
     /// [`Savepoint`]: crate::repo::Savepoint
     /// [`KeyRepo::finish_restore`]: crate::repo::key::KeyRepo::finish_restore
     pub fn finish_restore(&mut self, restore: Restore) -> bool {
-        state_repo::finish_restore(&mut self.repo, &mut self.state, restore.0)
+        self.0.finish_restore(restore.0)
     }
 
     /// Clean up the repository to reclaim space in the backing data store.
@@ -252,7 +221,7 @@ impl ContentRepo {
     ///
     /// [`KeyRepo::clean`]: crate::repo::key::KeyRepo::clean
     pub fn clean(&mut self) -> crate::Result<()> {
-        self.repo.clean()
+        self.0.repo.clean()
     }
 
     /// Delete all data in the current instance of the repository.
@@ -261,8 +230,7 @@ impl ContentRepo {
     ///
     /// [`KeyRepo::clear_instance`]: crate::repo::key::KeyRepo::clear_instance
     pub fn clear_instance(&mut self) {
-        self.repo.clear_instance();
-        self.state.clear();
+        self.0.clear_instance()
     }
 
     /// Delete all data in all instances of the repository.
@@ -271,8 +239,7 @@ impl ContentRepo {
     ///
     /// [`KeyRepo::clear_repo`]: crate::repo::key::KeyRepo::clear_repo
     pub fn clear_repo(&mut self) {
-        self.repo.clear_repo();
-        self.state.clear();
+        self.0.clear_repo()
     }
 
     /// Verify the integrity of all the data in the repository.
@@ -290,8 +257,9 @@ impl ContentRepo {
     ///
     /// [`Object::verify`]: crate::repo::Object::verify
     pub fn verify(&self) -> crate::Result<HashSet<&[u8]>> {
-        let corrupt_keys = self.repo.verify()?;
+        let corrupt_keys = self.0.repo.verify()?;
         Ok(self
+            .0
             .state
             .hash_table
             .iter()
@@ -306,16 +274,16 @@ impl ContentRepo {
     ///
     /// [`KeyRepo::change_password`]: crate::repo::key::KeyRepo::change_password
     pub fn change_password(&mut self, new_password: &[u8]) {
-        self.repo.change_password(new_password)
+        self.0.repo.change_password(new_password)
     }
 
     /// Return this repository's instance ID.
     pub fn instance(&self) -> Uuid {
-        self.repo.instance()
+        self.0.repo.instance()
     }
 
     /// Return information about the repository.
     pub fn info(&self) -> RepoInfo {
-        self.repo.info()
+        self.0.repo.info()
     }
 }

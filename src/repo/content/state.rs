@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::repo::id_table::{IdTable, UniqueId};
-use crate::repo::state_repo::{Restore as StateRestore, StateKeys};
+use crate::repo::state_repo::{RepoState, Restore as StateRestore, StateKeys};
 
 use super::HashAlgorithm;
 
@@ -46,18 +46,18 @@ pub struct ContentRepoState {
     pub hash_algorithm: HashAlgorithm,
 }
 
-impl ContentRepoState {
-    /// Return a new empty `ContentRepoState`.
-    pub fn new() -> Self {
+impl Default for ContentRepoState {
+    fn default() -> Self {
         ContentRepoState {
             hash_table: HashMap::new(),
             id_table: IdTable::new(),
             hash_algorithm: DEFAULT_ALGORITHM,
         }
     }
+}
 
-    /// Clear the `ContentRepoState` in place.
-    pub fn clear(&mut self) {
+impl RepoState for ContentRepoState {
+    fn clear(&mut self) {
         self.hash_table.clear();
         self.id_table = IdTable::new();
     }

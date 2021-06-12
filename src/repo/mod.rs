@@ -150,31 +150,10 @@ pub mod key {
     pub use super::common::{Key, KeyRepo, Restore};
 }
 
-/// Functions for implementing higher-level repository types.
-///
-/// Implementing new repository types on top of a [`KeyRepo`] requires careful consideration in
-/// order to maintain ACID guarantees. The functions in this module allow for implementing common
-/// operations for new repository types which mimic those found on a [`KeyRepo`].
-///
-/// The functions in this module assume a model where a repository type consists of a backing
-/// [`KeyRepo`] and a value holding the repository state which is read from and written to the
-/// backing [`KeyRepo`].
-///
-/// Typically, the type parameter `K` on the backing [`KeyRepo`] will be an enum with three variants
-/// dedicated to storing the state of the repository and potentially other variants as well. The
-/// [`StateKeys`] type in this module represents the three enum variants used for storing the
-/// repository state.
-///
-/// This module is not meant to be part of the public API, and exists to reduce boilerplate and
-/// redundant code between repository implementations provided as part of this crate.
-///
-/// [`KeyRepo`]: crate::repo::key::KeyRepo
-/// [`StateKeys`]: crate::repo::state_repo::StateKeys
-mod state_repo;
-
 mod common;
 pub mod content;
 pub mod file;
 mod id_table;
+mod state_repo;
 pub mod value;
 pub mod version;
