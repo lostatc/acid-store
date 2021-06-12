@@ -18,8 +18,6 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::repo::OpenRepo;
-
 use super::common::{Key, KeyRepo, Restore as KeyRestore, Savepoint};
 
 /// The keys in the backing `KeyRepo` for the objects which hold the repository state.
@@ -83,7 +81,7 @@ pub struct StateRepo<K: Key, S: RepoState> {
 
 impl<K: Key, S: RepoState> StateRepo<K, S> {
     /// Deserialize and return the repository state from the backing `KeyRepo`.
-    fn read_state(&mut self) -> crate::Result<S> {
+    pub fn read_state(&mut self) -> crate::Result<S> {
         match self.repo.object(&self.keys.current) {
             Some(mut object) => object.deserialize(),
             None => Ok(S::default()),
@@ -91,7 +89,7 @@ impl<K: Key, S: RepoState> StateRepo<K, S> {
     }
 
     /// Write the repository state to the backing `KeyRepo`.
-    fn write_state(&mut self) -> crate::Result<()> {
+    pub fn write_state(&mut self) -> crate::Result<()> {
         let mut object = self.repo.insert(self.keys.temp.clone());
         object.serialize(&self.state)?;
         drop(object);
@@ -185,64 +183,5 @@ impl<K: Key, S: RepoState> StateRepo<K, S> {
     pub fn clear_instance(&mut self) {
         self.repo.clear_instance();
         self.state.clear();
-    }
-}
-
-/// A trait which implements `OpenRepo` on a repository backed by a `StateRepo`.
-pub trait OpenStateRepo {
-    /// The type of the key used in the backing `KeyRepo`.
-    type Key: Key;
-
-    /// The type of the value which encapsulates the state for the repository.
-    type State: RepoState;
-
-    /// The version ID for the serialized data format of this repository.
-    const VERSION_ID: Uuid;
-
-    /// The keys of the objects which hold the repository state in the backing repository.
-    const STATE_KEYS: StateKeys<Self::Key>;
-
-    /// Return a new repository of this type backed by the `state_repo`.
-    fn from_repo(repo: StateRepo<Self::Key, Self::State>) -> Self;
-
-    /// Consume this repository and return the backing `KeyRepo`.
-    fn into_repo(self) -> StateRepo<Self::Key, Self::State>;
-}
-
-impl<T: OpenStateRepo> OpenRepo for T {
-    type Key = T::Key;
-
-    const VERSION_ID: Uuid = T::VERSION_ID;
-
-    fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let mut new_repo = StateRepo {
-            repo,
-            state: T::State::default(),
-            keys: T::STATE_KEYS,
-        };
-        new_repo.state = new_repo.read_state()?;
-        Ok(T::from_repo(new_repo))
-    }
-
-    fn create_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
-    where
-        Self: Sized,
-    {
-        let mut new_repo = StateRepo {
-            repo,
-            state: T::State::default(),
-            keys: T::STATE_KEYS,
-        };
-        new_repo.write_state()?;
-        Ok(T::from_repo(new_repo))
-    }
-
-    fn into_repo(self) -> crate::Result<KeyRepo<Self::Key>> {
-        let mut repo = self.into_repo();
-        repo.write_state()?;
-        Ok(repo.repo)
     }
 }
