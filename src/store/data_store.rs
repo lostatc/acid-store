@@ -14,9 +14,7 @@
  * limitations under the License.
  */
 
-use std::fmt::{self, Debug};
-
-use serde::export::Formatter;
+use std::fmt::{self, Debug, Formatter};
 use uuid::Uuid;
 
 /// A persistent store for blocks of data.
