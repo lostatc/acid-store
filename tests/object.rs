@@ -20,7 +20,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 
 use test_case::test_case;
 
-use acid_store::repo::object::ObjectRepo;
+use acid_store::repo::key::KeyRepo;
 use acid_store::repo::{Chunking, Compression, Encryption, OpenMode, OpenOptions, RepoConfig};
 use acid_store::store::MemoryConfig;
 use common::{random_buffer, random_bytes, MIN_BUFFER_SIZE};
@@ -35,13 +35,12 @@ mod common;
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn read_written_data(config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
-    let mut repo: ObjectRepo = OpenOptions::new()
+    let mut repo: KeyRepo<String> = OpenOptions::new()
         .config(config)
         .password(b"Password")
         .mode(OpenMode::CreateNew)
         .open(&store_config)?;
-    let mut handle = repo.add_unmanaged();
-    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let mut object = repo.insert(String::from("test"));
 
     let expected_data = random_buffer();
     let mut actual_data = vec![0u8; expected_data.len()];
@@ -64,13 +63,12 @@ fn read_written_data(config: RepoConfig) -> anyhow::Result<()> {
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn seek_and_read_data(config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
-    let mut repo: ObjectRepo = OpenOptions::new()
+    let mut repo: KeyRepo<String> = OpenOptions::new()
         .config(config)
         .password(b"Password")
         .mode(OpenMode::CreateNew)
         .open(&store_config)?;
-    let mut handle = repo.add_unmanaged();
-    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let mut object = repo.insert(String::from("test"));
 
     let original_data = random_buffer();
     let mut actual_data = Vec::new();
@@ -108,13 +106,12 @@ fn seek_and_read_data(config: RepoConfig) -> anyhow::Result<()> {
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn seek_to_negative_offset(config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
-    let mut repo: ObjectRepo = OpenOptions::new()
+    let mut repo: KeyRepo<String> = OpenOptions::new()
         .config(config)
         .password(b"Password")
         .mode(OpenMode::CreateNew)
         .open(&store_config)?;
-    let mut handle = repo.add_unmanaged();
-    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let mut object = repo.insert(String::from("test"));
 
     // Write initial data to the object.
     object.write_all(random_buffer().as_slice())?;
@@ -133,13 +130,12 @@ fn seek_to_negative_offset(config: RepoConfig) -> anyhow::Result<()> {
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn overwrite_written_data(config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
-    let mut repo: ObjectRepo = OpenOptions::new()
+    let mut repo: KeyRepo<String> = OpenOptions::new()
         .config(config)
         .password(b"Password")
         .mode(OpenMode::CreateNew)
         .open(&store_config)?;
-    let mut handle = repo.add_unmanaged();
-    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let mut object = repo.insert(String::from("test"));
 
     // Write initial data to the object.
     object.write_all(random_buffer().as_slice())?;
@@ -169,13 +165,12 @@ fn overwrite_written_data(config: RepoConfig) -> anyhow::Result<()> {
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn partially_overwrite_written_data(config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
-    let mut repo: ObjectRepo = OpenOptions::new()
+    let mut repo: KeyRepo<String> = OpenOptions::new()
         .config(config)
         .password(b"Password")
         .mode(OpenMode::CreateNew)
         .open(&store_config)?;
-    let mut handle = repo.add_unmanaged();
-    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let mut object = repo.insert(String::from("test"));
 
     // Write initial data to the object.
     let initial_data = random_buffer();
@@ -208,13 +203,12 @@ fn partially_overwrite_written_data(config: RepoConfig) -> anyhow::Result<()> {
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn partially_overwrite_and_grow_data(config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
-    let mut repo: ObjectRepo = OpenOptions::new()
+    let mut repo: KeyRepo<String> = OpenOptions::new()
         .config(config)
         .password(b"Password")
         .mode(OpenMode::CreateNew)
         .open(&store_config)?;
-    let mut handle = repo.add_unmanaged();
-    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let mut object = repo.insert(String::from("test"));
 
     let new_start_position = MIN_BUFFER_SIZE / 2;
 
@@ -249,13 +243,12 @@ fn partially_overwrite_and_grow_data(config: RepoConfig) -> anyhow::Result<()> {
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn truncate_object(config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
-    let mut repo: ObjectRepo = OpenOptions::new()
+    let mut repo: KeyRepo<String> = OpenOptions::new()
         .config(config)
         .password(b"Password")
         .mode(OpenMode::CreateNew)
         .open(&store_config)?;
-    let mut handle = repo.add_unmanaged();
-    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let mut object = repo.insert(String::from("test"));
 
     // Write data to the object.
     let initial_data = random_buffer();
@@ -288,25 +281,23 @@ fn truncate_object(config: RepoConfig) -> anyhow::Result<()> {
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn compare_content_ids(config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
-    let mut repo: ObjectRepo = OpenOptions::new()
+    let mut repo: KeyRepo<String> = OpenOptions::new()
         .config(config)
         .password(b"Password")
         .mode(OpenMode::CreateNew)
         .open(&store_config)?;
-    let mut handle1 = repo.add_unmanaged();
-    let mut handle2 = repo.add_unmanaged();
 
     let initial_data = random_buffer();
 
     // Write data to the first object.
-    let mut object = repo.unmanaged_object_mut(&mut handle1).unwrap();
+    let mut object = repo.insert(String::from("test1"));
     object.write_all(initial_data.as_slice())?;
     object.flush()?;
     let content_id1 = object.content_id();
     drop(object);
 
     // Write the same data to the second object.
-    let mut object = repo.unmanaged_object_mut(&mut handle2).unwrap();
+    let mut object = repo.insert(String::from("test2"));
     object.write_all(initial_data.as_slice())?;
     object.flush()?;
     let content_id2 = object.content_id();
@@ -315,7 +306,7 @@ fn compare_content_ids(config: RepoConfig) -> anyhow::Result<()> {
     assert_eq!(content_id1, content_id2);
 
     // Write new data to the second object.
-    let mut object = repo.unmanaged_object_mut(&mut handle2).unwrap();
+    let mut object = repo.object_mut("test2").unwrap();
     object.write_all(random_buffer().as_slice())?;
     object.flush()?;
     let content_id2 = object.content_id();
@@ -333,13 +324,12 @@ fn compare_content_ids(config: RepoConfig) -> anyhow::Result<()> {
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn compare_contents_with_are_equal(config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
-    let mut repo: ObjectRepo = OpenOptions::new()
+    let mut repo: KeyRepo<String> = OpenOptions::new()
         .config(config)
         .password(b"Password")
         .mode(OpenMode::CreateNew)
         .open(&store_config)?;
-    let mut handle = repo.add_unmanaged();
-    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let mut object = repo.insert(String::from("test"));
 
     let initial_data = random_buffer();
 
@@ -360,13 +350,12 @@ fn compare_contents_with_are_equal(config: RepoConfig) -> anyhow::Result<()> {
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn compare_unequal_contents_with_same_size(config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
-    let mut repo: ObjectRepo = OpenOptions::new()
+    let mut repo: KeyRepo<String> = OpenOptions::new()
         .config(config)
         .password(b"Password")
         .mode(OpenMode::CreateNew)
         .open(&store_config)?;
-    let mut handle = repo.add_unmanaged();
-    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let mut object = repo.insert(String::from("test"));
 
     let initial_data = random_buffer();
     let modified_data = random_bytes(initial_data.len());
@@ -388,13 +377,12 @@ fn compare_unequal_contents_with_same_size(config: RepoConfig) -> anyhow::Result
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn compare_contents_which_are_smaller(config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
-    let mut repo: ObjectRepo = OpenOptions::new()
+    let mut repo: KeyRepo<String> = OpenOptions::new()
         .config(config)
         .password(b"Password")
         .mode(OpenMode::CreateNew)
         .open(&store_config)?;
-    let mut handle = repo.add_unmanaged();
-    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let mut object = repo.insert(String::from("test"));
 
     let initial_data = random_buffer();
     let modified_data = &initial_data[..initial_data.len() / 2];
@@ -416,13 +404,12 @@ fn compare_contents_which_are_smaller(config: RepoConfig) -> anyhow::Result<()> 
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn compare_contents_which_are_larger(config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
-    let mut repo: ObjectRepo = OpenOptions::new()
+    let mut repo: KeyRepo<String> = OpenOptions::new()
         .config(config)
         .password(b"Password")
         .mode(OpenMode::CreateNew)
         .open(&store_config)?;
-    let mut handle = repo.add_unmanaged();
-    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let mut object = repo.insert(String::from("test"));
 
     let initial_data = random_buffer();
     let modified_data = [initial_data.clone(), random_buffer()].concat();
@@ -444,13 +431,12 @@ fn compare_contents_which_are_larger(config: RepoConfig) -> anyhow::Result<()> {
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn verify_valid_object_is_valid(config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
-    let mut repo: ObjectRepo = OpenOptions::new()
+    let mut repo: KeyRepo<String> = OpenOptions::new()
         .config(config)
         .password(b"Password")
         .mode(OpenMode::CreateNew)
         .open(&store_config)?;
-    let mut handle = repo.add_unmanaged();
-    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let mut object = repo.insert(String::from("test"));
 
     object.write_all(random_buffer().as_slice())?;
     object.flush()?;
@@ -464,14 +450,13 @@ fn write_buffer_with_same_size_as_fixed_chunk_size() -> anyhow::Result<()> {
     let chunk_size = 1024 * 1024;
 
     let store_config = MemoryConfig::new();
-    let mut repo: ObjectRepo = OpenOptions::new()
+    let mut repo: KeyRepo<String> = OpenOptions::new()
         .chunking(Chunking::Fixed { size: chunk_size })
         .encryption(Encryption::None)
         .compression(Compression::None)
         .mode(OpenMode::CreateNew)
         .open(&store_config)?;
-    let mut handle = repo.add_unmanaged();
-    let mut object = repo.unmanaged_object_mut(&mut handle).unwrap();
+    let mut object = repo.insert(String::from("test"));
 
     object.write_all(random_bytes(chunk_size as usize).as_slice())?;
     object.flush()?;

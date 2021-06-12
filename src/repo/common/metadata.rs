@@ -38,7 +38,7 @@ pub struct Header {
     /// A map of block IDs to their locations in packs.
     pub packs: HashMap<Uuid, Vec<PackIndex>>,
 
-    /// A map of object IDs to their object handles for the current instance.
+    /// A map of instance IDs to information about each instance.
     pub instances: HashMap<Uuid, InstanceInfo>,
 
     /// The table of object handle IDs.

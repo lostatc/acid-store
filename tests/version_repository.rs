@@ -316,3 +316,24 @@ fn rollback_after_clear_instance() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn rollback_after_clear_repo() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    let mut object = repo.insert("test".into()).unwrap();
+    object.write_all(random_buffer().as_slice())?;
+    object.flush()?;
+    drop(object);
+
+    repo.commit()?;
+    repo.clear_repo();
+    repo.rollback()?;
+
+    assert!(repo.contains("test"));
+    assert!(repo.keys().next().is_some());
+    assert!(repo.object("test").is_some());
+
+    Ok(())
+}
