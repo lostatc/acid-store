@@ -25,7 +25,6 @@ use super::path_tree::PathTree;
 
 pub const STATE_KEYS: StateKeys<FileRepoKey> = StateKeys {
     current: FileRepoKey::CurrentState,
-    previous: FileRepoKey::PreviousState,
     temp: FileRepoKey::TempState,
 };
 
@@ -60,9 +59,6 @@ impl RepoState for FileRepoState {
 pub enum FileRepoKey {
     /// The object which contains the serialized current repository state.
     CurrentState,
-
-    /// The object which contains the serialized repository state as of the previous commit.
-    PreviousState,
 
     /// The object which is used to temporarily store the object state.
     TempState,

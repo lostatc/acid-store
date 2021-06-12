@@ -29,7 +29,6 @@ const DEFAULT_ALGORITHM: HashAlgorithm = HashAlgorithm::Blake3;
 
 pub const STATE_KEYS: StateKeys<ContentRepoKey> = StateKeys {
     current: ContentRepoKey::CurrentState,
-    previous: ContentRepoKey::PreviousState,
     temp: ContentRepoKey::TempState,
 };
 
@@ -68,9 +67,6 @@ impl RepoState for ContentRepoState {
 pub enum ContentRepoKey {
     /// The object which contains the serialized current repository state.
     CurrentState,
-
-    /// The object which contains the serialized repository state as of the previous commit.
-    PreviousState,
 
     /// The object which is used to temporarily store the object state.
     TempState,

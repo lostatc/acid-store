@@ -850,23 +850,6 @@ impl<K: Key> KeyRepo<K> {
         }
     }
 
-    /// Delete all data in all instances of the repository.
-    ///
-    /// This does not commit changes to the repository.
-    ///
-    /// No data is reclaimed in the backing data store until changes are committed and [`clean`] is
-    /// called.
-    ///
-    /// [`clean`]: crate::repo::key::KeyRepo::clean
-    pub fn clear_repo(&mut self) {
-        // Because this method cannot return early, it doesn't matter which order we do these in.
-        self.handle_table = IdTable::new();
-        self.state.chunks.clear();
-        self.state.packs.clear();
-        self.instances.clear();
-        self.objects.clear();
-    }
-
     /// Verify the integrity of all the data in the current instance of the repository.
     ///
     /// This returns the set of keys of objects in the current instance which are corrupt.

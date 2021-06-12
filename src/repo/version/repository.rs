@@ -400,15 +400,6 @@ impl<K: Key> VersionRepo<K> {
         self.0.clear_instance()
     }
 
-    /// Delete all data in all instances of the repository.
-    ///
-    /// See [`KeyRepo::clear_repo`] for details.
-    ///
-    /// [`KeyRepo::clear_repo`]: crate::repo::key::KeyRepo::clear_repo
-    pub fn clear_repo(&mut self) {
-        self.0.clear_repo()
-    }
-
     /// Change the password for this repository.
     ///
     /// See [`KeyRepo::change_password`] for details.

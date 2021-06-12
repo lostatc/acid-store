@@ -28,7 +28,6 @@ use super::version::KeyInfo;
 
 pub const STATE_KEYS: StateKeys<VersionRepoKey> = StateKeys {
     current: VersionRepoKey::CurrentState,
-    previous: VersionRepoKey::PreviousState,
     temp: VersionRepoKey::TempState,
 };
 
@@ -60,9 +59,6 @@ impl<K: Key> RepoState for VersionRepoState<K> {
 pub enum VersionRepoKey {
     /// The object which contains the serialized current repository state.
     CurrentState,
-
-    /// The object which contains the serialized repository state as of the previous commit.
-    PreviousState,
 
     /// The object which is used to temporarily store the object state.
     TempState,

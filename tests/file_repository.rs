@@ -829,27 +829,6 @@ fn rollback_after_clear_instance() -> anyhow::Result<()> {
 }
 
 #[test]
-fn rollback_after_clear_repo() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo = create_repo(&config)?;
-
-    repo.create("test", &Entry::file())?;
-    let mut object = repo.open_mut("test")?;
-    object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
-    drop(object);
-
-    repo.commit()?;
-    repo.clear_repo();
-    repo.rollback()?;
-
-    assert!(repo.exists("test"));
-    assert!(repo.open("test").is_ok());
-
-    Ok(())
-}
-
-#[test]
 fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
     let config = MemoryConfig::new();
     let mut repository = create_repo(&config)?;

@@ -26,7 +26,6 @@ use crate::repo::state_repo::{RepoState, Restore as StateRestore, StateKeys};
 
 pub const STATE_KEYS: StateKeys<ValueRepoKey> = StateKeys {
     current: ValueRepoKey::CurrentState,
-    previous: ValueRepoKey::PreviousState,
     temp: ValueRepoKey::TempState,
 };
 
@@ -58,9 +57,6 @@ impl<K: Key> RepoState for ValueRepoState<K> {
 pub enum ValueRepoKey {
     /// The object which contains the serialized current repository state.
     CurrentState,
-
-    /// The object which contains the serialized repository state as of the previous commit.
-    PreviousState,
 
     /// The object which is used to temporarily store the object state.
     TempState,
