@@ -173,7 +173,11 @@ where
         drop(object);
 
         let entry_type = match entry.file_type {
-            FileType::File => EntryType::File(self.0.state.id_table.next()),
+            FileType::File => {
+                let file_id = self.0.state.id_table.next();
+                self.0.repo.insert(FileRepoKey::Object(file_id));
+                EntryType::File(file_id)
+            }
             FileType::Directory => EntryType::Directory,
             FileType::Special(_) => EntryType::Special,
         };
@@ -896,14 +900,14 @@ where
             .walk(RelativePathBuf::new())
             .unwrap()
             .filter(|(_, entry_handle)| {
-                let entry_valid = corrupt_keys.contains(&FileRepoKey::Object(entry_handle.entry));
-                let file_valid = match &entry_handle.entry_type {
+                let entry_corrupt = corrupt_keys.contains(&FileRepoKey::Object(entry_handle.entry));
+                let file_corrupt = match &entry_handle.entry_type {
                     EntryType::File(object_id) => {
                         corrupt_keys.contains(&FileRepoKey::Object(*object_id))
                     }
-                    _ => true,
+                    _ => false,
                 };
-                !entry_valid || !file_valid
+                entry_corrupt || file_corrupt
             })
             .map(|(path, _)| path)
             .collect::<HashSet<_>>())
