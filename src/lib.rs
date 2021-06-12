@@ -115,6 +115,7 @@
 //! [`MemoryStore`]: crate::store::MemoryStore
 
 #![allow(dead_code)]
+#![forbid(unsafe_code)]
 
 pub use anyhow;
 pub use uuid;
