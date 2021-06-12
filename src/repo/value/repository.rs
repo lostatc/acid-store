@@ -26,9 +26,9 @@ use uuid::Uuid;
 
 use crate::repo::id_table::UniqueId;
 use crate::repo::{
-    key::Key,
-    state_repo::{OpenStateRepo, StateKeys, StateRepo},
-    RepoInfo, Savepoint,
+    key::{Key, KeyRepo},
+    state_repo::StateRepo,
+    OpenRepo, RepoInfo, Savepoint,
 };
 
 use super::state::{Restore, ValueRepoKey, ValueRepoState, STATE_KEYS};
@@ -39,18 +39,40 @@ use super::state::{Restore, ValueRepoKey, ValueRepoState, STATE_KEYS};
 #[derive(Debug)]
 pub struct ValueRepo<K: Key>(StateRepo<ValueRepoKey, ValueRepoState<K>>);
 
-impl<K: Key> OpenStateRepo for ValueRepo<K> {
+impl<K: Key> OpenRepo for ValueRepo<K> {
     type Key = ValueRepoKey;
-    type State = ValueRepoState<K>;
-    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("49d1da00 be54 11eb 83e7 ab73adcf2dc4"));
-    const STATE_KEYS: StateKeys<Self::Key> = STATE_KEYS;
 
-    fn from_repo(repo: StateRepo<Self::Key, Self::State>) -> Self {
-        ValueRepo(repo)
+    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("49d1da00 be54 11eb 83e7 ab73adcf2dc4"));
+
+    fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut state_repo = StateRepo {
+            repo,
+            state: ValueRepoState::default(),
+            keys: STATE_KEYS,
+        };
+        state_repo.state = state_repo.read_state()?;
+        Ok(ValueRepo(state_repo))
     }
 
-    fn into_repo(self) -> StateRepo<Self::Key, Self::State> {
-        self.0
+    fn create_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut state_repo = StateRepo {
+            repo,
+            state: ValueRepoState::default(),
+            keys: STATE_KEYS,
+        };
+        state_repo.write_state()?;
+        Ok(ValueRepo(state_repo))
+    }
+
+    fn into_repo(mut self) -> crate::Result<KeyRepo<Self::Key>> {
+        self.0.write_state()?;
+        Ok(self.0.repo)
     }
 }
 

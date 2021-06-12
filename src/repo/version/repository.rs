@@ -24,9 +24,10 @@ use std::time::SystemTime;
 use hex_literal::hex;
 use uuid::Uuid;
 
+use crate::repo::common::KeyRepo;
 use crate::repo::id_table::UniqueId;
-use crate::repo::state_repo::{OpenStateRepo, StateKeys, StateRepo};
-use crate::repo::{key::Key, Object, ReadOnlyObject, RepoInfo, Savepoint};
+use crate::repo::state_repo::StateRepo;
+use crate::repo::{key::Key, Object, OpenRepo, ReadOnlyObject, RepoInfo, Savepoint};
 
 use super::state::{Restore, VersionRepoKey, VersionRepoState, STATE_KEYS};
 use super::version::{KeyInfo, Version, VersionInfo};
@@ -37,18 +38,40 @@ use super::version::{KeyInfo, Version, VersionInfo};
 #[derive(Debug)]
 pub struct VersionRepo<K: Key>(StateRepo<VersionRepoKey, VersionRepoState<K>>);
 
-impl<K: Key> OpenStateRepo for VersionRepo<K> {
+impl<K: Key> OpenRepo for VersionRepo<K> {
     type Key = VersionRepoKey;
-    type State = VersionRepoState<K>;
-    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("590bd584 be86 11eb b54d c32102ab5ae4"));
-    const STATE_KEYS: StateKeys<Self::Key> = STATE_KEYS;
 
-    fn from_repo(repo: StateRepo<Self::Key, Self::State>) -> Self {
-        VersionRepo(repo)
+    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("590bd584 be86 11eb b54d c32102ab5ae4"));
+
+    fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut state_repo = StateRepo {
+            repo,
+            state: VersionRepoState::default(),
+            keys: STATE_KEYS,
+        };
+        state_repo.state = state_repo.read_state()?;
+        Ok(VersionRepo(state_repo))
     }
 
-    fn into_repo(self) -> StateRepo<Self::Key, Self::State> {
-        self.0
+    fn create_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut state_repo = StateRepo {
+            repo,
+            state: VersionRepoState::default(),
+            keys: STATE_KEYS,
+        };
+        state_repo.write_state()?;
+        Ok(VersionRepo(state_repo))
+    }
+
+    fn into_repo(mut self) -> crate::Result<KeyRepo<Self::Key>> {
+        self.0.write_state()?;
+        Ok(self.0.repo)
     }
 }
 
@@ -386,7 +409,7 @@ impl<K: Key> VersionRepo<K> {
     ///
     /// See [`KeyRepo::clean`] for details.
     ///
-    /// [`KeyRepo::clean`]: crate::repo::object::KeyRepo::clean
+    /// [`KeyRepo::clean`]: crate::repo::key::KeyRepo::clean
     pub fn clean(&mut self) -> crate::Result<()> {
         self.0.repo.clean()
     }

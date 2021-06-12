@@ -20,10 +20,8 @@ use std::io::{Read, Write};
 use hex_literal::hex;
 use uuid::Uuid;
 
-use crate::repo::state_repo::StateKeys;
 use crate::repo::{
-    state_repo::{OpenStateRepo, StateRepo},
-    ReadOnlyObject, RepoInfo, Savepoint,
+    key::KeyRepo, state_repo::StateRepo, OpenRepo, ReadOnlyObject, RepoInfo, Savepoint,
 };
 
 use super::hash::{HashAlgorithm, BUFFER_SIZE};
@@ -35,18 +33,40 @@ use super::state::{ContentRepoKey, ContentRepoState, Restore, STATE_KEYS};
 #[derive(Debug)]
 pub struct ContentRepo(StateRepo<ContentRepoKey, ContentRepoState>);
 
-impl OpenStateRepo for ContentRepo {
+impl OpenRepo for ContentRepo {
     type Key = ContentRepoKey;
-    type State = ContentRepoState;
-    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("f45f7aa2 be47 11eb aff1 634ee34a5453"));
-    const STATE_KEYS: StateKeys<Self::Key> = STATE_KEYS;
 
-    fn from_repo(repo: StateRepo<Self::Key, Self::State>) -> Self {
-        ContentRepo(repo)
+    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("f45f7aa2 be47 11eb aff1 634ee34a5453"));
+
+    fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut state_repo = StateRepo {
+            repo,
+            state: ContentRepoState::default(),
+            keys: STATE_KEYS,
+        };
+        state_repo.state = state_repo.read_state()?;
+        Ok(ContentRepo(state_repo))
     }
 
-    fn into_repo(self) -> StateRepo<Self::Key, Self::State> {
-        self.0
+    fn create_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut state_repo = StateRepo {
+            repo,
+            state: ContentRepoState::default(),
+            keys: STATE_KEYS,
+        };
+        state_repo.write_state()?;
+        Ok(ContentRepo(state_repo))
+    }
+
+    fn into_repo(mut self) -> crate::Result<KeyRepo<Self::Key>> {
+        self.0.write_state()?;
+        Ok(self.0.repo)
     }
 }
 

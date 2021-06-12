@@ -48,9 +48,9 @@ impl Version {
 
     /// Return a `ContentId` representing the contents of this version.
     ///
-    /// See [`ObjectHandle::content_id`] for details.
+    /// See [`Object::content_id`] for details.
     ///
-    /// [`ObjectHandle::content_id`]: crate::repo::object::ObjectHandle::content_id
+    /// [`Object::content_id`]: crate::repo::Object::content_id
     pub fn content_id(&self) -> &ContentId {
         &self.content_id
     }
