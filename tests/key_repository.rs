@@ -683,29 +683,6 @@ fn clear_instance_deletes_objects(repo_config: RepoConfig) -> anyhow::Result<()>
 #[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
 #[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn clear_repo_deletes_objects(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-    let mut object = repo.insert(String::from("test"));
-
-    object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
-    drop(object);
-
-    repo.clear_repo();
-
-    assert!(!repo.contains("test"));
-    assert!(repo.object("test").is_none());
-
-    Ok(())
-}
-
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn rollback_after_clear_instance(repo_config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
     let mut repo = create_repo(repo_config, &store_config)?;
@@ -717,31 +694,6 @@ fn rollback_after_clear_instance(repo_config: RepoConfig) -> anyhow::Result<()> 
 
     repo.commit()?;
     repo.clear_instance();
-    repo.rollback()?;
-
-    assert!(repo.contains("test"));
-    assert!(repo.object("test").is_some());
-
-    Ok(())
-}
-
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn rollback_after_clear_repo(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-    let mut object = repo.insert(String::from("test"));
-
-    object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
-    drop(object);
-
-    repo.commit()?;
-    repo.clear_repo();
     repo.rollback()?;
 
     assert!(repo.contains("test"));

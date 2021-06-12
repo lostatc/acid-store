@@ -27,8 +27,10 @@ use super::common::{Key, KeyRepo, Restore as KeyRestore, Savepoint};
 /// Multiple objects are needed to hold the repository state in order to maintain ACID guarantees.
 #[derive(Debug, Clone, Copy)]
 pub struct StateKeys<K> {
+    /// The key of the object which holds the current repository state.
     pub current: K,
-    pub previous: K,
+
+    /// The key of the object which is used to temporarily hold the repository state.
     pub temp: K,
 }
 
@@ -82,8 +84,10 @@ pub struct StateRepo<K: Key, S: RepoState> {
 impl<K: Key, S: RepoState> StateRepo<K, S> {
     /// Deserialize and return the repository state from the backing `KeyRepo`.
     fn read_state(&mut self) -> crate::Result<S> {
-        let mut object = self.repo.object(&self.keys.current).unwrap();
-        object.deserialize()
+        match self.repo.object(&self.keys.current) {
+            Some(mut object) => object.deserialize(),
+            None => Ok(S::default()),
+        }
     }
 
     /// Write the repository state to the backing `KeyRepo`.
@@ -94,54 +98,37 @@ impl<K: Key, S: RepoState> StateRepo<K, S> {
 
         self.repo.copy(&self.keys.temp, self.keys.current.clone());
 
-        if !self.repo.contains(&self.keys.previous) {
-            self.repo
-                .copy(&self.keys.current, self.keys.previous.clone());
-        }
-
         Ok(())
     }
 
     /// Commit changes which have been made to the repository.
     pub fn commit(&mut self) -> crate::Result<()> {
-        // Write the current repository state.
         self.write_state()?;
-
-        // Copy the previous repository state to a temporary object so we can restore it if
-        // committing the backing repository fails.
-        self.repo.copy(&self.keys.previous, self.keys.temp.clone());
-
-        // Overwrite the previous repository state with the current repository state so that if the
-        // commit succeeds, future rollbacks will restore to this point.
-        self.repo
-            .copy(&self.keys.current, self.keys.previous.clone());
-
-        // Attempt to commit changes to the backing repository.
-        let result = self.repo.commit();
-
-        // If the commit fails, restore the previous repository state from the temporary
-        // object so we can still roll back the changes.
-        if result.is_err() {
-            self.repo.copy(&self.keys.temp, self.keys.previous.clone());
-        }
-
-        result
+        self.repo.commit()
     }
 
     /// Roll back all changes made since the last commit.
     pub fn rollback(&mut self) -> crate::Result<()> {
-        let previous_state = match self.repo.object(&self.keys.previous) {
-            Some(mut object) => match object.deserialize() {
-                Err(crate::Error::Deserialize) => return Err(crate::Error::Corrupt),
-                Err(error) => return Err(error),
-                Ok(value) => value,
-            },
-            None => S::default(),
-        };
+        // Create a savepoint on the backing repository so that we can undo rolling back the backing
+        // repository if necessary. This is necessary to uphold the contract that if this method
+        // returns `Err`, the repository is unchanged. It's important that we start the restore
+        // process here so that it can be completed infallibly.
+        let backup_savepoint = self.repo.savepoint()?;
+        let backup_restore = self.repo.start_restore(&backup_savepoint)?;
 
+        // Roll back the backing repository.
         self.repo.rollback()?;
 
-        self.state = previous_state;
+        // Roll back this repository's state to the previous commit.
+        self.state = match self.read_state() {
+            Ok(state) => state,
+            Err(error) => {
+                // If reading the state fails, we must finish restoring the backup so we can return
+                // `Err` and have the repository unchanged.
+                self.repo.finish_restore(backup_restore);
+                return Err(error);
+            }
+        };
 
         Ok(())
     }
@@ -197,12 +184,6 @@ impl<K: Key, S: RepoState> StateRepo<K, S> {
     /// Delete all data in the current instance of the repository.
     pub fn clear_instance(&mut self) {
         self.repo.clear_instance();
-        self.state.clear();
-    }
-
-    /// Delete all data in all instances of the repository.
-    pub fn clear_repo(&mut self) {
-        self.repo.clear_repo();
         self.state.clear();
     }
 }
