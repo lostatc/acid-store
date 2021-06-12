@@ -279,20 +279,25 @@ impl<K: Key> KeyRepo<K> {
         object.serialize(&self.objects)
     }
 
-    /// Read the object map for the current instance and modify the repository in-place.
+    /// Read the object map for the current instance from the data store and return it.
     ///
     /// This does not write the object map for the old instance first. To do that, use
     /// `write_object_map`.
     ///
     /// This does not commit or roll back changes.
     pub(super) fn read_object_map(&mut self) -> crate::Result<HashMap<K, ObjectHandle>> {
-        let handle = &mut self
-            .instances
-            .get_mut(&self.instance_id)
-            .expect("There is no instance with the given ID.")
-            .objects;
-        let mut instance_object = Object::new(&mut self.state, handle);
-        instance_object.deserialize()
+        match &mut self.instances.get_mut(&self.instance_id) {
+            Some(instance_info) => {
+                let mut instance_object = Object::new(&mut self.state, &mut instance_info.objects);
+                instance_object.deserialize()
+            }
+            None => {
+                // If the current instance is not in the instance map, then this repository has not
+                // been committed since it was created and an object map has not been written for
+                // this instance.
+                Ok(HashMap::new())
+            }
+        }
     }
 
     /// Set the current instance of the repository.
