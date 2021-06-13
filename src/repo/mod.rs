@@ -154,7 +154,6 @@ mod common;
 pub mod content;
 pub mod file;
 mod id_table;
-mod state;
 mod state_repo;
 pub mod value;
 pub mod version;

@@ -15,6 +15,7 @@
  */
 
 pub use self::chunking::Chunking;
+pub use self::commit::Commit;
 pub use self::compression::Compression;
 pub use self::config::RepoConfig;
 pub use self::encryption::{Encryption, ResourceLimit};
@@ -25,10 +26,12 @@ pub use self::open_options::{OpenMode, OpenOptions, DEFAULT_INSTANCE};
 pub use self::open_repo::{OpenRepo, SwitchInstance};
 pub use self::packing::Packing;
 pub use self::repository::KeyRepo;
-pub use self::savepoint::{Restore, Savepoint};
+pub use self::savepoint::{Restore, RestoreSavepoint, Savepoint};
+pub use self::state_repo::{StateRepo, StateStore};
 
 mod chunk_store;
 mod chunking;
+mod commit;
 mod compression;
 mod config;
 mod encryption;
@@ -42,3 +45,4 @@ mod packing;
 mod repository;
 mod savepoint;
 mod state;
+mod state_repo;
