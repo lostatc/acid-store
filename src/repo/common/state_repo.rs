@@ -18,47 +18,63 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::repo::Savepoint;
+use super::commit::Commit;
+use super::savepoint::{Restore, RestoreSavepoint, Savepoint};
 
-pub trait Restore: Clone {
-    /// Return whether the savepoint used to start this restore is valid.
-    fn is_valid(&self) -> bool;
-
-    /// The ID of the repository instance this `Restore` is associated with.
-    fn instance(&self) -> Uuid;
-}
-
-pub trait Commit {
-    fn commit(&mut self) -> crate::Result<()>;
-
-    fn rollback(&mut self) -> crate::Result<()>;
-}
-
-pub trait RestoreSavepoint {
-    type Restore: Restore;
-
-    fn savepoint(&mut self) -> crate::Result<Savepoint>;
-
-    fn start_restore(&mut self, savepoint: &Savepoint) -> crate::Result<Self::Restore>;
-
-    fn finish_restore(&mut self, restore: Self::Restore) -> bool;
-}
-
-pub trait ClearInstance {
-    fn clear_instance(&mut self);
-}
-
+/// A type which supports serializing and writing state to persistent storage.
 pub trait StateStore {
     type State: Serialize + DeserializeOwned;
 
+    /// Serialize and write the given `state`.
+    ///
+    /// If this method returns `Ok`, the state has been written and subsequent calls to
+    /// [`read_state`] will returns `state`. If this method returns `Err`, the state has not been
+    /// written and subsequent calls to `read_state` will returns state which was most recently
+    /// successfully written.
+    ///
+    /// # Errors
+    /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`read_state`]: crate::repo::StateStore::read_state
     fn write_state(&mut self, state: &Self::State) -> crate::Result<()>;
 
+    /// Read, deserialize, and return the `State`.
+    ///
+    /// If [`write_state`] has not been called yet, this method returns an empty `State`.
+    ///
+    /// # Errors
+    /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`write_state`]: crate::repo::StateStore::write_state
     fn read_state(&mut self) -> crate::Result<Self::State>;
 }
 
+/// An abstraction for implementing higher-level repository types.
+///
+/// This type is an abstraction used to implement new repository types which are backed by another
+/// repository. This type allows for trivially implementing traits like [`Commit`] and
+/// [`RestoreSavepoint`] on new repository types as long as they are backed by a repository type
+/// which also implements them.
+///
+/// A `StateRepo` consists of a `repo`, which is the backing repository, and a `state`, which is the
+/// state this repository holds that needs to be written to and read from the backing repository.
+///
+/// As long as `state` implements [`StateStore`], the implementations of [`Commit`] and
+/// [`RestoreSavepoint`] on this type will handle reading and writing that state in a way which
+/// maintains ACID guarantees.
+///
+/// [`Commit`]: crate::repo::Commit
+/// [`RestoreSavepoint`]: crate::repo::RestoreSavepoint
+/// [`StateStore`]: crate::repo::StateStore
 pub struct StateRepo<Repo, State> {
-    repo: Repo,
-    state: State,
+    pub repo: Repo,
+    pub state: State,
 }
 
 impl<Repo, State> Commit for StateRepo<Repo, State>
@@ -94,6 +110,10 @@ where
         };
 
         Ok(())
+    }
+
+    fn clean(&mut self) -> crate::Result<()> {
+        self.repo.clean()
     }
 }
 
