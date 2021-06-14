@@ -559,9 +559,10 @@ impl<'a> Seek for ReadOnlyObject<'a> {
 /// Because `Object` internally buffers data when reading, there's no need to use a buffered reader
 /// like `BufReader`.
 ///
-/// Written data is automatically flushed when this value is dropped. If an error occurs while
-/// flushing data in the `Drop` implementation, it is ignored and unflushed data is discarded. If
-/// you need to handle these errors, you should call `Write::flush` manually.
+/// Writing to an `Object` is transactional—no data is persisted to the repository until [`flush`]
+/// is called and returns `Ok`. When `Object` is dropped, any bytes written since the last call to
+/// [`flush`] are discarded. Note that this data may not be reclaimed in the backing data store
+/// until [`KeyRepo::clean`] is called.
 ///
 /// If encryption is enabled for the repository, data integrity is automatically verified as it is
 /// read and methods will return an `Err` if corrupt data is found. The [`verify`] method can be
@@ -570,6 +571,8 @@ impl<'a> Seek for ReadOnlyObject<'a> {
 /// The methods of `Read`, `Write`, and `Seek` return `io::Result`, but the returned `io::Error` can
 /// be converted `Into` an `acid_store::Error` to be consistent with the rest of the library.
 ///
+/// [`flush`]: crate::repo::Object::flush
+/// [`KeyRepo::clean`]: crate::repo::key::KeyRepo::clean
 /// [`verify`]: crate::repo::Object::verify
 #[derive(Debug)]
 pub struct Object<'a> {
@@ -743,11 +746,5 @@ impl<'a> Write for Object<'a> {
     /// - `Error::Io`: An I/O error occurred.
     fn flush(&mut self) -> io::Result<()> {
         self.object_writer().flush()
-    }
-}
-
-impl<'a> Drop for Object<'a> {
-    fn drop(&mut self) {
-        self.flush().ok();
     }
 }
