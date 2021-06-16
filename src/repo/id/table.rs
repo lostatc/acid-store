@@ -14,16 +14,14 @@
  * limitations under the License.
  */
 
-use std::collections::HashSet;
-
-use serde::{Deserialize, Serialize};
-
-/// An ID value which is unique within the same `IdTable`.
+/// An ID which uniquely identifies an object in an [`IdRepo`].
+///
+/// [`IdRepo`]: crate::repo::id::IdRepo
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct UniqueId(u64);
+pub struct ObjectId(u64);
 
-/// A table for allocating `UniqueId` values.
+/// A table for allocating `ObjectId` values.
 #[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
 pub struct IdTable {
     /// The highest used ID value (the high water mark).
@@ -40,28 +38,28 @@ impl IdTable {
     }
 
     /// Return the next unused ID from the table.
-    pub fn next(&mut self) -> UniqueId {
+    pub fn next(&mut self) -> ObjectId {
         match self.unused.iter().next().copied() {
             Some(id) => {
                 self.unused.remove(&id);
-                UniqueId(id)
+                ObjectId(id)
             }
             None => {
                 self.highest += 1;
-                UniqueId(self.highest)
+                ObjectId(self.highest)
             }
         }
     }
 
     /// Return whether the given `id` is in the table.
-    pub fn contains(&self, id: UniqueId) -> bool {
+    pub fn contains(&self, id: ObjectId) -> bool {
         id.0 <= self.highest && !self.unused.contains(&id.0)
     }
 
     /// Return the given `id` back to the table.
     ///
     /// This returns `true` if the value was returned or `false` if it was unused.
-    pub fn recycle(&mut self, id: UniqueId) -> bool {
+    pub fn recycle(&mut self, id: ObjectId) -> bool {
         if !self.contains(id) {
             return false;
         }
