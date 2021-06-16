@@ -118,9 +118,9 @@
 //! [`VersionRepo`]: crate::repo::version::VersionRepo
 
 pub use self::common::{
-    peek_info, Chunking, Compression, ContentId, Encryption, Object, OpenMode, OpenOptions,
-    OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit, Savepoint,
-    SwitchInstance, DEFAULT_INSTANCE,
+    peek_info, Chunking, Commit, Compression, ContentId, Encryption, Object, OpenMode, OpenOptions,
+    OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit, Restore,
+    RestoreSavepoint, Savepoint, SwitchInstance, DEFAULT_INSTANCE,
 };
 
 /// An object store which maps keys to seekable binary blobs.
@@ -147,13 +147,12 @@ pub use self::common::{
 /// [`SwitchInstance`]: crate::repo::SwitchInstance
 /// [`KeyRepo::commit`]: crate::repo::key::KeyRepo::commit
 pub mod key {
-    pub use super::common::{Key, KeyRepo, Restore};
+    pub use super::common::{Key, KeyRepo};
 }
 
 mod common;
 pub mod content;
 pub mod file;
-mod id_table;
-mod state_repo;
+pub mod id;
 pub mod value;
 pub mod version;
