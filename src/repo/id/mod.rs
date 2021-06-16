@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
+pub use self::repository::IdRepo;
 pub use self::table::ObjectId;
 
-mod table;
 mod repository;
+mod state;
+mod table;

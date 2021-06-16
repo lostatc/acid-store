@@ -14,80 +14,122 @@
  * limitations under the License.
  */
 
-use std::mem;
-use std::hash::Hash;
-use serde::{Serialize, Deserialize};
+use hex_literal::hex;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-use super::table::{ObjectId, IdTable};
-
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Serialize, Deserialize)]
-pub enum IdRepoKey {
-    Object(ObjectId),
-    State,
-    IdTable,
-    Stage,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct IdRepoState<State> {
-    pub state: State,
-    pub id_table: IdTable,
-}
+use super::state::{IdRestore, RepoKey, RepoState};
+use super::table::{IdTable, ObjectId};
+use crate::repo::{
+    key::KeyRepo, Commit, Object, OpenRepo, ReadOnlyObject, RepoInfo, Restore, RestoreSavepoint,
+    Savepoint,
+};
 
 pub struct IdRepo<State>
 where
     State: Serialize + DeserializeOwned + Default,
 {
-    repo: KeyRepo<IdRepoKey>,
+    repo: KeyRepo<RepoKey>,
     id_table: IdTable,
     state: State,
+}
+
+impl<State> OpenRepo for IdRepo<State>
+where
+    State: Serialize + DeserializeOwned + Default,
+{
+    type Key = RepoKey;
+
+    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("bb93f91a ce4a 11eb 9c6b b78939b5b629"));
+
+    fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut id_repo = IdRepo {
+            repo,
+            id_table: IdTable::default(),
+            state: State::default(),
+        };
+        let RepoState { state, id_table } = id_repo.read_state()?;
+        id_repo.state = state;
+        id_repo.id_table = id_table;
+        Ok(id_repo)
+    }
+
+    fn create_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut id_repo = IdRepo {
+            repo,
+            id_table: IdTable::default(),
+            state: State::default(),
+        };
+        id_repo.write_state()?;
+        Ok(id_repo)
+    }
+
+    fn into_repo(mut self) -> crate::Result<KeyRepo<Self::Key>> {
+        self.write_state()?;
+        Ok(self.repo)
+    }
 }
 
 impl<State> IdRepo<State>
 where
     State: Serialize + DeserializeOwned + Default,
 {
-    // TODO: Document
-    fn read_state(&mut self) -> crate::Result<IdRepoState<Self::State>> {
-        let state = match self.repo.object(&IdRepoKey::State) {
+    /// Read the state and ID table from the backing repository.
+    fn read_state(&mut self) -> crate::Result<RepoState<State>> {
+        let state = match self.repo.object(&RepoKey::State) {
             Some(mut object) => object.deserialize()?,
-            None => Self::State::default(),
+            None => State::default(),
         };
-        let id_table = match self.repo.object(&IdRepoKey::IdTable) {
+        let id_table = match self.repo.object(&RepoKey::IdTable) {
             Some(mut object) => object.deserialize()?,
             None => IdTable::default(),
         };
-        Ok(IdRepoState { state, id_table })
+        Ok(RepoState { state, id_table })
     }
 
-    // TODO: Document
+    /// Write the state and ID table to the backing repository.
     fn write_state(&mut self) -> crate::Result<()> {
-        let mut object = self.repo.insert(IdRepoKey::Stage);
+        // We write to a temporary object before copying to the final destination to make the write
+        // atomic.
+        let mut object = self.repo.insert(RepoKey::Stage);
         object.serialize(&self.state)?;
         drop(object);
-        self.repo.copy(IdRepoKey::Stage, IdRepoKey::State);
+        self.repo.copy(&RepoKey::Stage, RepoKey::State);
 
-        let mut object = self.repo.insert(IdRepoKey::Stage);
+        let mut object = self.repo.insert(RepoKey::Stage);
         object.serialize(&self.id_table)?;
         drop(object);
-        self.repo.copy(IdRepoKey::Stage, IdRepoKey::IdTable);
+        self.repo.copy(&RepoKey::Stage, RepoKey::IdTable);
 
         Ok(())
     }
 
-    pub fn state(&mut self) -> &mut Self::State {
+    /// Return a reference to the encapsulated state.
+    pub fn state(&self) -> &State {
+        &self.state
+    }
+
+    /// Return a mutable reference to the encapsulated state.
+    pub fn state_mut(&mut self) -> &mut State {
         &mut self.state
     }
 
     /// Return whether there is an object with the given `id` in this repository.
     pub fn contains(&self, id: ObjectId) -> bool {
-        self.repo.contains(IdRepoKey::Object(id))
+        self.repo.contains(&RepoKey::Object(id))
     }
 
     /// Create a new object in the repository and returns its `ObjectId`.
     pub fn create(&mut self) -> ObjectId {
         let id = self.id_table.next();
-        self.repo.insert(IdRepoKey::Object(id));
+        self.repo.insert(RepoKey::Object(id));
         id
     }
 
@@ -103,7 +145,7 @@ where
         if !self.id_table.recycle(id) {
             return false;
         }
-        assert!(self.repo.remove(IdRepoKey::Object(id)));
+        assert!(self.repo.remove(&RepoKey::Object(id)));
         true
     }
 
@@ -116,7 +158,7 @@ where
     ///
     /// [`object_mut`]: crate::repo::id::IdRepo::object_mut
     pub fn object(&self, id: ObjectId) -> Option<ReadOnlyObject> {
-        self.repo.object(IdRepoKey::Object(id))
+        self.repo.object(&RepoKey::Object(id))
     }
 
     /// Return an `Object` for reading and writing the object with the given `id`.
@@ -127,14 +169,14 @@ where
     /// [`object`].
     ///
     /// [`object`]: crate::repo::id::IdRepo::object
-    pub fn object_mut(&self, id: ObjectId) -> Option<Object> {
-        self.repo.object_mut(IdRepoKey::Object(id))
+    pub fn object_mut(&mut self, id: ObjectId) -> Option<Object> {
+        self.repo.object_mut(&RepoKey::Object(id))
     }
 
     /// Return an iterator over all the IDs of objects in this repository.
     pub fn list<'a>(&'a self) -> impl Iterator<Item = ObjectId> + 'a {
         self.repo.keys().filter_map(|key| match key {
-            IdRepoKey::Object(id) => Some(id),
+            RepoKey::Object(id) => Some(id),
             _ => None,
         })
     }
@@ -145,22 +187,138 @@ where
     ///
     /// This is a cheap operation which does not require copying the bytes in the object.
     pub fn copy(&mut self, source: ObjectId) -> Option<ObjectId> {
-        if !self.repo.contains(&IdRepoKey::Object(source)) {
+        if !self.repo.contains(&RepoKey::Object(source)) {
             return None;
         }
         let dest_id = self.id_table.next();
-        assert!(self.repo.copy(&IdRepoKey::Object(source), IdRepoKey::Object(dest_id)));
+        assert!(self
+            .repo
+            .copy(&RepoKey::Object(source), RepoKey::Object(dest_id)));
         Some(dest_id)
     }
 
-    /// Commit changes which have been made to the repository.
+    /// Delete all data in the current instance of the repository.
     ///
-    /// See [`KeyRepo::commit`] for details.
+    /// See [`KeyRepo::clear_instance`] for details.
     ///
-    /// [`KeyRepo::commit`]: crate::repo::key::KeyRepo::commit
-    pub fn commit(&mut self) -> crate::Result<()> {
-        self.write_state()?;
-        self.repo.commit()
+    /// [`KeyRepo::clear_instance`]: crate::repo::key::KeyRepo::clear_instance
+    pub fn clear_instance(&mut self) {
+        self.state = State::default();
+        self.id_table = IdTable::new();
+        self.repo.clear_instance();
+    }
+
+    /// Change the password for this repository.
+    ///
+    /// See [`KeyRepo::change_password`] for details.
+    ///
+    /// [`KeyRepo::change_password`]: crate::repo::key::KeyRepo::change_password
+    pub fn change_password(&mut self, new_password: &[u8]) {
+        self.repo.change_password(new_password);
+    }
+
+    /// Return this repository's instance ID.
+    pub fn instance(&self) -> Uuid {
+        self.repo.instance()
+    }
+
+    /// Return information about the repository.
+    pub fn info(&self) -> RepoInfo {
+        self.repo.info()
     }
 }
 
+impl<State> Commit for IdRepo<State>
+where
+    State: Serialize + DeserializeOwned + Default,
+{
+    fn commit(&mut self) -> crate::Result<()> {
+        self.write_state()?;
+        self.repo.commit()
+    }
+
+    fn rollback(&mut self) -> crate::Result<()> {
+        // Create a savepoint on the backing repository so that we can undo rolling back the backing
+        // repository if necessary. This is necessary to uphold the contract that if this method
+        // returns `Err`, the repository is unchanged. It's important that we start the restore
+        // process here so that it can be completed infallibly.
+        let backup_savepoint = self.repo.savepoint()?;
+        let backup_restore = self.repo.start_restore(&backup_savepoint)?;
+
+        // Roll back the backing repository.
+        self.repo.rollback()?;
+
+        // Roll back this repository's state to the previous commit.
+        match self.read_state() {
+            Ok(RepoState { state, id_table }) => {
+                self.state = state;
+                self.id_table = id_table;
+                Ok(())
+            }
+            Err(error) => {
+                // If reading the state fails, we must finish restoring the backup so we can return
+                // `Err` and have the repository unchanged.
+                self.repo.finish_restore(backup_restore);
+                Err(error)
+            }
+        }
+    }
+
+    fn clean(&mut self) -> crate::Result<()> {
+        self.repo.clean()
+    }
+}
+
+impl<State> RestoreSavepoint for IdRepo<State>
+where
+    State: Serialize + DeserializeOwned + Default,
+{
+    type Restore = IdRestore<State>;
+
+    fn savepoint(&mut self) -> crate::Result<Savepoint> {
+        self.write_state()?;
+        self.repo.savepoint()
+    }
+
+    fn start_restore(&mut self, savepoint: &Savepoint) -> crate::Result<Self::Restore> {
+        // Create a savepoint on the backing repository that we can restore to to undo any changes
+        // we make to the repository in this method. This is necessary to uphold the contract that
+        // the repository is unchanged when this method returns. It's important that we start the
+        // restore process here so that it can be completed infallibly.
+        let backup_savepoint = self.repo.savepoint()?;
+        let backup_restore = self.repo.start_restore(&backup_savepoint)?;
+
+        // Temporarily restore the backing repository to the given `savepoint` so we can read the
+        // repository state from when the savepoint was created.
+        let restore = self.repo.start_restore(savepoint)?;
+
+        // Note that we clone the `restore` value so that we can also use it in the returned
+        // `Restore` value. This is more efficient than calling `start_restore` twice.
+        self.repo.finish_restore(restore.clone());
+
+        // Read the repository state from the backing repository and then restore it to the state it
+        // was in before this method was called.
+        let state = match self.read_state() {
+            Ok(state) => {
+                self.repo.finish_restore(backup_restore);
+                state
+            }
+            Err(error) => {
+                self.repo.finish_restore(backup_restore);
+                return Err(error);
+            }
+        };
+
+        Ok(IdRestore { state, restore })
+    }
+
+    fn finish_restore(&mut self, restore: Self::Restore) -> bool {
+        if !self.repo.finish_restore(restore.restore) {
+            return false;
+        }
+        let RepoState { state, id_table } = restore.state;
+        self.state = state;
+        self.id_table = id_table;
+        true
+    }
+}

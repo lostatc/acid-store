@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+use std::collections::HashSet;
+
+use serde::{Deserialize, Serialize};
+
 /// An ID which uniquely identifies an object in an [`IdRepo`].
 ///
 /// [`IdRepo`]: crate::repo::id::IdRepo
