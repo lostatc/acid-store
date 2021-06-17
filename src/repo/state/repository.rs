@@ -19,14 +19,47 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::state::{IdRestore, RepoKey, RepoState};
 use super::table::{IdTable, ObjectId};
 use crate::repo::{
     key::KeyRepo, Commit, Object, OpenRepo, ReadOnlyObject, RepoInfo, Restore, RestoreSavepoint,
     Savepoint,
 };
 
-pub struct IdRepo<State>
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Serialize, Deserialize)]
+enum RepoKey {
+    Object(ObjectId),
+    State,
+    IdTable,
+    Stage,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct RepoState<State> {
+    pub state: State,
+    pub id_table: IdTable,
+}
+
+#[derive(Debug, Clone)]
+struct StateRestore<State> {
+    pub state: RepoState<State>,
+    pub restore: KeyRepo::Restore,
+}
+
+impl<State: Clone> Restore for StateRestore<State> {
+    fn is_valid(&self) -> bool {
+        self.restore.is_valid()
+    }
+
+    fn instance(&self) -> Uuid {
+        self.restore.instance()
+    }
+}
+
+/// A low-level repository type which can be used to implement higher-level repository types
+///
+/// See [`crate::repo::state`] for more information.
+#[derive(Debug)]
+pub struct StateRepo<State>
 where
     State: Serialize + DeserializeOwned + Default,
 {
@@ -35,7 +68,7 @@ where
     state: State,
 }
 
-impl<State> OpenRepo for IdRepo<State>
+impl<State> OpenRepo for StateRepo<State>
 where
     State: Serialize + DeserializeOwned + Default,
 {
@@ -47,28 +80,28 @@ where
     where
         Self: Sized,
     {
-        let mut id_repo = IdRepo {
+        let mut state_repo = StateRepo {
             repo,
             id_table: IdTable::default(),
             state: State::default(),
         };
-        let RepoState { state, id_table } = id_repo.read_state()?;
-        id_repo.state = state;
-        id_repo.id_table = id_table;
-        Ok(id_repo)
+        let RepoState { state, id_table } = state_repo.read_state()?;
+        state_repo.state = state;
+        state_repo.id_table = id_table;
+        Ok(state_repo)
     }
 
     fn create_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized,
     {
-        let mut id_repo = IdRepo {
+        let mut state_repo = StateRepo {
             repo,
             id_table: IdTable::default(),
             state: State::default(),
         };
-        id_repo.write_state()?;
-        Ok(id_repo)
+        state_repo.write_state()?;
+        Ok(state_repo)
     }
 
     fn into_repo(mut self) -> crate::Result<KeyRepo<Self::Key>> {
@@ -77,7 +110,7 @@ where
     }
 }
 
-impl<State> IdRepo<State>
+impl<State> StateRepo<State>
 where
     State: Serialize + DeserializeOwned + Default,
 {
@@ -140,7 +173,7 @@ where
     /// The space used by the given object isn't reclaimed in the backing data store until changes
     /// are committed and [`clean`] is called.
     ///
-    /// [`clean`]: crate::repo::id::IdRepo::clean
+    /// [`clean`]: crate::repo::Commit::clean
     pub fn remove(&mut self, id: ObjectId) -> bool {
         if !self.id_table.recycle(id) {
             return false;
@@ -156,7 +189,7 @@ where
     /// The returned object provides read-only access to the data. To get read-write access, use
     /// [`object_mut`].
     ///
-    /// [`object_mut`]: crate::repo::id::IdRepo::object_mut
+    /// [`object_mut`]: crate::repo::state::StateRepo::object_mut
     pub fn object(&self, id: ObjectId) -> Option<ReadOnlyObject> {
         self.repo.object(&RepoKey::Object(id))
     }
@@ -168,7 +201,7 @@ where
     /// The returned object provides read-write access to the data. To get read-only access, use
     /// [`object`].
     ///
-    /// [`object`]: crate::repo::id::IdRepo::object
+    /// [`object`]: crate::repo::state::StateRepo::object
     pub fn object_mut(&mut self, id: ObjectId) -> Option<Object> {
         self.repo.object_mut(&RepoKey::Object(id))
     }
@@ -228,7 +261,7 @@ where
     }
 }
 
-impl<State> Commit for IdRepo<State>
+impl<State> Commit for StateRepo<State>
 where
     State: Serialize + DeserializeOwned + Default,
 {
@@ -269,11 +302,11 @@ where
     }
 }
 
-impl<State> RestoreSavepoint for IdRepo<State>
+impl<State> RestoreSavepoint for StateRepo<State>
 where
     State: Serialize + DeserializeOwned + Default,
 {
-    type Restore = IdRestore<State>;
+    type Restore = StateRestore<State>;
 
     fn savepoint(&mut self) -> crate::Result<Savepoint> {
         self.write_state()?;
@@ -309,7 +342,7 @@ where
             }
         };
 
-        Ok(IdRestore { state, restore })
+        Ok(StateRestore { state, restore })
     }
 
     fn finish_restore(&mut self, restore: Self::Restore) -> bool {

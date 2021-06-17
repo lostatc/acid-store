@@ -29,6 +29,8 @@
 //! - [`VersionRepo`] is an object store with support for content versioning.
 //! - [`ContentRepo`] is a content-addressable storage which allows for accessing data by its
 //! cryptographic hash.
+//! - [`StateRepo`] is a low-level repository type which can be used to implement higher-level
+//! repository types.
 //!
 //! A repository stores its data in a [`DataStore`], which is a small trait that can be implemented
 //! to create new storage backends. The following data stores are provided out of the box. They can
@@ -104,6 +106,7 @@
 //! [`ValueRepo`]: crate::repo::value::ValueRepo
 //! [`VersionRepo`]: crate::repo::version::VersionRepo
 //! [`ContentRepo`]: crate::repo::content::ContentRepo
+//! [`StateRepo`]: crate::repo::state::StateRepo
 //!
 //! [`DataStore`]: crate::store::DataStore
 //! [`DirectoryStore`]: crate::store::DirectoryStore
