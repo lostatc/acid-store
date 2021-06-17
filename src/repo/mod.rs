@@ -25,8 +25,7 @@
 //! to read data from them and write data to them.
 //!
 //! Each sub-module of this module contains a different repository type. If you're not sure which
-//! one you should use, [`KeyRepo`] has the most general use-case. All the other repository types in
-//! this module are implemented on top of [`KeyRepo`].
+//! one you should use, [`KeyRepo`] has the most general use-case.
 //!
 //! You can open or create a repository using [`OpenOptions`].
 //!
@@ -47,17 +46,16 @@
 //! committed. Committing a repository is an atomic and consistent operation; changes cannot be
 //! partially committed and interrupting a commit will never leave the repository in an inconsistent
 //! state. If the repository is dropped or the thread panics, any uncommitted changes are rolled
-//! back automatically.
+//! back automatically. You can use [`Commit::commit`] to commit changes to a repository.
 //!
 //! When data in a repository is deleted, the space is not reclaimed in the backing data store until
 //! those changes are committed and the repository is cleaned. Cleaning a repository can be an
 //! expensive operation, so these are kept as separate steps so that it is possible to commit
-//! changes without cleaning the repository. See [`KeyRepo::commit`] and [`KeyRepo::clean`]
-//! for details.
+//! changes without cleaning the repository. You can use [`Commit::clean`] to clean a repository.
 //!
 //! Repositories support creating savepoints and then later restoring to those savepoints to
 //! atomically undo or redo changes to a repository without rolling back all changes made since the
-//! last commit. See [`Savepoint`] for details.
+//! last commit. See [`RestoreSavepoint`] for more information.
 //!
 //! # Encryption
 //! If encryption is enabled, the Argon2id key derivation function is used to derive a key from a
@@ -107,9 +105,9 @@
 //! [`KeyRepo`]: crate::repo::key::KeyRepo
 //! [`OpenOptions`]: crate::repo::OpenOptions
 //! [`Chunking`]: crate::repo::Chunking
-//! [`KeyRepo::commit`]: crate::repo::key::KeyRepo::commit
-//! [`KeyRepo::clean`]: crate::repo::key::KeyRepo::clean
-//! [`Savepoint`]: crate::repo::Savepoint
+//! [`Commit::commit`]: crate::repo::Commit::commit
+//! [`Commit::clean`]: crate::repo::Commit::clean
+//! [`RestoreSavepoint`]: crate::repo::RestoreSavepoint
 //! [`Packing`]: crate::repo::Packing
 //! [`RepoInfo`]: crate::repo::RepoInfo
 //! [`peek_info`]: crate::repo::peek_info
@@ -130,22 +128,14 @@ pub use self::common::{
 /// A [`KeyRepo`] maps keys to seekable binary blobs called objects and stores them persistently in
 /// a [`DataStore`]. A key is any type which implements [`Key`].
 ///
-/// All the other repository types provided in the [`crate::repo`] module are implemented on top of
-/// [`KeyRepo`]. Repository types which are implemented on top of [`KeyRepo`] can implement
-/// [`OpenRepo`], which allows them to be opened or created using [`OpenOptions`] and also allows
-/// for switching between repository instances of different types using [`SwitchInstance`].
-///
 /// Like other repositories, changes made to the repository are not persisted to the data store
-/// until [`KeyRepo::commit`] is called. For details about deduplication, compression, encryption,
+/// until [`Commit::commit`] is called. For details about deduplication, compression, encryption,
 /// and locking, see the module-level documentation for [`crate::repo`].
 ///
 /// [`KeyRepo`]: crate::repo::key::KeyRepo
 /// [`DataStore`]: crate::store::DataStore
 /// [`Key`]: crate::repo::key::Key
-/// [`OpenRepo`]: crate::repo::OpenRepo
-/// [`OpenOptions`]: crate::repo::OpenOptions
-/// [`SwitchInstance`]: crate::repo::SwitchInstance
-/// [`KeyRepo::commit`]: crate::repo::key::KeyRepo::commit
+/// [`Commit::commit`]: crate::repo::Commit::commit
 pub mod key {
     pub use super::common::{Key, KeyRepo};
 }
@@ -153,6 +143,6 @@ pub mod key {
 mod common;
 pub mod content;
 pub mod file;
-pub mod id;
+pub mod state;
 pub mod value;
 pub mod version;

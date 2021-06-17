@@ -18,9 +18,9 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-/// An ID which uniquely identifies an object in an [`IdRepo`].
+/// An opaque ID which uniquely identifies an object in a [`StateRepo`].
 ///
-/// [`IdRepo`]: crate::repo::id::IdRepo
+/// [`StateRepo`]: crate::repo::state::StateRepo
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ObjectId(u64);

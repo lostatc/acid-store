@@ -24,26 +24,9 @@ use super::object::ObjectHandle;
 
 /// A target for rolling back changes in a repository.
 ///
-/// Repositories support creating savepoints and later restoring to those savepoints, undoing any
-/// changes made since they were created.
+/// See [`RestoreSavepoint`] for more information.
 ///
-/// You can use [`RestoreSavepoint::savepoint`] to create a savepoint, and you can use
-/// [`RestoreSavepoint::start_restore`] and [`RestoreSavepoint::finish_restore`] to restore the
-/// repository to a savepoint.
-///
-/// Savepoints aren't just used to "undo" changes; they can also be used to "redo" changes. If you
-/// create a savepoint `A` and then later create a savepoint `B`, you can restore to `A` and *then*
-/// restore to `B`, even though `B` was created after `A`.
-///
-/// You can only restore to savepoints created since the last commit; once changes in a repository
-/// are committed, all savepoints associated with that repository are invalidated. A savepoint is
-/// also invalidated if the repository it is associated with is dropped. You can use [`is_valid`] to
-/// determine whether the current savepoint is valid.
-///
-/// [`RestoreSavepoint::savepoint`]: crate::repo::RestoreSavepoint::savepoint
-/// [`RestoreSavepoint::start_restore`]: crate::repo::RestoreSavepoint::start_restore
-/// [`RestoreSavepoint::finish_restore`]: crate::repo::RestoreSavepoint::finish_restore
-/// [`is_valid`]: crate::repo::Savepoint::is_valid
+/// [`RestoreSavepoint`]: crate::repo::RestoreSavepoint
 #[derive(Debug, Clone)]
 pub struct Savepoint {
     /// The header associated with this savepoint.
@@ -93,7 +76,27 @@ pub trait Restore: Clone {
 
 /// A repository which supports restoring to a [`Savepoint`].
 ///
+/// Repositories support creating savepoints and later restoring to those savepoints, undoing any
+/// changes made since they were created.
+///
+/// You can use [`RestoreSavepoint::savepoint`] to create a savepoint, and you can use
+/// [`RestoreSavepoint::start_restore`] and [`RestoreSavepoint::finish_restore`] to restore the
+/// repository to a savepoint.
+///
+/// Savepoints aren't just used to "undo" changes; they can also be used to "redo" changes. If you
+/// create a savepoint `A` and then later create a savepoint `B`, you can restore to `A` and *then*
+/// restore to `B`, even though `B` was created after `A`.
+///
+/// You can only restore to savepoints created since the last commit; once changes in a repository
+/// are committed, all savepoints associated with that repository are invalidated. A savepoint is
+/// also invalidated if the repository it is associated with is dropped. You can use
+/// [`Savepoint::is_valid`] to determine whether the current savepoint is valid.
+///
 /// [`Savepoint`]: crate::repo::Savepoint
+/// [`RestoreSavepoint::savepoint`]: crate::repo::RestoreSavepoint::savepoint
+/// [`RestoreSavepoint::start_restore`]: crate::repo::RestoreSavepoint::start_restore
+/// [`RestoreSavepoint::finish_restore`]: crate::repo::RestoreSavepoint::finish_restore
+/// [`Savepoint::is_valid`]: crate::repo::Savepoint::is_valid
 pub trait RestoreSavepoint {
     type Restore: Restore;
 
@@ -131,7 +134,7 @@ pub trait RestoreSavepoint {
     /// ```
     /// # use std::io::Write;
     /// # use acid_store::store::MemoryConfig;
-    /// # use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo};
+    /// # use acid_store::repo::{RestoreSavepoint, OpenOptions, OpenMode, key::KeyRepo};
     /// #
     /// # let mut repo: KeyRepo<String> = OpenOptions::new()
     /// #     .mode(OpenMode::CreateNew)
