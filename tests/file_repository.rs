@@ -22,7 +22,7 @@ use std::io::{Read, Write};
 
 use maplit::hashmap;
 #[cfg(all(target_os = "linux", feature = "file-metadata"))]
-use posix_acl::{PosixACL, Qualifier as PosixQualifier};
+use posix_acl::{PosixACL, Qualifier as PosixQualifier, ACL_RWX};
 use relative_path::RelativePathBuf;
 use tempfile::tempdir;
 
@@ -34,7 +34,7 @@ use common::{assert_contains_all, random_buffer};
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
     acid_store::repo::file::{
-        AccessQualifier, CommonMetadata, FileType, UnixMetadata, UnixSpecialType,
+        AccessMode, AccessQualifier, CommonMetadata, FileType, UnixMetadata, UnixSpecialType,
     },
     nix::sys::stat::{Mode, SFlag},
     nix::unistd::mkfifo,
@@ -648,7 +648,7 @@ fn write_unix_metadata() -> anyhow::Result<()> {
         user: 1000,
         group: 1000,
         attributes: HashMap::new(),
-        acl: hashmap! { AccessQualifier::User(1001) => 0o777 },
+        acl: hashmap! { AccessQualifier::User(1001) => AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE },
     };
     let entry = Entry {
         file_type: FileType::File,
@@ -668,8 +668,8 @@ fn write_unix_metadata() -> anyhow::Result<()> {
 
     #[cfg(target_os = "linux")]
     {
-        let dest_acl = PosixACL::new(dest_metadata.mode());
-        assert_eq!(dest_acl.get(PosixQualifier::User(1001)), Some(0o777));
+        let dest_acl = PosixACL::read_acl(dest_path)?;
+        assert_eq!(dest_acl.get(PosixQualifier::User(1001)), Some(ACL_RWX));
     }
 
     Ok(())
@@ -685,7 +685,7 @@ fn read_unix_metadata() -> anyhow::Result<()> {
     #[cfg(target_os = "linux")]
     {
         let mut dest_acl = PosixACL::new(source_path.metadata()?.mode());
-        dest_acl.set(PosixQualifier::User(1001), 0o777);
+        dest_acl.set(PosixQualifier::User(1001), ACL_RWX);
         dest_acl.write_acl(&source_path)?;
     }
 
@@ -710,7 +710,7 @@ fn read_unix_metadata() -> anyhow::Result<()> {
     {
         assert_eq!(
             entry_metadata.acl,
-            hashmap! { AccessQualifier::User(1001) => 0o777 }
+            hashmap! { AccessQualifier::User(1001) => AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE }
         );
     }
 
