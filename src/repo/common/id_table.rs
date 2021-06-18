@@ -14,20 +14,24 @@
  * limitations under the License.
  */
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
-use crate::repo::common::{IdTable as UniqueIdTable, UniqueId};
-
-/// An opaque ID which uniquely identifies an object in a [`StateRepo`].
-///
-/// [`StateRepo`]: crate::repo::state::StateRepo
+/// An opaque ID which can be uniquely allocated by an `IdTable`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct ObjectId(UniqueId);
+pub struct UniqueId(u64);
 
-/// A table for allocating `ObjectId` values.
+/// A table for allocating `UniqueId` values.
 #[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
-pub struct IdTable(UniqueIdTable);
+pub struct IdTable {
+    /// The highest used ID value (the high water mark).
+    highest: u64,
+
+    /// A set of unused ID values below the high water mark.
+    unused: HashSet<u64>,
+}
 
 impl IdTable {
     /// Return a new empty `IdTable`.
@@ -36,19 +40,32 @@ impl IdTable {
     }
 
     /// Return the next unused ID from the table.
-    pub fn next(&mut self) -> ObjectId {
-        ObjectId(self.0.next())
+    pub fn next(&mut self) -> UniqueId {
+        match self.unused.iter().next().copied() {
+            Some(id) => {
+                self.unused.remove(&id);
+                UniqueId(id)
+            }
+            None => {
+                self.highest += 1;
+                UniqueId(self.highest)
+            }
+        }
     }
 
     /// Return whether the given `id` is in the table.
-    pub fn contains(&self, id: ObjectId) -> bool {
-        self.0.contains(id.0)
+    pub fn contains(&self, id: UniqueId) -> bool {
+        id.0 <= self.highest && !self.unused.contains(&id.0)
     }
 
     /// Return the given `id` back to the table.
     ///
     /// This returns `true` if the value was returned or `false` if it was unused.
-    pub fn recycle(&mut self, id: ObjectId) -> bool {
-        self.0.recycle(id.0)
+    pub fn recycle(&mut self, id: UniqueId) -> bool {
+        if !self.contains(id) {
+            return false;
+        }
+        self.unused.insert(id.0);
+        true
     }
 }

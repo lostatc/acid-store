@@ -68,6 +68,14 @@ pub struct PathTree<V> {
     nodes: HashMap<String, PathNode<V>>,
 }
 
+impl<V> Default for PathTree<V> {
+    fn default() -> Self {
+        Self {
+            nodes: HashMap::new(),
+        }
+    }
+}
+
 impl<V> PathTree<V> {
     /// Return a new empty `PathTree`.
     pub fn new() -> Self {
