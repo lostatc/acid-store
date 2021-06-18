@@ -119,7 +119,7 @@ pub trait SwitchInstance {
     /// # Examples
     /// ```
     /// use acid_store::uuid::Uuid;
-    /// use acid_store::repo::{SwitchInstance, OpenMode, OpenOptions, key::KeyRepo, value::ValueRepo};
+    /// use acid_store::repo::{SwitchInstance, Commit, OpenMode, OpenOptions, key::KeyRepo, value::ValueRepo};
     /// use acid_store::store::MemoryConfig;
     ///
     /// let key_instance = Uuid::new_v4();

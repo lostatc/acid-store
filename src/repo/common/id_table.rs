@@ -18,7 +18,7 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-/// An ID value which is unique within the same `IdTable`.
+/// An opaque ID which can be uniquely allocated by an `IdTable`.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct UniqueId(u64);

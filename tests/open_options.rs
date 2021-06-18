@@ -19,7 +19,7 @@
 use acid_store::repo::key::KeyRepo;
 use acid_store::repo::value::ValueRepo;
 use acid_store::repo::{
-    Chunking, Compression, Encryption, OpenMode, OpenOptions, RepoConfig, ResourceLimit,
+    Chunking, Commit, Compression, Encryption, OpenMode, OpenOptions, RepoConfig, ResourceLimit,
 };
 use acid_store::store::MemoryConfig;
 
@@ -130,14 +130,13 @@ fn opening_with_invalid_password_errs() -> anyhow::Result<()> {
 }
 
 #[test]
-fn creating_without_password_errs() -> anyhow::Result<()> {
+fn creating_without_password_errs() {
     let config = MemoryConfig::new();
     let repo = OpenOptions::new()
         .encryption(Encryption::XChaCha20Poly1305)
         .mode(OpenMode::CreateNew)
         .open::<KeyRepo<String>, _>(&config);
     assert!(matches!(repo, Err(acid_store::Error::Password)));
-    Ok(())
 }
 
 #[test]

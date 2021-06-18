@@ -17,7 +17,7 @@
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
 use acid_store::repo::value::ValueRepo;
-use acid_store::repo::{OpenMode, OpenOptions, SwitchInstance, DEFAULT_INSTANCE};
+use acid_store::repo::{Commit, OpenMode, OpenOptions, SwitchInstance, DEFAULT_INSTANCE};
 use acid_store::store::MemoryConfig;
 use acid_store::uuid::Uuid;
 use common::assert_contains_all;

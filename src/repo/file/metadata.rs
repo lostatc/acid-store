@@ -17,8 +17,9 @@
 use std::io;
 use std::path::Path;
 
-#[cfg(all(linux, feature = "file-metadata"))]
-use posix_acl::{PosixACL, Qualifier as PosixQualifier};
+use bitflags::bitflags;
+#[cfg(all(target_os = "linux", feature = "file-metadata"))]
+use posix_acl::{PosixACL, Qualifier as PosixQualifier, ACL_EXECUTE, ACL_READ, ACL_WRITE};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -71,6 +72,19 @@ pub enum AccessQualifier {
     Group(u32),
 }
 
+bitflags! {
+    /// The permission mode for an access control list.
+    #[cfg(all(any(unix, doc), feature = "file-metadata"))]
+    #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
+    #[derive(Serialize, Deserialize)]
+    pub struct AccessMode: u32 {
+        const READ = ACL_READ;
+        const WRITE = ACL_WRITE;
+        const EXECUTE = ACL_EXECUTE;
+    }
+
+}
+
 /// A `FileMetadata` for unix-like operating systems.
 ///
 /// Extended attributes and access control lists may not work on all platforms. If a platform is
@@ -106,8 +120,8 @@ pub struct UnixMetadata {
 
     /// The access control list for the file.
     ///
-    /// This is a map of qualifiers to their associated permissions bits.
-    pub acl: HashMap<AccessQualifier, u32>,
+    /// This is a map of qualifiers to their associated permissions.
+    pub acl: HashMap<AccessQualifier, AccessMode>,
 }
 
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
@@ -124,18 +138,24 @@ impl FileMetadata for UnixMetadata {
             }
         }
 
-        #[cfg(not(linux))]
+        #[cfg(not(target_os = "linux"))]
         let acl = HashMap::new();
 
         // This ACL library only supports Linux.
-        #[cfg(linux)]
+        #[cfg(target_os = "linux")]
         let acl = PosixACL::read_acl(path)
             .map_err(|error| io::Error::from(error.kind()))?
             .entries()
             .into_iter()
             .filter_map(|entry| match entry.qual {
-                PosixQualifier::User(uid) => Some((AccessQualifier::User(uid), entry.perm)),
-                PosixQualifier::Group(gid) => Some((AccessQualifier::Group(gid), entry.perm)),
+                PosixQualifier::User(uid) => Some((
+                    AccessQualifier::User(uid),
+                    AccessMode::from_bits(entry.perm).unwrap(),
+                )),
+                PosixQualifier::Group(gid) => Some((
+                    AccessQualifier::Group(gid),
+                    AccessMode::from_bits(entry.perm).unwrap(),
+                )),
                 _ => None,
             })
             .collect();
@@ -161,7 +181,7 @@ impl FileMetadata for UnixMetadata {
         set_permissions(path, PermissionsExt::from_mode(self.mode))?;
 
         // This ACL library only supports Linux.
-        #[cfg(linux)]
+        #[cfg(target_os = "linux")]
         {
             let mut acl = PosixACL::new(self.mode);
             for (qualifier, permissions) in self.acl.iter() {
@@ -169,7 +189,7 @@ impl FileMetadata for UnixMetadata {
                     AccessQualifier::User(uid) => PosixQualifier::User(*uid),
                     AccessQualifier::Group(gid) => PosixQualifier::Group(*gid),
                 };
-                acl.set(posix_qualifier, *permissions);
+                acl.set(posix_qualifier, permissions.bits());
             }
             acl.write_acl(path)
                 .map_err(|error| io::Error::from(error.kind()))?;

@@ -37,7 +37,7 @@
 //! [`FileMetadata`] and [`SpecialType`] traits.
 //!
 //! Like other repositories, changes made to the repository are not persisted to the data store
-//! until [`FileRepo::commit`] is called. For details about deduplication, compression, encryption,
+//! until [`Commit::commit`] is called. For details about deduplication, compression, encryption,
 //! and locking, see the module-level documentation for [`crate::repo`].
 //!
 //! # Metadata
@@ -66,7 +66,7 @@
 //! [`RelativePath`]: crate::repo::file::RelativePath
 //! [`FileMetadata`]: crate::repo::file::FileMetadata
 //! [`SpecialType`]: crate::repo::file::SpecialType
-//! [`FileRepo::commit`]: crate::repo::file::FileRepo::commit
+//! [`Commit::commit`]: crate::repo::Commit::commit
 //! [`NoMetadata`]: crate::repo::file::NoMetadata
 //! [`NoSpecialType`]: crate::repo::file::NoSpecialType
 
@@ -74,7 +74,7 @@ pub use relative_path::{RelativePath, RelativePathBuf};
 
 #[cfg(all(unix, feature = "file-metadata"))]
 pub use {
-    self::metadata::{AccessQualifier, UnixMetadata},
+    self::metadata::{AccessMode, AccessQualifier, UnixMetadata},
     self::special::UnixSpecialType,
 };
 
@@ -84,11 +84,9 @@ pub use self::metadata::CommonMetadata;
 pub use self::metadata::{FileMetadata, NoMetadata};
 pub use self::repository::FileRepo;
 pub use self::special::{NoSpecialType, SpecialType};
-pub use self::state::Restore;
 
 mod entry;
 mod metadata;
 mod path_tree;
 mod repository;
 mod special;
-mod state;
