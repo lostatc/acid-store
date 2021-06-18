@@ -79,9 +79,9 @@ pub trait Restore: Clone {
 /// Repositories support creating savepoints and later restoring to those savepoints, undoing any
 /// changes made since they were created.
 ///
-/// You can use [`RestoreSavepoint::savepoint`] to create a savepoint, and you can use
-/// [`RestoreSavepoint::start_restore`] and [`RestoreSavepoint::finish_restore`] to restore the
-/// repository to a savepoint.
+/// You can use [`savepoint`] to create a savepoint, and you can use [`start_restore`] and
+/// [`finish_restore`] to restore the repository to a savepoint. You can also use [`restore`] to
+/// restore the repository in one step instead of two.
 ///
 /// Savepoints aren't just used to "undo" changes; they can also be used to "redo" changes. If you
 /// create a savepoint `A` and then later create a savepoint `B`, you can restore to `A` and *then*
@@ -92,31 +92,53 @@ pub trait Restore: Clone {
 /// also invalidated if the repository it is associated with is dropped. You can use
 /// [`Savepoint::is_valid`] to determine whether the current savepoint is valid.
 ///
+/// Creating a savepoint does not commit changes to the repository; if the repository is
+/// dropped, it will revert to the previous commit and not the most recent savepoint.
+///
+/// Restoring to a savepoint affects all instances of the repository.
+///
+/// # Examples
+/// This example demonstrates restoring from a savepoint to undo a change to the repository.
+/// ```
+/// # use std::io::Write;
+/// # use acid_store::store::MemoryConfig;
+/// # use acid_store::repo::{RestoreSavepoint, OpenOptions, OpenMode, key::KeyRepo};
+/// #
+/// # let mut repo: KeyRepo<String> = OpenOptions::new()
+/// #     .mode(OpenMode::CreateNew)
+/// #     .open(&MemoryConfig::new())
+/// #     .unwrap();
+/// // Create a new savepoint.
+/// let savepoint = repo.savepoint().unwrap();
+///
+/// // Write data to the repository.
+/// let mut object = repo.insert(String::from("test"));
+/// object.write_all(b"Some data").unwrap();
+/// object.flush().unwrap();
+/// drop(object);
+///
+/// // Restore to the savepoint.
+/// repo.restore(&savepoint).unwrap();
+///
+/// assert!(!repo.contains("test"));
+/// ```
+///
 /// [`Savepoint`]: crate::repo::Savepoint
-/// [`RestoreSavepoint::savepoint`]: crate::repo::RestoreSavepoint::savepoint
-/// [`RestoreSavepoint::start_restore`]: crate::repo::RestoreSavepoint::start_restore
-/// [`RestoreSavepoint::finish_restore`]: crate::repo::RestoreSavepoint::finish_restore
+/// [`savepoint`]: crate::repo::RestoreSavepoint::savepoint
+/// [`start_restore`]: crate::repo::RestoreSavepoint::start_restore
+/// [`finish_restore`]: crate::repo::RestoreSavepoint::finish_restore
+/// [`restore`]: crate::repo::RestoreSavepoint::restore
 /// [`Savepoint::is_valid`]: crate::repo::Savepoint::is_valid
 pub trait RestoreSavepoint {
     type Restore: Restore;
 
     /// Create a new [`Savepoint`] representing the current state of the repository.
     ///
-    /// You can restore the repository to this savepoint using [`start_restore`] and
-    /// [`finish_restore`].
-    ///
-    /// Creating a savepoint does not commit changes to the repository; if the repository is
-    /// dropped, it will revert to the previous commit and not the most recent savepoint.
-    ///
-    /// See [`Savepoint`] for details.
-    ///
     /// # Errors
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     ///
-    /// [`start_restore`]: crate::repo::RestoreSavepoint::start_restore
-    /// [`finish_restore`]: crate::repo::RestoreSavepoint::finish_restore
     /// [`Savepoint`]: crate::repo::Savepoint
     fn savepoint(&mut self) -> crate::Result<Savepoint>;
 
@@ -124,37 +146,6 @@ pub trait RestoreSavepoint {
     ///
     /// This method does not restore the repository on its own, but it returns a [`Restore`] value
     /// which can be passed to [`finish_restore`] to atomically complete the restore.
-    ///
-    /// Restoring to a savepoint affects all instances of the repository.
-    ///
-    /// See [`Savepoint`] and [`Restore`] for details.
-    ///
-    /// # Examples
-    /// This example demonstrates restoring from a savepoint to undo a change to the repository.
-    /// ```
-    /// # use std::io::Write;
-    /// # use acid_store::store::MemoryConfig;
-    /// # use acid_store::repo::{RestoreSavepoint, OpenOptions, OpenMode, key::KeyRepo};
-    /// #
-    /// # let mut repo: KeyRepo<String> = OpenOptions::new()
-    /// #     .mode(OpenMode::CreateNew)
-    /// #     .open(&MemoryConfig::new())
-    /// #     .unwrap();
-    /// // Create a new savepoint.
-    /// let savepoint = repo.savepoint().unwrap();
-    ///
-    /// // Write data to the repository.
-    /// let mut object = repo.insert(String::from("test"));
-    /// object.write_all(b"Some data").unwrap();
-    /// object.flush().unwrap();
-    /// drop(object);
-    ///
-    /// // Restore to the savepoint.
-    /// let restore = repo.start_restore(&savepoint).unwrap();
-    /// repo.finish_restore(restore);
-    ///
-    /// assert!(!repo.contains("test"));
-    /// ```
     ///
     /// # Errors
     /// - `Error::InvalidSavepoint`: The given savepoint is invalid or not associated with this
@@ -177,14 +168,29 @@ pub trait RestoreSavepoint {
     /// `false`, the savepoint which was used to start the restore process is invalid or the given
     /// [`Restore`] is not associated with the current instance of the repository.
     ///
-    /// Restoring to a savepoint affects all instances of the repository.
-    ///
-    /// See [`Savepoint`] and [`Restore`] for details.
-    ///
     /// [`Savepoint`]: crate::repo::Savepoint
     /// [`start_restore`]: crate::repo::RestoreSavepoint::start_restore
     /// [`Restore`]: crate::repo::Restore
     fn finish_restore(&mut self, restore: Self::Restore) -> bool;
+
+    /// Restore the repository to the given `savepoint`.
+    ///
+    /// This is a convenience method which calls both [`start_restore`] and [`finish_restore`].
+    ///
+    /// # Errors
+    /// - `Error::InvalidSavepoint`: The given savepoint is invalid or not associated with this
+    /// repository.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`start_restore`]: crate::repo::RestoreSavepoint::start_restore
+    /// [`finish_restore`]: crate::repo::RestoreSavepoint::finish_restore
+    fn restore(&mut self, savepoint: &Savepoint) -> crate::Result<()> {
+        let restore = self.start_restore(savepoint)?;
+        self.finish_restore(restore);
+        Ok(())
+    }
 }
 
 /// A [`Restore`] for a [`KeyRepo`]
