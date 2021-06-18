@@ -48,7 +48,7 @@
 //! ```
 //! use std::io::{Read, Seek, Write, SeekFrom};
 //! use acid_store::store::MemoryConfig;
-//! use acid_store::repo::{OpenMode, OpenOptions, key::KeyRepo};
+//! use acid_store::repo::{OpenMode, OpenOptions, Commit, key::KeyRepo};
 //!
 //! fn main() -> acid_store::Result<()> {
 //!     // Create a `KeyRepo` with the default configuration that stores data in memory.
