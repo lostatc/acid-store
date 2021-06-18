@@ -80,7 +80,7 @@ nix = { version = "0.17.0", optional = true }
 xattr = { version = "0.2.2", optional = true }
 
 # Linux-specific dependencies
-[target.'cfg(linux)'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 posix-acl = { version = "1.0.0", optional = true }
 
 [dev-dependencies]
