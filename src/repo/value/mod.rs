@@ -22,14 +22,12 @@
 //! serialized and deserialized automatically using a space-efficient binary format.
 //!
 //! Like other repositories, changes made to the repository are not persisted to the data store
-//! until [`ValueRepo::commit`] is called. For details about deduplication, compression, encryption,
+//! until [`Commit::commit`] is called. For details about deduplication, compression, encryption,
 //! and locking, see the module-level documentation for [`crate::repo`].
 //!
 //! [`ValueRepo`]: crate::repo::value::ValueRepo
-//! [`ValueRepo::commit`]: crate::repo::value::ValueRepo::commit
+//! [`Commit::commit`]: crate::repo::Commit::commit
 
 pub use self::repository::ValueRepo;
-pub use self::state::Restore;
 
 mod repository;
-mod state;

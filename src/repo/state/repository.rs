@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+use std::collections::HashSet;
+
 use hex_literal::hex;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -26,7 +28,7 @@ use crate::repo::{
 };
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Serialize, Deserialize)]
-enum RepoKey {
+pub enum RepoKey {
     Object(ObjectId),
     State,
     IdTable,
@@ -34,15 +36,15 @@ enum RepoKey {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-struct RepoState<State> {
+pub struct RepoState<State> {
     pub state: State,
     pub id_table: IdTable,
 }
 
 #[derive(Debug, Clone)]
-struct StateRestore<State> {
+pub struct StateRestore<State> {
     pub state: RepoState<State>,
-    pub restore: KeyRepo::Restore,
+    pub restore: <KeyRepo<RepoKey> as RestoreSavepoint>::Restore,
 }
 
 impl<State: Clone> Restore for StateRestore<State> {
@@ -209,7 +211,7 @@ where
     /// Return an iterator over all the IDs of objects in this repository.
     pub fn list<'a>(&'a self) -> impl Iterator<Item = ObjectId> + 'a {
         self.repo.keys().filter_map(|key| match key {
-            RepoKey::Object(id) => Some(id),
+            RepoKey::Object(id) => Some(*id),
             _ => None,
         })
     }
@@ -228,6 +230,26 @@ where
             .repo
             .copy(&RepoKey::Object(source), RepoKey::Object(dest_id)));
         Some(dest_id)
+    }
+
+    /// Verify the integrity of all the data in the repository.
+    ///
+    /// This returns the set of IDs of objects which are corrupt.
+    ///
+    /// # Errors
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn verify(&self) -> crate::Result<HashSet<ObjectId>> {
+        Ok(self
+            .repo
+            .verify()?
+            .iter()
+            .filter_map(|key| match key {
+                RepoKey::Object(id) => Some(*id),
+                _ => None,
+            })
+            .collect())
     }
 
     /// Delete all data in the current instance of the repository.
@@ -304,7 +326,7 @@ where
 
 impl<State> RestoreSavepoint for StateRepo<State>
 where
-    State: Serialize + DeserializeOwned + Default,
+    State: Serialize + DeserializeOwned + Default + Clone,
 {
     type Restore = StateRestore<State>;
 

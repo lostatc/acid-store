@@ -17,7 +17,7 @@
 use std::io;
 use std::path::Path;
 
-#[cfg(all(linux, feature = "file-metadata"))]
+#[cfg(all(target_os = "linux", feature = "file-metadata"))]
 use posix_acl::{PosixACL, Qualifier as PosixQualifier};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -124,11 +124,11 @@ impl FileMetadata for UnixMetadata {
             }
         }
 
-        #[cfg(not(linux))]
+        #[cfg(not(target_os = "linux"))]
         let acl = HashMap::new();
 
         // This ACL library only supports Linux.
-        #[cfg(linux)]
+        #[cfg(target_os = "linux")]
         let acl = PosixACL::read_acl(path)
             .map_err(|error| io::Error::from(error.kind()))?
             .entries()
@@ -161,7 +161,7 @@ impl FileMetadata for UnixMetadata {
         set_permissions(path, PermissionsExt::from_mode(self.mode))?;
 
         // This ACL library only supports Linux.
-        #[cfg(linux)]
+        #[cfg(target_os = "linux")]
         {
             let mut acl = PosixACL::new(self.mode);
             for (qualifier, permissions) in self.acl.iter() {

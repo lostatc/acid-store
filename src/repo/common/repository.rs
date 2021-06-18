@@ -25,7 +25,6 @@ use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
 use uuid::Uuid;
 
-use crate::repo::id_table::IdTable;
 use crate::store::DataStore;
 
 use super::chunk_store::{
@@ -33,12 +32,13 @@ use super::chunk_store::{
 };
 use super::commit::Commit;
 use super::encryption::{EncryptionKey, KeySalt};
+use super::id_table::IdTable;
 use super::key::Key;
 use super::metadata::{Header, RepoInfo};
 use super::object::{chunk_hash, Object, ObjectHandle, ReadOnlyObject};
 use super::open_repo::OpenRepo;
 use super::packing::Packing;
-use super::savepoint::{KeyRestore, Restore, RestoreSavepoint, Savepoint};
+use super::savepoint::{KeyRestore, RestoreSavepoint, Savepoint};
 use super::state::{InstanceInfo, RepoState};
 
 /// The block ID of the block which stores the repository metadata.

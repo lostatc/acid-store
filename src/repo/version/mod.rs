@@ -23,7 +23,7 @@
 //! read-only.
 //!
 //! Like other repositories, changes made to the repository are not persisted to the data store
-//! until [`VersionRepo::commit`] is called. For details about deduplication, compression,
+//! until [`Commit::commit`] is called. For details about deduplication, compression,
 //! encryption, and locking, see the module-level documentation for [`crate::repo`].
 //!
 //! # Examples
@@ -68,13 +68,11 @@
 //! ```
 //!
 //! [`VersionRepo`]: crate::repo::version::VersionRepo
-//! [`VersionRepo::commit`]: crate::repo::version::VersionRepo::commit
+//! [`Commit::commit`]: crate::repo::Commit::commit
 //! [`KeyRepo`]: crate::repo::key::KeyRepo
 
 pub use self::repository::VersionRepo;
-pub use self::state::Restore;
 pub use self::version::Version;
 
 mod repository;
-mod state;
 mod version;
