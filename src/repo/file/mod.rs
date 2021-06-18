@@ -74,7 +74,7 @@ pub use relative_path::{RelativePath, RelativePathBuf};
 
 #[cfg(all(unix, feature = "file-metadata"))]
 pub use {
-    self::metadata::{AccessQualifier, UnixMetadata},
+    self::metadata::{AccessMode, AccessQualifier, UnixMetadata},
     self::special::UnixSpecialType,
 };
 
