@@ -466,27 +466,6 @@ impl<K: Key> KeyRepo<K> {
         }
     }
 
-    /// Delete all data in the current instance of the repository.
-    ///
-    /// This does not delete data from other instances of the repository.
-    ///
-    /// This does not commit changes to the repository.
-    ///
-    /// No data is reclaimed in the backing data store until changes are committed and
-    /// [`Commit::clean`] is called.
-    ///
-    /// [`Commit::clean`]: crate::repo::Commit::clean
-    pub fn clear_instance(&mut self) {
-        let handles = self
-            .objects
-            .drain()
-            .map(|(_, handle)| handle)
-            .collect::<Vec<_>>();
-        for handle in handles {
-            self.remove_handle(&handle);
-        }
-    }
-
     /// Verify the integrity of all the data in the current instance of the repository.
     ///
     /// This returns the set of keys of objects in the current instance which are corrupt.
@@ -540,6 +519,27 @@ impl<K: Key> KeyRepo<K> {
         }
 
         Ok(corrupt_keys)
+    }
+
+    /// Delete all data in the current instance of the repository.
+    ///
+    /// This does not delete data from other instances of the repository.
+    ///
+    /// This does not commit changes to the repository.
+    ///
+    /// No data is reclaimed in the backing data store until changes are committed and
+    /// [`Commit::clean`] is called.
+    ///
+    /// [`Commit::clean`]: crate::repo::Commit::clean
+    pub fn clear_instance(&mut self) {
+        let handles = self
+            .objects
+            .drain()
+            .map(|(_, handle)| handle)
+            .collect::<Vec<_>>();
+        for handle in handles {
+            self.remove_handle(&handle);
+        }
     }
 
     /// Change the password for this repository.

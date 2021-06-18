@@ -16,6 +16,8 @@
 
 //! A low-level repository type which can be used to implement higher-level repository types
 //!
+//! This module contains the [`StateRepo`] repository type.
+//!
 //! The purpose of [`StateRepo`] is not to be used on its own, but to be used to implement new
 //! repository types.
 //!
