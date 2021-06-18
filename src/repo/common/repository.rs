@@ -25,19 +25,20 @@ use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
 use uuid::Uuid;
 
-use crate::repo::id_table::IdTable;
 use crate::store::DataStore;
 
 use super::chunk_store::{
     EncodeBlock, ReadBlock, ReadChunk, StoreReader, StoreState, StoreWriter, WriteBlock,
 };
+use super::commit::Commit;
 use super::encryption::{EncryptionKey, KeySalt};
+use super::id_table::IdTable;
 use super::key::Key;
 use super::metadata::{Header, RepoInfo};
 use super::object::{chunk_hash, Object, ObjectHandle, ReadOnlyObject};
 use super::open_repo::OpenRepo;
 use super::packing::Packing;
-use super::savepoint::{Restore, Savepoint};
+use super::savepoint::{KeyRestore, RestoreSavepoint, Savepoint};
 use super::state::{InstanceInfo, RepoState};
 
 /// The block ID of the block which stores the repository metadata.
@@ -147,9 +148,9 @@ impl<K: Key> KeyRepo<K> {
     /// This returns `true` if the object was removed or `false` if it didn't exist.
     ///
     /// The space used by the given object isn't reclaimed in the backing data store until changes
-    /// are committed and [`clean`] is called.
+    /// are committed and [`Commit::clean`] is called.
     ///
-    /// [`clean`]: crate::repo::key::KeyRepo::clean
+    /// [`Commit::clean`]: crate::repo::Commit::clean
     pub fn remove<Q>(&mut self, key: &Q) -> bool
     where
         K: Borrow<Q>,
@@ -465,29 +466,180 @@ impl<K: Key> KeyRepo<K> {
         }
     }
 
-    /// Commit changes which have been made to the repository.
+    /// Verify the integrity of all the data in the current instance of the repository.
     ///
-    /// No changes are saved persistently until this method is called.
+    /// This returns the set of keys of objects in the current instance which are corrupt.
     ///
-    /// If this method returns `Ok`, changes have been committed. If this method returns `Err`,
-    /// changes have not been committed.
-    ///
-    /// If changes are committed, this method invalidates all savepoints which are associated with
-    /// this repository.
-    ///
-    /// To reclaim space from deleted objects in the backing data store, you must call [`clean`]
-    /// after changes are committed.
-    ///
-    /// This method commits changes for all instances of the repository.
+    /// If you just need to verify the integrity of one object, [`Object::verify`] is faster. If you
+    /// need to verify the integrity of all the data in the repository, however, this can be more
+    /// efficient.
     ///
     /// # Errors
-    /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     ///
-    /// [`clean`]: crate::repo::key::KeyRepo::clean
-    pub fn commit(&mut self) -> crate::Result<()> {
+    /// [`Object::verify`]: crate::repo::Object::verify
+    pub fn verify(&self) -> crate::Result<HashSet<&K>> {
+        let mut corrupt_chunks = HashSet::new();
+        let expected_chunks = self.state.chunks.keys().copied().collect::<Vec<_>>();
+
+        // Get the set of hashes of chunks which are corrupt.
+        let mut store_state = StoreState::new();
+        let mut store_reader = StoreReader::new(&self.state, &mut store_state);
+        for chunk in expected_chunks {
+            match store_reader.read_chunk(chunk) {
+                Ok(data) => {
+                    if data.len() != chunk.size as usize || chunk_hash(&data) != chunk.hash {
+                        corrupt_chunks.insert(chunk.hash);
+                    }
+                }
+                Err(crate::Error::InvalidData) => {
+                    // Ciphertext verification failed. No need to check the hash.
+                    corrupt_chunks.insert(chunk.hash);
+                }
+                Err(error) => return Err(error),
+            };
+        }
+
+        // If there are no corrupt chunks, there are no corrupt objects.
+        if corrupt_chunks.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        let mut corrupt_keys = HashSet::new();
+        for (key, handle) in &self.objects {
+            for chunk in &handle.chunks {
+                // If any one of the object's chunks is corrupt, the object is corrupt.
+                if corrupt_chunks.contains(&chunk.hash) {
+                    corrupt_keys.insert(key);
+                    break;
+                }
+            }
+        }
+
+        Ok(corrupt_keys)
+    }
+
+    /// Delete all data in the current instance of the repository.
+    ///
+    /// This does not delete data from other instances of the repository.
+    ///
+    /// This does not commit changes to the repository.
+    ///
+    /// No data is reclaimed in the backing data store until changes are committed and
+    /// [`Commit::clean`] is called.
+    ///
+    /// [`Commit::clean`]: crate::repo::Commit::clean
+    pub fn clear_instance(&mut self) {
+        let handles = self
+            .objects
+            .drain()
+            .map(|(_, handle)| handle)
+            .collect::<Vec<_>>();
+        for handle in handles {
+            self.remove_handle(&handle);
+        }
+    }
+
+    /// Change the password for this repository.
+    ///
+    /// This replaces the existing password with `new_password`. Changing the password does not
+    /// require re-encrypting any data. The change does not take effect until [`Commit::commit`] is
+    /// called.
+    ///
+    /// If encryption is disabled, this method does nothing.
+    ///
+    /// [`Commit::commit`]: crate::repo::Commit::commit
+    pub fn change_password(&mut self, new_password: &[u8]) {
+        let salt = KeySalt::generate();
+        let user_key = EncryptionKey::derive(
+            new_password,
+            &salt,
+            self.state.metadata.config.encryption.key_size(),
+            self.state.metadata.config.memory_limit,
+            self.state.metadata.config.operations_limit,
+        );
+
+        let encrypted_master_key = self
+            .state
+            .metadata
+            .config
+            .encryption
+            .encrypt(self.state.master_key.expose_secret(), &user_key);
+
+        self.state.metadata.salt = salt;
+        self.state.metadata.master_key = encrypted_master_key;
+    }
+
+    /// Return this repository's current instance ID.
+    pub fn instance(&self) -> Uuid {
+        self.instance_id
+    }
+
+    /// Return information about the repository.
+    pub fn info(&self) -> RepoInfo {
+        self.state.metadata.to_info()
+    }
+}
+
+impl<K: Key> RestoreSavepoint for KeyRepo<K> {
+    type Restore = KeyRestore<K>;
+
+    fn savepoint(&mut self) -> crate::Result<Savepoint> {
+        self.write_object_map()?;
+
+        Ok(Savepoint {
+            header: Arc::new(self.clone_header()),
+            transaction_id: Arc::downgrade(&self.transaction_id),
+        })
+    }
+
+    fn start_restore(&mut self, savepoint: &Savepoint) -> crate::Result<Self::Restore> {
+        match savepoint.transaction_id.upgrade() {
+            None => return Err(crate::Error::InvalidSavepoint),
+            Some(transaction_id) if transaction_id != self.transaction_id => {
+                return Err(crate::Error::InvalidSavepoint)
+            }
+            _ => (),
+        }
+
+        let old_header = self.replace_header((*savepoint.header).clone());
+
+        match self.read_object_map() {
+            Ok(objects) => Ok(KeyRestore {
+                objects,
+                header: self.replace_header(old_header),
+                transaction_id: savepoint.transaction_id.clone(),
+                instance_id: self.instance_id,
+            }),
+            Err(error) => {
+                self.replace_header(old_header);
+                Err(error)
+            }
+        }
+    }
+
+    fn finish_restore(&mut self, restore: Self::Restore) -> bool {
+        match restore.transaction_id.upgrade() {
+            None => return false,
+            Some(transaction_id) if transaction_id != self.transaction_id => return false,
+            _ => (),
+        }
+
+        if restore.instance_id != self.instance_id {
+            return false;
+        }
+
+        self.replace_header(restore.header);
+        self.objects = restore.objects;
+
+        true
+    }
+}
+
+impl<K: Key> Commit for KeyRepo<K> {
+    fn commit(&mut self) -> crate::Result<()> {
         // Write the map of objects for the current instance.
         self.write_object_map()?;
 
@@ -505,23 +657,7 @@ impl<K: Key> KeyRepo<K> {
         Ok(())
     }
 
-    /// Roll back all changes made since the last commit.
-    ///
-    /// Uncommitted changes in a repository are automatically rolled back when the repository is
-    /// dropped. This method can be used to manually roll back changes without dropping and
-    /// re-opening the repository.
-    ///
-    /// If this method returns `Ok`, changes have been rolled back. If this method returns `Err`,
-    /// the repository is unchanged.
-    ///
-    /// This method rolls back changes for all instances of the repository.
-    ///
-    /// # Errors
-    /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn rollback(&mut self) -> crate::Result<()> {
+    fn rollback(&mut self) -> crate::Result<()> {
         // Read the header from the previous commit from the data store.
         let encoded_header = self
             .state
@@ -539,148 +675,7 @@ impl<K: Key> KeyRepo<K> {
         self.restore_header(header)
     }
 
-    /// Create a new [`Savepoint`] representing the current state of the repository.
-    ///
-    /// You can restore the repository to this savepoint using [`start_restore`] and
-    /// [`finish_restore`].
-    ///
-    /// Creating a savepoint does not commit changes to the repository; if the repository is
-    /// dropped, it will revert to the previous commit and not the most recent savepoint.
-    ///
-    /// See [`Savepoint`] for details.
-    ///
-    /// # Errors
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    ///
-    /// [`start_restore`]: crate::repo::key::KeyRepo::start_restore
-    /// [`finish_restore`]: crate::repo::key::KeyRepo::finish_restore
-    /// [`Savepoint`]: crate::repo::Savepoint
-    pub fn savepoint(&mut self) -> crate::Result<Savepoint> {
-        self.write_object_map()?;
-
-        Ok(Savepoint {
-            header: Arc::new(self.clone_header()),
-            transaction_id: Arc::downgrade(&self.transaction_id),
-        })
-    }
-
-    /// Start the process of restoring the repository to the given `savepoint`.
-    ///
-    /// This method does not restore the repository on its own, but it returns a [`Restore`] value
-    /// which can be passed to [`finish_restore`] to atomically complete the restore.
-    ///
-    /// Restoring to a savepoint affects all instances of the repository.
-    ///
-    /// See [`Savepoint`] and [`Restore`] for details.
-    ///
-    /// # Examples
-    /// This example demonstrates restoring from a savepoint to undo a change to the repository.
-    /// ```
-    /// # use std::io::Write;
-    /// # use acid_store::store::MemoryConfig;
-    /// # use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo};
-    /// #
-    /// # let mut repo: KeyRepo<String> = OpenOptions::new()
-    /// #     .mode(OpenMode::CreateNew)
-    /// #     .open(&MemoryConfig::new())
-    /// #     .unwrap();
-    /// // Create a new savepoint.
-    /// let savepoint = repo.savepoint().unwrap();
-    ///
-    /// // Write data to the repository.
-    /// let mut object = repo.insert(String::from("test"));
-    /// object.write_all(b"Some data").unwrap();
-    /// object.flush().unwrap();
-    /// drop(object);
-    ///
-    /// // Restore to the savepoint.
-    /// let restore = repo.start_restore(&savepoint).unwrap();
-    /// repo.finish_restore(restore);
-    ///
-    /// assert!(!repo.contains("test"));
-    /// ```
-    ///
-    /// # Errors
-    /// - `Error::InvalidSavepoint`: The given savepoint is invalid or not associated with this
-    /// repository.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    ///
-    /// [`Restore`]: crate::repo::key::Restore
-    /// [`finish_restore`]: crate::repo::key::KeyRepo::finish_restore
-    /// [`Savepoint`]: crate::repo::Savepoint
-    pub fn start_restore(&mut self, savepoint: &Savepoint) -> crate::Result<Restore<K>> {
-        match savepoint.transaction_id.upgrade() {
-            None => return Err(crate::Error::InvalidSavepoint),
-            Some(transaction_id) if transaction_id != self.transaction_id => {
-                return Err(crate::Error::InvalidSavepoint)
-            }
-            _ => (),
-        }
-
-        let old_header = self.replace_header((*savepoint.header).clone());
-
-        match self.read_object_map() {
-            Ok(objects) => Ok(Restore {
-                objects,
-                header: self.replace_header(old_header),
-                transaction_id: savepoint.transaction_id.clone(),
-                instance_id: self.instance_id,
-            }),
-            Err(error) => {
-                self.replace_header(old_header);
-                Err(error)
-            }
-        }
-    }
-
-    /// Finish the process of restoring the repository to a [`Savepoint`].
-    ///
-    /// To start the process of restoring the repository to a savepoint, you must first call
-    /// [`start_restore`].
-    ///
-    /// If this method returns `true`, the repository has been restored. If this method returns
-    /// `false`, the savepoint which was used to start the restore process is invalid or the given
-    /// [`Restore`] is not associated with the current instance of the repository.
-    ///
-    /// Restoring to a savepoint affects all instances of the repository.
-    ///
-    /// See [`Savepoint`] and [`Restore`] for details.
-    ///
-    /// [`Savepoint`]: crate::repo::Savepoint
-    /// [`start_restore`]: crate::repo::key::KeyRepo::start_restore
-    /// [`Restore`]: crate::repo::key::Restore
-    pub fn finish_restore(&mut self, restore: Restore<K>) -> bool {
-        match restore.transaction_id.upgrade() {
-            None => return false,
-            Some(transaction_id) if transaction_id != self.transaction_id => return false,
-            _ => (),
-        }
-
-        if restore.instance_id != self.instance_id {
-            return false;
-        }
-
-        self.replace_header(restore.header);
-        self.objects = restore.objects;
-
-        true
-    }
-
-    /// Clean up the repository to reclaim space in the backing data store.
-    ///
-    /// When data in a repository is deleted, the space is not reclaimed in the backing data store
-    /// until those changes are committed and this method is called.
-    ///
-    /// # Errors
-    /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    pub fn clean(&mut self) -> crate::Result<()> {
+    fn clean(&mut self) -> crate::Result<()> {
         // Read the header from the previous commit.
         let encoded_header = self
             .state
@@ -827,119 +822,5 @@ impl<K: Key> KeyRepo<K> {
         }
 
         Ok(())
-    }
-
-    /// Delete all data in the current instance of the repository.
-    ///
-    /// This does not delete data from other instances of the repository.
-    ///
-    /// This does not commit changes to the repository.
-    ///
-    /// No data is reclaimed in the backing data store until changes are committed and [`clean`] is
-    /// called.
-    ///
-    /// [`clean`]: crate::repo::key::KeyRepo::clean
-    pub fn clear_instance(&mut self) {
-        let handles = self
-            .objects
-            .drain()
-            .map(|(_, handle)| handle)
-            .collect::<Vec<_>>();
-        for handle in handles {
-            self.remove_handle(&handle);
-        }
-    }
-
-    /// Verify the integrity of all the data in the current instance of the repository.
-    ///
-    /// This returns the set of keys of objects in the current instance which are corrupt.
-    ///
-    /// If you just need to verify the integrity of one object, [`Object::verify`] is faster. If you
-    /// need to verify the integrity of all the data in the repository, however, this can be more
-    /// efficient.
-    ///
-    /// # Errors
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
-    ///
-    /// [`Object::verify`]: crate::repo::Object::verify
-    pub fn verify(&self) -> crate::Result<HashSet<&K>> {
-        let mut corrupt_chunks = HashSet::new();
-        let expected_chunks = self.state.chunks.keys().copied().collect::<Vec<_>>();
-
-        // Get the set of hashes of chunks which are corrupt.
-        let mut store_state = StoreState::new();
-        let mut store_reader = StoreReader::new(&self.state, &mut store_state);
-        for chunk in expected_chunks {
-            match store_reader.read_chunk(chunk) {
-                Ok(data) => {
-                    if data.len() != chunk.size as usize || chunk_hash(&data) != chunk.hash {
-                        corrupt_chunks.insert(chunk.hash);
-                    }
-                }
-                Err(crate::Error::InvalidData) => {
-                    // Ciphertext verification failed. No need to check the hash.
-                    corrupt_chunks.insert(chunk.hash);
-                }
-                Err(error) => return Err(error),
-            };
-        }
-
-        // If there are no corrupt chunks, there are no corrupt objects.
-        if corrupt_chunks.is_empty() {
-            return Ok(HashSet::new());
-        }
-
-        let mut corrupt_keys = HashSet::new();
-        for (key, handle) in &self.objects {
-            for chunk in &handle.chunks {
-                // If any one of the object's chunks is corrupt, the object is corrupt.
-                if corrupt_chunks.contains(&chunk.hash) {
-                    corrupt_keys.insert(key);
-                    break;
-                }
-            }
-        }
-
-        Ok(corrupt_keys)
-    }
-
-    /// Change the password for this repository.
-    ///
-    /// This replaces the existing password with `new_password`. Changing the password does not
-    /// require re-encrypting any data. The change does not take effect until [`commit`] is called.
-    /// If encryption is disabled, this method does nothing.
-    ///
-    /// [`commit`]: crate::repo::key::KeyRepo::commit
-    pub fn change_password(&mut self, new_password: &[u8]) {
-        let salt = KeySalt::generate();
-        let user_key = EncryptionKey::derive(
-            new_password,
-            &salt,
-            self.state.metadata.config.encryption.key_size(),
-            self.state.metadata.config.memory_limit,
-            self.state.metadata.config.operations_limit,
-        );
-
-        let encrypted_master_key = self
-            .state
-            .metadata
-            .config
-            .encryption
-            .encrypt(self.state.master_key.expose_secret(), &user_key);
-
-        self.state.metadata.salt = salt;
-        self.state.metadata.master_key = encrypted_master_key;
-    }
-
-    /// Return this repository's current instance ID.
-    pub fn instance(&self) -> Uuid {
-        self.instance_id
-    }
-
-    /// Return information about the repository.
-    pub fn info(&self) -> RepoInfo {
-        self.state.metadata.to_info()
     }
 }

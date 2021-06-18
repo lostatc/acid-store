@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: Install ACL library
-        run: sudo apt-get install acl
+        run: sudo apt-get install libacl1-dev
 
       - name: Build
         run: cargo build --all-features

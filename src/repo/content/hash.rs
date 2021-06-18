@@ -27,11 +27,14 @@ use {
     sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512},
 };
 
+/// The default hash algorithm to use for `ContentRepo`.
+pub const DEFAULT_ALGORITHM: HashAlgorithm = HashAlgorithm::Blake3;
+
 /// The size of the buffer to use when copying bytes.
 ///
 /// We use a 16KiB buffer because that is the minimum size recommended to make use of SIMD
 /// instruction sets with BLAKE3.
-pub(super) const BUFFER_SIZE: usize = 1024 * 16;
+pub const BUFFER_SIZE: usize = 1024 * 16;
 
 /// A simple digest which supports variable-size output.
 ///

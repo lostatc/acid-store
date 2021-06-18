@@ -23,13 +23,13 @@ use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
 use uuid::Uuid;
 
-use crate::repo::id_table::IdTable;
 use crate::store::{DataStore, OpenStore};
 
 use super::chunking::Chunking;
 use super::compression::Compression;
 use super::config::RepoConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt, ResourceLimit};
+use super::id_table::IdTable;
 use super::lock::LockTable;
 use super::metadata::{peek_info_store, Header, RepoMetadata};
 use super::open_repo::OpenRepo;

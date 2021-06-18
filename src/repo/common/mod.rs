@@ -15,9 +15,11 @@
  */
 
 pub use self::chunking::Chunking;
+pub use self::commit::Commit;
 pub use self::compression::Compression;
 pub use self::config::RepoConfig;
 pub use self::encryption::{Encryption, ResourceLimit};
+pub use self::id_table::{IdTable, UniqueId};
 pub use self::key::Key;
 pub use self::metadata::{peek_info, RepoInfo};
 pub use self::object::{ContentId, Object, ReadOnlyObject};
@@ -25,13 +27,15 @@ pub use self::open_options::{OpenMode, OpenOptions, DEFAULT_INSTANCE};
 pub use self::open_repo::{OpenRepo, SwitchInstance};
 pub use self::packing::Packing;
 pub use self::repository::KeyRepo;
-pub use self::savepoint::{Restore, Savepoint};
+pub use self::savepoint::{Restore, RestoreSavepoint, Savepoint};
 
 mod chunk_store;
 mod chunking;
+mod commit;
 mod compression;
 mod config;
 mod encryption;
+mod id_table;
 mod key;
 mod lock;
 mod metadata;

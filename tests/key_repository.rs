@@ -22,7 +22,10 @@ use test_case::test_case;
 use uuid::Uuid;
 
 use acid_store::repo::key::KeyRepo;
-use acid_store::repo::{peek_info, Encryption, OpenMode, OpenOptions, RepoConfig, SwitchInstance};
+use acid_store::repo::{
+    peek_info, Commit, Encryption, OpenMode, OpenOptions, RepoConfig, RestoreSavepoint,
+    SwitchInstance,
+};
 use acid_store::store::{DataStore, MemoryConfig, OpenStore};
 use common::{assert_contains_all, random_buffer};
 

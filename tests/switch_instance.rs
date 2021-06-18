@@ -17,7 +17,9 @@
 use std::io::Write;
 
 use acid_store::repo::key::KeyRepo;
-use acid_store::repo::{OpenMode, OpenOptions, RepoConfig, SwitchInstance, DEFAULT_INSTANCE};
+use acid_store::repo::{
+    Commit, OpenMode, OpenOptions, RepoConfig, SwitchInstance, DEFAULT_INSTANCE,
+};
 use acid_store::store::MemoryConfig;
 use acid_store::uuid::Uuid;
 use test_case::test_case;
