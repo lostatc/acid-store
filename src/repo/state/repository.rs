@@ -173,9 +173,9 @@ where
     /// This returns `true` if the object was removed or `false` if it didn't exist.
     ///
     /// The space used by the given object isn't reclaimed in the backing data store until changes
-    /// are committed and [`clean`] is called.
+    /// are committed and [`Commit::clean`] is called.
     ///
-    /// [`clean`]: crate::repo::Commit::clean
+    /// [`Commit::clean`]: crate::repo::Commit::clean
     pub fn remove(&mut self, id: ObjectId) -> bool {
         if !self.id_table.recycle(id) {
             return false;
