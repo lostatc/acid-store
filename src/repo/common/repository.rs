@@ -148,9 +148,9 @@ impl<K: Key> KeyRepo<K> {
     /// This returns `true` if the object was removed or `false` if it didn't exist.
     ///
     /// The space used by the given object isn't reclaimed in the backing data store until changes
-    /// are committed and [`clean`] is called.
+    /// are committed and [`Commit::clean`] is called.
     ///
-    /// [`clean`]: crate::repo::key::KeyRepo::clean
+    /// [`Commit::clean`]: crate::repo::Commit::clean
     pub fn remove<Q>(&mut self, key: &Q) -> bool
     where
         K: Borrow<Q>,
@@ -472,10 +472,10 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// This does not commit changes to the repository.
     ///
-    /// No data is reclaimed in the backing data store until changes are committed and [`clean`] is
-    /// called.
+    /// No data is reclaimed in the backing data store until changes are committed and
+    /// [`Commit::clean`] is called.
     ///
-    /// [`clean`]: crate::repo::key::KeyRepo::clean
+    /// [`Commit::clean`]: crate::repo::Commit::clean
     pub fn clear_instance(&mut self) {
         let handles = self
             .objects
@@ -545,10 +545,12 @@ impl<K: Key> KeyRepo<K> {
     /// Change the password for this repository.
     ///
     /// This replaces the existing password with `new_password`. Changing the password does not
-    /// require re-encrypting any data. The change does not take effect until [`commit`] is called.
+    /// require re-encrypting any data. The change does not take effect until [`Commit::commit`] is
+    /// called.
+    ///
     /// If encryption is disabled, this method does nothing.
     ///
-    /// [`commit`]: crate::repo::key::KeyRepo::commit
+    /// [`Commit::commit`]: crate::repo::Commit::commit
     pub fn change_password(&mut self, new_password: &[u8]) {
         let salt = KeySalt::generate();
         let user_key = EncryptionKey::derive(
