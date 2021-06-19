@@ -90,6 +90,7 @@
 //! `compression` | Compress repositories | No
 //! `file-metadata` | Store file metadata and special file types in [`FileRepo`] | No
 //! `hash-algorithms` | Use hash algorithms other than BLAKE3 in [`ContentRepo`] | No
+//! `fuse-mount` | Mount a [`FileRepo`] as a FUSE file system | No
 //! `store-directory` | Store data in a directory in the local file system | No
 //! `store-sqlite` | Store data in a SQLite database | No
 //! `store-redis` | Store data on a Redis server | No

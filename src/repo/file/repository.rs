@@ -21,6 +21,7 @@ use std::io::{self, copy};
 use std::marker::PhantomData;
 use std::path::Path;
 
+use fuse;
 use hex_literal::hex;
 use once_cell::sync::Lazy;
 use relative_path::{RelativePath, RelativePathBuf};
@@ -32,9 +33,13 @@ use crate::repo::{
 };
 
 use super::entry::{Entry, EntryHandle, EntryType, FileType};
+use super::fuse::FuseAdapter;
 use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
 use super::special::{NoSpecialType, SpecialType};
+use std::ffi::OsStr;
+#[cfg(all(any(unix, doc), feature = "fuse-mount"))]
+use {super::metadata::UnixMetadata, super::special::UnixSpecialType};
 
 /// The path of the root entry.
 static EMPTY_PATH: Lazy<RelativePathBuf> = Lazy::new(|| RelativePath::new("").to_owned());
@@ -45,7 +50,10 @@ type RepoState = PathTree<EntryHandle>;
 ///
 /// See [`crate::repo::file`] for more information.
 #[derive(Debug)]
-pub struct FileRepo<S = NoSpecialType, M = NoMetadata>(StateRepo<RepoState>, PhantomData<(S, M)>)
+pub struct FileRepo<S = NoSpecialType, M = NoMetadata>(
+    pub(super) StateRepo<RepoState>,
+    PhantomData<(S, M)>,
+)
 where
     S: SpecialType,
     M: FileMetadata;
@@ -888,5 +896,21 @@ where
 
     fn finish_restore(&mut self, restore: Self::Restore) -> bool {
         self.0.finish_restore(restore)
+    }
+}
+
+#[cfg(all(any(unix, doc), feature = "fuse-mount"))]
+impl FileRepo<UnixSpecialType, UnixMetadata> {
+    /// Mount the `FileRepo` as a FUSE file system at `mountpoint`.
+    ///
+    /// This accepts an array of mount `options`.
+    ///
+    /// This method does not return until the file system is unmounted.
+    ///
+    /// # Errors
+    /// - `Error::Io`: An I/O error occurred.
+    pub fn mount(&mut self, mountpoint: impl AsRef<Path>, options: &[&OsStr]) -> crate::Result<()> {
+        let adapter = FuseAdapter::new(&mut self);
+        Ok(fuse::mount(adapter, mountpoint, options)?)
     }
 }
