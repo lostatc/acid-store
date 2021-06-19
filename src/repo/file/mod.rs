@@ -32,6 +32,8 @@
 //! file types—are heavily platform-dependent, the behavior of [`FileRepo`] can be customized
 //! through the [`FileMetadata`] and [`SpecialType`] traits.
 //!
+//! A [`FileRepo`] can be mounted as a FUSE file system using [`FileRepo::mount`].
+//!
 //! Like other repositories, changes made to the repository are not persisted to the data store
 //! until [`Commit::commit`] is called. For details about deduplication, compression, encryption,
 //! and locking, see the module-level documentation for [`crate::repo`].
@@ -73,6 +75,7 @@
 //! [`RelativePath`]: crate::repo::file::RelativePath
 //! [`FileMetadata`]: crate::repo::file::FileMetadata
 //! [`SpecialType`]: crate::repo::file::SpecialType
+//! [`FileRepo::mount`]: crate::repo::file::FileRepo::mount
 //! [`Commit::commit`]: crate::repo::Commit::commit
 //! [`NoMetadata`]: crate::repo::file::NoMetadata
 //! [`NoSpecialType`]: crate::repo::file::NoSpecialType
@@ -93,6 +96,7 @@ pub use self::repository::FileRepo;
 pub use self::special::{NoSpecialType, SpecialType};
 
 mod entry;
+mod fuse;
 mod metadata;
 mod path_tree;
 mod repository;
