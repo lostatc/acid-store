@@ -120,14 +120,14 @@ impl SpecialType for UnixSpecialType {
             UnixSpecialType::CharacterDevice { major, minor } => {
                 match mknod(path, SFlag::S_IFCHR, Mode::S_IRWXU, makedev(*major, *minor)) {
                     Err(nix::Error::Sys(nix::errno::Errno::EPERM)) => (),
-                    Err(error) => Err(io::Error::new(io::ErrorKind::Other, error))?,
+                    Err(error) => return Err(io::Error::new(io::ErrorKind::Other, error)),
                     _ => (),
                 }
             }
             UnixSpecialType::BlockDevice { major, minor } => {
                 match mknod(path, SFlag::S_IFBLK, Mode::S_IRWXU, makedev(*major, *minor)) {
                     Err(nix::Error::Sys(nix::errno::Errno::EPERM)) => (),
-                    Err(error) => Err(io::Error::new(io::ErrorKind::Other, error))?,
+                    Err(error) => return Err(io::Error::new(io::ErrorKind::Other, error)),
                     _ => (),
                 }
             }

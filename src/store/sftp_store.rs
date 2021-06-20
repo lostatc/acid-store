@@ -146,8 +146,8 @@ impl OpenStore for SftpConfig {
                     let key = identities
                         .iter()
                         .find(|key| key.comment() == comment)
-                        .ok_or(anyhow!("No key with matching comment found in agent."))
-                        .map_err(|error| crate::Error::Store(error))?;
+                        .ok_or_else(|| anyhow!("No key with matching comment found in agent."))
+                        .map_err(crate::Error::Store)?;
                     agent
                         .userauth(username, key)
                         .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;

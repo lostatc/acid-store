@@ -25,7 +25,7 @@ use super::open_store::OpenStore;
 /// The configuration for opening a [`MemoryStore`].
 ///
 /// [`MemoryStore`]: crate::store::MemoryStore
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MemoryConfig(Arc<Mutex<HashMap<Uuid, Vec<u8>>>>);
 
 impl MemoryConfig {

@@ -109,7 +109,7 @@ impl<'a> ReadBlock for PackingBlockReader<'a> {
                         .lock()
                         .unwrap()
                         .read_block(pack_index.id)
-                        .map_err(|error| crate::Error::Store(error))?
+                        .map_err(crate::Error::Store)?
                         .ok_or(crate::Error::InvalidData)?;
                     let pack_buffer = self
                         .repo_state
@@ -216,7 +216,7 @@ impl<'a> WriteBlock for PackingBlockWriter<'a> {
                     .lock()
                     .unwrap()
                     .write_block(current_pack.id, encoded_pack.as_slice())
-                    .map_err(|error| crate::Error::Store(error))?;
+                    .map_err(crate::Error::Store)?;
 
                 // We're starting a new pack, so these need to be reset.
                 current_offset = 0;
@@ -241,7 +241,7 @@ impl<'a> WriteBlock for PackingBlockWriter<'a> {
                     .lock()
                     .unwrap()
                     .write_block(current_pack.id, encoded_pack.as_slice())
-                    .map_err(|error| crate::Error::Store(error))?;
+                    .map_err(crate::Error::Store)?;
 
                 // We need to update the pack map in the repository state after all data has been
                 // written to the data store. If this method fails early, we can't have the pack map
@@ -279,7 +279,7 @@ impl<'a> ReadBlock for DirectBlockWriter<'a> {
             .lock()
             .unwrap()
             .read_block(id)
-            .map_err(|error| crate::Error::Store(error))?
+            .map_err(crate::Error::Store)?
             .ok_or(crate::Error::InvalidData)?;
         self.state.decode_data(encoded_block.as_slice())
     }
@@ -293,7 +293,7 @@ impl<'a> WriteBlock for DirectBlockWriter<'a> {
             .lock()
             .unwrap()
             .write_block(id, encoded_block.as_slice())
-            .map_err(|error| crate::Error::Store(error))
+            .map_err(crate::Error::Store)
     }
 }
 

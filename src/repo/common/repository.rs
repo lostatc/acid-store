@@ -205,7 +205,7 @@ impl<K: Key> KeyRepo<K> {
     }
 
     /// Return an iterator over all the keys of objects in this repository.
-    pub fn keys<'a>(&'a self) -> impl Iterator<Item = &'a K> + 'a {
+    pub fn keys(&self) -> impl Iterator<Item = &K> {
         self.objects.keys()
     }
 
@@ -256,7 +256,7 @@ impl<K: Key> KeyRepo<K> {
             .lock()
             .unwrap()
             .list_blocks()
-            .map_err(|error| crate::Error::Store(error))?;
+            .map_err(crate::Error::Store)?;
 
         Ok(all_blocks
             .iter()
@@ -372,7 +372,7 @@ impl<K: Key> KeyRepo<K> {
             .lock()
             .unwrap()
             .write_block(header_id, encoded_header.as_slice())
-            .map_err(|error| crate::Error::Store(error))?;
+            .map_err(crate::Error::Store)?;
         self.state.metadata.header_id = header_id;
 
         // Atomically write the new repository metadata containing the new header ID.
@@ -383,7 +383,7 @@ impl<K: Key> KeyRepo<K> {
             .lock()
             .unwrap()
             .write_block(METADATA_BLOCK_ID, &serialized_metadata)
-            .map_err(|error| crate::Error::Store(error))
+            .map_err(crate::Error::Store)
     }
 
     /// Return a cloned `Header` representing the current state of the repository.
@@ -665,7 +665,7 @@ impl<K: Key> Commit for KeyRepo<K> {
             .lock()
             .unwrap()
             .read_block(self.state.metadata.header_id)
-            .map_err(|error| crate::Error::Store(error))?
+            .map_err(crate::Error::Store)?
             .ok_or(crate::Error::Corrupt)?;
         let serialized_header = self.state.decode_data(encoded_header.as_slice())?;
         let header: Header =
@@ -683,7 +683,7 @@ impl<K: Key> Commit for KeyRepo<K> {
             .lock()
             .unwrap()
             .read_block(self.state.metadata.header_id)
-            .map_err(|error| crate::Error::Store(error))?
+            .map_err(crate::Error::Store)?
             .ok_or(crate::Error::Corrupt)?;
         let serialized_header = self.state.decode_data(encoded_header.as_slice())?;
         let previous_header: Header =
@@ -713,9 +713,7 @@ impl<K: Key> Commit for KeyRepo<K> {
                 let mut store = self.state.store.lock().unwrap();
                 for block_id in block_ids {
                     if !referenced_blocks.contains(&block_id) {
-                        store
-                            .remove_block(block_id)
-                            .map_err(|error| crate::Error::Store(error))?;
+                        store.remove_block(block_id).map_err(crate::Error::Store)?;
                     }
                 }
             }
@@ -780,9 +778,7 @@ impl<K: Key> Commit for KeyRepo<K> {
                 {
                     let mut store = self.state.store.lock().unwrap();
                     for pack_id in packs_to_remove {
-                        store
-                            .remove_block(pack_id)
-                            .map_err(|error| crate::Error::Store(error))?;
+                        store.remove_block(pack_id).map_err(crate::Error::Store)?;
                     }
                 }
 

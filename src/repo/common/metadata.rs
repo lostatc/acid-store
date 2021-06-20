@@ -78,7 +78,7 @@ pub fn peek_info_store(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
     // Read and deserialize the metadata.
     let serialized_metadata = match store
         .read_block(METADATA_BLOCK_ID)
-        .map_err(|error| crate::Error::Store(error))?
+        .map_err(crate::Error::Store)?
     {
         Some(data) => data,
         None => return Err(crate::Error::NotFound),
