@@ -21,7 +21,6 @@ use std::io::{self, copy};
 use std::marker::PhantomData;
 use std::path::Path;
 
-use fuse;
 use hex_literal::hex;
 use once_cell::sync::Lazy;
 use relative_path::{RelativePath, RelativePathBuf};
@@ -900,6 +899,7 @@ where
 }
 
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
+#[cfg_attr(docsrs, doc(cfg(all(unix, feature = "fuse-mount"))))]
 impl FileRepo<UnixSpecialType, UnixMetadata> {
     /// Mount the `FileRepo` as a FUSE file system at `mountpoint`.
     ///
@@ -910,7 +910,7 @@ impl FileRepo<UnixSpecialType, UnixMetadata> {
     /// # Errors
     /// - `Error::Io`: An I/O error occurred.
     pub fn mount(&mut self, mountpoint: impl AsRef<Path>, options: &[&OsStr]) -> crate::Result<()> {
-        let adapter = FuseAdapter::new(&mut self);
-        Ok(fuse::mount(adapter, mountpoint, options)?)
+        let adapter = FuseAdapter::new(self);
+        Ok(fuse::mount(adapter, &mountpoint, options)?)
     }
 }
