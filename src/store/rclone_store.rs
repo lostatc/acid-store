@@ -86,7 +86,7 @@ fn wait_for_connection(port: u16) -> io::Result<()> {
                 sleep(CONNECT_WAIT_TIME);
                 continue;
             }
-            Err(error) => return Err(error.into()),
+            Err(error) => return Err(error),
             Ok(_) => break,
         }
     }

@@ -120,11 +120,18 @@ pub enum OpenMode {
 /// [`open`]: crate::repo::OpenOptions::open
 /// [`OpenStore`]: crate::store::OpenStore
 /// [`OpenRepo`]: crate::repo::OpenRepo
+#[derive(Debug)]
 pub struct OpenOptions {
     config: RepoConfig,
     mode: OpenMode,
     password: Option<Vec<u8>>,
     instance: Uuid,
+}
+
+impl Default for OpenOptions {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl OpenOptions {
@@ -256,7 +263,7 @@ impl OpenOptions {
         // Read the repository version to see if this is a compatible repository.
         let serialized_version = store
             .read_block(VERSION_BLOCK_ID)
-            .map_err(|error| crate::Error::Store(error))?
+            .map_err(crate::Error::Store)?
             .ok_or(crate::Error::NotFound)?;
         let version =
             Uuid::from_slice(serialized_version.as_slice()).map_err(|_| crate::Error::Corrupt)?;
@@ -268,7 +275,7 @@ impl OpenOptions {
         // acquiring the lock.
         let serialized_metadata = store
             .read_block(METADATA_BLOCK_ID)
-            .map_err(|error| crate::Error::Store(error))?
+            .map_err(crate::Error::Store)?
             .ok_or(crate::Error::Corrupt)?;
         let metadata: RepoMetadata =
             from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
@@ -306,7 +313,7 @@ impl OpenOptions {
         // Read, decrypt, decompress, and deserialize the repository header.
         let encrypted_header = store
             .read_block(metadata.header_id)
-            .map_err(|error| crate::Error::Store(error))?
+            .map_err(crate::Error::Store)?
             .ok_or(crate::Error::Corrupt)?;
         let compressed_header = metadata
             .config
@@ -370,7 +377,7 @@ impl OpenOptions {
         // Check if the repository already exists.
         if store
             .read_block(VERSION_BLOCK_ID)
-            .map_err(|error| crate::Error::Store(error))?
+            .map_err(crate::Error::Store)?
             .is_some()
         {
             return Err(crate::Error::AlreadyExists);
@@ -423,7 +430,7 @@ impl OpenOptions {
         let header_id = Uuid::new_v4();
         store
             .write_block(header_id, &encrypted_header)
-            .map_err(|error| crate::Error::Store(error))?;
+            .map_err(crate::Error::Store)?;
 
         // Create the repository metadata with the header block references.
         let metadata = RepoMetadata {
@@ -438,13 +445,13 @@ impl OpenOptions {
         let serialized_metadata = to_vec(&metadata).expect("Could not serialize metadata.");
         store
             .write_block(METADATA_BLOCK_ID, &serialized_metadata)
-            .map_err(|error| crate::Error::Store(error))?;
+            .map_err(crate::Error::Store)?;
 
         // Write the repository version. We do this last because this signifies that the repository
         // is done being created.
         store
             .write_block(VERSION_BLOCK_ID, VERSION_ID.as_bytes())
-            .map_err(|error| crate::Error::Store(error))?;
+            .map_err(crate::Error::Store)?;
 
         let Header {
             chunks,
@@ -507,7 +514,7 @@ impl OpenOptions {
             OpenMode::Create => {
                 if store
                     .read_block(VERSION_BLOCK_ID)
-                    .map_err(|error| crate::Error::Store(error))?
+                    .map_err(crate::Error::Store)?
                     .is_some()
                 {
                     self.open_repo(store)

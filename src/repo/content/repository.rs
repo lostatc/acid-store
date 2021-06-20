@@ -185,7 +185,7 @@ impl ContentRepo {
 
         // Re-compute the hashes of the objects in the repository.
         let mut new_table = HashMap::new();
-        for (_, object_id) in &self.0.state().table {
+        for object_id in self.0.state().table.values() {
             let mut object = self.0.object(*object_id).unwrap();
             let new_hash = new_algorithm.hash(&mut object)?;
             drop(object);

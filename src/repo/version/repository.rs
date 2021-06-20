@@ -30,7 +30,7 @@ use crate::repo::{
     key::Key, Commit, Object, OpenRepo, ReadOnlyObject, RepoInfo, RestoreSavepoint, Savepoint,
 };
 
-use super::version::{KeyInfo, Version, VersionInfo};
+use super::info::{KeyInfo, Version, VersionInfo};
 
 /// The state for a `VersionRepo`.
 type RepoState<K> = HashMap<K, KeyInfo>;

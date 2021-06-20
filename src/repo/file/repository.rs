@@ -425,12 +425,11 @@ where
             return Err(crate::Error::InvalidPath);
         }
 
-        let entry_handle = self
+        let entry_handle = *self
             .0
             .state()
             .get(source.as_ref())
-            .ok_or(crate::Error::NotFound)?
-            .clone();
+            .ok_or(crate::Error::NotFound)?;
 
         let new_handle = self.copy_entry_handle(entry_handle);
         self.0.state_mut().insert(dest.as_ref(), new_handle);
@@ -475,12 +474,11 @@ where
         let mut dest_tree = PathTree::new();
 
         // Copy the root path into the destination tree.
-        let source_root_handle = self
+        let source_root_handle = *self
             .0
             .state()
             .get(source.as_ref())
-            .ok_or(crate::Error::NotFound)?
-            .clone();
+            .ok_or(crate::Error::NotFound)?;
         let dest_root_handle = self.copy_entry_handle(source_root_handle);
         self.0.state_mut().insert(&dest, dest_root_handle);
         dest_tree.insert(&dest, source_root_handle);
@@ -490,7 +488,7 @@ where
         for (path, source_handle) in self.0.state().walk(source.as_ref()).unwrap() {
             let relative_path = path.strip_prefix(&source).unwrap();
             let dest_path = dest.as_ref().join(relative_path);
-            dest_tree.insert(dest_path, source_handle.clone());
+            dest_tree.insert(dest_path, *source_handle);
         }
 
         // Move the rest of the paths from the destination tree into the path table.

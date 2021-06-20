@@ -92,7 +92,7 @@ impl OpenStore for RedisConfig {
                 RedisAddr::Tcp(host, port) => ConnectionAddr::Tcp(host, port),
                 RedisAddr::Unix(path) => ConnectionAddr::Unix(path),
             }),
-            db: self.db.clone(),
+            db: self.db,
             username: self.username.clone(),
             passwd: self.password.clone(),
         };

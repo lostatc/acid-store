@@ -71,8 +71,8 @@
 //! [`Commit::commit`]: crate::repo::Commit::commit
 //! [`KeyRepo`]: crate::repo::key::KeyRepo
 
+pub use self::info::Version;
 pub use self::repository::VersionRepo;
-pub use self::version::Version;
 
+mod info;
 mod repository;
-mod version;

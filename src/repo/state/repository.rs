@@ -209,7 +209,7 @@ where
     }
 
     /// Return an iterator over all the IDs of objects in this repository.
-    pub fn list<'a>(&'a self) -> impl Iterator<Item = ObjectId> + 'a {
+    pub fn list(&self) -> impl Iterator<Item = ObjectId> + '_ {
         self.repo.keys().filter_map(|key| match key {
             RepoKey::Object(id) => Some(*id),
             _ => None,
