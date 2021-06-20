@@ -18,10 +18,8 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
-/// An opaque ID which can be uniquely allocated by an `IdTable`.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct UniqueId(u64);
+/// An ID which can be uniquely allocated by an `IdTable`.
+pub type UniqueId = u64;
 
 /// A table for allocating `UniqueId` values.
 #[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
@@ -44,18 +42,18 @@ impl IdTable {
         match self.unused.iter().next().copied() {
             Some(id) => {
                 self.unused.remove(&id);
-                UniqueId(id)
+                id
             }
             None => {
                 self.highest += 1;
-                UniqueId(self.highest)
+                self.highest
             }
         }
     }
 
     /// Return whether the given `id` is in the table.
     pub fn contains(&self, id: UniqueId) -> bool {
-        id.0 <= self.highest && !self.unused.contains(&id.0)
+        id <= self.highest && !self.unused.contains(&id)
     }
 
     /// Return the given `id` back to the table.
@@ -65,7 +63,7 @@ impl IdTable {
         if !self.contains(id) {
             return false;
         }
-        self.unused.insert(id.0);
+        self.unused.insert(id);
         true
     }
 }
