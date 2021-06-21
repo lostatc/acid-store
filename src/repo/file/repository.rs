@@ -88,6 +88,36 @@ where
         self.0.state().contains(path.as_ref())
     }
 
+    /// Return whether the given `path` is a regular file entry.
+    ///
+    /// If there is no entry at `path`, this returns `false`.
+    pub fn is_file(&self, path: impl AsRef<RelativePath>) -> bool {
+        match self.0.state().get(path.as_ref()) {
+            Some(entry) => matches!(entry.entry_type, EntryType::File(_)),
+            None => false,
+        }
+    }
+
+    /// Return whether the given `path` is a directory entry.
+    ///
+    /// If there is no entry at `path`, this returns `false`.
+    pub fn is_directory(&self, path: impl AsRef<RelativePath>) -> bool {
+        match self.0.state().get(path.as_ref()) {
+            Some(entry) => matches!(entry.entry_type, EntryType::Directory),
+            None => false,
+        }
+    }
+
+    /// Return whether the given `path` is a special file entry.
+    ///
+    /// If there is no entry at `path`, this returns `false`.
+    pub fn is_special(&self, path: impl AsRef<RelativePath>) -> bool {
+        match self.0.state().get(path.as_ref()) {
+            Some(entry) => matches!(entry.entry_type, EntryType::Special),
+            None => false,
+        }
+    }
+
     /// Return `true` if the given `path` has a parent directory in the repository.
     fn has_parent(&self, path: &RelativePath) -> bool {
         match path.parent() {
@@ -278,22 +308,6 @@ where
 
     /// Return the entry at `path`.
     ///
-    /// # Examples
-    /// Check if an entry is a regular file.
-    /// ```
-    /// # use acid_store::repo::{OpenOptions, OpenMode};
-    /// # use acid_store::repo::file::{FileRepo, Entry, RelativePath};
-    /// # use acid_store::store::{MemoryStore, MemoryConfig};
-    /// #
-    /// # let mut repo: FileRepo = OpenOptions::new()
-    /// #    .mode(OpenMode::CreateNew)
-    /// #    .open(&MemoryConfig::new())
-    /// #    .unwrap();
-    /// #
-    /// let entry_path = RelativePath::new("file");
-    /// repo.create(entry_path, &Entry::file()).unwrap();
-    /// assert!(repo.entry(entry_path).unwrap().is_file())
-    /// ```
     /// # Errors
     /// - `Error::NotFound`: There is no entry at `path`.
     /// - `Error::Deserialize`: The file metadata could not be deserialized.
