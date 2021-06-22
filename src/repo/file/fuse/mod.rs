@@ -19,3 +19,4 @@ pub use self::fs::FuseAdapter;
 mod fs;
 mod handle;
 mod inode;
+mod object;
