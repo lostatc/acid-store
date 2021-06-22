@@ -28,13 +28,14 @@ use fuse::{
 use nix::fcntl::OFlag;
 use nix::libc;
 use nix::sys::stat;
+use once_cell::sync::Lazy;
 use relative_path::RelativePathBuf;
 use time::Timespec;
 
+use super::handle::{HandleInfo, HandleTable, HandleType};
 use super::inode::InodeTable;
+use super::object::ObjectTable;
 
-use crate::repo::common::IdTable;
-use crate::repo::file::fuse::handle::HandleTable;
 use crate::repo::file::{
     entry::{Entry, FileType},
     metadata::UnixMetadata,
@@ -64,7 +65,7 @@ const DEFAULT_DIR_MODE: u32 = 0o775;
 const DEFAULT_FILE_MODE: u32 = 0o664;
 
 /// The set of `open` flags which are not supported by this file system.
-const UNSUPPORTED_OPEN_FLAGS: OFlag = OFlag::O_DIRECT | OFlag::O_TMPFILE;
+const UNSUPPORTED_OPEN_FLAGS: Lazy<OFlag> = Lazy::new(|| OFlag::O_DIRECT | OFlag::O_TMPFILE);
 
 impl crate::Error {
     /// Get the libc errno for this error.
@@ -147,6 +148,8 @@ pub struct FuseAdapter<'a> {
 
     /// A table for allocating file handles.
     handles: HandleTable,
+
+    objects: Option<ObjectTable<'a>>,
 }
 
 impl<'a> FuseAdapter<'a> {
@@ -161,7 +164,8 @@ impl<'a> FuseAdapter<'a> {
         Self {
             repo,
             inodes,
-            handles: IdTable::new(),
+            handles: HandleTable::new(),
+            objects: None,
         }
     }
 
@@ -605,9 +609,9 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     fn link(
         &mut self,
         _req: &Request,
-        ino: u64,
-        newparent: u64,
-        newname: &OsStr,
+        _ino: u64,
+        _newparent: u64,
+        _newname: &OsStr,
         reply: ReplyEntry,
     ) {
         reply.error(libc::ENOSYS);
@@ -622,7 +626,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             }
         };
 
-        if flags.intersects(UNSUPPORTED_OPEN_FLAGS) {
+        if flags.intersects(*UNSUPPORTED_OPEN_FLAGS) {
             reply.error(libc::ENOTSUP);
             return;
         }
@@ -635,12 +639,40 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             }
         };
 
-        if self.repo.is_directory(&entry_path) {
-            reply.error(libc::EISDIR);
+        if !self.repo.is_file(&entry_path) {
+            reply.error(libc::ENOTSUP);
             return;
         }
 
-        let fh = self.handles.open(flags);
+        let fh = self.handles.open(flags, HandleType::File);
         reply.opened(fh, 0);
+    }
+
+    fn read(
+        &mut self,
+        _req: &Request,
+        ino: u64,
+        fh: u64,
+        offset: i64,
+        size: u32,
+        reply: ReplyData,
+    ) {
+        let flags = match self.handles.info(fh) {
+            Some(HandleInfo {
+                handle_type: HandleType::Directory,
+                ..
+            }) => {
+                reply.error(libc::EISDIR);
+                return;
+            }
+            Some(info) => info.flags,
+            None => {
+                reply.error(libc::EBADF);
+                return;
+            }
+        };
+
+        // TODO: What if this entry was deleted from the repository?
+        let entry_path = self.inodes.path(ino).unwrap();
     }
 }

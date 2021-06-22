@@ -20,6 +20,22 @@ use nix::fcntl::OFlag;
 
 use crate::repo::common::IdTable;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HandleType {
+    File,
+    Directory,
+}
+
+/// Information about a file handle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HandleInfo {
+    /// The flags used to open the file.
+    pub flags: OFlag,
+
+    /// Whether the handle refers to a file or directory.
+    pub handle_type: HandleType,
+}
+
 /// A table for allocating file handles in a virtual file system.
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct HandleTable {
@@ -27,7 +43,7 @@ pub struct HandleTable {
     id_table: IdTable,
 
     /// A map of file handles to the flags they were opened with.
-    flags: HashMap<u64, OFlag>,
+    info: HashMap<u64, HandleInfo>,
 }
 
 impl HandleTable {
@@ -37,20 +53,21 @@ impl HandleTable {
     }
 
     /// Get a new file handle for the file opened with the given `flags`.
-    pub fn open(&mut self, flags: OFlag) -> u64 {
+    pub fn open(&mut self, flags: OFlag, handle_type: HandleType) -> u64 {
         let fh = self.id_table.next();
-        self.flags.insert(fh, flags);
-        fg
+        let info = HandleInfo { flags, handle_type };
+        self.info.insert(fh, info);
+        fh
     }
 
     /// Remove the given `fh` from the table.
     pub fn close(&mut self, fh: u64) {
         self.id_table.recycle(fh);
-        self.flags.remove(&fh);
+        self.info.remove(&fh);
     }
 
-    /// Get the flags which were used to open the file with the given `fh`.
-    pub fn flags(&self, fh: u64) -> Option<OFlag> {
-        self.flags.get(&fh).copied()
+    /// Get information about the given `fh`.
+    pub fn info(&self, fh: u64) -> Option<HandleInfo> {
+        self.info.get(&fh).copied()
     }
 }
