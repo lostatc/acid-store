@@ -77,11 +77,11 @@ impl<'a> ObjectTable<'a> {
     ///
     /// This returns a reference to an existing object in the table if one exists or inserts a new
     /// object into the table using `default` if not.
-    pub fn as_read(
-        &mut self,
+    pub fn as_read<'b>(
+        &'b mut self,
         inode: u64,
         default: impl FnOnce() -> ReadOnlyObject<'a>,
-    ) -> crate::Result<&mut ReadOnlyObject<'a>> {
+    ) -> crate::Result<&'b mut ReadOnlyObject<'a>> {
         let object = match &mut self.0 {
             Some(table @ OpenObjects::Write { .. }) => {
                 let old_table = mem::replace(table, OpenObjects::Read(HashMap::new()));

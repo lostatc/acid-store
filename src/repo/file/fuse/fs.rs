@@ -18,6 +18,7 @@
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
+use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -139,6 +140,7 @@ impl Entry<UnixSpecialType, UnixMetadata> {
     }
 }
 
+#[derive(Debug)]
 pub struct FuseAdapter<'a> {
     /// The repository which contains the virtual file system.
     repo: &'a mut FileRepo<UnixSpecialType, UnixMetadata>,
@@ -149,7 +151,8 @@ pub struct FuseAdapter<'a> {
     /// A table for allocating file handles.
     handles: HandleTable,
 
-    objects: Option<ObjectTable<'a>>,
+    /// The table of currently open objects.
+    objects: ObjectTable<'a>,
 }
 
 impl<'a> FuseAdapter<'a> {
@@ -165,7 +168,7 @@ impl<'a> FuseAdapter<'a> {
             repo,
             inodes,
             handles: HandleTable::new(),
-            objects: None,
+            objects: ObjectTable::new(),
         }
     }
 
@@ -657,6 +660,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         size: u32,
         reply: ReplyData,
     ) {
+        // TODO: Implement flag behavior.
         let flags = match self.handles.info(fh) {
             Some(HandleInfo {
                 handle_type: HandleType::Directory,
@@ -672,7 +676,43 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             }
         };
 
-        // TODO: What if this entry was deleted from the repository?
-        let entry_path = self.inodes.path(ino).unwrap();
+        // Technically, on Unix systems, a file should still be accessible via its file descriptor
+        // once it's been unlinked. Because this isn't how repositories work, we will return `EBADF`
+        // if the user tries to read from a file which has been unlinked since it was opened.
+        let entry_path = match self.inodes.path(ino) {
+            Some(path) => path.to_owned(),
+            None => {
+                self.handles.close(fh);
+                reply.error(libc::EBADF);
+                return;
+            }
+        };
+
+        let object = match self
+            .objects
+            .as_read(ino, || self.repo.open(&entry_path).unwrap())
+        {
+            Ok(object) => object,
+            Err(error) => {
+                reply.error(error.to_errno());
+                return;
+            }
+        };
+
+        if let Err(error) = object.seek(SeekFrom::Start(offset as u64)) {
+            reply.error(crate::Error::Io(error).to_errno());
+            return;
+        }
+
+        let mut buffer = Vec::with_capacity(size as usize);
+        let bytes_read = match object.read_to_end(&mut buffer) {
+            Ok(bytes_read) => bytes_read,
+            Err(error) => {
+                reply.error(crate::Error::Io(error).to_errno());
+                return;
+            }
+        };
+
+        reply.data(&buffer[..bytes_read]);
     }
 }
