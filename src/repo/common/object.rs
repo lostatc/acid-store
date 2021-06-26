@@ -20,6 +20,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::mem::replace;
+use std::sync::{Arc, RwLock, Weak};
 
 use rmp_serde::{from_read, to_vec};
 use serde::de::DeserializeOwned;
@@ -30,6 +31,7 @@ use super::chunk_store::{ReadChunk, StoreReader, StoreWriter, WriteChunk};
 use super::id_table::UniqueId;
 use super::state::RepoState;
 use super::state::{ChunkLocation, ObjectState};
+use crate::repo::common::metadata::RepoMetadata;
 
 /// A checksum used for uniquely identifying a chunk.
 pub type ChunkHash = [u8; blake3::OUT_LEN];
@@ -316,7 +318,7 @@ impl<'a> ObjectWriter<'a> {
 
         // Truncating the object may mean slicing a chunk in half. Because we can't edit chunks
         // in-place, we need to read the final chunk, slice it, and write it back.
-        let end_location = match self.object_reader().current_chunk() {
+        let end_location = match self.object_reader()?.current_chunk() {
             Some(location) => location,
             None => return Ok(()),
         };
@@ -342,7 +344,7 @@ impl<'a> ObjectWriter<'a> {
     /// Serialize the given `value` and write it to the object.
     fn serialize<T: Serialize>(&mut self, value: &T) -> crate::Result<()> {
         let serialized = to_vec(value).map_err(|_| crate::Error::Serialize)?;
-        self.object_reader().seek(SeekFrom::Start(0))?;
+        self.object_reader()?.seek(SeekFrom::Start(0))?;
         self.write_all(serialized.as_slice())?;
         self.flush()?;
         self.truncate(serialized.len() as u64)?;
@@ -369,7 +371,7 @@ impl<'a> Write for ObjectWriter<'a> {
         // Check if this is the first time `write` is being called after calling `flush`.
         if !self.object_state.needs_flushed {
             // Because we're starting a new write, we need to set the starting location.
-            self.object_state.start_location = self.object_reader().current_chunk();
+            self.object_state.start_location = self.object_reader()?.current_chunk();
 
             if let Some(location) = &self.object_state.start_location {
                 let chunk = location.chunk;
@@ -403,7 +405,7 @@ impl<'a> Write for ObjectWriter<'a> {
             return Ok(());
         }
 
-        let current_chunk = self.object_reader().current_chunk();
+        let current_chunk = self.object_reader()?.current_chunk();
 
         if let Some(location) = &current_chunk {
             // We need to make sure the data after the seek position is saved when we replace the
@@ -460,32 +462,14 @@ impl<'a> Write for ObjectWriter<'a> {
 ///
 /// [`Object`]: crate::repo::Object
 #[derive(Debug)]
-pub struct ReadOnlyObject<'a> {
-    /// The state for the object repository.
-    repo_state: &'a RepoState,
+pub struct ReadOnlyObject(Object);
 
-    /// The state for the object itself.
-    object_state: ObjectState,
-
-    /// The object handle which stores the hashes of the chunks which make up the object.
-    handle: &'a ObjectHandle,
-}
-
-impl<'a> ReadOnlyObject<'a> {
-    pub(crate) fn new(repo_state: &'a RepoState, handle: &'a ObjectHandle) -> Self {
-        Self {
-            repo_state,
-            object_state: ObjectState::new(repo_state.metadata.config.chunking.to_chunker()),
-            handle,
-        }
-    }
-
-    fn object_reader(&mut self) -> ObjectReader {
-        ObjectReader {
-            repo_state: &mut self.repo_state,
-            object_state: &mut self.object_state,
-            handle: self.handle,
-        }
+impl ReadOnlyObject {
+    pub(crate) fn new(
+        repo_state: &Arc<RwLock<RepoState>>,
+        handle: &Arc<RwLock<ObjectHandle>>,
+    ) -> Self {
+        Self(Object::new(repo_state, handle))
     }
 
     /// Return the size of the object in bytes.
@@ -494,7 +478,7 @@ impl<'a> ReadOnlyObject<'a> {
     ///
     /// [`Object::size`]: crate::repo::Object::size
     pub fn size(&self) -> u64 {
-        self.handle.size()
+        self.0.size()
     }
 
     /// Return a `ContentId` representing the contents of this object.
@@ -503,10 +487,7 @@ impl<'a> ReadOnlyObject<'a> {
     ///
     /// [`Object::content_id`]: crate::repo::Object::content_id
     pub fn content_id(&self) -> ContentId {
-        ContentId {
-            repo_id: self.repo_state.metadata.id,
-            chunks: self.handle.chunks.clone(),
-        }
+        self.0.content_id()
     }
 
     /// Return whether this object has the same contents as `other`.
@@ -515,7 +496,7 @@ impl<'a> ReadOnlyObject<'a> {
     ///
     /// [`Object::compare_contents`]: crate::repo::Object::compare_contents
     pub fn compare_contents(&self, other: impl Read) -> crate::Result<bool> {
-        self.content_id().compare_contents(other)
+        self.0.compare_contents(other)
     }
 
     /// Verify the integrity of the data in this object.
@@ -524,7 +505,7 @@ impl<'a> ReadOnlyObject<'a> {
     ///
     /// [`Object::verify`]: crate::repo::Object::verify
     pub fn verify(&mut self) -> crate::Result<bool> {
-        self.object_reader().verify()
+        self.0.verify()
     }
 
     /// Deserialize a value serialized with [`Object::serialize`].
@@ -534,22 +515,24 @@ impl<'a> ReadOnlyObject<'a> {
     /// [`Object::serialize`]: crate::repo::Object::serialize
     /// [`Object::deserialize`]: crate::repo::Object::deserialize
     pub fn deserialize<T: DeserializeOwned>(&mut self) -> crate::Result<T> {
-        self.object_reader().deserialize()
+        self.0.deserialize()
     }
 }
 
-impl<'a> Read for ReadOnlyObject<'a> {
+impl Read for ReadOnlyObject {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.object_reader().read(buf)
+        self.0.read(buf)
     }
 }
 
-impl<'a> Seek for ReadOnlyObject<'a> {
+impl Seek for ReadOnlyObject {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        self.object_reader().seek(pos)
+        self.0.seek(pos)
     }
 }
 
+// TODO: Document behavior of multiple objects, such as that unflushed changes will not be visible
+//   to to other objects.
 /// A read-write view of data in a repository.
 ///
 /// An `Object` is a view of data in a repository. It implements `Read`, `Write`, and `Seek` for
@@ -574,40 +557,68 @@ impl<'a> Seek for ReadOnlyObject<'a> {
 /// [`KeyRepo::clean`]: crate::repo::key::KeyRepo::clean
 /// [`verify`]: crate::repo::Object::verify
 #[derive(Debug)]
-pub struct Object<'a> {
+pub struct Object {
     /// The state for the object repository.
-    repo_state: &'a mut RepoState,
+    repo_state: Weak<RwLock<RepoState>>,
+
+    /// The object handle which stores the hashes of the chunks which make up the object.
+    handle: Weak<RwLock<ObjectHandle>>,
 
     /// The state for the object itself.
     object_state: ObjectState,
 
-    /// The object handle which stores the hashes of the chunks which make up the object.
-    handle: &'a mut ObjectHandle,
+    /// The ID of the repository this object is associated with.
+    repo_id: Uuid,
 }
 
-impl<'a> Object<'a> {
-    pub(crate) fn new(repo_state: &'a mut RepoState, handle: &'a mut ObjectHandle) -> Self {
-        let chunker = repo_state.metadata.config.chunking.to_chunker();
+impl Object {
+    pub(crate) fn new(
+        repo_state: &Arc<RwLock<RepoState>>,
+        handle: &Arc<RwLock<ObjectHandle>>,
+    ) -> Self {
+        let metadata = &repo_state.read().unwrap().metadata;
+        let object_state = ObjectState::new(metadata.config.chunking.to_chunker());
         Self {
-            repo_state,
-            object_state: ObjectState::new(chunker),
-            handle,
+            repo_state: Arc::downgrade(repo_state),
+            handle: Arc::downgrade(handle),
+            object_state,
+            repo_id: metadata.id,
         }
     }
 
-    fn object_reader(&mut self) -> ObjectReader {
-        ObjectReader {
-            repo_state: &self.repo_state,
+    fn object_reader(&mut self) -> crate::Result<ObjectReader> {
+        Ok(ObjectReader {
+            repo_state: &*self
+                .repo_state
+                .upgrade()
+                .ok_or(crate::Error::InvalidObject)?
+                .read()
+                .unwrap(),
             object_state: &mut self.object_state,
-            handle: self.handle,
-        }
+            handle: &*self
+                .handle
+                .upgrade()
+                .ok_or(crate::Error::InvalidObject)?
+                .read()
+                .unwrap(),
+        })
     }
 
     fn object_writer(&mut self) -> ObjectWriter {
         ObjectWriter {
-            repo_state: &mut self.repo_state,
+            repo_state: &mut *self
+                .repo_state
+                .upgrade()
+                .ok_or(crate::Error::InvalidObject)?
+                .write()
+                .unwrap(),
             object_state: &mut self.object_state,
-            handle: self.handle,
+            handle: &mut *self
+                .handle
+                .upgrade()
+                .ok_or(crate::Error::InvalidObject)?
+                .write()
+                .unwrap(),
         }
     }
 
@@ -630,7 +641,7 @@ impl<'a> Object<'a> {
     /// explicitly flush written data with `Write::flush` before calling this method.
     pub fn content_id(&self) -> ContentId {
         ContentId {
-            repo_id: self.repo_state.metadata.id,
+            repo_id: self.repo_id,
             chunks: self.handle.chunks.clone(),
         }
     }
@@ -655,11 +666,13 @@ impl<'a> Object<'a> {
     /// explicitly flush written data with `Write::flush` before calling this method.
     ///
     /// # Errors
+    /// - `Error::InvalidObject`: The repository associated with this object was dropped or the
+    /// object was removed.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn verify(&mut self) -> crate::Result<bool> {
-        self.object_reader().verify()
+        self.object_reader()?.verify()
     }
 
     /// Truncate the object to the given `length`.
@@ -669,11 +682,13 @@ impl<'a> Object<'a> {
     /// moved to the new end of the object.
     ///
     /// # Errors
+    /// - `Error::InvalidObject`: The repository associated with this object was dropped or the
+    /// object was removed.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn truncate(&mut self, length: u64) -> crate::Result<()> {
-        self.object_writer().truncate(length)
+        self.object_writer()?.truncate(length)
     }
 
     /// Serialize the given `value` and write it to the object.
@@ -684,11 +699,13 @@ impl<'a> Object<'a> {
     ///
     /// # Errors
     /// - `Error::Serialize`: The given value could not be serialized.
+    /// - `Error::InvalidObject`: The repository associated with this object was dropped or the
+    /// object was removed.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn serialize<T: Serialize>(&mut self, value: &T) -> crate::Result<()> {
-        self.object_writer().serialize(value)
+        self.object_writer()?.serialize(value)
     }
 
     /// Deserialize a value serialized with `Object::serialize`.
@@ -698,15 +715,17 @@ impl<'a> Object<'a> {
     ///
     /// # Errors
     /// - `Error::Deserialize`: The data could not be deserialized as a value of type `T`.
+    /// - `Error::InvalidObject`: The repository associated with this object was dropped or the
+    /// object was removed.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn deserialize<T: DeserializeOwned>(&mut self) -> crate::Result<T> {
-        self.object_reader().deserialize()
+        self.object_reader()?.deserialize()
     }
 }
 
-impl<'a> Read for Object<'a> {
+impl Read for Object {
     /// The `io::Error` returned by this method can be converted into an `acid_store::Error`.
     ///
     /// # Errors
@@ -714,19 +733,19 @@ impl<'a> Read for Object<'a> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.object_writer().flush()?;
-        self.object_reader().read(buf)
+        self.object_writer()?.flush()?;
+        self.object_reader()?.read(buf)
     }
 }
 
-impl<'a> Seek for Object<'a> {
+impl Seek for Object {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        self.object_writer().flush()?;
-        self.object_reader().seek(pos)
+        self.object_writer()?.flush()?;
+        self.object_reader()?.seek(pos)
     }
 }
 
-impl<'a> Write for Object<'a> {
+impl Write for Object {
     /// The `io::Error` returned by this method can be converted into an `acid_store::Error`.
     ///
     /// # Errors
@@ -734,7 +753,7 @@ impl<'a> Write for Object<'a> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.object_writer().write(buf)
+        self.object_writer()?.write(buf)
     }
 
     /// The `io::Error` returned by this method can be converted into an `acid_store::Error`.
@@ -744,6 +763,6 @@ impl<'a> Write for Object<'a> {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     fn flush(&mut self) -> io::Result<()> {
-        self.object_writer().flush()
+        self.object_writer()?.flush()
     }
 }

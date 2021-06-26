@@ -18,11 +18,12 @@ use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::mem;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock, RwLockReadGuard, TryLockError};
 
 use hex_literal::hex;
 use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
+use serde::{de::DeserializeOwned, Serialize};
 use uuid::Uuid;
 
 use crate::store::DataStore;
@@ -32,14 +33,15 @@ use super::chunk_store::{
 };
 use super::commit::Commit;
 use super::encryption::{EncryptionKey, KeySalt};
-use super::id_table::IdTable;
+use super::id_table::{IdTable, UniqueId};
 use super::key::Key;
+use super::lock::LockTable;
 use super::metadata::{Header, RepoInfo};
 use super::object::{chunk_hash, Object, ObjectHandle, ReadOnlyObject};
 use super::open_repo::OpenRepo;
 use super::packing::Packing;
 use super::savepoint::{KeyRestore, RestoreSavepoint, Savepoint};
-use super::state::{InstanceInfo, RepoState};
+use super::state::{InstanceInfo, ObjectState, RepoState};
 
 /// The block ID of the block which stores the repository metadata.
 pub(super) const METADATA_BLOCK_ID: Uuid =
@@ -55,13 +57,16 @@ pub(super) const VERSION_BLOCK_ID: Uuid =
 #[derive(Debug)]
 pub struct KeyRepo<K: Key> {
     /// The state for this repository.
-    pub(super) state: RepoState,
+    pub(super) state: Arc<RwLock<RepoState>>,
 
     /// The instance ID of this repository instance.
     pub(super) instance_id: Uuid,
 
     /// A map of object keys to their object handles for the current instance.
-    pub(super) objects: HashMap<K, ObjectHandle>,
+    pub(super) objects: HashMap<K, Arc<RwLock<ObjectHandle>>>,
+
+    /// A table of locks on object descriptors.
+    pub(super) descriptor_locks: LockTable<UniqueId>,
 
     /// A map of instance IDs to information about those instances.
     pub(super) instances: HashMap<Uuid, InstanceInfo>,
@@ -118,17 +123,22 @@ impl<K: Key> KeyRepo<K> {
     /// If another object with the same `key` already exists, it is replaced.
     pub fn insert(&mut self, key: K) -> Object {
         self.remove(&key);
+        let handle_id = self.handle_table.next();
         let handle = ObjectHandle {
-            id: self.handle_table.next(),
+            id: handle_id,
             chunks: Vec::new(),
         };
         assert!(!self.objects.contains_key(&key));
-        let handle = self.objects.entry(key).or_insert(handle);
-        Object::new(&mut self.state, handle)
+        let handle = self
+            .objects
+            .entry(key)
+            .or_insert(Arc::new(RwLock::new(handle)));
+        Object::new(&self.state, handle)
     }
 
     /// Remove the given object `handle` from the repository.
     fn remove_handle(&mut self, handle: &ObjectHandle) {
+        let state = self.state_mut();
         for chunk in &handle.chunks {
             let chunk_info = self
                 .state
@@ -137,7 +147,7 @@ impl<K: Key> KeyRepo<K> {
                 .expect("This chunk was not found in the repository.");
             chunk_info.references.remove(&handle.id);
             if chunk_info.references.is_empty() {
-                self.state.chunks.remove(chunk);
+                state.chunks.remove(chunk);
             }
         }
         self.handle_table.recycle(handle.id);
@@ -157,51 +167,23 @@ impl<K: Key> KeyRepo<K> {
         Q: Eq + Hash + ?Sized,
     {
         let handle = match self.objects.remove(key) {
-            Some(handle) => handle,
+            Some(handle) => &*handle.read().unwrap(),
             None => return false,
         };
-        self.remove_handle(&handle);
+        self.remove_handle(handle);
         true
     }
 
-    /// Return a `ReadOnlyObject` for reading the object with the given `key`.
+    /// Return an object for reading and writing the object with the given `key`.
     ///
     /// This returns `None` if there is no object with the given `key` in the repository.
-    ///
-    /// The returned object provides read-only access to the data. To get read-write access, use
-    /// [`object_mut`].
-    ///
-    /// [`object_mut`]: crate::repo::key::KeyRepo::object_mut
-    pub fn object<Q>(&self, key: &Q) -> Option<ReadOnlyObject>
+    pub fn object<Q>(&mut self, key: &Q) -> Option<Object>
     where
         K: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        let handle = match self.objects.get(key) {
-            Some(handle) => handle,
-            None => return None,
-        };
-        Some(ReadOnlyObject::new(&self.state, handle))
-    }
-
-    /// Return an `Object` for reading and writing the object with the given `key`.
-    ///
-    /// This returns `None` if there is no object with the given `key` in the repository.
-    ///
-    /// The returned object provides read-write access to the data. To get read-only access, use
-    /// [`object`].
-    ///
-    /// [`object`]: crate::repo::key::KeyRepo::object
-    pub fn object_mut<Q>(&mut self, key: &Q) -> Option<Object>
-    where
-        K: Borrow<Q>,
-        Q: Eq + Hash + ?Sized,
-    {
-        let handle = match self.objects.get_mut(key) {
-            Some(handle) => handle,
-            None => return None,
-        };
-        Some(Object::new(&mut self.state, handle))
+        let handle = self.objects.get(key)?;
+        Some(Object::new(&self.sate, handle))
     }
 
     /// Return an iterator over all the keys of objects in this repository.
@@ -213,7 +195,7 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// If another object already exists at `dest`, it is replaced.
     ///
-    /// This returns `true` if the object was copied or `false` if there was no object at `source`.
+    /// This returns `true` if the object was copied or `false` if there was no object at source.
     ///
     /// This is a cheap operation which does not require copying the bytes in the object.
     pub fn copy<Q>(&mut self, source: &Q, dest: K) -> bool
@@ -222,7 +204,7 @@ impl<K: Key> KeyRepo<K> {
         Q: Eq + Hash + ?Sized,
     {
         let source_chunks = match self.objects.get(source) {
-            Some(handle) => handle.chunks.clone(),
+            Some(handle) => handle.read().unwrap().chunks.clone(),
             None => return false,
         };
 
@@ -237,36 +219,49 @@ impl<K: Key> KeyRepo<K> {
         for chunk in &dest_handle.chunks {
             let chunk_info = self
                 .state
+                .write()
+                .unwrap()
                 .chunks
                 .get_mut(chunk)
                 .expect("This chunk was not found in the repository.");
             chunk_info.references.insert(dest_handle.id);
         }
 
-        self.objects.insert(dest, dest_handle);
+        self.objects
+            .insert(dest, Arc::new(RwLock::new(dest_handle)));
 
         true
     }
 
+    /// Return a reference to the repository state.
+    fn state(&self) -> &RepoState {
+        &*self.state.read().unwrap()
+    }
+
+    /// Return a mutable reference to the repository state.
+    fn state_mut(&self) -> &mut RepoState {
+        &mut *self.state.write().unwrap()
+    }
+
     /// Return a list of blocks in the data store excluding those used to store metadata.
-    fn list_data_blocks(&self) -> crate::Result<Vec<Uuid>> {
-        let all_blocks = self
-            .state
+    fn list_data_blocks(&self) -> Vec<Uuid> {
+        let state = self.state();
+        let all_blocks = state
             .store
             .lock()
             .unwrap()
             .list_blocks()
             .map_err(crate::Error::Store)?;
 
-        Ok(all_blocks
+        all_blocks
             .iter()
             .copied()
             .filter(|id| {
                 *id != METADATA_BLOCK_ID
                     && *id != VERSION_BLOCK_ID
-                    && *id != self.state.metadata.header_id
+                    && *id != state.metadata.header_id
             })
-            .collect())
+            .collect()
     }
 
     /// Write the map of objects for the current instance to the data store.
@@ -276,7 +271,7 @@ impl<K: Key> KeyRepo<K> {
             .get_mut(&self.instance_id)
             .expect("There is no instance with the given ID.")
             .objects;
-        let mut object = Object::new(&mut self.state, handle);
+        let mut object = Object::new(&self.state, handle);
         object.serialize(&self.objects)
     }
 
@@ -286,11 +281,13 @@ impl<K: Key> KeyRepo<K> {
     /// `write_object_map`.
     ///
     /// This does not commit or roll back changes.
-    pub(super) fn read_object_map(&mut self) -> crate::Result<HashMap<K, ObjectHandle>> {
+    pub(super) fn read_object_map(
+        &mut self,
+    ) -> crate::Result<HashMap<K, Arc<RwLock<ObjectHandle>>>> {
         match &mut self.instances.get_mut(&self.instance_id) {
             Some(instance_info) => {
-                let mut instance_object = Object::new(&mut self.state, &mut instance_info.objects);
-                instance_object.deserialize()
+                let mut object = Object::new(&self.state, &instance_info.objects);
+                object.deserialize()
             }
             None => {
                 // If the current instance is not in the instance map, then this repository has not
@@ -311,18 +308,17 @@ impl<K: Key> KeyRepo<K> {
         let new_objects = if is_new_instance {
             // Create the object handle for the object which will store the object map for the new
             // instance.
-            let mut handle = ObjectHandle {
+            let mut handle = Arc::new(RwLock::new(ObjectHandle {
                 id: self.handle_table.next(),
                 chunks: Vec::new(),
-            };
+            }));
 
             // Because this is a new instance, we return an empty object map.
-            let objects = HashMap::<R::Key, ObjectHandle>::new();
+            let objects = HashMap::<R::Key, Arc<RwLock<ObjectHandle>>>::new();
 
             // Write an empty object map to the object.
-            let mut object = Object::new(&mut self.state, &mut handle);
+            let mut object = Object::new(&self.state, &handle);
             object.serialize(&objects)?;
-            drop(object);
 
             // Insert the instance info into the instance map.
             let instance_info = InstanceInfo {
@@ -340,7 +336,7 @@ impl<K: Key> KeyRepo<K> {
             }
 
             // Deserialize the object map for this instance.
-            let mut object = Object::new(&mut self.state, &mut instance_info.objects);
+            let mut object = Object::new(&self.state, &instance_info.objects);
             object.deserialize()?
         };
 
@@ -348,6 +344,7 @@ impl<K: Key> KeyRepo<K> {
             state: self.state,
             instance_id,
             objects: new_objects,
+            descriptor_locks: LockTable::new(),
             instances: self.instances,
             handle_table: self.handle_table,
             transaction_id: self.transaction_id,
@@ -362,23 +359,24 @@ impl<K: Key> KeyRepo<K> {
 
     /// Atomically encode and write the given serialized `header` to the data store.
     fn write_serialized_header(&mut self, serialized_header: &[u8]) -> crate::Result<()> {
+        let state = self.state_mut();
         // Encode the serialized header.
-        let encoded_header = self.state.encode_data(serialized_header)?;
+        let encoded_header = state.encode_data(serialized_header)?;
 
         // Write the new header to a new block.
         let header_id = Uuid::new_v4();
-        self.state
+        state
             .store
             .lock()
             .unwrap()
             .write_block(header_id, encoded_header.as_slice())
             .map_err(crate::Error::Store)?;
-        self.state.metadata.header_id = header_id;
+        state.metadata.header_id = header_id;
 
         // Atomically write the new repository metadata containing the new header ID.
         let serialized_metadata =
-            to_vec(&self.state.metadata).expect("Could not serialize repository metadata.");
-        self.state
+            to_vec(&state.metadata).expect("Could not serialize repository metadata.");
+        state
             .store
             .lock()
             .unwrap()
@@ -388,9 +386,10 @@ impl<K: Key> KeyRepo<K> {
 
     /// Return a cloned `Header` representing the current state of the repository.
     fn clone_header(&self) -> Header {
+        let state = self.state();
         Header {
-            chunks: self.state.chunks.clone(),
-            packs: self.state.packs.clone(),
+            chunks: state.chunks.clone(),
+            packs: state.packs.clone(),
             instances: self.instances.clone(),
             handle_table: self.handle_table.clone(),
         }
@@ -400,12 +399,13 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// The returned data is not encoded.
     fn serialize_header(&mut self) -> Vec<u8> {
+        let state = self.state_mut();
         // Temporarily replace the values in the repository which need to be serialized so we can
         // put them into the `Header`. This avoids the need to clone them. We'll put them back
         // later.
         let header = Header {
-            chunks: mem::replace(&mut self.state.chunks, HashMap::new()),
-            packs: mem::replace(&mut self.state.packs, HashMap::new()),
+            chunks: mem::replace(&mut state.chunks, HashMap::new()),
+            packs: mem::replace(&mut state.packs, HashMap::new()),
             instances: mem::replace(&mut self.instances, HashMap::new()),
             handle_table: mem::replace(&mut self.handle_table, IdTable::new()),
         };
@@ -421,8 +421,8 @@ impl<K: Key> KeyRepo<K> {
             instances,
             handle_table,
         } = header;
-        self.state.chunks = chunks;
-        self.state.packs = packs;
+        state.chunks = chunks;
+        state.packs = packs;
         self.instances = instances;
         self.handle_table = handle_table;
 
@@ -431,8 +431,9 @@ impl<K: Key> KeyRepo<K> {
 
     /// Replace the repository header with `header` and return the old one.
     fn replace_header(&mut self, header: Header) -> Header {
-        let old_chunks = mem::replace(&mut self.state.chunks, header.chunks);
-        let old_packs = mem::replace(&mut self.state.packs, header.packs);
+        let state = self.state_mut();
+        let old_chunks = mem::replace(&mut state.chunks, header.chunks);
+        let old_packs = mem::replace(&mut state.packs, header.packs);
         let old_instances = mem::replace(&mut self.instances, header.instances);
         let old_handle_table = mem::replace(&mut self.handle_table, header.handle_table);
         Header {
@@ -481,12 +482,14 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// [`Object::verify`]: crate::repo::Object::verify
     pub fn verify(&self) -> crate::Result<HashSet<&K>> {
+        let state = self.state();
+
         let mut corrupt_chunks = HashSet::new();
-        let expected_chunks = self.state.chunks.keys().copied().collect::<Vec<_>>();
+        let expected_chunks = state.chunks.keys().copied().collect::<Vec<_>>();
 
         // Get the set of hashes of chunks which are corrupt.
         let mut store_state = StoreState::new();
-        let mut store_reader = StoreReader::new(&self.state, &mut store_state);
+        let mut store_reader = StoreReader::new(state, &mut store_state);
         for chunk in expected_chunks {
             match store_reader.read_chunk(chunk) {
                 Ok(data) => {
@@ -538,7 +541,7 @@ impl<K: Key> KeyRepo<K> {
             .map(|(_, handle)| handle)
             .collect::<Vec<_>>();
         for handle in handles {
-            self.remove_handle(&handle);
+            self.remove_handle(&*handle.read().unwrap());
         }
     }
 
@@ -552,24 +555,25 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// [`Commit::commit`]: crate::repo::Commit::commit
     pub fn change_password(&mut self, new_password: &[u8]) {
+        let state = self.state_mut();
+
         let salt = KeySalt::generate();
         let user_key = EncryptionKey::derive(
             new_password,
             &salt,
-            self.state.metadata.config.encryption.key_size(),
-            self.state.metadata.config.memory_limit,
-            self.state.metadata.config.operations_limit,
+            state.metadata.config.encryption.key_size(),
+            state.metadata.config.memory_limit,
+            state.metadata.config.operations_limit,
         );
 
-        let encrypted_master_key = self
-            .state
+        let encrypted_master_key = state
             .metadata
             .config
             .encryption
-            .encrypt(self.state.master_key.expose_secret(), &user_key);
+            .encrypt(state.master_key.expose_secret(), &user_key);
 
-        self.state.metadata.salt = salt;
-        self.state.metadata.master_key = encrypted_master_key;
+        state.metadata.salt = salt;
+        state.metadata.master_key = encrypted_master_key;
     }
 
     /// Return this repository's current instance ID.
@@ -579,7 +583,7 @@ impl<K: Key> KeyRepo<K> {
 
     /// Return information about the repository.
     pub fn info(&self) -> RepoInfo {
-        self.state.metadata.to_info()
+        self.state().metadata.to_info()
     }
 }
 
@@ -658,16 +662,16 @@ impl<K: Key> Commit for KeyRepo<K> {
     }
 
     fn rollback(&mut self) -> crate::Result<()> {
+        let state = self.state();
         // Read the header from the previous commit from the data store.
-        let encoded_header = self
-            .state
+        let encoded_header = state
             .store
             .lock()
             .unwrap()
-            .read_block(self.state.metadata.header_id)
+            .read_block(state.metadata.header_id)
             .map_err(crate::Error::Store)?
             .ok_or(crate::Error::Corrupt)?;
-        let serialized_header = self.state.decode_data(encoded_header.as_slice())?;
+        let serialized_header = state.decode_data(encoded_header.as_slice())?;
         let header: Header =
             from_read(serialized_header.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
@@ -676,16 +680,17 @@ impl<K: Key> Commit for KeyRepo<K> {
     }
 
     fn clean(&mut self) -> crate::Result<()> {
+        let state = self.state_mut();
+
         // Read the header from the previous commit.
-        let encoded_header = self
-            .state
+        let encoded_header = state
             .store
             .lock()
             .unwrap()
-            .read_block(self.state.metadata.header_id)
+            .read_block(state.metadata.header_id)
             .map_err(crate::Error::Store)?
             .ok_or(crate::Error::Corrupt)?;
-        let serialized_header = self.state.decode_data(encoded_header.as_slice())?;
+        let serialized_header = state.decode_data(encoded_header.as_slice())?;
         let previous_header: Header =
             from_read(serialized_header.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
@@ -694,8 +699,7 @@ impl<K: Key> Commit for KeyRepo<K> {
         // blocks which were referenced after the previous commit because that would make it
         // impossible to roll back changes, and this method may be called before the repository is
         // committed.
-        let mut referenced_blocks = self
-            .state
+        let mut referenced_blocks = state
             .chunks
             .values()
             .map(|info| info.block_id)
@@ -704,13 +708,13 @@ impl<K: Key> Commit for KeyRepo<K> {
         referenced_blocks.extend(previous_referenced_blocks);
 
         // Remove all blocks from the data store which are unreferenced.
-        match &self.state.metadata.config.packing {
+        match &state.metadata.config.packing {
             Packing::None => {
                 // When packing is disabled, we can just remove the unreferenced blocks from the
                 // data store directly.
                 let block_ids = self.list_data_blocks()?;
 
-                let mut store = self.state.store.lock().unwrap();
+                let mut store = state.store.lock().unwrap();
                 for block_id in block_ids {
                     if !referenced_blocks.contains(&block_id) {
                         store.remove_block(block_id).map_err(crate::Error::Store)?;
@@ -722,7 +726,7 @@ impl<K: Key> Commit for KeyRepo<K> {
                 // blocks.
 
                 // Get an iterator of block IDs and the list of packs they're contained in.
-                let blocks_to_packs = self.state.packs.iter().chain(previous_header.packs.iter());
+                let blocks_to_packs = state.packs.iter().chain(previous_header.packs.iter());
 
                 // Get a map of pack IDs to the set of blocks contained in them.
                 let mut packs_to_blocks = HashMap::new();
@@ -766,7 +770,7 @@ impl<K: Key> Commit for KeyRepo<K> {
                 // to a new one.
                 {
                     let mut store_state = StoreState::new();
-                    let mut store_writer = StoreWriter::new(&mut self.state, &mut store_state);
+                    let mut store_writer = StoreWriter::new(state, &mut store_state);
                     for block_id in blocks_to_repack {
                         let block_data = store_writer.read_block(block_id)?;
                         store_writer.write_block(block_id, block_data.as_slice())?;
@@ -776,7 +780,7 @@ impl<K: Key> Commit for KeyRepo<K> {
                 // Once all the referenced blocks have been written to new packs, remove the old
                 // packs from the data store.
                 {
-                    let mut store = self.state.store.lock().unwrap();
+                    let mut store = state.store.lock().unwrap();
                     for pack_id in packs_to_remove {
                         store.remove_block(pack_id).map_err(crate::Error::Store)?;
                     }
@@ -791,7 +795,7 @@ impl<K: Key> Commit for KeyRepo<K> {
                 // nonexistent blocks from the pack map, but if this method returns early or panics
                 // before this step can complete, the repository will not be in an inconsistent
                 // state.
-                self.state
+                state
                     .packs
                     .retain(|block_id, _| referenced_blocks.contains(block_id));
 
@@ -804,14 +808,14 @@ impl<K: Key> Commit for KeyRepo<K> {
                     // Temporarily move the pack map into the previous header just so that we can
                     // serialize it. Once we're done, move it back. This avoids needing the clone
                     // the pack map.
-                    previous_header.packs = mem::replace(&mut self.state.packs, HashMap::new());
+                    previous_header.packs = mem::replace(&mut state.packs, HashMap::new());
                     let serialized_header = to_vec(&previous_header)
                         .expect("Could not serialize the repository header.");
-                    mem::swap(&mut previous_header.packs, &mut self.state.packs);
+                    mem::swap(&mut previous_header.packs, &mut state.packs);
                     drop(previous_header);
 
                     // Encode the serialized header and write it to the data store.
-                    let encoded_header = self.state.encode_data(serialized_header.as_slice())?;
+                    let encoded_header = state.encode_data(serialized_header.as_slice())?;
                     self.write_serialized_header(encoded_header.as_slice())?;
                 }
             }

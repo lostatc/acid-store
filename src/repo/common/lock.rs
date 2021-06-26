@@ -22,15 +22,15 @@ use weak_table::WeakHashSet;
 ///
 /// The lock is released when this value is dropped.
 #[derive(Debug)]
-pub struct Lock(Arc<Uuid>);
+pub struct Lock<T>(Arc<T>);
 
-/// A value which keeps track of locks on resources identified by UUIDs.
+/// A value which keeps track of locks on resources identified by generic IDs.
 ///
 /// This locks resources between threads in a process using weak references.
 #[derive(Debug)]
-pub struct LockTable(WeakHashSet<Weak<Uuid>>);
+pub struct LockTable<T>(WeakHashSet<Weak<T>>);
 
-impl LockTable {
+impl<T> LockTable<T> {
     /// Create a new empty `LockTable`.
     pub fn new() -> Self {
         Self(WeakHashSet::new())
@@ -39,7 +39,7 @@ impl LockTable {
     /// Attempt to acquire a lock on the given `id`.
     ///
     /// This returns a new lock or `None` if the resource is already locked.
-    pub fn acquire_lock(&mut self, id: Uuid) -> Option<Lock> {
+    pub fn acquire_lock(&mut self, id: T) -> Option<Lock<T>> {
         if self.0.contains(&id) {
             None
         } else {

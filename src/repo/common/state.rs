@@ -16,7 +16,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Formatter};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, RwLock};
 
 use cdchunking::ChunkerImpl;
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,7 @@ use super::id_table::UniqueId;
 use super::lock::Lock;
 use super::metadata::RepoMetadata;
 use super::object::{Chunk, ObjectHandle};
+use crate::repo::common::descriptor::Descriptor;
 
 /// Information about a chunk in a repository.
 #[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
@@ -99,7 +100,7 @@ pub struct InstanceInfo {
     ///
     /// This object handle contains a serialized map of object IDs to object handles for that
     /// instance.
-    pub objects: ObjectHandle,
+    pub objects: Arc<RwLock<ObjectHandle>>,
 }
 
 /// The state associated with a `KeyRepo`.
@@ -121,7 +122,7 @@ pub struct RepoState {
     pub master_key: EncryptionKey,
 
     /// The lock on the repository.
-    pub lock: Lock,
+    pub lock: Lock<Uuid>,
 }
 
 /// The location of a chunk in a stream of bytes.

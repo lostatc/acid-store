@@ -34,6 +34,7 @@ mod chunking;
 mod commit;
 mod compression;
 mod config;
+mod descriptor;
 mod encryption;
 mod id_table;
 mod key;
