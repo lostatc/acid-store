@@ -19,9 +19,8 @@ use std::sync::{Arc, RwLock, Weak};
 
 use uuid::Uuid;
 
+use super::handle::ObjectHandle;
 use super::metadata::Header;
-use super::object::ObjectHandle;
-use crate::repo::common::state::ObjectInfo;
 
 /// A target for rolling back changes in a repository.
 ///

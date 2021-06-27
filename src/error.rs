@@ -62,6 +62,10 @@ pub enum Error {
     #[error("This object is no longer valid.")]
     InvalidObject,
 
+    /// A transaction is currently in progress for this object.
+    #[error("A transaction is currently in progress for this object.")]
+    TransactionInProgress,
+
     /// This file type is not supported.
     #[error("This file type is not supported.")]
     FileType,

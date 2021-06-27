@@ -22,8 +22,8 @@ use uuid::Uuid;
 
 use super::config::RepoConfig;
 use super::encryption::KeySalt;
+use super::handle::Chunk;
 use super::id_table::IdTable;
-use super::object::Chunk;
 use super::repository::METADATA_BLOCK_ID;
 use super::state::{ChunkInfo, InstanceInfo, PackIndex};
 use crate::store::{DataStore, OpenStore};

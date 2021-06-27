@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
+use std::hash::Hash;
 use std::sync::{Arc, Weak};
-use uuid::Uuid;
+
 use weak_table::WeakHashSet;
 
 /// A lock acquired on a resource.
@@ -28,9 +29,9 @@ pub struct Lock<T>(Arc<T>);
 ///
 /// This locks resources between threads in a process using weak references.
 #[derive(Debug)]
-pub struct LockTable<T>(WeakHashSet<Weak<T>>);
+pub struct LockTable<T: Eq + Hash>(WeakHashSet<Weak<T>>);
 
-impl<T> LockTable<T> {
+impl<T: Eq + Hash> LockTable<T> {
     /// Create a new empty `LockTable`.
     pub fn new() -> Self {
         Self(WeakHashSet::new())

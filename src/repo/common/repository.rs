@@ -18,12 +18,11 @@ use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::mem;
-use std::sync::{Arc, RwLock, RwLockReadGuard, TryLockError};
+use std::sync::{Arc, RwLock};
 
 use hex_literal::hex;
 use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
-use serde::{de::DeserializeOwned, Serialize};
 use uuid::Uuid;
 
 use crate::store::DataStore;
@@ -33,15 +32,15 @@ use super::chunk_store::{
 };
 use super::commit::Commit;
 use super::encryption::{EncryptionKey, KeySalt};
-use super::id_table::{IdTable, UniqueId};
+use super::handle::{chunk_hash, ObjectHandle};
+use super::id_table::IdTable;
 use super::key::Key;
-use super::lock::LockTable;
 use super::metadata::{Header, RepoInfo};
-use super::object::{chunk_hash, Object, ObjectHandle, ReadOnlyObject};
+use super::object::Object;
 use super::open_repo::OpenRepo;
 use super::packing::Packing;
 use super::savepoint::{KeyRestore, RestoreSavepoint, Savepoint};
-use super::state::{InstanceInfo, ObjectState, RepoState};
+use super::state::{InstanceInfo, RepoState};
 
 /// The block ID of the block which stores the repository metadata.
 pub(super) const METADATA_BLOCK_ID: Uuid =
@@ -64,9 +63,6 @@ pub struct KeyRepo<K: Key> {
 
     /// A map of object keys to their object handles for the current instance.
     pub(super) objects: HashMap<K, Arc<RwLock<ObjectHandle>>>,
-
-    /// A table of locks on object descriptors.
-    pub(super) descriptor_locks: LockTable<UniqueId>,
 
     /// A map of instance IDs to information about those instances.
     pub(super) instances: HashMap<Uuid, InstanceInfo>,
@@ -140,8 +136,7 @@ impl<K: Key> KeyRepo<K> {
     fn remove_handle(&mut self, handle: &ObjectHandle) {
         let state = self.state_mut();
         for chunk in &handle.chunks {
-            let chunk_info = self
-                .state
+            let chunk_info = state
                 .chunks
                 .get_mut(chunk)
                 .expect("This chunk was not found in the repository.");
@@ -183,7 +178,7 @@ impl<K: Key> KeyRepo<K> {
         Q: Eq + Hash + ?Sized,
     {
         let handle = self.objects.get(key)?;
-        Some(Object::new(&self.sate, handle))
+        Some(Object::new(&self.state, handle))
     }
 
     /// Return an iterator over all the keys of objects in this repository.
@@ -244,7 +239,7 @@ impl<K: Key> KeyRepo<K> {
     }
 
     /// Return a list of blocks in the data store excluding those used to store metadata.
-    fn list_data_blocks(&self) -> Vec<Uuid> {
+    fn list_data_blocks(&self) -> crate::Result<Vec<Uuid>> {
         let state = self.state();
         let all_blocks = state
             .store
@@ -253,7 +248,7 @@ impl<K: Key> KeyRepo<K> {
             .list_blocks()
             .map_err(crate::Error::Store)?;
 
-        all_blocks
+        Ok(all_blocks
             .iter()
             .copied()
             .filter(|id| {
@@ -261,7 +256,7 @@ impl<K: Key> KeyRepo<K> {
                     && *id != VERSION_BLOCK_ID
                     && *id != state.metadata.header_id
             })
-            .collect()
+            .collect())
     }
 
     /// Write the map of objects for the current instance to the data store.
@@ -344,7 +339,6 @@ impl<K: Key> KeyRepo<K> {
             state: self.state,
             instance_id,
             objects: new_objects,
-            descriptor_locks: LockTable::new(),
             instances: self.instances,
             handle_table: self.handle_table,
             transaction_id: self.transaction_id,

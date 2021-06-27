@@ -15,7 +15,7 @@
  */
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use hex_literal::hex;
 use once_cell::sync::Lazy;
@@ -51,7 +51,7 @@ pub const DEFAULT_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92
 const VERSION_ID: Uuid = Uuid::from_bytes(hex!("25df72b4 8368 4409 910b fef908e1cf90"));
 
 /// A table of locks on repositories.
-static REPO_LOCKS: Lazy<Mutex<LockTable>> = Lazy::new(|| Mutex::new(LockTable::new()));
+static REPO_LOCKS: Lazy<Mutex<LockTable<Uuid>>> = Lazy::new(|| Mutex::new(LockTable::new()));
 
 /// The mode to use to open a repository.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -334,14 +334,15 @@ impl OpenOptions {
             handle_table,
         } = header;
 
-        let state = RepoState {
+        let state = Arc::new(RwLock::new(RepoState {
             store: Mutex::new(Box::new(store)),
             metadata,
             chunks,
             packs,
+            transactions: LockTable::new(),
             master_key,
             lock,
-        };
+        }));
 
         let repo: KeyRepo<R::Key> = KeyRepo {
             state,
@@ -460,14 +461,15 @@ impl OpenOptions {
             handle_table,
         } = header;
 
-        let state = RepoState {
+        let state = Arc::new(RwLock::new(RepoState {
             store: Mutex::new(Box::new(store)),
             metadata,
             chunks,
             packs,
+            transactions: LockTable::new(),
             master_key,
             lock,
-        };
+        }));
 
         let repo: KeyRepo<R::Key> = KeyRepo {
             state,

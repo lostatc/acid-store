@@ -19,8 +19,8 @@ use std::collections::HashSet;
 
 use uuid::Uuid;
 
+use super::handle::{chunk_hash, Chunk};
 use super::id_table::UniqueId;
-use super::object::{chunk_hash, Chunk};
 use super::packing::Packing;
 use super::state::{ChunkInfo, Pack, PackIndex, RepoState};
 

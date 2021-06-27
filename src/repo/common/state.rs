@@ -27,11 +27,11 @@ use crate::store::DataStore;
 use super::chunk_store::StoreState;
 use super::chunking::IncrementalChunker;
 use super::encryption::EncryptionKey;
+use super::handle::{Chunk, ObjectHandle};
 use super::id_table::UniqueId;
 use super::lock::Lock;
+use super::lock::LockTable;
 use super::metadata::RepoMetadata;
-use super::object::{Chunk, ObjectHandle};
-use crate::repo::common::descriptor::Descriptor;
 
 /// Information about a chunk in a repository.
 #[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
@@ -118,6 +118,9 @@ pub struct RepoState {
     /// A map of block IDs to their locations in packs.
     pub packs: HashMap<Uuid, Vec<PackIndex>>,
 
+    /// A table used to track current transactions for each object.
+    pub transactions: LockTable<UniqueId>,
+
     /// The master encryption key for the repository.
     pub master_key: EncryptionKey,
 
@@ -175,8 +178,8 @@ pub struct ObjectState {
     /// The contents of the chunk which was most recently read from.
     pub read_buffer: Vec<u8>,
 
-    /// Whether unflushed data has been written to the object.
-    pub needs_flushed: bool,
+    /// A lock representing the current transaction if there is one.
+    pub transaction_lock: Option<Lock<UniqueId>>,
 
     /// The state for reading and writing blocks to the data store.
     pub store_state: StoreState,
@@ -192,7 +195,7 @@ impl ObjectState {
             position: 0,
             buffered_chunk: None,
             read_buffer: Vec::new(),
-            needs_flushed: false,
+            transaction_lock: None,
             store_state: StoreState::new(),
         }
     }
