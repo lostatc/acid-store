@@ -28,8 +28,7 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 use crate::repo::{
-    key::KeyRepo, state::StateRepo, Commit, Object, OpenRepo, ReadOnlyObject, RepoInfo,
-    RestoreSavepoint, Savepoint,
+    key::KeyRepo, state::StateRepo, Commit, Object, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint,
 };
 
 use super::entry::{Entry, EntryHandle, EntryType, FileType};
@@ -162,7 +161,7 @@ where
         }
 
         let entry_id = self.0.create();
-        let mut object = self.0.object_mut(entry_id).unwrap();
+        let mut object = self.0.object(entry_id).unwrap();
         let result = object.serialize(entry);
         drop(object);
         if let Err(error) = result {
@@ -330,53 +329,25 @@ where
             .state()
             .get(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
-        let mut object = self.0.object_mut(entry_handle.entry).unwrap();
+        let mut object = self.0.object(entry_handle.entry).unwrap();
         let mut entry: Entry<S, M> = object.deserialize()?;
         entry.metadata = metadata;
         object.serialize(&entry)
     }
 
-    /// Return a `ReadOnlyObject` for reading the contents of the file at `path`.
-    ///
-    /// The returned object provides read-only access to the file. To get read-write access, use
-    /// [`open_mut`].
-    ///
-    /// # Errors
-    /// - `Error::NotFound`: There is no entry with the given `path`.
-    /// - `Error::NotFile`: The entry does not represent a regular file.
-    ///
-    /// [`open_mut`]: crate::repo::file::FileRepo::open_mut
-    pub fn open(&self, path: impl AsRef<RelativePath>) -> crate::Result<ReadOnlyObject> {
-        let entry_handle = self
-            .0
-            .state()
-            .get(path.as_ref())
-            .ok_or(crate::Error::NotFound)?;
-        if let EntryType::File(object_id) = &entry_handle.entry_type {
-            Ok(self.0.object(*object_id).unwrap())
-        } else {
-            Err(crate::Error::NotFile)
-        }
-    }
-
     /// Return an `Object` for reading and writing the contents of the file at `path`.
     ///
-    /// The returned object provides read-write access to the file. To get read-only access, use
-    /// [`open`].
-    ///
     /// # Errors
     /// - `Error::NotFound`: There is no entry with the given `path`.
     /// - `Error::NotFile`: The entry does not represent a regular file.
-    ///
-    /// [`open`]: crate::repo::file::FileRepo::open
-    pub fn open_mut(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<Object> {
+    pub fn open(&self, path: impl AsRef<RelativePath>) -> crate::Result<Object> {
         let entry_handle = *self
             .0
             .state()
             .get(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
         if let EntryType::File(object_id) = entry_handle.entry_type {
-            Ok(self.0.object_mut(object_id).unwrap())
+            Ok(self.0.object(object_id).unwrap())
         } else {
             Err(crate::Error::NotFile)
         }
@@ -591,7 +562,7 @@ where
         // Write the contents of the file entry if it's a file.
         let entry_handle = self.0.state().get(dest.as_ref()).unwrap();
         if let EntryType::File(object_id) = entry_handle.entry_type {
-            let mut object = self.0.object_mut(object_id).unwrap();
+            let mut object = self.0.object(object_id).unwrap();
             let mut file = File::open(&source)?;
             copy(&mut file, &mut object)?;
             object.flush()?;

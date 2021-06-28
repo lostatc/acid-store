@@ -15,6 +15,7 @@
  */
 
 use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
 use std::io::{Read, Write};
 
 use hex_literal::hex;
@@ -105,7 +106,7 @@ impl ContentRepo {
             self.0.state_mut().stage = Some(self.0.create());
         }
         let stage_object_id = self.0.state().stage.unwrap();
-        let mut stage_object = self.0.object_mut(stage_object_id).unwrap();
+        let mut stage_object = self.0.object(stage_object_id).unwrap();
 
         // This object may have data in it from a past failed write.
         stage_object.truncate(0)?;
@@ -156,7 +157,7 @@ impl ContentRepo {
     /// This returns `None` if there is no data with the given `hash` in the repository.
     pub fn object(&self, hash: &[u8]) -> Option<ReadOnlyObject> {
         let object_id = *self.0.state().table.get(hash)?;
-        Some(self.0.object(object_id).unwrap())
+        Some(self.0.object(object_id).unwrap().try_into().unwrap())
     }
 
     /// Return an iterator of hashes of all the objects in this repository.

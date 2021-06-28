@@ -16,7 +16,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Formatter};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Mutex;
 
 use cdchunking::ChunkerImpl;
 use serde::{Deserialize, Serialize};
@@ -100,7 +100,7 @@ pub struct InstanceInfo {
     ///
     /// This object handle contains a serialized map of object IDs to object handles for that
     /// instance.
-    pub objects: Arc<RwLock<ObjectHandle>>,
+    pub objects: ObjectHandle,
 }
 
 /// The state associated with a `KeyRepo`.

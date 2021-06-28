@@ -42,7 +42,7 @@ mod key;
 mod lock;
 mod metadata;
 mod object;
-mod object_io;
+mod object_store;
 mod open_options;
 mod open_repo;
 mod packing;

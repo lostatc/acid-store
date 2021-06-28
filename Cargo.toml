@@ -62,7 +62,7 @@ rand = { version = "0.7.2", optional = true }
 secrecy = "0.7.0"
 
 # Serialization
-serde = { version = "1.0.103", features = ["derive"] }
+serde = { version = "1.0.103", features = ["derive", "rc"] }
 rmp = "0.8.8"
 rmp-serde = "0.14.0"
 

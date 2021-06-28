@@ -59,15 +59,6 @@ impl Version {
     pub fn size(&self) -> u64 {
         self.content_id.size()
     }
-
-    /// Return whether this version has the same contents as `other`.
-    ///
-    /// See [`ContentId::compare_contents`] for details.
-    ///
-    /// [`ContentId::compare_contents`]: crate::repo::ContentId::compare_contents
-    pub fn compare_contents(&self, other: impl Read) -> crate::Result<bool> {
-        self.content_id.compare_contents(other)
-    }
 }
 
 /// Information with a version.

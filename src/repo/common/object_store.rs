@@ -17,12 +17,110 @@
 use std::cmp::min;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::mem;
-use std::sync::{RwLock, Weak};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
+
+use rmp_serde::{from_read, to_vec};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 use super::chunk_store::{ReadChunk, StoreReader, StoreWriter, WriteChunk};
 use super::handle::{chunk_hash, ContentId, ObjectHandle};
 use super::state::{ChunkLocation, ObjectState, RepoState};
 
+pub struct ObjectStore {
+    repo_state: Arc<RwLock<RepoState>>,
+    handle: Arc<RwLock<ObjectHandle>>,
+}
+
+impl ObjectStore {
+    pub fn new(
+        repo_state: &Weak<RwLock<RepoState>>,
+        handle: &Weak<RwLock<ObjectHandle>>,
+    ) -> crate::Result<Self> {
+        Ok(Self {
+            repo_state: repo_state.upgrade().ok_or(crate::Error::InvalidObject)?,
+            handle: handle.upgrade().ok_or(crate::Error::InvalidObject)?,
+        })
+    }
+
+    pub fn info_guard<'a>(&'a self, object_state: &'a ObjectState) -> ObjectInfoGuard<'a> {
+        ObjectInfoGuard {
+            repo_state: self.repo_state.read().unwrap(),
+            handle: self.handle.read().unwrap(),
+            object_state,
+        }
+    }
+
+    pub fn reader_guard<'a>(&'a self, object_state: &'a mut ObjectState) -> ObjectReaderGuard<'a> {
+        ObjectReaderGuard {
+            repo_state: self.repo_state.read().unwrap(),
+            handle: self.handle.read().unwrap(),
+            object_state,
+        }
+    }
+
+    pub fn writer_guard<'a>(&'a self, object_state: &'a mut ObjectState) -> ObjectWriterGuard<'a> {
+        ObjectWriterGuard {
+            repo_state: self.repo_state.write().unwrap(),
+            handle: self.handle.write().unwrap(),
+            object_state,
+        }
+    }
+}
+
+pub struct ObjectInfoGuard<'a> {
+    repo_state: RwLockReadGuard<'a, RepoState>,
+    handle: RwLockReadGuard<'a, ObjectHandle>,
+    object_state: &'a ObjectState,
+}
+
+impl<'a> ObjectInfoGuard<'a> {
+    pub fn info(&self) -> ObjectInfo {
+        ObjectInfo::new(&self.repo_state, &self.object_state, &self.handle)
+    }
+}
+
+pub struct ObjectReaderGuard<'a> {
+    repo_state: RwLockReadGuard<'a, RepoState>,
+    handle: RwLockReadGuard<'a, ObjectHandle>,
+    object_state: &'a mut ObjectState,
+}
+
+impl<'a> ObjectReaderGuard<'a> {
+    pub fn info(&self) -> ObjectInfo {
+        ObjectInfo::new(&self.repo_state, &self.object_state, &self.handle)
+    }
+
+    pub fn reader(&mut self) -> ObjectReader {
+        ObjectReader::new(&self.repo_state, &mut self.object_state, &self.handle)
+    }
+}
+
+pub struct ObjectWriterGuard<'a> {
+    repo_state: RwLockWriteGuard<'a, RepoState>,
+    handle: RwLockWriteGuard<'a, ObjectHandle>,
+    object_state: &'a mut ObjectState,
+}
+
+impl<'a> ObjectWriterGuard<'a> {
+    pub fn info(&self) -> ObjectInfo {
+        ObjectInfo::new(&self.repo_state, &self.object_state, &self.handle)
+    }
+
+    pub fn reader(&mut self) -> ObjectReader {
+        ObjectReader::new(&self.repo_state, &mut self.object_state, &self.handle)
+    }
+
+    pub fn writer(&mut self) -> ObjectWriter {
+        ObjectWriter::new(
+            &mut self.repo_state,
+            &mut self.object_state,
+            &mut self.handle,
+        )
+    }
+}
+
+/// A borrowed value for getting information about an object.
 pub struct ObjectInfo<'a> {
     repo_state: &'a RepoState,
     object_state: &'a ObjectState,
@@ -31,23 +129,15 @@ pub struct ObjectInfo<'a> {
 
 impl<'a> ObjectInfo<'a> {
     pub fn new(
-        repo_state: &Weak<RwLock<RepoState>>,
+        repo_state: &'a RepoState,
         object_state: &'a ObjectState,
-        handle: &Weak<RwLock<ObjectHandle>>,
-    ) -> crate::Result<Self> {
-        Ok(Self {
-            repo_state: &*repo_state
-                .upgrade()
-                .ok_or(crate::Error::InvalidObject)?
-                .read()
-                .unwrap(),
+        handle: &'a ObjectHandle,
+    ) -> Self {
+        Self {
+            repo_state,
             object_state,
-            handle: &*handle
-                .upgrade()
-                .ok_or(crate::Error::InvalidObject)?
-                .read()
-                .unwrap(),
-        })
+            handle,
+        }
     }
 
     /// Return the size of the object in bytes.
@@ -80,23 +170,15 @@ pub struct ObjectReader<'a> {
 /// A wrapper for reading data from an object.
 impl<'a> ObjectReader<'a> {
     pub fn new(
-        repo_state: &Weak<RwLock<RepoState>>,
+        repo_state: &'a RepoState,
         object_state: &'a mut ObjectState,
-        handle: &Weak<RwLock<ObjectHandle>>,
-    ) -> crate::Result<Self> {
-        Ok(Self {
-            repo_state: &*repo_state
-                .upgrade()
-                .ok_or(crate::Error::InvalidObject)?
-                .read()
-                .unwrap(),
+        handle: &'a ObjectHandle,
+    ) -> Self {
+        Self {
+            repo_state,
             object_state,
-            handle: &*handle
-                .upgrade()
-                .ok_or(crate::Error::InvalidObject)?
-                .read()
-                .unwrap(),
-        })
+            handle,
+        }
     }
 
     fn store_reader(&mut self) -> StoreReader {
@@ -171,6 +253,12 @@ impl<'a> ObjectReader<'a> {
         let end = min(start + size, current_location.chunk.size as usize);
         Ok(&self.object_state.read_buffer[start..end])
     }
+
+    /// Deserialize a value serialized with `ObjectWriter::serialize`.
+    pub fn deserialize<T: DeserializeOwned>(&mut self) -> crate::Result<T> {
+        self.seek(SeekFrom::Start(0))?;
+        from_read(self).map_err(|_| crate::Error::Deserialize)
+    }
 }
 
 impl<'a> Seek for ObjectReader<'a> {
@@ -238,23 +326,15 @@ pub struct ObjectWriter<'a> {
 
 impl<'a> ObjectWriter<'a> {
     pub fn new(
-        repo_state: &Weak<RwLock<RepoState>>,
+        repo_state: &'a mut RepoState,
         object_state: &'a mut ObjectState,
-        handle: &Weak<RwLock<ObjectHandle>>,
-    ) -> crate::Result<Self> {
-        Ok(Self {
-            repo_state: &mut *repo_state
-                .upgrade()
-                .ok_or(crate::Error::InvalidObject)?
-                .read()
-                .unwrap(),
+        handle: &'a mut ObjectHandle,
+    ) -> Self {
+        Self {
+            repo_state,
             object_state,
-            handle: &mut *handle
-                .upgrade()
-                .ok_or(crate::Error::InvalidObject)?
-                .read()
-                .unwrap(),
-        })
+            handle,
+        }
     }
 
     fn store_writer(&mut self) -> StoreWriter {
@@ -291,7 +371,7 @@ impl<'a> ObjectWriter<'a> {
 
         // Truncating the object may mean slicing a chunk in half. Because we can't edit chunks
         // in-place, we need to read the final chunk, slice it, and write it back.
-        let end_location = match self.object_reader()?.current_chunk() {
+        let end_location = match self.object_reader().current_chunk() {
             Some(location) => location,
             None => return Ok(()),
         };
@@ -327,6 +407,16 @@ impl<'a> ObjectWriter<'a> {
         Ok(())
     }
 
+    /// Serialize the given `value` and write it to the object.
+    pub fn serialize<T: Serialize>(&mut self, value: &T) -> crate::Result<()> {
+        let serialized = to_vec(value).map_err(|_| crate::Error::Serialize)?;
+        self.seek(SeekFrom::Start(0))?;
+        self.write_all(serialized.as_slice())?;
+        self.commit()?;
+        self.truncate(serialized.len() as u64)?;
+        Ok(())
+    }
+
     /// Commit change to the data store.
     pub fn commit(&mut self) -> crate::Result<()> {
         if self.object_state.transaction_lock.is_none() {
@@ -334,7 +424,7 @@ impl<'a> ObjectWriter<'a> {
             return Ok(());
         }
 
-        let current_chunk = self.object_reader()?.current_chunk();
+        let current_chunk = self.object_reader().current_chunk();
 
         if let Some(location) = &current_chunk {
             // We need to make sure the data after the seek position is saved when we replace the
@@ -404,7 +494,7 @@ impl<'a> Write for ObjectWriter<'a> {
         // Check if this is the first time `write` is being called after calling `commit`.
         if first_write {
             // Because we're starting a new write, we need to set the starting location.
-            self.object_state.start_location = self.object_reader()?.current_chunk();
+            self.object_state.start_location = self.object_reader().current_chunk();
 
             if let Some(location) = &self.object_state.start_location {
                 let chunk = location.chunk;

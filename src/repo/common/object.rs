@@ -19,14 +19,12 @@ use std::fmt::Debug;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::sync::{Arc, RwLock, Weak};
 
-use rmp_serde::{from_read, to_vec};
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::handle::{ContentId, ObjectHandle};
-use super::object_io::{ObjectInfo, ObjectReader, ObjectWriter};
-use super::state::ObjectState;
-use super::state::RepoState;
+use super::object_store::ObjectStore;
+use super::state::{ObjectState, RepoState};
 
 /// A read-write view of data in a repository.
 ///
@@ -35,15 +33,16 @@ use super::state::RepoState;
 ///
 /// Writing to an `Object` is transactional—writing to an object via `Write` automatically begins a
 /// transaction, and calling [`commit`] completes the transaction and commits changes to the
-/// repository. No data is persisted to the repository until the transaction is committed.
-/// Changes made to this object are not visible to other `Object` or `ReadOnlyObject` instances
-/// until the transaction is complete. When an `Object` is dropped, any bytes written since the last
-/// commit are discarded.
+/// repository. No data is persisted to the repository until the transaction is committed. When an
+/// `Object` is dropped, any uncommitted changes are discarded. Attempting to read or seek on an
+/// `Object` with uncommitted changes will return [`Error::TransactionInProgress`].
 ///
-/// Attempting to read or seek on an `Object` with uncommitted changes will always return
-/// [`Error::TransactionInProgress`]. Attempting to write to an `Object` if another `Object`
-/// instance already has a transaction in progress will also return
-/// [`Error::TransactionInProgress`].
+/// It is possible to have multiple `Object` and `ReadOnlyObject` instances which all refer to the
+/// same object. Different instances can all read from the object concurrently, but only one
+/// instance can have a transaction in progress. Attempting to write to an `Object` if another
+/// instance already has a transaction in progress will return [`Error::TransactionInProgress`].
+/// Additionally, uncommitted changes to an object are not visible to other instances until the
+/// transaction is committed.
 ///
 /// Because `Object` internally buffers data when reading, there's no need to use a buffered reader
 /// like `BufReader`.
@@ -53,7 +52,7 @@ use super::state::RepoState;
 /// used to check the integrity of all the data in the object whether encryption is enabled or not.
 ///
 /// The methods of `Read`, `Write`, and `Seek` return `io::Result`, but the returned `io::Error` can
-/// be converted `Into` an `acid_store::Error` to be consistent with the rest of the library.
+/// be converted `Into` a [`crate::Error`] to be consistent with the rest of the library.
 ///
 /// [`commit`]: crate::repo::Object::commit
 /// [`Commit::clean`]: crate::repo::Commit::clean
@@ -85,18 +84,6 @@ impl Object {
         }
     }
 
-    fn object_info(&self) -> crate::Result<ObjectInfo> {
-        ObjectInfo::new(&self.repo_state, &self.object_state, &self.handle)
-    }
-
-    fn object_reader(&mut self) -> crate::Result<ObjectReader> {
-        ObjectReader::new(&self.repo_state, &mut self.object_state, &self.handle)
-    }
-
-    fn object_writer(&mut self) -> crate::Result<ObjectWriter> {
-        ObjectWriter::new(&self.repo_state, &mut self.object_state, &self.handle)
-    }
-
     /// Return the size of the object in bytes.
     ///
     /// # Errors
@@ -104,7 +91,10 @@ impl Object {
     /// - `Error::InvalidObject`: The repository associated with this object was dropped or the
     /// object was removed.
     pub fn size(&self) -> crate::Result<u64> {
-        self.object_info()?.size()
+        ObjectStore::new(&self.repo_state, &self.handle)?
+            .info_guard(&self.object_state)
+            .info()
+            .size()
     }
 
     /// Return a `ContentId` representing the contents of the object.
@@ -119,7 +109,10 @@ impl Object {
     /// - `Error::InvalidObject`: The repository associated with this object was dropped or the
     /// object was removed.
     pub fn content_id(&self) -> crate::Result<ContentId> {
-        self.object_info()?.content_id()
+        ObjectStore::new(&self.repo_state, &self.handle)?
+            .info_guard(&self.object_state)
+            .info()
+            .content_id()
     }
 
     /// Verify the integrity of the data in this object.
@@ -134,7 +127,10 @@ impl Object {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn verify(&mut self) -> crate::Result<bool> {
-        self.object_reader()?.verify()
+        ObjectStore::new(&self.repo_state, &self.handle)?
+            .reader_guard(&mut self.object_state)
+            .reader()
+            .verify()
     }
 
     /// Truncate the object to the given `length`.
@@ -153,7 +149,10 @@ impl Object {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn truncate(&mut self, length: u64) -> crate::Result<()> {
-        self.object_writer()?.truncate(length)
+        ObjectStore::new(&self.repo_state, &self.handle)?
+            .writer_guard(&mut self.object_state)
+            .writer()
+            .truncate(length)
     }
 
     /// Serialize the given `value` and write it to the object.
@@ -173,13 +172,10 @@ impl Object {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn serialize<T: Serialize>(&mut self, value: &T) -> crate::Result<()> {
-        let serialized = to_vec(value).map_err(|_| crate::Error::Serialize)?;
-        let mut writer = self.object_writer()?;
-        writer.seek(SeekFrom::Start(0))?;
-        writer.write_all(serialized.as_slice())?;
-        writer.commit()?;
-        writer.truncate(serialized.len() as u64)?;
-        Ok(())
+        ObjectStore::new(&self.repo_state, &self.handle)?
+            .writer_guard(&mut self.object_state)
+            .writer()
+            .serialize(value)
     }
 
     /// Deserialize a value serialized with `Object::serialize`.
@@ -196,15 +192,19 @@ impl Object {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn deserialize<T: DeserializeOwned>(&mut self) -> crate::Result<T> {
-        let mut reader = self.object_reader()?;
-        reader.seek(SeekFrom::Start(0))?;
-        from_read(&reader).map_err(|_| crate::Error::Deserialize)
+        ObjectStore::new(&self.repo_state, &self.handle)?
+            .reader_guard(&mut self.object_state)
+            .reader()
+            .deserialize()
     }
 
     /// Commit changes to this object to the repository.
     ///
     /// Data written to this object via `Write` is not persisted to the repository or visible to
     /// other `Object` or `ReadOnlyObject` instances until this method is called and returns `Ok`.
+    ///
+    /// This method automatically flushes changes, so it is not necessary to call `Write::flush`
+    /// before calling this method.
     ///
     /// Calling this method does not call [`Commit::commit`]. Even if this method is called, data is
     /// not persisted to the data store until [`Commit::commit`] is called on the repository this
@@ -219,29 +219,44 @@ impl Object {
     ///
     /// [`Commit::commit`]: crate::repo::Commit::commit
     pub fn commit(&mut self) -> crate::Result<()> {
-        self.object_writer()?.commit()
+        ObjectStore::new(&self.repo_state, &self.handle)?
+            .writer_guard(&mut self.object_state)
+            .writer()
+            .commit()
     }
 }
 
 impl Read for Object {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.object_reader()?.read(buf)
+        ObjectStore::new(&self.repo_state, &self.handle)?
+            .reader_guard(&mut self.object_state)
+            .reader()
+            .read(buf)
     }
 }
 
 impl Seek for Object {
     fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
-        self.object_reader()?.seek(pos)
+        ObjectStore::new(&self.repo_state, &self.handle)?
+            .reader_guard(&mut self.object_state)
+            .reader()
+            .seek(pos)
     }
 }
 
 impl Write for Object {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.object_writer()?.write(buf)
+        ObjectStore::new(&self.repo_state, &self.handle)?
+            .writer_guard(&mut self.object_state)
+            .writer()
+            .write(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.object_writer()?.flush()
+        ObjectStore::new(&self.repo_state, &self.handle)?
+            .writer_guard(&mut self.object_state)
+            .writer()
+            .flush()
     }
 }
 
@@ -258,13 +273,6 @@ impl Write for Object {
 pub struct ReadOnlyObject(Object);
 
 impl ReadOnlyObject {
-    pub(super) fn new(
-        repo_state: &Arc<RwLock<RepoState>>,
-        handle: &Arc<RwLock<ObjectHandle>>,
-    ) -> Self {
-        Self(Object::new(repo_state, handle))
-    }
-
     /// Return the size of the object in bytes.
     ///
     /// See [`Object::size`] for details.

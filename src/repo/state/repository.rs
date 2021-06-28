@@ -23,8 +23,7 @@ use uuid::Uuid;
 
 use super::table::{IdTable, ObjectId};
 use crate::repo::{
-    key::KeyRepo, Commit, Object, OpenRepo, ReadOnlyObject, RepoInfo, Restore, RestoreSavepoint,
-    Savepoint,
+    key::KeyRepo, Commit, Object, OpenRepo, RepoInfo, Restore, RestoreSavepoint, Savepoint,
 };
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Serialize, Deserialize)]
@@ -187,25 +186,8 @@ where
     /// Return a `ReadOnlyObject` for reading the object with the given `id`.
     ///
     /// This returns `None` if there is no object with the given `id` in the repository.
-    ///
-    /// The returned object provides read-only access to the data. To get read-write access, use
-    /// [`object_mut`].
-    ///
-    /// [`object_mut`]: crate::repo::state::StateRepo::object_mut
-    pub fn object(&self, id: ObjectId) -> Option<ReadOnlyObject> {
+    pub fn object(&self, id: ObjectId) -> Option<Object> {
         self.repo.object(&RepoKey::Object(id))
-    }
-
-    /// Return an `Object` for reading and writing the object with the given `id`.
-    ///
-    /// This returns `None` if there is no object with the given `id` in the repository.
-    ///
-    /// The returned object provides read-write access to the data. To get read-only access, use
-    /// [`object`].
-    ///
-    /// [`object`]: crate::repo::state::StateRepo::object
-    pub fn object_mut(&mut self, id: ObjectId) -> Option<Object> {
-        self.repo.object_mut(&RepoKey::Object(id))
     }
 
     /// Return an iterator over all the IDs of objects in this repository.
