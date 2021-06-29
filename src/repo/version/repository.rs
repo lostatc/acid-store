@@ -215,16 +215,9 @@ impl<K: Key> VersionRepo<K> {
         true
     }
 
-    /// Return an `Object` for reading the contents of a version.
+    /// Return a `ReadOnlyObject` for reading the contents of a version.
     ///
     /// This returns `None` if the version doesn't exist in the repository.
-    ///
-    /// # Errors
-    /// - `Error::NotFound`: The given `key` is not in the repository.
-    /// - `Error::NotFound`: There is no version with the given `version_id`.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
     pub fn version_object<Q>(&self, key: &Q, version_id: u32) -> Option<ReadOnlyObject>
     where
         K: Borrow<Q>,

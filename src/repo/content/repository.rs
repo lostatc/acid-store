@@ -122,7 +122,7 @@ impl ContentRepo {
             stage_object.write_all(&buffer[..bytes_read])?;
         }
 
-        stage_object.flush()?;
+        stage_object.commit()?;
         drop(stage_object);
 
         // Now that we know the hash, we can associate the object with its hash.

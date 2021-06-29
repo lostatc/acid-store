@@ -17,7 +17,7 @@
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::fs::{create_dir, create_dir_all, metadata, File, OpenOptions};
-use std::io::{self, copy, Write};
+use std::io::{self, copy};
 use std::marker::PhantomData;
 use std::path::Path;
 
@@ -565,7 +565,7 @@ where
             let mut object = self.0.object(object_id).unwrap();
             let mut file = File::open(&source)?;
             copy(&mut file, &mut object)?;
-            object.flush()?;
+            object.commit()?;
         }
 
         Ok(())

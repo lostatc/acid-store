@@ -45,12 +45,12 @@ fn read_written_data(config: RepoConfig) -> anyhow::Result<()> {
     let expected_data = random_buffer();
     let mut actual_data = vec![0u8; expected_data.len()];
     object.write_all(expected_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
     object.seek(SeekFrom::Start(0))?;
     object.read_exact(&mut actual_data)?;
 
     assert_eq!(actual_data, expected_data);
-    assert_eq!(object.size(), expected_data.len() as u64);
+    assert_eq!(object.size().unwrap(), expected_data.len() as u64);
 
     Ok(())
 }
@@ -74,7 +74,7 @@ fn seek_and_read_data(config: RepoConfig) -> anyhow::Result<()> {
     let mut actual_data = Vec::new();
 
     object.write_all(original_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
 
     // Seek from start.
     object.seek(SeekFrom::Start(10))?;
@@ -115,7 +115,7 @@ fn seek_to_negative_offset(config: RepoConfig) -> anyhow::Result<()> {
 
     // Write initial data to the object.
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     object.seek(SeekFrom::Start(0))?;
 
     assert!(object.seek(SeekFrom::Current(-1)).is_err());
@@ -139,14 +139,14 @@ fn overwrite_written_data(config: RepoConfig) -> anyhow::Result<()> {
 
     // Write initial data to the object.
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     object.seek(SeekFrom::Start(0))?;
 
     // Overwrite that initial data with new data.
     let expected_data = random_buffer();
     let mut actual_data = vec![0u8; expected_data.len()];
     object.write_all(expected_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
     object.seek(SeekFrom::Start(0))?;
 
     // Read the new data..
@@ -175,13 +175,13 @@ fn partially_overwrite_written_data(config: RepoConfig) -> anyhow::Result<()> {
     // Write initial data to the object.
     let initial_data = random_buffer();
     object.write_all(initial_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
     object.seek(SeekFrom::Start(0))?;
 
     // Partially overwrite that initial data with new data.
     let new_data = random_bytes(MIN_BUFFER_SIZE / 2);
     object.write_all(new_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
     object.seek(SeekFrom::Start(0))?;
 
     // Read all the data.
@@ -215,13 +215,13 @@ fn partially_overwrite_and_grow_data(config: RepoConfig) -> anyhow::Result<()> {
     // Write initial data to the object.
     let initial_data = random_buffer();
     object.write_all(initial_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
     object.seek(SeekFrom::Start(new_start_position as u64))?;
 
     // Partially overwrite that initial data with new data which extends past the initial data.
     let new_data = random_buffer();
     object.write_all(new_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
     object.seek(SeekFrom::Start(0))?;
 
     // Read all the data.
@@ -253,13 +253,13 @@ fn truncate_object(config: RepoConfig) -> anyhow::Result<()> {
     // Write data to the object.
     let initial_data = random_buffer();
     object.write_all(initial_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
 
     // Truncate the object.
     let new_size = MIN_BUFFER_SIZE as u64 / 2;
     object.truncate(new_size)?;
 
-    assert_eq!(object.size(), new_size);
+    assert_eq!(object.size().unwrap(), new_size);
     assert_eq!(object.seek(SeekFrom::Current(0))?, new_size);
 
     // Read data from the object.
@@ -292,24 +292,24 @@ fn compare_content_ids(config: RepoConfig) -> anyhow::Result<()> {
     // Write data to the first object.
     let mut object = repo.insert(String::from("test1"));
     object.write_all(initial_data.as_slice())?;
-    object.flush()?;
-    let content_id1 = object.content_id();
+    object.commit()?;
+    let content_id1 = object.content_id().unwrap();
     drop(object);
 
     // Write the same data to the second object.
     let mut object = repo.insert(String::from("test2"));
     object.write_all(initial_data.as_slice())?;
-    object.flush()?;
-    let content_id2 = object.content_id();
+    object.commit()?;
+    let content_id2 = object.content_id().unwrap();
     drop(object);
 
     assert_eq!(content_id1, content_id2);
 
     // Write new data to the second object.
-    let mut object = repo.object_mut("test2").unwrap();
+    let mut object = repo.object("test2").unwrap();
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
-    let content_id2 = object.content_id();
+    object.commit()?;
+    let content_id2 = object.content_id().unwrap();
 
     assert_ne!(content_id1, content_id2);
 
@@ -335,9 +335,11 @@ fn compare_contents_with_are_equal(config: RepoConfig) -> anyhow::Result<()> {
 
     // Write data to the object.
     object.write_all(initial_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
 
-    assert!(object.compare_contents(initial_data.as_slice())?);
+    assert!(object
+        .content_id()?
+        .compare_contents(initial_data.as_slice())?);
 
     Ok(())
 }
@@ -362,9 +364,11 @@ fn compare_unequal_contents_with_same_size(config: RepoConfig) -> anyhow::Result
 
     // Write data to the object.
     object.write_all(initial_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
 
-    assert!(!object.compare_contents(modified_data.as_slice())?);
+    assert!(!object
+        .content_id()?
+        .compare_contents(modified_data.as_slice())?);
 
     Ok(())
 }
@@ -389,9 +393,9 @@ fn compare_contents_which_are_smaller(config: RepoConfig) -> anyhow::Result<()> 
 
     // Write data to the object.
     object.write_all(initial_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
 
-    assert!(!object.compare_contents(modified_data)?);
+    assert!(!object.content_id()?.compare_contents(modified_data)?);
 
     Ok(())
 }
@@ -416,9 +420,11 @@ fn compare_contents_which_are_larger(config: RepoConfig) -> anyhow::Result<()> {
 
     // Write data to the object.
     object.write_all(initial_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
 
-    assert!(!object.compare_contents(modified_data.as_slice())?);
+    assert!(!object
+        .content_id()?
+        .compare_contents(modified_data.as_slice())?);
 
     Ok(())
 }
@@ -439,7 +445,7 @@ fn verify_valid_object_is_valid(config: RepoConfig) -> anyhow::Result<()> {
     let mut object = repo.insert(String::from("test"));
 
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
 
     assert!(object.verify()?);
     Ok(())
@@ -459,8 +465,8 @@ fn write_buffer_with_same_size_as_fixed_chunk_size() -> anyhow::Result<()> {
     let mut object = repo.insert(String::from("test"));
 
     object.write_all(random_bytes(chunk_size as usize).as_slice())?;
-    object.flush()?;
+    object.commit()?;
 
-    assert_eq!(object.size(), chunk_size as u64);
+    assert_eq!(object.size().unwrap(), chunk_size as u64);
     Ok(())
 }

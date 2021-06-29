@@ -183,7 +183,7 @@ where
         true
     }
 
-    /// Return a `ReadOnlyObject` for reading the object with the given `id`.
+    /// Return an `Object` for reading the object with the given `id`.
     ///
     /// This returns `None` if there is no object with the given `id` in the repository.
     pub fn object(&self, id: ObjectId) -> Option<Object> {

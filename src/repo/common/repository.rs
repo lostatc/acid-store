@@ -51,6 +51,24 @@ pub(super) const METADATA_BLOCK_ID: Uuid =
 pub(super) const VERSION_BLOCK_ID: Uuid =
     Uuid::from_bytes(hex!("cbf28b1c 3550 11ea 8cb0 87d7a14efe10"));
 
+/// Return a list of blocks in the data store excluding those used to store metadata.
+fn list_data_blocks(state: &RepoState) -> crate::Result<Vec<Uuid>> {
+    let all_blocks = state
+        .store
+        .lock()
+        .unwrap()
+        .list_blocks()
+        .map_err(crate::Error::Store)?;
+
+    Ok(all_blocks
+        .iter()
+        .copied()
+        .filter(|id| {
+            *id != METADATA_BLOCK_ID && *id != VERSION_BLOCK_ID && *id != state.metadata.header_id
+        })
+        .collect())
+}
+
 /// An object store which maps keys to seekable binary blobs.
 ///
 /// See [`crate::repo::key`] for more information.
@@ -226,27 +244,6 @@ impl<K: Key> KeyRepo<K> {
             .insert(dest, Arc::new(RwLock::new(dest_handle)));
 
         true
-    }
-
-    /// Return a list of blocks in the data store excluding those used to store metadata.
-    fn list_data_blocks(&self) -> crate::Result<Vec<Uuid>> {
-        let state = self.state.read().unwrap();
-        let all_blocks = state
-            .store
-            .lock()
-            .unwrap()
-            .list_blocks()
-            .map_err(crate::Error::Store)?;
-
-        Ok(all_blocks
-            .iter()
-            .copied()
-            .filter(|id| {
-                *id != METADATA_BLOCK_ID
-                    && *id != VERSION_BLOCK_ID
-                    && *id != state.metadata.header_id
-            })
-            .collect())
     }
 
     /// Write the map of objects for the current instance to the data store.
@@ -708,7 +705,7 @@ impl<K: Key> Commit for KeyRepo<K> {
             Packing::None => {
                 // When packing is disabled, we can just remove the unreferenced blocks from the
                 // data store directly.
-                let block_ids = self.list_data_blocks()?;
+                let block_ids = list_data_blocks(&state)?;
 
                 let mut store = state.store.lock().unwrap();
                 for block_id in block_ids {
@@ -743,7 +740,7 @@ impl<K: Key> Commit for KeyRepo<K> {
                 let mut blocks_to_repack = Vec::new();
 
                 // Iterate over the IDs of packs which are contained in the data store.
-                for pack_id in self.list_data_blocks()? {
+                for pack_id in list_data_blocks(&state)? {
                     match packs_to_blocks.get(&pack_id) {
                         Some(contained_blocks) => {
                             let contains_unreferenced_blocks = contained_blocks

@@ -114,7 +114,7 @@ pub trait Restore: Clone {
 /// // Write data to the repository.
 /// let mut object = repo.insert(String::from("test"));
 /// object.write_all(b"Some data").unwrap();
-/// object.flush().unwrap();
+/// object.commit().unwrap();
 /// drop(object);
 ///
 /// // Restore to the savepoint.
