@@ -15,12 +15,12 @@
  */
 
 use std::collections::HashMap;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, RwLock, Weak};
 
 use uuid::Uuid;
 
+use super::handle::ObjectHandle;
 use super::metadata::Header;
-use super::object::ObjectHandle;
 
 /// A target for rolling back changes in a repository.
 ///
@@ -114,7 +114,7 @@ pub trait Restore: Clone {
 /// // Write data to the repository.
 /// let mut object = repo.insert(String::from("test"));
 /// object.write_all(b"Some data").unwrap();
-/// object.flush().unwrap();
+/// object.commit().unwrap();
 /// drop(object);
 ///
 /// // Restore to the savepoint.
@@ -196,7 +196,7 @@ pub trait RestoreSavepoint {
 /// A [`Restore`] for a [`KeyRepo`]
 #[derive(Debug, Clone)]
 pub struct KeyRestore<K> {
-    pub(super) objects: HashMap<K, ObjectHandle>,
+    pub(super) objects: HashMap<K, Arc<RwLock<ObjectHandle>>>,
     pub(super) header: Header,
     pub(super) transaction_id: Weak<Uuid>,
     // We need to store the instance ID because it should not be possible to complete this restore

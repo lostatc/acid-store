@@ -38,8 +38,8 @@ pub enum Error {
     #[error("The provided password was invalid.")]
     Password,
 
-    /// The repository is locked.
-    #[error("The repository is locked.")]
+    /// A resource is locked.
+    #[error("A resource is locked.")]
     Locked,
 
     /// The repository is corrupt.
@@ -57,6 +57,14 @@ pub enum Error {
     /// The given savepoint is invalid.
     #[error("The given savepoint is invalid.")]
     InvalidSavepoint,
+
+    /// This object is no longer valid.
+    #[error("This object is no longer valid.")]
+    InvalidObject,
+
+    /// A transaction is currently in progress for this object.
+    #[error("A transaction is currently in progress for this object.")]
+    TransactionInProgress,
 
     /// This file type is not supported.
     #[error("This file type is not supported.")]

@@ -66,9 +66,9 @@ fn switching_instance_does_not_roll_back() -> anyhow::Result<()> {
     let mut repo = create_repo(&config)?;
 
     repo.create("file", &Entry::file())?;
-    let mut object = repo.open_mut("file")?;
+    let mut object = repo.open("file")?;
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     let repo: FileRepo = repo.switch_instance(Uuid::new_v4())?;
@@ -86,9 +86,9 @@ fn switching_instance_does_not_commit() -> anyhow::Result<()> {
     let mut repo = create_repo(&config)?;
 
     repo.create("file", &Entry::file())?;
-    let mut object = repo.open_mut("file")?;
+    let mut object = repo.open("file")?;
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     let repo: FileRepo = repo.switch_instance(Uuid::new_v4())?;
@@ -257,10 +257,10 @@ fn open_file() -> anyhow::Result<()> {
     let config = MemoryConfig::new();
     let mut repository = create_repo(&config)?;
     repository.create("file", &Entry::file())?;
-    let mut object = repository.open_mut("file")?;
+    let mut object = repository.open("file")?;
 
     object.write_all(b"expected data")?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     let mut object = repository.open("file")?;
@@ -281,9 +281,9 @@ fn copied_file_has_same_contents() -> anyhow::Result<()> {
 
     // Add a file entry and write data to it.
     repository.create("source", &Entry::file())?;
-    let mut object = repository.open_mut("source")?;
+    let mut object = repository.open("source")?;
     object.write_all(expected_data)?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     // Copy the file entry.
@@ -532,9 +532,9 @@ fn extract_file() -> anyhow::Result<()> {
     let mut repository = create_repo(&config)?;
 
     repository.create("source", &Entry::file())?;
-    let mut object = repository.open_mut("source")?;
+    let mut object = repository.open("source")?;
     object.write_all(b"file contents")?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
     repository.extract("source", &dest_path)?;
 
@@ -773,9 +773,9 @@ fn entries_removed_on_rollback() -> anyhow::Result<()> {
     let mut repository = create_repo(&config)?;
     repository.create("file", &Entry::file())?;
 
-    let mut object = repository.open_mut("file")?;
+    let mut object = repository.open("file")?;
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     repository.rollback()?;
@@ -791,9 +791,9 @@ fn clear_instance_removes_paths() -> anyhow::Result<()> {
     let mut repo = create_repo(&config)?;
 
     repo.create("test", &Entry::file())?;
-    let mut object = repo.open_mut("test")?;
+    let mut object = repo.open("test")?;
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     repo.clear_instance();
@@ -813,9 +813,9 @@ fn rollback_after_clear_instance() -> anyhow::Result<()> {
     let mut repo = create_repo(&config)?;
 
     repo.create("test", &Entry::file())?;
-    let mut object = repo.open_mut("test")?;
+    let mut object = repo.open("test")?;
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     repo.commit()?;

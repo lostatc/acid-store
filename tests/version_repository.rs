@@ -47,7 +47,7 @@ fn switching_instance_does_not_roll_back() -> anyhow::Result<()> {
 
     let mut object = repo.insert("test".to_string()).unwrap();
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     let repo: VersionRepo<String> = repo.switch_instance(Uuid::new_v4())?;
@@ -66,7 +66,7 @@ fn switching_instance_does_not_commit() -> anyhow::Result<()> {
 
     let mut object = repo.insert("test".to_string()).unwrap();
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     let repo: VersionRepo<String> = repo.switch_instance(Uuid::new_v4())?;
@@ -88,7 +88,7 @@ fn read_version() -> anyhow::Result<()> {
     let expected_data = random_buffer();
     let mut object = repository.insert(String::from("Key")).unwrap();
     object.write_all(expected_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     // Create a new version of the object.
@@ -213,16 +213,16 @@ fn restore_version() -> anyhow::Result<()> {
     // Create an object and write data to it.
     let mut object = repository.insert("Key".into()).unwrap();
     object.write_all(expected_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     // Create a new version.
     let version = repository.create_version("Key").unwrap();
 
     // Modify the contents of the object.
-    let mut object = repository.object_mut("Key").unwrap();
+    let mut object = repository.object("Key").unwrap();
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     // Restore the contents from the version.
@@ -245,13 +245,13 @@ fn modifying_object_doesnt_modify_versions() -> anyhow::Result<()> {
     repository.insert(String::from("Key")).unwrap();
     let version = repository.create_version("Key").unwrap();
 
-    let mut object = repository.object_mut("Key").unwrap();
+    let mut object = repository.object("Key").unwrap();
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     let object = repository.version_object("Key", version.id()).unwrap();
-    assert_eq!(object.size(), 0);
+    assert_eq!(object.size().unwrap(), 0);
 
     Ok(())
 }
@@ -263,7 +263,7 @@ fn objects_removed_on_rollback() -> anyhow::Result<()> {
 
     let mut object = repository.insert("test".into()).unwrap();
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     repository.create_version("test").unwrap();
@@ -284,7 +284,7 @@ fn clear_instance_removes_keys() -> anyhow::Result<()> {
 
     let mut object = repo.insert("test".into()).unwrap();
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     repo.clear_instance();
@@ -303,7 +303,7 @@ fn rollback_after_clear_instance() -> anyhow::Result<()> {
 
     let mut object = repo.insert("test".into()).unwrap();
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     repo.commit()?;

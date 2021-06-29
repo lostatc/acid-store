@@ -125,7 +125,6 @@ fn can_not_get_object_from_removed_key(repo_config: RepoConfig) -> anyhow::Resul
     repo.remove("test");
 
     assert!(repo.object("test").is_none());
-    assert!(repo.object_mut("test").is_none());
 
     Ok(())
 }
@@ -155,7 +154,7 @@ fn copy_has_same_contents(repo_config: RepoConfig) -> anyhow::Result<()> {
     let mut object = repo.insert(String::from("original"));
 
     object.write_all(b"Data")?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     assert!(repo.copy("original", String::from("copy")));
@@ -194,12 +193,12 @@ fn copying_overwrites_destination(repo_config: RepoConfig) -> anyhow::Result<()>
 
     let mut object = repo.insert(String::from("original"));
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     let mut object = repo.insert(String::from("destination"));
     object.write_all(expected_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     assert!(repo.copy("original", String::from("destination")));
@@ -226,11 +225,11 @@ fn existing_key_is_replaced(repo_config: RepoConfig) -> anyhow::Result<()> {
 
     let mut object = repo.insert(String::from("test"));
     object.write_all(b"Data")?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     let object = repo.insert(String::from("test"));
-    assert_eq!(object.size(), 0);
+    assert_eq!(object.size().unwrap(), 0);
 
     Ok(())
 }
@@ -340,7 +339,7 @@ fn committed_changes_are_persisted(repo_config: RepoConfig) -> anyhow::Result<()
     // Write some data to the repository.
     let expected_data = random_buffer();
     object.write_all(expected_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     repo.commit()?;
@@ -373,7 +372,7 @@ fn uncommitted_changes_are_not_persisted(repo_config: RepoConfig) -> anyhow::Res
     // Write some data to the repository.
     let expected_data = random_buffer();
     object.write_all(expected_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
     drop(repo);
 
@@ -398,7 +397,7 @@ fn objects_are_removed_on_rollback(repo_config: RepoConfig) -> anyhow::Result<()
     let mut object = repo.insert(String::from("test"));
 
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     repo.rollback()?;
@@ -422,9 +421,9 @@ fn object_contents_are_modified_on_rollback(repo_config: RepoConfig) -> anyhow::
 
     repo.commit()?;
 
-    let mut object = repo.object_mut("test").unwrap();
+    let mut object = repo.object("test").unwrap();
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     repo.rollback()?;
@@ -433,7 +432,7 @@ fn object_contents_are_modified_on_rollback(repo_config: RepoConfig) -> anyhow::
     let mut actual_data = Vec::new();
     object.read_to_end(&mut actual_data)?;
 
-    assert_eq!(object.size(), 0);
+    assert_eq!(object.size().unwrap(), 0);
     assert!(actual_data.is_empty());
 
     Ok(())
@@ -461,7 +460,7 @@ fn objects_are_removed_on_restore(repo_config: RepoConfig) -> anyhow::Result<()>
 
     let mut object = repo.insert(String::from("test"));
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     let restore = repo.start_restore(&savepoint)?;
@@ -487,9 +486,9 @@ fn object_contents_are_modified_on_restore(repo_config: RepoConfig) -> anyhow::R
 
     let savepoint = repo.savepoint()?;
 
-    let mut object = repo.object_mut("test").unwrap();
+    let mut object = repo.object("test").unwrap();
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     let restore = repo.start_restore(&savepoint)?;
@@ -500,7 +499,7 @@ fn object_contents_are_modified_on_restore(repo_config: RepoConfig) -> anyhow::R
     let mut actual_data = Vec::new();
     object.read_to_end(&mut actual_data)?;
 
-    assert_eq!(object.size(), 0);
+    assert_eq!(object.size().unwrap(), 0);
     assert!(actual_data.is_empty());
 
     Ok(())
@@ -512,7 +511,7 @@ fn restore_can_redo_changes() -> anyhow::Result<()> {
 
     let mut object = repo.insert(String::from("test"));
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     let before_savepoint = repo.savepoint()?;
@@ -598,7 +597,7 @@ fn unused_data_is_reclaimed_on_commit(repo_config: RepoConfig) -> anyhow::Result
     let mut object = repo.insert(String::from("test"));
 
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
     repo.commit()?;
     drop(repo);
@@ -636,7 +635,7 @@ fn clean_before_commit_does_not_prevent_rollback(repo_config: RepoConfig) -> any
 
     // Write to an object and commit.
     object.write_all(expected_data.as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
     repo.commit()?;
 
@@ -669,7 +668,7 @@ fn clear_instance_deletes_objects(repo_config: RepoConfig) -> anyhow::Result<()>
     let mut object = repo.insert(String::from("test"));
 
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     repo.clear_instance();
@@ -692,7 +691,7 @@ fn rollback_after_clear_instance(repo_config: RepoConfig) -> anyhow::Result<()> 
     let mut object = repo.insert(String::from("test"));
 
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     repo.commit()?;
@@ -717,7 +716,7 @@ fn verify_valid_repository_is_valid(repo_config: RepoConfig) -> anyhow::Result<(
     let mut object = repo.insert(String::from("test"));
 
     object.write_all(random_buffer().as_slice())?;
-    object.flush()?;
+    object.commit()?;
     drop(object);
 
     assert!(repo.verify()?.is_empty());
