@@ -61,7 +61,7 @@
 //!
 //!     // Write data to the repository via `std::io::Write`.
 //!     object.write_all(b"Data")?;
-//!     object.flush();
+//!     object.commit()?;
 //!     drop(object);
 //!
 //!     // Get the object associated with a key.

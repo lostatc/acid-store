@@ -83,7 +83,7 @@ impl<K: Key> ValueRepo<K> {
     /// - `Error::Io`: An I/O error occurred.
     pub fn insert<V: Serialize>(&mut self, key: K, value: &V) -> crate::Result<()> {
         let object_id = self.0.create();
-        let mut object = self.0.object_mut(object_id).unwrap();
+        let mut object = self.0.object(object_id).unwrap();
         let result = object.serialize(value);
         drop(object);
         if let Err(error) = result {

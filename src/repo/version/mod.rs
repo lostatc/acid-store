@@ -42,14 +42,14 @@
 //!         // Insert a new object and write some data to it.
 //!         let mut object = repository.insert(String::from("Key")).unwrap();
 //!         object.write_all(b"Original data")?;
-//!         object.flush()?;
+//!         object.commit()?;
 //!         drop(object);
 //!
 //!         // Create a new, read-only version of this object.
 //!         let version = repository.create_version("Key").unwrap();
 //!
 //!         // Modify the current version of the object.
-//!         let mut object = repository.object_mut("Key").unwrap();
+//!         let mut object = repository.object("Key").unwrap();
 //!         object.truncate(0)?;
 //!         drop(object);
 //!

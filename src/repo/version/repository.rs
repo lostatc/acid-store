@@ -16,6 +16,7 @@
 
 use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap};
+use std::convert::TryInto;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::mem;
@@ -94,7 +95,7 @@ impl<K: Key> VersionRepo<K> {
         };
 
         self.0.state_mut().insert(key, key_info);
-        self.0.object_mut(object_id)
+        self.0.object(object_id)
     }
 
     /// Remove the given `key` and all its versions from the repository.
@@ -124,38 +125,16 @@ impl<K: Key> VersionRepo<K> {
         true
     }
 
-    /// Return a `ReadOnlyObject` for reading the current version of `key`.
+    /// Return an `Object` for reading the current version of `key`.
     ///
     /// This returns `None` if the key doesn't exist in the repository.
-    ///
-    /// The returned object provides read-only access to the data. To get read-write access, use
-    /// [`object_mut`].
-    ///
-    /// [`object_mut`]: crate::repo::version::VersionRepo::object_mut
-    pub fn object<Q>(&self, key: &Q) -> Option<ReadOnlyObject>
+    pub fn object<Q>(&self, key: &Q) -> Option<Object>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
         let object_id = self.0.state().get(key)?.object;
         Some(self.0.object(object_id).unwrap())
-    }
-
-    /// Return an `Object` for reading and writing the current version of `key`.
-    ///
-    /// This returns `None` if the key doesn't exist in the repository.
-    ///
-    /// The returned object provides read-write access to the data. To get read-only access, use
-    /// [`object`].
-    ///
-    /// [`object`]: crate::repo::version::VersionRepo::object
-    pub fn object_mut<Q>(&mut self, key: &Q) -> Option<Object>
-    where
-        K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
-    {
-        let object_id = self.0.state().get(key)?.object;
-        Some(self.0.object_mut(object_id).unwrap())
     }
 
     /// Return an iterator of all the keys in this repository.
@@ -196,7 +175,12 @@ impl<K: Key> VersionRepo<K> {
         let version = Version {
             id: version_id,
             created: version_info.created,
-            content_id: self.0.object(version_info.id).unwrap().content_id(),
+            content_id: self
+                .0
+                .object(version_info.id)
+                .unwrap()
+                .content_id()
+                .unwrap(),
         };
 
         self.0
@@ -231,16 +215,9 @@ impl<K: Key> VersionRepo<K> {
         true
     }
 
-    /// Return an `Object` for reading the contents of a version.
+    /// Return a `ReadOnlyObject` for reading the contents of a version.
     ///
     /// This returns `None` if the version doesn't exist in the repository.
-    ///
-    /// # Errors
-    /// - `Error::NotFound`: The given `key` is not in the repository.
-    /// - `Error::NotFound`: There is no version with the given `version_id`.
-    /// - `Error::InvalidData`: Ciphertext verification failed.
-    /// - `Error::Store`: An error occurred with the data store.
-    /// - `Error::Io`: An I/O error occurred.
     pub fn version_object<Q>(&self, key: &Q, version_id: u32) -> Option<ReadOnlyObject>
     where
         K: Borrow<Q>,
@@ -248,7 +225,7 @@ impl<K: Key> VersionRepo<K> {
     {
         let key_info = self.0.state().get(key)?;
         let version_info = key_info.versions.get(&version_id)?;
-        Some(self.0.object(version_info.id).unwrap())
+        Some(self.0.object(version_info.id).unwrap().try_into().unwrap())
     }
 
     /// Return the version of `key` with the given `version_id`.
@@ -263,7 +240,12 @@ impl<K: Key> VersionRepo<K> {
         Some(Version {
             id: version_id,
             created: version_info.created,
-            content_id: self.0.object(version_info.id).unwrap().content_id(),
+            content_id: self
+                .0
+                .object(version_info.id)
+                .unwrap()
+                .content_id()
+                .unwrap(),
         })
     }
 
@@ -282,7 +264,7 @@ impl<K: Key> VersionRepo<K> {
         Some(versions.iter().map(move |(id, info)| Version {
             id: *id,
             created: info.created,
-            content_id: self.0.object(info.id).unwrap().content_id(),
+            content_id: self.0.object(info.id).unwrap().content_id().unwrap(),
         }))
     }
 
