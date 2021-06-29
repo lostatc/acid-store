@@ -16,12 +16,15 @@
 
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
+use std::convert::TryFrom;
 use std::io::{Read, Seek, SeekFrom, Write};
 
 use test_case::test_case;
 
 use acid_store::repo::key::KeyRepo;
-use acid_store::repo::{Chunking, Compression, Encryption, OpenMode, OpenOptions, RepoConfig};
+use acid_store::repo::{
+    Chunking, Compression, Encryption, OpenMode, OpenOptions, ReadOnlyObject, RepoConfig,
+};
 use acid_store::store::MemoryConfig;
 use common::{random_buffer, random_bytes, MIN_BUFFER_SIZE};
 
@@ -468,5 +471,294 @@ fn write_buffer_with_same_size_as_fixed_chunk_size() -> anyhow::Result<()> {
     object.commit()?;
 
     assert_eq!(object.size().unwrap(), chunk_size as u64);
+    Ok(())
+}
+
+#[test]
+fn reading_seeking_with_uncommitted_changes_errs() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let mut object = repo.insert(String::from("test"));
+    object.write_all(b"test data")?;
+    let mut content = Vec::new();
+
+    assert!(matches!(
+        acid_store::Error::from(object.read(&mut content).unwrap_err()),
+        acid_store::Error::TransactionInProgress
+    ));
+
+    assert!(matches!(
+        acid_store::Error::from(object.seek(SeekFrom::Start(0)).unwrap_err()),
+        acid_store::Error::TransactionInProgress
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn accessing_with_uncommitted_changes_errs() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let mut object = repo.insert(String::from("test"));
+    object.write_all(b"test data")?;
+
+    assert!(matches!(
+        object.size(),
+        Err(acid_store::Error::TransactionInProgress)
+    ));
+
+    assert!(matches!(
+        object.content_id(),
+        Err(acid_store::Error::TransactionInProgress)
+    ));
+
+    assert!(matches!(
+        object.verify(),
+        Err(acid_store::Error::TransactionInProgress)
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn truncating_with_uncommitted_changes_errs() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let mut object = repo.insert(String::from("test"));
+    object.write_all(b"test data")?;
+
+    assert!(matches!(
+        object.truncate(0),
+        Err(acid_store::Error::TransactionInProgress)
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn writing_from_another_instance_with_uncommitted_changes_errs() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let mut object1 = repo.insert(String::from("test"));
+    object1.write_all(b"test data")?;
+
+    let mut object2 = repo.object("test").unwrap();
+
+    assert!(matches!(
+        acid_store::Error::from(object2.write_all(b"test data").unwrap_err()),
+        acid_store::Error::TransactionInProgress
+    ));
+
+    object1.commit()?;
+
+    assert!(object2.write_all(b"test data").is_ok());
+
+    Ok(())
+}
+
+#[test]
+fn truncating_from_another_instance_with_uncommitted_changes_errs() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let mut object1 = repo.insert(String::from("test"));
+    object1.write_all(b"test data")?;
+
+    let mut object2 = repo.object("test").unwrap();
+
+    assert!(matches!(
+        object2.truncate(0),
+        Err(acid_store::Error::TransactionInProgress)
+    ));
+
+    object1.commit()?;
+
+    assert!(object2.truncate(0).is_ok());
+
+    Ok(())
+}
+
+#[test]
+fn reading_seeking_from_another_instance_with_uncommitted_changes_is_ok() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let mut object1 = repo.insert(String::from("test"));
+
+    object1.write_all(b"test data")?;
+
+    let mut object2 = repo.object("test").unwrap();
+    let mut content = Vec::new();
+
+    assert!(object2.seek(SeekFrom::Start(0)).is_ok());
+    assert!(object2.read_to_end(&mut content).is_ok());
+
+    Ok(())
+}
+
+#[test]
+fn accessing_from_another_instance_with_uncommitted_changes_is_ok() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let mut object1 = repo.insert(String::from("test"));
+
+    object1.write_all(b"test data")?;
+
+    let mut object2 = repo.object("test").unwrap();
+
+    assert!(object2.size().is_ok());
+    assert!(object2.content_id().is_ok());
+    assert!(object2.verify().is_ok());
+
+    Ok(())
+}
+
+#[test]
+fn uncommitted_changes_are_not_visible_from_other_instances() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let mut object1 = repo.insert(String::from("test"));
+    let expected_content = random_buffer();
+
+    object1.write_all(&expected_content)?;
+    object1.flush()?;
+
+    let mut object2 = repo.object("test").unwrap();
+    let mut actual_content = Vec::new();
+    object2.read_to_end(&mut actual_content)?;
+
+    assert!(actual_content.is_empty());
+
+    object1.commit()?;
+    object2.read_to_end(&mut actual_content)?;
+
+    assert_eq!(&actual_content, &expected_content);
+
+    Ok(())
+}
+
+#[test]
+fn accessing_once_repo_is_dropped_errs() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let mut object = repo.insert(String::from("test"));
+    drop(repo);
+    let mut content = Vec::new();
+
+    assert!(matches!(
+        object.size(),
+        Err(acid_store::Error::InvalidObject)
+    ));
+    assert!(matches!(
+        object.content_id(),
+        Err(acid_store::Error::InvalidObject)
+    ));
+    assert!(matches!(
+        object.verify(),
+        Err(acid_store::Error::InvalidObject)
+    ));
+    assert!(matches!(
+        object.truncate(0),
+        Err(acid_store::Error::InvalidObject)
+    ));
+    assert!(matches!(
+        acid_store::Error::from(object.seek(SeekFrom::Start(0)).unwrap_err()),
+        acid_store::Error::InvalidObject,
+    ));
+    assert!(matches!(
+        acid_store::Error::from(object.read(&mut content).unwrap_err()),
+        acid_store::Error::InvalidObject,
+    ));
+    assert!(matches!(
+        acid_store::Error::from(object.write(b"test data").unwrap_err()),
+        acid_store::Error::InvalidObject,
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn accessing_once_object_is_removed_errs() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let mut object = repo.insert(String::from("test"));
+    repo.remove("test");
+    let mut content = Vec::new();
+
+    assert!(matches!(
+        object.size(),
+        Err(acid_store::Error::InvalidObject)
+    ));
+    assert!(matches!(
+        object.content_id(),
+        Err(acid_store::Error::InvalidObject)
+    ));
+    assert!(matches!(
+        object.verify(),
+        Err(acid_store::Error::InvalidObject)
+    ));
+    assert!(matches!(
+        object.truncate(0),
+        Err(acid_store::Error::InvalidObject)
+    ));
+    assert!(matches!(
+        acid_store::Error::from(object.seek(SeekFrom::Start(0)).unwrap_err()),
+        acid_store::Error::InvalidObject,
+    ));
+    assert!(matches!(
+        acid_store::Error::from(object.read(&mut content).unwrap_err()),
+        acid_store::Error::InvalidObject,
+    ));
+    assert!(matches!(
+        acid_store::Error::from(object.write(b"test data").unwrap_err()),
+        acid_store::Error::InvalidObject,
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn converting_to_read_only_with_uncommitted_changes_errs() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let mut object = repo.insert(String::from("test"));
+    object.write_all(b"test data")?;
+
+    assert!(matches!(
+        ReadOnlyObject::try_from(object),
+        Err(acid_store::Error::TransactionInProgress)
+    ));
+
     Ok(())
 }

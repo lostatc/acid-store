@@ -37,19 +37,20 @@ use super::state::{ObjectState, RepoState};
 /// `Object` is dropped, any uncommitted changes are discarded. Attempting to read or seek on an
 /// `Object` with uncommitted changes will return [`Error::TransactionInProgress`].
 ///
-/// It is possible to have multiple `Object` and `ReadOnlyObject` instances which all refer to the
+/// It is possible to have multiple `Object` and [`ReadOnlyObject`] instances which all refer to the
 /// same object. Different instances can all read from the object concurrently, but only one
 /// instance can have a transaction in progress. Attempting to write to an `Object` if another
 /// instance already has a transaction in progress will return [`Error::TransactionInProgress`].
-/// Additionally, uncommitted changes to an object are not visible to other instances until the
-/// transaction is committed.
+/// Additionally, changes to an object are not visible to other instances until the transaction is
+/// committed.
 ///
 /// Because `Object` internally buffers data when reading, there's no need to use a buffered reader
 /// like `BufReader`.
 ///
 /// If encryption is enabled for the repository, data integrity is automatically verified as it is
-/// read and methods will return an `Err` if corrupt data is found. The [`verify`] method can be
-/// used to check the integrity of all the data in the object whether encryption is enabled or not.
+/// read and methods will return an [`Error::InvalidData`] if corrupt data is found. The [`verify`]
+/// method can be used to check the integrity of all the data in the object whether encryption is
+/// enabled or not.
 ///
 /// The methods of `Read`, `Write`, and `Seek` return `io::Result`, but the returned `io::Error` can
 /// be converted `Into` a [`crate::Error`] to be consistent with the rest of the library.
@@ -57,6 +58,8 @@ use super::state::{ObjectState, RepoState};
 /// [`commit`]: crate::repo::Object::commit
 /// [`Commit::clean`]: crate::repo::Commit::clean
 /// [`Error::TransactionInProgress`]: crate::Error::TransactionInProgress
+/// [`ReadOnlyObject`]: crate::repo::ReadOnlyObject
+/// [`Error::InvalidData`]: crate::Error::InvalidData
 /// [`verify`]: crate::repo::Object::verify
 #[derive(Debug)]
 pub struct Object {
@@ -201,7 +204,7 @@ impl Object {
     /// Commit changes to this object to the repository.
     ///
     /// Data written to this object via `Write` is not persisted to the repository or visible to
-    /// other `Object` or `ReadOnlyObject` instances until this method is called and returns `Ok`.
+    /// other `Object` or [`ReadOnlyObject`] instances until this method is called and returns `Ok`.
     ///
     /// This method automatically flushes changes, so it is not necessary to call `Write::flush`
     /// before calling this method.
@@ -217,6 +220,7 @@ impl Object {
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     ///
+    /// [`ReadOnlyObject`]: crate::repo::ReadOnlyObject
     /// [`Commit::commit`]: crate::repo::Commit::commit
     pub fn commit(&mut self) -> crate::Result<()> {
         ObjectStore::new(&self.repo_state, &self.handle)?
