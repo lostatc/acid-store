@@ -568,16 +568,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         reply.opened(fh, 0);
     }
 
-    fn read(
-        &mut self,
-        _req: &Request,
-        ino: u64,
-        fh: u64,
-        offset: i64,
-        size: u32,
-        reply: ReplyData,
-    ) {
-        // TODO: Implement flag behavior.
+    fn read(&mut self, req: &Request, ino: u64, fh: u64, offset: i64, size: u32, reply: ReplyData) {
         let flags = match self.handles.info(fh) {
             Some(HandleInfo {
                 handle_type: HandleType::Directory,
@@ -617,7 +608,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         try_result!(object.seek(SeekFrom::Start(offset as u64)), reply);
 
-        // This method should read the exact number of bytes requested except on EOF or error.
+        // `Filesystem::read` should read the exact number of bytes requested except on EOF or error.
         let mut buffer = Vec::with_capacity(size as usize);
         let mut bytes_read = 0;
         let mut total_bytes_read = 0;
@@ -632,6 +623,21 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                 // Either the object has reached EOF or we've already read `size` bytes from it.
                 break;
             }
+        }
+
+        // Update the file's `st_atime` unless the `O_NOATIME` flag was passed.
+        if !flags.contains(OFlag::O_NOATIME) {
+            let mut metadata = try_result!(self.repo.entry(&entry_path), reply).metadata;
+            match metadata {
+                Some(mut metadata) => {
+                    metadata.accessed = SystemTime::now();
+                }
+                mut metadata => {
+                    // The default metadata sets the `st_atime` to the current time.
+                    metadata = Some(file_entry.default_metadata(req));
+                }
+            }
+            try_result!(self.repo.set_metadata(&entry_path, &metadata), reply);
         }
 
         reply.data(&buffer[..total_bytes_read]);
