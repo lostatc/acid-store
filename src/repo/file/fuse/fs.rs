@@ -617,9 +617,23 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         try_result!(object.seek(SeekFrom::Start(offset as u64)), reply);
 
+        // This method should read the exact number of bytes requested except on EOF or error.
         let mut buffer = Vec::with_capacity(size as usize);
-        let bytes_read = try_result!(object.read_to_end(&mut buffer), reply);
+        let mut bytes_read = 0;
+        let mut total_bytes_read = 0;
+        loop {
+            bytes_read = try_result!(
+                object.read(&mut buffer[total_bytes_read..size as usize]),
+                reply
+            );
+            total_bytes_read += bytes_read;
 
-        reply.data(&buffer[..bytes_read]);
+            if bytes_read == 0 {
+                // Either the object has reached EOF or we've already read `size` bytes from it.
+                break;
+            }
+        }
+
+        reply.data(&buffer[..total_bytes_read]);
     }
 }
