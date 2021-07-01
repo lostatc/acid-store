@@ -730,4 +730,33 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         reply.written(bytes_written as u32);
     }
+
+    fn flush(&mut self, _req: &Request, ino: u64, _fh: u64, _lock_owner: u64, reply: ReplyEmpty) {
+        if let Some(object) = self.objects.get_mut(&ino) {
+            try_result!(object.commit(), reply);
+        }
+        reply.ok()
+    }
+
+    fn release(
+        &mut self,
+        _req: &Request,
+        _ino: u64,
+        fh: u64,
+        _flags: u32,
+        _lock_owner: u64,
+        _flush: bool,
+        reply: ReplyEmpty,
+    ) {
+        self.handles.close(fh);
+        reply.ok()
+    }
+
+    fn fsync(&mut self, _req: &Request, ino: u64, _fh: u64, _datasync: bool, reply: ReplyEmpty) {
+        if let Some(object) = self.objects.get_mut(&ino) {
+            try_result!(object.commit(), reply);
+        }
+        try_result!(self.repo.commit(), reply);
+        reply.ok();
+    }
 }
