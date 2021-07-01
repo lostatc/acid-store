@@ -16,7 +16,7 @@
 
 #![cfg(all(any(unix, doc), feature = "fuse-mount"))]
 
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry as HashMapEntry, HashMap};
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::ffi::OsStrExt;
@@ -35,7 +35,6 @@ use time::Timespec;
 
 use super::handle::{HandleInfo, HandleTable, HandleType};
 use super::inode::InodeTable;
-use super::object::ObjectTable;
 
 use crate::repo::file::{
     entry::{Entry, FileType},
@@ -43,6 +42,7 @@ use crate::repo::file::{
     repository::{FileRepo, EMPTY_PARENT},
     special::UnixSpecialType,
 };
+use crate::repo::Object;
 
 /// The block size used to calculate `st_blocks`.
 const BLOCK_SIZE: u64 = 512;
@@ -151,8 +151,8 @@ pub struct FuseAdapter<'a> {
     /// A table for allocating file handles.
     handles: HandleTable,
 
-    /// The table of currently open objects.
-    objects: ObjectTable<'a>,
+    /// A map of inodes to currently open file objects.
+    objects: HashMap<u64, Object>,
 }
 
 impl<'a> FuseAdapter<'a> {
@@ -168,7 +168,7 @@ impl<'a> FuseAdapter<'a> {
             repo,
             inodes,
             handles: HandleTable::new(),
-            objects: ObjectTable::new(),
+            objects: HashMap::new(),
         }
     }
 
@@ -185,20 +185,27 @@ impl<'a> FuseAdapter<'a> {
 
     /// Get the `FileAttr` for the `entry` with the given `inode`.
     fn entry_attr(
-        &self,
+        &mut self,
         entry: &Entry<UnixSpecialType, UnixMetadata>,
         inode: u64,
         req: &Request,
-    ) -> Option<FileAttr> {
-        let entry_path = self.inodes.path(inode)?;
+    ) -> crate::Result<FileAttr> {
+        let entry_path = self.inodes.path(inode).ok_or(crate::Error::NotFound)?;
         let default_metadata = entry.default_metadata(req);
         let metadata = entry.metadata.as_ref().unwrap_or(&default_metadata);
 
         let size = match &entry.file_type {
-            FileType::File => match self.repo.open(entry_path) {
-                Ok(object) => object.size(),
-                Err(crate::Error::NotFound) => return None,
-                Err(_) => panic!("The entry is a file in the repository but could not be opened."),
+            FileType::File => match self.objects.entry(inode) {
+                HashMapEntry::Occupied(mut entry) => {
+                    let object = entry.get_mut();
+                    // We must commit changes in case this object has a transaction in progress.
+                    object.commit()?;
+                    object.size().unwrap()
+                }
+                HashMapEntry::Vacant(entry) => {
+                    let object = self.repo.open(entry_path)?;
+                    entry.insert(object).size().unwrap()
+                }
             },
             FileType::Directory => 0,
             FileType::Special(special) => match special {
@@ -208,7 +215,7 @@ impl<'a> FuseAdapter<'a> {
             },
         };
 
-        Some(FileAttr {
+        Ok(FileAttr {
             ino: inode,
             size,
             blocks: size / BLOCK_SIZE,
@@ -265,7 +272,14 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             }
         };
 
-        let attr = self.entry_attr(&entry, entry_inode, req).unwrap();
+        let attr = match self.entry_attr(&entry, entry_inode, req) {
+            Ok(attr) => attr,
+            Err(error) => {
+                reply.error(error.to_errno());
+                return;
+            }
+        };
+
         let generation = self.inodes.generation(entry_inode);
 
         reply.entry(&DEFAULT_TTL, &attr, generation);
@@ -286,7 +300,13 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                 return;
             }
         };
-        let attr = self.entry_attr(&entry, ino, req).unwrap();
+        let attr = match self.entry_attr(&entry, ino, req) {
+            Ok(attr) => attr,
+            Err(error) => {
+                reply.error(error.to_errno());
+                return;
+            }
+        };
 
         reply.attr(&DEFAULT_TTL, &attr);
     }
@@ -352,7 +372,13 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             return;
         }
 
-        let attr = self.entry_attr(&entry, ino, req).unwrap();
+        let attr = match self.entry_attr(&entry, ino, req) {
+            Ok(attr) => attr,
+            Err(error) => {
+                reply.error(error.to_errno());
+                return;
+            }
+        };
         reply.attr(&DEFAULT_TTL, &attr);
     }
 
@@ -439,7 +465,13 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         }
 
         let entry_inode = self.inodes.insert(entry_path);
-        let attr = self.entry_attr(&entry, entry_inode, req).unwrap();
+        let attr = match self.entry_attr(&entry, entry_inode, req) {
+            Ok(attr) => attr,
+            Err(error) => {
+                reply.error(error.to_errno());
+                return;
+            }
+        };
         let generation = self.inodes.generation(entry_inode);
 
         reply.entry(&DEFAULT_TTL, &attr, generation);
@@ -464,7 +496,13 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         };
 
         let entry_inode = self.inodes.insert(entry_path);
-        let attr = self.entry_attr(&entry, entry_inode, req).unwrap();
+        let attr = match self.entry_attr(&entry, entry_inode, req) {
+            Ok(attr) => attr,
+            Err(error) => {
+                reply.error(error.to_errno());
+                return;
+            }
+        };
         let generation = self.inodes.generation(entry_inode);
 
         reply.entry(&DEFAULT_TTL, &attr, generation);
@@ -550,7 +588,13 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         };
 
         let entry_inode = self.inodes.insert(entry_path);
-        let attr = self.entry_attr(&entry, entry_inode, req).unwrap();
+        let attr = match self.entry_attr(&entry, entry_inode, req) {
+            Ok(attr) => attr,
+            Err(error) => {
+                reply.error(error.to_errno());
+                return;
+            }
+        };
         let generation = self.inodes.generation(entry_inode);
 
         reply.entry(&DEFAULT_TTL, &attr, generation);
@@ -687,16 +731,17 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                 return;
             }
         };
-
-        let object = match self
-            .objects
-            .as_read(ino, || self.repo.open(&entry_path).unwrap())
-        {
-            Ok(object) => object,
-            Err(error) => {
-                reply.error(error.to_errno());
-                return;
+        let object = match self.objects.entry(ino) {
+            HashMapEntry::Occupied(entry) => {
+                let object = entry.into_mut();
+                // We must commit changes in case this object has a transaction in progress.
+                if let Err(error) = object.commit() {
+                    reply.error(error.to_errno());
+                    return;
+                }
+                object
             }
+            HashMapEntry::Vacant(entry) => entry.insert(self.repo.open(entry_path).unwrap()),
         };
 
         if let Err(error) = object.seek(SeekFrom::Start(offset as u64)) {
