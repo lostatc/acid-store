@@ -18,13 +18,14 @@
 
 use std::collections::{hash_map::Entry as HashMapEntry, HashMap};
 use std::ffi::OsStr;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use fuse::{
-    FileAttr, Filesystem, ReplyAttr, ReplyData, ReplyEmpty, ReplyEntry, ReplyOpen, Request,
+    FileAttr, Filesystem, ReplyAttr, ReplyData, ReplyEmpty, ReplyEntry, ReplyOpen, ReplyWrite,
+    Request,
 };
 use nix::fcntl::OFlag;
 use nix::libc;
@@ -42,7 +43,7 @@ use crate::repo::file::{
     repository::{FileRepo, EMPTY_PARENT},
     special::UnixSpecialType,
 };
-use crate::repo::Object;
+use crate::repo::{Commit, Object};
 
 /// The block size used to calculate `st_blocks`.
 const BLOCK_SIZE: u64 = 512;
@@ -162,6 +163,14 @@ impl Entry<UnixSpecialType, UnixMetadata> {
             group: req.gid(),
             attributes: HashMap::new(),
             acl: HashMap::new(),
+        }
+    }
+
+    /// Return this entry's metadata or the default metadata if it's `None`.
+    fn metadata_or_default(self, req: &Request) -> UnixMetadata {
+        match self.metadata {
+            Some(metadata) => metadata,
+            None => self.default_metadata(req),
         }
     }
 }
@@ -603,14 +612,14 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                 try_result!(object.commit(), reply);
                 object
             }
-            HashMapEntry::Vacant(entry) => entry.insert(self.repo.open(entry_path).unwrap()),
+            HashMapEntry::Vacant(entry) => entry.insert(self.repo.open(&entry_path).unwrap()),
         };
 
         try_result!(object.seek(SeekFrom::Start(offset as u64)), reply);
 
         // `Filesystem::read` should read the exact number of bytes requested except on EOF or error.
         let mut buffer = Vec::with_capacity(size as usize);
-        let mut bytes_read = 0;
+        let mut bytes_read;
         let mut total_bytes_read = 0;
         loop {
             bytes_read = try_result!(
@@ -627,19 +636,98 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         // Update the file's `st_atime` unless the `O_NOATIME` flag was passed.
         if !flags.contains(OFlag::O_NOATIME) {
-            let mut metadata = try_result!(self.repo.entry(&entry_path), reply).metadata;
-            match metadata {
-                Some(mut metadata) => {
-                    metadata.accessed = SystemTime::now();
-                }
-                mut metadata => {
-                    // The default metadata sets the `st_atime` to the current time.
-                    metadata = Some(file_entry.default_metadata(req));
-                }
-            }
-            try_result!(self.repo.set_metadata(&entry_path, &metadata), reply);
+            let mut metadata =
+                try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
+            metadata.accessed = SystemTime::now();
+            try_result!(self.repo.set_metadata(&entry_path, Some(metadata)), reply);
         }
 
         reply.data(&buffer[..total_bytes_read]);
+    }
+
+    fn write(
+        &mut self,
+        req: &Request,
+        ino: u64,
+        fh: u64,
+        offset: i64,
+        data: &[u8],
+        _flags: u32,
+        reply: ReplyWrite,
+    ) {
+        let flags = match self.handles.info(fh) {
+            Some(HandleInfo {
+                handle_type: HandleType::Directory,
+                ..
+            }) => {
+                reply.error(libc::EISDIR);
+                return;
+            }
+            Some(info) => info.flags,
+            None => {
+                reply.error(libc::EBADF);
+                return;
+            }
+        };
+
+        // Technically, on Unix systems, a file should still be accessible via its file descriptor
+        // once it's been unlinked. Because this isn't how repositories work, we will return `EBADF`
+        // if the user tries to read from a file which has been unlinked since it was opened.
+        let entry_path = match self.inodes.path(ino) {
+            Some(path) => path.to_owned(),
+            None => {
+                self.handles.close(fh);
+                reply.error(libc::EBADF);
+                return;
+            }
+        };
+
+        let object = match self.objects.entry(ino) {
+            HashMapEntry::Occupied(entry) => entry.into_mut(),
+            HashMapEntry::Vacant(entry) => entry.insert(self.repo.open(&entry_path).unwrap()),
+        };
+
+        if flags.contains(OFlag::O_APPEND) {
+            try_result!(object.seek(SeekFrom::End(0)), reply);
+        } else {
+            try_result!(object.seek(SeekFrom::Start(offset as u64)), reply);
+        }
+
+        let mut metadata =
+            try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
+
+        let bytes_written = try_result!(object.write(data), reply);
+
+        // After this point, we need to be more careful about error handling. Because bytes have
+        // been written to the object, if an error occurs, we need to drop the `Object` to discard
+        // any uncommitted changes before returning so that bytes will only have been written to the
+        // object if this method returns successfully.
+
+        // Update the `st_atime` and `st_mtime` for the entry.
+        metadata.accessed = SystemTime::now();
+        metadata.modified = SystemTime::now();
+        if let Err(error) = self.repo.set_metadata(&entry_path, Some(metadata)) {
+            self.objects.remove(&ino);
+            reply.error(error.to_errno());
+            return;
+        }
+
+        // If the `O_SYNC` or `O_DSYNC` flags were passed, we need to commit changes to the object
+        // *and* commit changes to the repository after each write.
+        if flags.intersects(OFlag::O_SYNC | OFlag::O_DSYNC) {
+            if let Err(error) = object.commit() {
+                self.objects.remove(&ino);
+                reply.error(error.to_errno());
+                return;
+            }
+
+            if let Err(error) = self.repo.commit() {
+                self.objects.remove(&ino);
+                reply.error(error.to_errno());
+                return;
+            }
+        }
+
+        reply.written(bytes_written as u32);
     }
 }
