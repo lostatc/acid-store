@@ -68,6 +68,32 @@ const DEFAULT_FILE_MODE: u32 = 0o664;
 /// The set of `open` flags which are not supported by this file system.
 const UNSUPPORTED_OPEN_FLAGS: Lazy<OFlag> = Lazy::new(|| OFlag::O_DIRECT | OFlag::O_TMPFILE);
 
+/// Handle a `crate::Result` in a FUSE method.
+macro_rules! try_result {
+    ($result:expr, $reply:expr) => {
+        match $result {
+            Ok(result) => result,
+            Err(error) => {
+                $reply.error(crate::Error::from(error).to_errno());
+                return;
+            }
+        }
+    };
+}
+
+/// Handle an `Option` in a FUSE method.
+macro_rules! try_option {
+    ($result:expr, $reply:expr, $error:expr) => {
+        match $result {
+            Some(result) => result,
+            None => {
+                $reply.error($error);
+                return;
+            }
+        }
+    };
+}
+
 impl crate::Error {
     /// Get the libc errno for this error.
     fn to_errno(&self) -> i32 {
@@ -256,29 +282,11 @@ impl<'a> FuseAdapter<'a> {
 
 impl<'a> Filesystem for FuseAdapter<'a> {
     fn lookup(&mut self, req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
-        let entry_path = match self.child_path(parent, name) {
-            Some(path) => path,
-            None => {
-                reply.error(libc::ENOENT);
-                return;
-            }
-        };
+        let entry_path = try_option!(self.child_path(parent, name), reply, libc::ENOENT);
         let entry_inode = self.inodes.inode(&entry_path).unwrap();
-        let entry = match self.repo.entry(&entry_path) {
-            Ok(entry) => entry,
-            Err(error) => {
-                reply.error(error.to_errno());
-                return;
-            }
-        };
+        let entry = try_result!(self.repo.entry(&entry_path), reply);
 
-        let attr = match self.entry_attr(&entry, entry_inode, req) {
-            Ok(attr) => attr,
-            Err(error) => {
-                reply.error(error.to_errno());
-                return;
-            }
-        };
+        let attr = try_result!(self.entry_attr(&entry, entry_inode, req), reply);
 
         let generation = self.inodes.generation(entry_inode);
 
@@ -286,27 +294,9 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     }
 
     fn getattr(&mut self, req: &Request, ino: u64, reply: ReplyAttr) {
-        let entry_path = match self.inodes.path(ino) {
-            Some(path) => path,
-            None => {
-                reply.error(libc::ENOENT);
-                return;
-            }
-        };
-        let entry = match self.repo.entry(&entry_path) {
-            Ok(entry) => entry,
-            Err(error) => {
-                reply.error(error.to_errno());
-                return;
-            }
-        };
-        let attr = match self.entry_attr(&entry, ino, req) {
-            Ok(attr) => attr,
-            Err(error) => {
-                reply.error(error.to_errno());
-                return;
-            }
-        };
+        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
+        let entry = try_result!(self.repo.entry(&entry_path), reply);
+        let attr = try_result!(self.entry_attr(&entry, ino, req), reply);
 
         reply.attr(&DEFAULT_TTL, &attr);
     }
@@ -328,21 +318,9 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         _flags: Option<u32>,
         reply: ReplyAttr,
     ) {
-        let entry_path = match self.inodes.path(ino) {
-            Some(path) => path,
-            None => {
-                reply.error(libc::ENOENT);
-                return;
-            }
-        };
+        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
 
-        let mut entry = match self.repo.entry(&entry_path) {
-            Ok(entry) => entry,
-            Err(error) => {
-                reply.error(error.to_errno());
-                return;
-            }
-        };
+        let mut entry = try_result!(self.repo.entry(&entry_path), reply);
 
         let default_metadata = entry.default_metadata(req);
         let metadata = entry.metadata.get_or_insert(default_metadata);
@@ -367,36 +345,18 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             metadata.modified = to_system_time(mtime);
         }
 
-        if let Err(error) = self.repo.set_metadata(entry_path, entry.metadata.clone()) {
-            reply.error(error.to_errno());
-            return;
-        }
+        try_result!(
+            self.repo.set_metadata(entry_path, entry.metadata.clone()),
+            reply
+        );
 
-        let attr = match self.entry_attr(&entry, ino, req) {
-            Ok(attr) => attr,
-            Err(error) => {
-                reply.error(error.to_errno());
-                return;
-            }
-        };
+        let attr = try_result!(self.entry_attr(&entry, ino, req), reply);
         reply.attr(&DEFAULT_TTL, &attr);
     }
 
     fn readlink(&mut self, _req: &Request, ino: u64, reply: ReplyData) {
-        let entry_path = match self.inodes.path(ino) {
-            Some(path) => path,
-            None => {
-                reply.error(libc::ENOENT);
-                return;
-            }
-        };
-        let entry = match self.repo.entry(&entry_path) {
-            Ok(entry) => entry,
-            Err(error) => {
-                reply.error(error.to_errno());
-                return;
-            }
-        };
+        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
+        let entry = try_result!(self.repo.entry(&entry_path), reply);
         match &entry.file_type {
             FileType::Special(UnixSpecialType::SymbolicLink { target }) => {
                 reply.data(target.as_os_str().as_bytes());
@@ -416,13 +376,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         rdev: u32,
         reply: ReplyEntry,
     ) {
-        let entry_path = match self.child_path(parent, name) {
-            Some(path) => path,
-            None => {
-                reply.error(libc::ENOENT);
-                return;
-            }
-        };
+        let entry_path = try_option!(self.child_path(parent, name), reply, libc::ENOENT);
 
         let file_type = match stat::SFlag::from_bits(mode) {
             Some(s_flag) => {
@@ -459,73 +413,40 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         let entry = Entry::new(file_type, req);
 
-        if let Err(error) = self.repo.create(&entry_path, &entry) {
-            reply.error(error.to_errno());
-            return;
-        }
+        try_result!(self.repo.create(&entry_path, &entry), reply);
 
         let entry_inode = self.inodes.insert(entry_path);
-        let attr = match self.entry_attr(&entry, entry_inode, req) {
-            Ok(attr) => attr,
-            Err(error) => {
-                reply.error(error.to_errno());
-                return;
-            }
-        };
+        let attr = try_result!(self.entry_attr(&entry, entry_inode, req), reply);
         let generation = self.inodes.generation(entry_inode);
 
         reply.entry(&DEFAULT_TTL, &attr, generation);
     }
 
     fn mkdir(&mut self, req: &Request, parent: u64, name: &OsStr, mode: u32, reply: ReplyEntry) {
-        let entry_path = match self.child_path(parent, name) {
-            Some(path) => path,
-            None => {
-                reply.error(libc::ENOENT);
-                return;
-            }
-        };
+        let entry_path = try_option!(self.child_path(parent, name), reply, libc::ENOENT);
 
         let mut entry = Entry::new(FileType::Directory, req);
         let metadata = entry.metadata.as_mut().unwrap();
         metadata.mode = mode;
 
-        if let Err(error) = self.repo.create(&entry_path, &entry) {
-            reply.error(error.to_errno());
-            return;
-        };
+        try_result!(self.repo.create(&entry_path, &entry), reply);
 
         let entry_inode = self.inodes.insert(entry_path);
-        let attr = match self.entry_attr(&entry, entry_inode, req) {
-            Ok(attr) => attr,
-            Err(error) => {
-                reply.error(error.to_errno());
-                return;
-            }
-        };
+        let attr = try_result!(self.entry_attr(&entry, entry_inode, req), reply);
         let generation = self.inodes.generation(entry_inode);
 
         reply.entry(&DEFAULT_TTL, &attr, generation);
     }
 
     fn unlink(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
-        let entry_path = match self.child_path(parent, name) {
-            Some(path) => path,
-            None => {
-                reply.error(libc::ENOENT);
-                return;
-            }
-        };
+        let entry_path = try_option!(self.child_path(parent, name), reply, libc::ENOENT);
 
         if self.repo.is_directory(&entry_path) {
             reply.error(libc::EISDIR);
             return;
         }
 
-        if let Err(error) = self.repo.remove(&entry_path) {
-            reply.error(error.to_errno());
-            return;
-        }
+        try_result!(self.repo.remove(&entry_path), reply);
 
         let entry_inode = self.inodes.inode(&entry_path).unwrap();
         self.inodes.remove(entry_inode);
@@ -534,13 +455,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     }
 
     fn rmdir(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
-        let entry_path = match self.child_path(parent, name) {
-            Some(path) => path,
-            None => {
-                reply.error(libc::ENOENT);
-                return;
-            }
-        };
+        let entry_path = try_option!(self.child_path(parent, name), reply, libc::ENOENT);
 
         if !self.repo.is_directory(&entry_path) {
             reply.error(libc::ENOTDIR);
@@ -548,10 +463,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         }
 
         // `FileRepo::remove` method checks that the directory entry is empty.
-        if let Err(error) = self.repo.remove(&entry_path) {
-            reply.error(error.to_errno());
-            return;
-        }
+        try_result!(self.repo.remove(&entry_path), reply);
 
         let entry_inode = self.inodes.inode(&entry_path).unwrap();
         self.inodes.remove(entry_inode);
@@ -567,13 +479,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         link: &Path,
         reply: ReplyEntry,
     ) {
-        let entry_path = match self.child_path(parent, name) {
-            Some(path) => path,
-            None => {
-                reply.error(libc::ENOENT);
-                return;
-            }
-        };
+        let entry_path = try_option!(self.child_path(parent, name), reply, libc::ENOENT);
 
         let entry = Entry::new(
             FileType::Special(UnixSpecialType::SymbolicLink {
@@ -582,19 +488,10 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             req,
         );
 
-        if let Err(error) = self.repo.create(&entry_path, &entry) {
-            reply.error(error.to_errno());
-            return;
-        };
+        try_result!(self.repo.create(&entry_path, &entry), reply);
 
         let entry_inode = self.inodes.insert(entry_path);
-        let attr = match self.entry_attr(&entry, entry_inode, req) {
-            Ok(attr) => attr,
-            Err(error) => {
-                reply.error(error.to_errno());
-                return;
-            }
-        };
+        let attr = try_result!(self.entry_attr(&entry, entry_inode, req), reply);
         let generation = self.inodes.generation(entry_inode);
 
         reply.entry(&DEFAULT_TTL, &attr, generation);
@@ -609,20 +506,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         newname: &OsStr,
         reply: ReplyEmpty,
     ) {
-        let source_path = match self.child_path(parent, name) {
-            Some(path) => path,
-            None => {
-                reply.error(libc::ENOENT);
-                return;
-            }
-        };
-        let dest_path = match self.child_path(newparent, newname) {
-            Some(path) => path,
-            None => {
-                reply.error(libc::ENOENT);
-                return;
-            }
-        };
+        let source_path = try_option!(self.child_path(parent, name), reply, libc::ENOENT);
+        let dest_path = try_option!(self.child_path(newparent, newname), reply, libc::ENOENT);
 
         if !self.repo.exists(&source_path) {
             reply.error(libc::ENOENT);
@@ -665,26 +550,14 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     }
 
     fn open(&mut self, _req: &Request, ino: u64, flags: u32, reply: ReplyOpen) {
-        let flags = match OFlag::from_bits(flags as i32) {
-            Some(flags) => flags,
-            None => {
-                reply.error(libc::EINVAL);
-                return;
-            }
-        };
+        let flags = try_option!(OFlag::from_bits(flags as i32), reply, libc::EINVAL);
 
         if flags.intersects(*UNSUPPORTED_OPEN_FLAGS) {
             reply.error(libc::ENOTSUP);
             return;
         }
 
-        let entry_path = match self.inodes.path(ino) {
-            Some(path) => path,
-            None => {
-                reply.error(libc::ENOENT);
-                return;
-            }
-        };
+        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
 
         if !self.repo.is_file(&entry_path) {
             reply.error(libc::ENOTSUP);
@@ -731,32 +604,21 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                 return;
             }
         };
+
         let object = match self.objects.entry(ino) {
             HashMapEntry::Occupied(entry) => {
                 let object = entry.into_mut();
                 // We must commit changes in case this object has a transaction in progress.
-                if let Err(error) = object.commit() {
-                    reply.error(error.to_errno());
-                    return;
-                }
+                try_result!(object.commit(), reply);
                 object
             }
             HashMapEntry::Vacant(entry) => entry.insert(self.repo.open(entry_path).unwrap()),
         };
 
-        if let Err(error) = object.seek(SeekFrom::Start(offset as u64)) {
-            reply.error(crate::Error::Io(error).to_errno());
-            return;
-        }
+        try_result!(object.seek(SeekFrom::Start(offset as u64)), reply);
 
         let mut buffer = Vec::with_capacity(size as usize);
-        let bytes_read = match object.read_to_end(&mut buffer) {
-            Ok(bytes_read) => bytes_read,
-            Err(error) => {
-                reply.error(crate::Error::Io(error).to_errno());
-                return;
-            }
-        };
+        let bytes_read = try_result!(object.read_to_end(&mut buffer), reply);
 
         reply.data(&buffer[..bytes_read]);
     }
