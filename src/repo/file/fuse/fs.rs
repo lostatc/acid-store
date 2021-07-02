@@ -385,6 +385,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             reply
         );
 
+        try_result!(self.repo.commit(), reply);
+
         let attr = try_result!(self.entry_attr(&entry, ino, req), reply);
         reply.attr(&DEFAULT_TTL, &attr);
     }
@@ -450,6 +452,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         try_result!(self.repo.create(&entry_path, &entry), reply);
 
+        try_result!(self.repo.commit(), reply);
+
         let entry_inode = self.inodes.insert(entry_path);
         let attr = try_result!(self.entry_attr(&entry, entry_inode, req), reply);
         let generation = self.inodes.generation(entry_inode);
@@ -465,6 +469,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         metadata.mode = mode;
 
         try_result!(self.repo.create(&entry_path, &entry), reply);
+
+        try_result!(self.repo.commit(), reply);
 
         let entry_inode = self.inodes.insert(entry_path);
         let attr = try_result!(self.entry_attr(&entry, entry_inode, req), reply);
@@ -483,6 +489,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         try_result!(self.repo.remove(&entry_path), reply);
 
+        try_result!(self.repo.commit(), reply);
+
         let entry_inode = self.inodes.inode(&entry_path).unwrap();
         self.inodes.remove(entry_inode);
 
@@ -499,6 +507,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         // `FileRepo::remove` method checks that the directory entry is empty.
         try_result!(self.repo.remove(&entry_path), reply);
+
+        try_result!(self.repo.commit(), reply);
 
         let entry_inode = self.inodes.inode(&entry_path).unwrap();
         self.inodes.remove(entry_inode);
@@ -524,6 +534,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         );
 
         try_result!(self.repo.create(&entry_path, &entry), reply);
+
+        try_result!(self.repo.commit(), reply);
 
         let entry_inode = self.inodes.insert(entry_path);
         let attr = try_result!(self.entry_attr(&entry, entry_inode, req), reply);
@@ -569,6 +581,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         // We've already checked all the possible error conditions.
         self.repo.copy(&source_path, &dest_path).ok();
+
+        try_result!(self.repo.commit(), reply);
 
         reply.ok();
     }
