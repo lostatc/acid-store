@@ -24,8 +24,8 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use fuse::{
-    FileAttr, Filesystem, ReplyAttr, ReplyData, ReplyEmpty, ReplyEntry, ReplyOpen, ReplyWrite,
-    Request,
+    FileAttr, FileType as FuseFileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory,
+    ReplyEmpty, ReplyEntry, ReplyOpen, ReplyWrite, Request,
 };
 use nix::fcntl::OFlag;
 use nix::libc;
@@ -175,6 +175,28 @@ impl Entry<UnixSpecialType, UnixMetadata> {
     }
 }
 
+impl FileType<UnixSpecialType> {
+    /// Convert this `FileType` to a `fuse`-compatible file type.
+    pub fn to_file_type(&self) -> FuseFileType {
+        match self {
+            FileType::File => FuseFileType::RegularFile,
+            FileType::Directory => FuseFileType::Directory,
+            FileType::Special(UnixSpecialType::BlockDevice { .. }) => FuseFileType::BlockDevice,
+            FileType::Special(UnixSpecialType::CharacterDevice { .. }) => FuseFileType::CharDevice,
+            FileType::Special(UnixSpecialType::SymbolicLink { .. }) => FuseFileType::Symlink,
+            FileType::Special(UnixSpecialType::NamedPipe { .. }) => FuseFileType::NamedPipe,
+        }
+    }
+}
+
+/// A directory entry for an open file handle.
+#[derive(Debug)]
+pub struct DirectoryEntry {
+    pub file_name: String,
+    pub file_type: FuseFileType,
+    pub inode: u64,
+}
+
 #[derive(Debug)]
 pub struct FuseAdapter<'a> {
     /// The repository which contains the virtual file system.
@@ -188,6 +210,9 @@ pub struct FuseAdapter<'a> {
 
     /// A map of inodes to currently open file objects.
     objects: HashMap<u64, Object>,
+
+    /// A map of open directory handles to lists of their child entries.
+    directories: HashMap<u64, Vec<DirectoryEntry>>,
 }
 
 impl<'a> FuseAdapter<'a> {
@@ -204,6 +229,7 @@ impl<'a> FuseAdapter<'a> {
             inodes,
             handles: HandleTable::new(),
             objects: HashMap::new(),
+            directories: HashMap::new(),
         }
     }
 
@@ -756,6 +782,92 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         if let Some(object) = self.objects.get_mut(&ino) {
             try_result!(object.commit(), reply);
         }
+        try_result!(self.repo.commit(), reply);
+        reply.ok();
+    }
+
+    fn opendir(&mut self, _req: &Request, ino: u64, flags: u32, reply: ReplyOpen) {
+        let flags = try_option!(OFlag::from_bits(flags as i32), reply, libc::EINVAL);
+
+        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
+
+        if !self.repo.is_directory(entry_path) {
+            reply.error(libc::ENOTDIR);
+            return;
+        }
+
+        let mut children = Vec::new();
+        for child_path in try_result!(self.repo.list(entry_path), reply) {
+            let file_name = child_path.file_name().unwrap().to_string();
+            let inode = self.inodes.inode(&child_path).unwrap();
+            let file_type = try_result!(self.repo.entry(&child_path), reply)
+                .file_type
+                .to_file_type();
+            children.push(DirectoryEntry {
+                file_name,
+                file_type,
+                inode,
+            })
+        }
+
+        let fh = self.handles.open(flags, HandleType::Directory);
+        self.directories.insert(fh, children);
+
+        reply.opened(fh, 0);
+    }
+
+    fn readdir(
+        &mut self,
+        _req: &Request,
+        _ino: u64,
+        fh: u64,
+        offset: i64,
+        mut reply: ReplyDirectory,
+    ) {
+        match self.handles.info(fh) {
+            Some(HandleInfo {
+                handle_type: HandleType::File,
+                ..
+            }) => {
+                reply.error(libc::ENOTDIR);
+                return;
+            }
+            None => {
+                reply.error(libc::EBADF);
+                return;
+            }
+            _ => {}
+        }
+
+        let children = self.directories.get(&fh).unwrap();
+
+        for (i, dir_entry) in children[offset as usize..].iter().enumerate() {
+            if reply.add(
+                dir_entry.inode,
+                (i + 1) as i64,
+                dir_entry.file_type,
+                &dir_entry.file_name,
+            ) {
+                break;
+            }
+        }
+
+        reply.ok();
+    }
+
+    fn releasedir(&mut self, _req: &Request, _ino: u64, fh: u64, _flags: u32, reply: ReplyEmpty) {
+        self.handles.close(fh);
+        reply.ok()
+    }
+
+    fn fsyncdir(
+        &mut self,
+        _req: &Request,
+        _ino: u64,
+        _fh: u64,
+        _datasync: bool,
+        reply: ReplyEmpty,
+    ) {
         try_result!(self.repo.commit(), reply);
         reply.ok();
     }
