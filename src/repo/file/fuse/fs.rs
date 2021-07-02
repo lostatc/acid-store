@@ -18,7 +18,7 @@
 
 use std::collections::{hash_map::Entry as HashMapEntry, HashMap};
 use std::ffi::OsStr;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -234,14 +234,15 @@ impl<'a> FuseAdapter<'a> {
     }
 
     /// Return the path of the entry with the given `name` and `parent_inode`.
-    ///
-    /// If there is no such entry, this returns `None`.
-    fn child_path(&self, parent_inode: u64, name: &OsStr) -> Option<RelativePathBuf> {
-        Some(
-            self.inodes
-                .path(parent_inode)?
-                .join(name.to_string_lossy().as_ref()),
-        )
+    fn child_path(&self, parent_inode: u64, name: &OsStr) -> crate::Result<RelativePathBuf> {
+        let file_name = name
+            .to_str()
+            .ok_or(io::Error::from_raw_os_error(libc::EINVAL))?;
+        Ok(self
+            .inodes
+            .path(parent_inode)
+            .ok_or(crate::Error::NotFound)?
+            .join(file_name))
     }
 
     /// Get the `FileAttr` for the `entry` with the given `inode`.
@@ -317,7 +318,7 @@ impl<'a> FuseAdapter<'a> {
 
 impl<'a> Filesystem for FuseAdapter<'a> {
     fn lookup(&mut self, req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
-        let entry_path = try_option!(self.child_path(parent, name), reply, libc::ENOENT);
+        let entry_path = try_result!(self.child_path(parent, name), reply);
         let entry_inode = self.inodes.inode(&entry_path).unwrap();
         let entry = try_result!(self.repo.entry(&entry_path), reply);
 
@@ -413,7 +414,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         rdev: u32,
         reply: ReplyEntry,
     ) {
-        let entry_path = try_option!(self.child_path(parent, name), reply, libc::ENOENT);
+        let entry_path = try_result!(self.child_path(parent, name), reply);
 
         let file_type = match stat::SFlag::from_bits(mode) {
             Some(s_flag) => {
@@ -462,7 +463,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     }
 
     fn mkdir(&mut self, req: &Request, parent: u64, name: &OsStr, mode: u32, reply: ReplyEntry) {
-        let entry_path = try_option!(self.child_path(parent, name), reply, libc::ENOENT);
+        let entry_path = try_result!(self.child_path(parent, name), reply);
 
         let mut entry = Entry::new(FileType::Directory, req);
         let metadata = entry.metadata.as_mut().unwrap();
@@ -480,7 +481,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     }
 
     fn unlink(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
-        let entry_path = try_option!(self.child_path(parent, name), reply, libc::ENOENT);
+        let entry_path = try_result!(self.child_path(parent, name), reply);
 
         if self.repo.is_directory(&entry_path) {
             reply.error(libc::EISDIR);
@@ -498,7 +499,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     }
 
     fn rmdir(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
-        let entry_path = try_option!(self.child_path(parent, name), reply, libc::ENOENT);
+        let entry_path = try_result!(self.child_path(parent, name), reply);
 
         if !self.repo.is_directory(&entry_path) {
             reply.error(libc::ENOTDIR);
@@ -524,7 +525,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         link: &Path,
         reply: ReplyEntry,
     ) {
-        let entry_path = try_option!(self.child_path(parent, name), reply, libc::ENOENT);
+        let entry_path = try_result!(self.child_path(parent, name), reply);
 
         let entry = Entry::new(
             FileType::Special(UnixSpecialType::SymbolicLink {
@@ -553,8 +554,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         newname: &OsStr,
         reply: ReplyEmpty,
     ) {
-        let source_path = try_option!(self.child_path(parent, name), reply, libc::ENOENT);
-        let dest_path = try_option!(self.child_path(newparent, newname), reply, libc::ENOENT);
+        let source_path = try_result!(self.child_path(parent, name), reply);
+        let dest_path = try_result!(self.child_path(newparent, newname), reply);
 
         if !self.repo.exists(&source_path) {
             reply.error(libc::ENOENT);
