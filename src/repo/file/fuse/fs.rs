@@ -25,7 +25,7 @@ use std::time::{Duration, SystemTime};
 
 use fuse::{
     FileAttr, FileType as FuseFileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory,
-    ReplyEmpty, ReplyEntry, ReplyOpen, ReplyWrite, Request,
+    ReplyEmpty, ReplyEntry, ReplyOpen, ReplyStatfs, ReplyWrite, ReplyXattr, Request,
 };
 use nix::fcntl::OFlag;
 use nix::libc;
@@ -884,6 +884,121 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         reply: ReplyEmpty,
     ) {
         try_result!(self.repo.commit(), reply);
+        reply.ok();
+    }
+
+    fn statfs(&mut self, _req: &Request, _ino: u64, reply: ReplyStatfs) {
+        reply.error(libc::ENOSYS);
+    }
+
+    fn setxattr(
+        &mut self,
+        req: &Request,
+        ino: u64,
+        name: &OsStr,
+        value: &[u8],
+        flags: u32,
+        _position: u32,
+        reply: ReplyEmpty,
+    ) {
+        let attr_name = try_option!(name.to_str(), reply, libc::EINVAL).to_owned();
+
+        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
+        let mut metadata =
+            try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
+
+        if flags == 0 {
+            metadata.attributes.insert(attr_name, value.to_vec());
+        } else if flags == libc::XATTR_CREATE as u32 {
+            match metadata.attributes.entry(attr_name) {
+                HashMapEntry::Occupied(_) => {
+                    reply.error(libc::EEXIST);
+                    return;
+                }
+                HashMapEntry::Vacant(entry) => {
+                    entry.insert(value.to_vec());
+                }
+            }
+        } else if flags == libc::XATTR_REPLACE as u32 {
+            match metadata.attributes.entry(attr_name) {
+                HashMapEntry::Occupied(mut entry) => {
+                    entry.insert(value.to_vec());
+                }
+                HashMapEntry::Vacant(_) => {
+                    reply.error(libc::ENODATA);
+                    return;
+                }
+            }
+        } else {
+            reply.error(libc::EINVAL);
+            return;
+        }
+
+        try_result!(self.repo.set_metadata(entry_path, Some(metadata)), reply);
+
+        try_result!(self.repo.commit(), reply);
+
+        reply.ok();
+    }
+
+    fn getxattr(&mut self, req: &Request, ino: u64, name: &OsStr, size: u32, reply: ReplyXattr) {
+        let attr_name = try_option!(name.to_str(), reply, libc::ENODATA).to_owned();
+
+        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
+        let metadata = try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
+
+        let attr_value = try_option!(metadata.attributes.get(&attr_name), reply, libc::ENODATA);
+
+        if size == 0 {
+            reply.size(attr_value.len() as u32);
+            return;
+        }
+
+        if attr_value.len() > size as usize {
+            reply.error(libc::ERANGE);
+            return;
+        }
+
+        reply.data(attr_value.as_slice());
+    }
+
+    fn listxattr(&mut self, req: &Request, ino: u64, size: u32, reply: ReplyXattr) {
+        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
+        let metadata = try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
+
+        // Construct a byte string of null-terminated attribute names.
+        let mut attr_names = Vec::new();
+        for attr_name in metadata.attributes.keys() {
+            attr_names.extend_from_slice(attr_name.as_bytes());
+            attr_names.push(0u8);
+        }
+
+        if size == 0 {
+            reply.size(attr_names.len() as u32);
+            return;
+        }
+
+        if attr_names.len() > size as usize {
+            reply.error(libc::ERANGE);
+            return;
+        }
+
+        reply.data(attr_names.as_slice());
+    }
+
+    fn removexattr(&mut self, req: &Request, ino: u64, name: &OsStr, reply: ReplyEmpty) {
+        let attr_name = try_option!(name.to_str(), reply, libc::ENODATA).to_owned();
+
+        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
+        let mut metadata =
+            try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
+
+        metadata.attributes.remove(&attr_name);
+
+        try_result!(self.repo.set_metadata(entry_path, Some(metadata)), reply);
+
+        try_result!(self.repo.commit(), reply);
+
         reply.ok();
     }
 }
