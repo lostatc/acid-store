@@ -17,6 +17,7 @@
 use std::collections::HashMap;
 
 use bimap::BiMap;
+use fuse::FUSE_ROOT_ID;
 use relative_path::{RelativePath, RelativePathBuf};
 
 use crate::repo::common::IdTable;
@@ -42,7 +43,12 @@ pub struct InodeTable {
 impl InodeTable {
     /// Return a new empty `InodeTable`.
     pub fn new() -> Self {
-        Self::default()
+        let mut table = Self::default();
+        // Add the root entry to the table.
+        table
+            .paths
+            .insert(FUSE_ROOT_ID, RelativePath::new("").to_owned());
+        table
     }
 
     /// Return whether the given `inode` is in the table.
