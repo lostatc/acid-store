@@ -325,7 +325,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     fn lookup(&mut self, req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
         let file_name = try_option!(name.to_str(), reply, libc::ENOENT);
         let entry_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).join(file_name);
-        let entry_inode = self.inodes.inode(&entry_path).unwrap();
+        let entry_inode = try_option!(self.inodes.inode(&entry_path), reply, libc::ENOENT);
         let entry = try_result!(self.repo.entry(&entry_path), reply);
 
         let attr = try_result!(self.entry_attr(&entry, entry_inode, req), reply);
