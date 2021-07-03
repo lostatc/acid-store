@@ -898,6 +898,9 @@ where
     }
 }
 
+/// The default mount options which are always passed to libfuse.
+const DEFAULT_FUSE_MOUNT_OPTS: &'static [&str] = &["default_permissions", "auto_umount"];
+
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "fuse-mount"))))]
 impl FileRepo<UnixSpecialType, UnixMetadata> {
@@ -911,6 +914,11 @@ impl FileRepo<UnixSpecialType, UnixMetadata> {
     /// - `Error::Io`: An I/O error occurred.
     pub fn mount(&mut self, mountpoint: impl AsRef<Path>, options: &[&OsStr]) -> crate::Result<()> {
         let adapter = FuseAdapter::new(self);
-        Ok(fuse::mount(adapter, &mountpoint, options)?)
+        let mut opts = DEFAULT_FUSE_MOUNT_OPTS
+            .into_iter()
+            .map(|opt| OsStr::new(opt))
+            .collect::<Vec<_>>();
+        opts.extend_from_slice(options);
+        Ok(fuse::mount(adapter, &mountpoint, &opts)?)
     }
 }

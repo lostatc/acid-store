@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#![cfg(all(any(unix, doc), feature = "fuse-mount"))]
+
 pub use self::fs::FuseAdapter;
 
 mod fs;
