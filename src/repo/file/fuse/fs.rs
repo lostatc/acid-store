@@ -14,8 +14,6 @@
  * limitations under the License.
  */
 
-#![cfg(all(any(unix, doc), feature = "fuse-mount"))]
-
 use std::collections::{hash_map::Entry as HashMapEntry, HashMap};
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -29,7 +27,7 @@ use fuse::{
 };
 use nix::fcntl::OFlag;
 use nix::libc;
-use nix::sys::stat::{self, Mode};
+use nix::sys::stat;
 use once_cell::sync::Lazy;
 use time::Timespec;
 
@@ -1002,46 +1000,5 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         try_result!(self.repo.commit(), reply);
 
         reply.ok();
-    }
-
-    fn access(&mut self, req: &Request, ino: u64, mask: u32, reply: ReplyEmpty) {
-        let mask = mask as i32;
-
-        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
-
-        if mask == libc::F_OK {
-            if self.repo.exists(entry_path) {
-                reply.ok();
-            } else {
-                reply.error(libc::ENOENT);
-            }
-            return;
-        }
-
-        let metadata = try_result!(self.repo.entry(entry_path), reply).metadata_or_default(req);
-
-        let check_read = (mask & libc::R_OK) == libc::R_OK;
-        let check_write = (mask & libc::W_OK) == libc::W_OK;
-        let check_exec = (mask & libc::X_OK) == libc::X_OK;
-
-        let is_user = metadata.user == req.uid();
-        let is_group = metadata.group == req.gid();
-        let mode = try_option!(Mode::from_bits(metadata.mode), reply, libc::EACCES);
-
-        let can_read = mode.contains(Mode::S_IROTH)
-            || (is_user && mode.contains(Mode::S_IRUSR))
-            || (is_group && mode.contains(Mode::S_IRGRP));
-        let can_write = mode.contains(Mode::S_IWOTH)
-            || (is_user && mode.contains(Mode::S_IWUSR))
-            || (is_group && mode.contains(Mode::S_IWGRP));
-        let can_exec = mode.contains(Mode::S_IXOTH)
-            || (is_user && mode.contains(Mode::S_IXUSR))
-            || (is_group && mode.contains(Mode::S_IXGRP));
-
-        if (check_read && !can_read) || (check_write && !can_write) || (check_exec && !can_exec) {
-            reply.error(libc::EACCES);
-        } else {
-            reply.ok()
-        }
     }
 }
