@@ -252,23 +252,11 @@ impl<'a> FuseAdapter<'a> {
         inode: u64,
         req: &Request,
     ) -> crate::Result<FileAttr> {
-        let entry_path = self.inodes.path(inode).ok_or(crate::Error::NotFound)?;
         let default_metadata = entry.default_metadata(req);
         let metadata = entry.metadata.as_ref().unwrap_or(&default_metadata);
 
         let size = match &entry.file_type {
-            FileType::File => match self.objects.entry(inode) {
-                HashMapEntry::Occupied(mut entry) => {
-                    let object = entry.get_mut();
-                    // We must commit changes in case this object has a transaction in progress.
-                    object.commit()?;
-                    object.size().unwrap()
-                }
-                HashMapEntry::Vacant(entry) => {
-                    let object = self.repo.open(entry_path)?;
-                    entry.insert(object).size().unwrap()
-                }
-            },
+            FileType::File => self.open_file_commit(inode)?.size().unwrap(),
             FileType::Directory => 0,
             FileType::Special(special) => match special {
                 // The `st_size` of a symlink should be the length of the pathname it contains.
@@ -314,6 +302,38 @@ impl<'a> FuseAdapter<'a> {
             flags: 0,
         })
     }
+
+    /// Return an `Object` for the file at the given `inode`.
+    ///
+    /// The returned object may have a transaction in progress.
+    fn open_file(&mut self, inode: u64) -> crate::Result<&mut Object> {
+        match self.objects.entry(inode) {
+            HashMapEntry::Occupied(entry) => Ok(entry.into_mut()),
+            HashMapEntry::Vacant(entry) => {
+                let entry_path = self.inodes.path(inode).ok_or(crate::Error::NotFound)?;
+                Ok(entry.insert(self.repo.open(entry_path).unwrap()))
+            }
+        }
+    }
+
+    /// Return an `Object` for the file at the given `inode`.
+    ///
+    /// This commits changes if the object was already open to ensure there is not a transaction in
+    /// progress when this method returns.
+    fn open_file_commit(&mut self, inode: u64) -> crate::Result<&mut Object> {
+        match self.objects.entry(inode) {
+            HashMapEntry::Occupied(entry) => {
+                let object = entry.into_mut();
+                // We must commit changes in case this object has a transaction in progress.
+                object.commit()?;
+                Ok(object)
+            }
+            HashMapEntry::Vacant(entry) => {
+                let entry_path = self.inodes.path(inode).ok_or(crate::Error::NotFound)?;
+                Ok(entry.insert(self.repo.open(entry_path).unwrap()))
+            }
+        }
+    }
 }
 
 impl<'a> Filesystem for FuseAdapter<'a> {
@@ -354,19 +374,11 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         _flags: Option<u32>,
         reply: ReplyAttr,
     ) {
-        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
+        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT).to_owned();
 
         // If `size` is not `None`, that means we must truncate the file.
         if let Some(size) = size {
-            let object = match self.objects.entry(ino) {
-                HashMapEntry::Occupied(entry) => {
-                    let object = entry.into_mut();
-                    // We must commit changes in case this object has a transaction in progress.
-                    try_result!(object.commit(), reply);
-                    object
-                }
-                HashMapEntry::Vacant(entry) => entry.insert(self.repo.open(&entry_path).unwrap()),
-            };
+            let object = try_result!(self.open_file_commit(ino), reply);
             try_result!(object.truncate(size), reply);
         }
 
@@ -396,7 +408,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         }
 
         try_result!(
-            self.repo.set_metadata(entry_path, entry.metadata.clone()),
+            self.repo.set_metadata(&entry_path, entry.metadata.clone()),
             reply
         );
 
@@ -650,32 +662,26 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             }
         };
 
-        let object = match self.objects.entry(ino) {
-            HashMapEntry::Occupied(entry) => {
-                let object = entry.into_mut();
-                // We must commit changes in case this object has a transaction in progress.
-                try_result!(object.commit(), reply);
-                object
-            }
-            HashMapEntry::Vacant(entry) => entry.insert(self.repo.open(&entry_path).unwrap()),
-        };
-
-        try_result!(object.seek(SeekFrom::Start(offset as u64)), reply);
-
-        // `Filesystem::read` should read the exact number of bytes requested except on EOF or error.
         let mut buffer = Vec::with_capacity(size as usize);
-        let mut bytes_read;
         let mut total_bytes_read = 0;
-        loop {
-            bytes_read = try_result!(
-                object.read(&mut buffer[total_bytes_read..size as usize]),
-                reply
-            );
-            total_bytes_read += bytes_read;
 
-            if bytes_read == 0 {
-                // Either the object has reached EOF or we've already read `size` bytes from it.
-                break;
+        {
+            let object = try_result!(self.open_file_commit(ino), reply);
+            try_result!(object.seek(SeekFrom::Start(offset as u64)), reply);
+
+            // `Filesystem::read` should read the exact number of bytes requested except on EOF or error.
+            let mut bytes_read;
+            loop {
+                bytes_read = try_result!(
+                    object.read(&mut buffer[total_bytes_read..size as usize]),
+                    reply
+                );
+                total_bytes_read += bytes_read;
+
+                if bytes_read == 0 {
+                    // Either the object has reached EOF or we've already read `size` bytes from it.
+                    break;
+                }
             }
         }
 
@@ -727,21 +733,20 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             }
         };
 
-        let object = match self.objects.entry(ino) {
-            HashMapEntry::Occupied(entry) => entry.into_mut(),
-            HashMapEntry::Vacant(entry) => entry.insert(self.repo.open(&entry_path).unwrap()),
-        };
-
-        if flags.contains(OFlag::O_APPEND) {
-            try_result!(object.seek(SeekFrom::End(0)), reply);
-        } else {
-            try_result!(object.seek(SeekFrom::Start(offset as u64)), reply);
-        }
-
         let mut metadata =
             try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
 
-        let bytes_written = try_result!(object.write(data), reply);
+        let bytes_written = {
+            let object = try_result!(self.open_file(ino), reply);
+
+            if flags.contains(OFlag::O_APPEND) {
+                try_result!(object.seek(SeekFrom::End(0)), reply);
+            } else {
+                try_result!(object.seek(SeekFrom::Start(offset as u64)), reply);
+            }
+
+            try_result!(object.write(data), reply)
+        };
 
         // After this point, we need to be more careful about error handling. Because bytes have
         // been written to the object, if an error occurs, we need to drop the `Object` to discard
@@ -760,7 +765,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         // If the `O_SYNC` or `O_DSYNC` flags were passed, we need to commit changes to the object
         // *and* commit changes to the repository after each write.
         if flags.intersects(OFlag::O_SYNC | OFlag::O_DSYNC) {
-            if let Err(error) = object.commit() {
+            if let Err(error) = self.open_file_commit(ino) {
                 self.objects.remove(&ino);
                 reply.error(error.to_errno());
                 return;
