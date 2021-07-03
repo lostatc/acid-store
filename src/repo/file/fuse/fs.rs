@@ -344,7 +344,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         mode: Option<u32>,
         uid: Option<u32>,
         gid: Option<u32>,
-        _size: Option<u64>,
+        size: Option<u64>,
         atime: Option<Timespec>,
         mtime: Option<Timespec>,
         _fh: Option<u64>,
@@ -355,6 +355,20 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         reply: ReplyAttr,
     ) {
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
+
+        // If `size` is not `None`, that means we must truncate the file.
+        if let Some(size) = size {
+            let object = match self.objects.entry(ino) {
+                HashMapEntry::Occupied(entry) => {
+                    let object = entry.into_mut();
+                    // We must commit changes in case this object has a transaction in progress.
+                    try_result!(object.commit(), reply);
+                    object
+                }
+                HashMapEntry::Vacant(entry) => entry.insert(self.repo.open(&entry_path).unwrap()),
+            };
+            try_result!(object.truncate(size), reply);
+        }
 
         let mut entry = try_result!(self.repo.entry(&entry_path), reply);
 
