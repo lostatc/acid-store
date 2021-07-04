@@ -20,4 +20,6 @@ pub use self::fs::FuseAdapter;
 
 mod fs;
 mod handle;
+mod id_table;
 mod inode;
+mod object;
