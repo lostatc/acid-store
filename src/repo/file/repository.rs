@@ -41,7 +41,7 @@ use std::ffi::OsStr;
 use {super::metadata::UnixMetadata, super::special::UnixSpecialType};
 
 /// The path of the root entry.
-static EMPTY_PATH: Lazy<RelativePathBuf> = Lazy::new(|| RelativePath::new("").to_owned());
+pub static EMPTY_PATH: Lazy<RelativePathBuf> = Lazy::new(|| RelativePath::new("").to_owned());
 
 type RepoState = PathTree<EntryHandle>;
 
@@ -904,21 +904,31 @@ const DEFAULT_FUSE_MOUNT_OPTS: &'static [&str] = &["default_permissions", "auto_
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "fuse-mount"))))]
 impl FileRepo<UnixSpecialType, UnixMetadata> {
-    /// Mount the `FileRepo` as a FUSE file system at `mountpoint`.
+    /// Mount the `FileRepo` as a FUSE file system.
     ///
-    /// This accepts an array of mount `options`.
+    /// This accepts the path of the `root` entry in the repository which will be mounted in the
+    /// file system at `mountpoint`. This also accepts an array of mount `options` to pass to
+    /// libfuse.
     ///
     /// This method does not return until the file system is unmounted.
     ///
     /// # Errors
+    /// - `Error::InvalidPath`: The given `root` path is empty.
+    /// - `Error::NotFound`: There is no entry at `root`.
+    /// - `Error::NotDirectory`: The given `root` entry is not a directory.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn mount(&mut self, mountpoint: impl AsRef<Path>, options: &[&OsStr]) -> crate::Result<()> {
-        let adapter = FuseAdapter::new(self);
-        let mut opts = DEFAULT_FUSE_MOUNT_OPTS
+    pub fn mount(
+        &mut self,
+        mountpoint: impl AsRef<Path>,
+        root: impl AsRef<RelativePath>,
+        options: &[&str],
+    ) -> crate::Result<()> {
+        let adapter = FuseAdapter::new(self, root.as_ref())?;
+        let all_opts = [DEFAULT_FUSE_MOUNT_OPTS, options]
+            .concat()
             .into_iter()
             .map(|opt| OsStr::new(opt))
             .collect::<Vec<_>>();
-        opts.extend_from_slice(options);
-        Ok(fuse::mount(adapter, &mountpoint, &opts)?)
+        Ok(fuse::mount(adapter, &mountpoint, &all_opts)?)
     }
 }
