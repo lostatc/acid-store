@@ -29,6 +29,7 @@ use nix::fcntl::OFlag;
 use nix::libc;
 use nix::sys::stat;
 use once_cell::sync::Lazy;
+use relative_path::RelativePath;
 use time::Timespec;
 
 use super::handle::{HandleInfo, HandleTable, HandleType};
@@ -37,7 +38,7 @@ use super::inode::InodeTable;
 use crate::repo::file::{
     entry::{Entry, FileType},
     metadata::UnixMetadata,
-    repository::{FileRepo, EMPTY_PARENT},
+    repository::{FileRepo, EMPTY_PATH},
     special::UnixSpecialType,
 };
 use crate::repo::{Commit, Object};
@@ -214,20 +215,27 @@ pub struct FuseAdapter<'a> {
 
 impl<'a> FuseAdapter<'a> {
     /// Create a new `FuseAdapter` from the given `repo`.
-    pub fn new(repo: &'a mut FileRepo<UnixSpecialType, UnixMetadata>) -> Self {
-        let mut inodes = InodeTable::new();
+    pub fn new(
+        repo: &'a mut FileRepo<UnixSpecialType, UnixMetadata>,
+        root: &RelativePath,
+    ) -> crate::Result<Self> {
+        if root == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
 
-        for (path, _) in repo.0.state().walk(&*EMPTY_PARENT).unwrap() {
+        let mut inodes = InodeTable::new(root);
+
+        for path in repo.walk(root)? {
             inodes.insert(path);
         }
 
-        Self {
+        Ok(Self {
             repo,
             inodes,
             handles: HandleTable::new(),
             objects: HashMap::new(),
             directories: HashMap::new(),
-        }
+        })
     }
 
     /// Get the `FileAttr` for the `entry` with the given `inode`.
