@@ -105,6 +105,19 @@ fn switching_instance_does_not_commit() -> anyhow::Result<()> {
 }
 
 #[test]
+fn empty_path_does_not_exist() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let repository = create_repo(&config)?;
+
+    assert!(!repository.exists(""));
+    assert!(!repository.is_file(""));
+    assert!(!repository.is_directory(""));
+    assert!(!repository.is_special(""));
+
+    Ok(())
+}
+
+#[test]
 fn creating_existing_file_errs() -> anyhow::Result<()> {
     let config = MemoryConfig::new();
     let mut repository = create_repo(&config)?;
@@ -137,6 +150,23 @@ fn creating_file_without_parent_errs() -> anyhow::Result<()> {
     assert!(matches!(
         result.unwrap_err(),
         acid_store::Error::InvalidPath
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn creating_empty_path_errs() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
+
+    assert!(matches!(
+        repository.create("", &Entry::file()),
+        Err(acid_store::Error::InvalidPath)
+    ));
+    assert!(matches!(
+        repository.create_parents("", &Entry::file()),
+        Err(acid_store::Error::InvalidPath)
     ));
 
     Ok(())
@@ -189,6 +219,23 @@ fn removing_non_empty_directory_errs() -> anyhow::Result<()> {
 }
 
 #[test]
+fn removing_emtpy_path_errs() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
+
+    assert!(matches!(
+        repository.remove(""),
+        Err(acid_store::Error::InvalidPath)
+    ));
+    assert!(matches!(
+        repository.remove_tree(""),
+        Err(acid_store::Error::InvalidPath)
+    ));
+
+    Ok(())
+}
+
+#[test]
 fn remove_file() -> anyhow::Result<()> {
     let config = MemoryConfig::new();
     let mut repository = create_repo(&config)?;
@@ -224,12 +271,38 @@ fn remove_tree_without_descendants() -> anyhow::Result<()> {
 }
 
 #[test]
+fn getting_empty_path_errs() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let repository = create_repo(&config)?;
+
+    assert!(matches!(
+        repository.entry(""),
+        Err(acid_store::Error::InvalidPath)
+    ));
+
+    Ok(())
+}
+
+#[test]
 fn setting_metadata_on_nonexistent_file_errs() -> anyhow::Result<()> {
     let config = MemoryConfig::new();
     let mut repository = create_repo(&config)?;
     let result = repository.set_metadata("file", None);
 
     assert!(matches!(result, Err(acid_store::Error::NotFound)));
+    Ok(())
+}
+
+#[test]
+fn setting_metadata_on_empty_path_errs() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
+
+    assert!(matches!(
+        repository.set_metadata("", None),
+        Err(acid_store::Error::InvalidPath)
+    ));
+
     Ok(())
 }
 
@@ -268,6 +341,19 @@ fn open_file() -> anyhow::Result<()> {
     object.read_to_end(&mut actual_data)?;
 
     assert_eq!(actual_data, b"expected data");
+    Ok(())
+}
+
+#[test]
+fn opening_empty_path_errs() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let repository = create_repo(&config)?;
+
+    assert!(matches!(
+        repository.open(""),
+        Err(acid_store::Error::InvalidPath)
+    ));
+
     Ok(())
 }
 
@@ -346,6 +432,42 @@ fn copy_tree_which_is_a_file() -> anyhow::Result<()> {
 }
 
 #[test]
+fn copying_with_empty_path_as_source_errs() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
+
+    assert!(matches!(
+        repository.copy("", "test"),
+        Err(acid_store::Error::InvalidPath)
+    ));
+    assert!(matches!(
+        repository.copy_tree("", "test"),
+        Err(acid_store::Error::InvalidPath)
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn copying_with_empty_path_as_dest_errs() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
+
+    repository.create("test", &Entry::file())?;
+
+    assert!(matches!(
+        repository.copy("test", ""),
+        Err(acid_store::Error::InvalidPath)
+    ));
+    assert!(matches!(
+        repository.copy_tree("test", ""),
+        Err(acid_store::Error::InvalidPath)
+    ));
+
+    Ok(())
+}
+
+#[test]
 fn list_children() -> anyhow::Result<()> {
     let config = MemoryConfig::new();
     let mut repository = create_repo(&config)?;
@@ -382,6 +504,24 @@ fn list_children_of_a_file() -> anyhow::Result<()> {
     let result = repository.list("file");
 
     assert!(matches!(result, Err(acid_store::Error::NotDirectory)));
+
+    Ok(())
+}
+
+#[test]
+fn list_children_of_empty_path() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
+    repository.create("file1", &Entry::file())?;
+    repository.create("file2", &Entry::file())?;
+
+    let actual = repository.list("")?;
+    let expected = vec![
+        RelativePathBuf::from("file1"),
+        RelativePathBuf::from("file2"),
+    ];
+
+    assert_contains_all(actual, expected);
 
     Ok(())
 }
@@ -424,6 +564,23 @@ fn walk_descendants_of_a_file() -> anyhow::Result<()> {
     let result = repository.walk("file");
 
     assert!(matches!(result, Err(acid_store::Error::NotDirectory)));
+
+    Ok(())
+}
+
+#[test]
+fn walk_descendants_of_empty_path() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
+    repository.create_parents("directory/file", &Entry::file())?;
+
+    let actual = repository.walk("")?;
+    let expected = vec![
+        RelativePathBuf::from("directory"),
+        RelativePathBuf::from("directory/file"),
+    ];
+
+    assert_contains_all(actual, expected);
 
     Ok(())
 }
@@ -520,6 +677,27 @@ fn archive_tree() -> anyhow::Result<()> {
     assert!(repository.entry("dest/file1")?.is_file());
     assert!(repository.entry("dest/directory")?.is_directory());
     assert!(repository.entry("dest/directory/file2")?.is_file());
+    Ok(())
+}
+
+#[test]
+fn archiving_to_empty_path_errs() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let source_path = temp_dir.as_ref().join("source");
+    File::create(&source_path)?;
+
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
+
+    assert!(matches!(
+        repository.archive(&source_path, ""),
+        Err(acid_store::Error::InvalidPath)
+    ));
+    assert!(matches!(
+        repository.archive_tree(&source_path, ""),
+        Err(acid_store::Error::InvalidPath)
+    ));
+
     Ok(())
 }
 
@@ -625,6 +803,26 @@ fn extract_tree() -> anyhow::Result<()> {
     assert!(dest_path.join("file1").is_file());
     assert!(dest_path.join("directory").is_dir());
     assert!(dest_path.join("directory/file2").is_file());
+    Ok(())
+}
+
+#[test]
+fn extracting_from_empty_path_errs() -> anyhow::Result<()> {
+    let temp_dir = tempdir()?;
+    let dest_path = temp_dir.as_ref().join("dest");
+
+    let config = MemoryConfig::new();
+    let repository = create_repo(&config)?;
+
+    assert!(matches!(
+        repository.extract("", &dest_path),
+        Err(acid_store::Error::InvalidPath)
+    ));
+    assert!(matches!(
+        repository.extract_tree("", &dest_path),
+        Err(acid_store::Error::InvalidPath)
+    ));
+
     Ok(())
 }
 

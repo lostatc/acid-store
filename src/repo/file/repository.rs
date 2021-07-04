@@ -36,8 +36,8 @@ use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
 use super::special::{NoSpecialType, SpecialType};
 
-/// The parent of a relative path with no parent.
-static EMPTY_PARENT: Lazy<RelativePathBuf> = Lazy::new(|| RelativePath::new("").to_owned());
+/// The path of the root entry.
+static EMPTY_PATH: Lazy<RelativePathBuf> = Lazy::new(|| RelativePath::new("").to_owned());
 
 type RepoState = PathTree<EntryHandle>;
 
@@ -121,7 +121,7 @@ where
     /// Return `true` if the given `path` has a parent directory in the repository.
     fn has_parent(&self, path: &RelativePath) -> bool {
         match path.parent() {
-            Some(parent) if parent != *EMPTY_PARENT => match self.0.state().get(parent) {
+            Some(parent) if parent != *EMPTY_PATH => match self.0.state().get(parent) {
                 Some(handle) => matches!(handle.entry_type, EntryType::Directory),
                 None => false,
             },
@@ -171,6 +171,7 @@ where
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `path` does not exist or is not a directory.
+    /// - `Error::InvalidPath`: The given `path` is empty.
     /// - `Error::AlreadyExists`: There is already an entry at `path`.
     /// - `Error::Serialize`: The new file metadata could not be serialized.
     /// - `Error::Deserialize`: The old file metadata could not be deserialized.
@@ -182,6 +183,10 @@ where
         path: impl AsRef<RelativePath>,
         entry: &Entry<S, M>,
     ) -> crate::Result<()> {
+        if path.as_ref() == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
+
         if self.exists(&path) {
             return Err(crate::Error::AlreadyExists);
         }
@@ -220,6 +225,7 @@ where
     /// This also creates any missing parent directories.
     ///
     /// # Errors
+    /// - `Error::InvalidPath`: The given `path` is empty.
     /// - `Error::AlreadyExists`: There is already an entry at `path`.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Serialize`: The new file metadata could not be serialized.
@@ -232,7 +238,7 @@ where
         entry: &Entry<S, M>,
     ) -> crate::Result<()> {
         let parent = match path.as_ref().parent() {
-            Some(parent) if parent != *EMPTY_PARENT => parent,
+            Some(parent) if parent != *EMPTY_PATH => parent,
             _ => return self.create(path, entry),
         };
 
@@ -255,11 +261,16 @@ where
     /// are committed and [`Commit::clean`] is called.
     ///
     /// # Errors
+    /// - `Error::InvalidPath`: The given `path` is empty.
     /// - `Error::NotFound`: There is no entry with the given `path`.
     /// - `Error::NotEmpty`: The entry is a directory which is not empty.
     ///
     /// [`Commit::clean`]: crate::repo::Commit::clean
     pub fn remove(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<()> {
+        if path.as_ref() == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
+
         match self.0.state().list(&path) {
             Some(mut children) => {
                 if children.next().is_some() {
@@ -284,10 +295,15 @@ where
     /// are committed and [`Commit::clean`] is called.
     ///
     /// # Errors
+    /// - `Error::InvalidPath`: The given `path` is empty.
     /// - `Error::NotFound`: There is no entry with the given `path`.
     ///
     /// [`clean`]: crate::repo::Commit::clean
     pub fn remove_tree(&mut self, path: impl AsRef<RelativePath>) -> crate::Result<()> {
+        if path.as_ref() == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
+
         let handles = self
             .0
             .state_mut()
@@ -309,12 +325,16 @@ where
     /// Return the entry at `path`.
     ///
     /// # Errors
+    /// - `Error::InvalidPath`: The given `path` is empty.
     /// - `Error::NotFound`: There is no entry at `path`.
     /// - `Error::Deserialize`: The file metadata could not be deserialized.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
     pub fn entry(&self, path: impl AsRef<RelativePath>) -> crate::Result<Entry<S, M>> {
+        if path.as_ref() == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
         let entry_handle = &self
             .0
             .state()
@@ -327,6 +347,7 @@ where
     /// Set the file `metadata` for the entry at `path`.
     ///
     /// # Errors
+    /// - `Error::InvalidPath`: The given `path` is empty.
     /// - `Error::NotFound`: There is no entry at `path`.
     /// - `Error::Serialize`: The new file metadata could not be serialized.
     /// - `Error::Deserialize`: The old file metadata could not be deserialized.
@@ -338,6 +359,10 @@ where
         path: impl AsRef<RelativePath>,
         metadata: Option<M>,
     ) -> crate::Result<()> {
+        if path.as_ref() == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
+
         let entry_handle = *self
             .0
             .state()
@@ -352,14 +377,20 @@ where
     /// Return an `Object` for reading and writing the contents of the file at `path`.
     ///
     /// # Errors
+    /// - `Error::InvalidPath`: The given `path` is empty.
     /// - `Error::NotFound`: There is no entry with the given `path`.
     /// - `Error::NotFile`: The entry does not represent a regular file.
     pub fn open(&self, path: impl AsRef<RelativePath>) -> crate::Result<Object> {
+        if path.as_ref() == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
+
         let entry_handle = *self
             .0
             .state()
             .get(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
+
         if let EntryType::File(object_id) = entry_handle.entry_type {
             Ok(self.0.object(object_id).unwrap())
         } else {
@@ -392,6 +423,7 @@ where
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
+    /// - `Error::InvalidPath`: The given `source` or `dest` paths are empty.
     /// - `Error::NotFound`: There is no entry at `source`.
     /// - `Error::AlreadyExists`: There is already an entry at `dest`.
     ///
@@ -402,6 +434,10 @@ where
         source: impl AsRef<RelativePath>,
         dest: impl AsRef<RelativePath>,
     ) -> crate::Result<()> {
+        if source.as_ref() == *EMPTY_PATH || dest.as_ref() == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
+
         if self.exists(dest.as_ref()) {
             return Err(crate::Error::AlreadyExists);
         }
@@ -434,6 +470,7 @@ where
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
+    /// - `Error::InvalidPath`: The given `source` or `dest` paths are empty.
     /// - `Error::NotFound`: There is no entry at `source`.
     /// - `Error::AlreadyExists`: There is already an entry at `dest`.
     ///
@@ -444,6 +481,10 @@ where
         source: impl AsRef<RelativePath>,
         dest: impl AsRef<RelativePath>,
     ) -> crate::Result<()> {
+        if source.as_ref() == *EMPTY_PATH || dest.as_ref() == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
+
         if self.exists(dest.as_ref()) {
             return Err(crate::Error::AlreadyExists);
         }
@@ -487,6 +528,9 @@ where
 
     /// Return an iterator of paths which are children of `parent`.
     ///
+    /// The given `parent` may be an empty path, in which case the paths of top-level entries are
+    /// returned.
+    ///
     /// # Errors
     /// - `Error::NotFound`: The given `parent` does not exist.
     /// - `Error::NotDirectory`: The given `parent` is not a directory.
@@ -494,19 +538,24 @@ where
         &'a self,
         parent: impl AsRef<RelativePath> + 'a,
     ) -> crate::Result<impl Iterator<Item = RelativePathBuf> + 'a> {
-        let entry_handle = self
-            .0
-            .state()
-            .get(parent.as_ref())
-            .ok_or(crate::Error::NotFound)?;
-        if !matches!(entry_handle.entry_type, EntryType::Directory) {
-            return Err(crate::Error::NotDirectory);
+        if parent.as_ref() != *EMPTY_PATH {
+            let entry_handle = self
+                .0
+                .state()
+                .get(parent.as_ref())
+                .ok_or(crate::Error::NotFound)?;
+            if !matches!(entry_handle.entry_type, EntryType::Directory) {
+                return Err(crate::Error::NotDirectory);
+            }
         }
 
         Ok(self.0.state().list(parent).unwrap().map(|(path, _)| path))
     }
 
     /// Return an iterator of paths which are descendants of `parent`.
+    ///
+    /// The given `parent` may be an empty path, in which case the paths of all entries in the
+    /// repository are returned.
     ///
     /// The returned iterator yields paths in depth-first order, meaning that a path will always
     /// come before its children.
@@ -518,13 +567,15 @@ where
         &'a self,
         parent: impl AsRef<RelativePath> + 'a,
     ) -> crate::Result<impl Iterator<Item = RelativePathBuf> + 'a> {
-        let entry_handle = self
-            .0
-            .state()
-            .get(parent.as_ref())
-            .ok_or(crate::Error::NotFound)?;
-        if !matches!(entry_handle.entry_type, EntryType::Directory) {
-            return Err(crate::Error::NotDirectory);
+        if parent.as_ref() != *EMPTY_PATH {
+            let entry_handle = self
+                .0
+                .state()
+                .get(parent.as_ref())
+                .ok_or(crate::Error::NotFound)?;
+            if !matches!(entry_handle.entry_type, EntryType::Directory) {
+                return Err(crate::Error::NotDirectory);
+            }
         }
 
         Ok(self.0.state().walk(parent).unwrap().map(|(path, _)| path))
@@ -539,6 +590,7 @@ where
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
+    /// - `Error::InvalidPath`: The given `dest` path is empty.
     /// - `Error::AlreadyExists`: There is already an entry at `dest`.
     /// - `Error::FileType`: The file at `source` is not a regular file, directory, or supported
     /// special file.
@@ -552,6 +604,10 @@ where
         source: impl AsRef<Path>,
         dest: impl AsRef<RelativePath>,
     ) -> crate::Result<()> {
+        if dest.as_ref() == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
+
         if self.exists(&dest) {
             return Err(crate::Error::AlreadyExists);
         }
@@ -596,6 +652,7 @@ where
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
+    /// - `Error::InvalidPath`: The given `dest` path is empty.
     /// - `Error::AlreadyExists`: There is already an entry at `dest`.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
@@ -635,6 +692,7 @@ where
     /// [`FileMetadata`] implementation.
     ///
     /// # Errors
+    /// - `Error::InvalidPath`: The given `source` path is empty.
     /// - `Error::NotFound`: The `source` entry does not exist.
     /// - `Error::AlreadyExists`: The `dest` file already exists.
     /// - `Error::Deserialize`: The file metadata could not be deserialized.
@@ -648,6 +706,10 @@ where
         source: impl AsRef<RelativePath>,
         dest: impl AsRef<Path>,
     ) -> crate::Result<()> {
+        if source.as_ref() == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
+
         if dest.as_ref().exists() {
             return Err(crate::Error::AlreadyExists);
         }
@@ -694,6 +756,7 @@ where
     /// [`FileMetadata`] implementation.
     ///
     /// # Errors
+    /// - `Error::InvalidPath`: The given `source` path is empty.
     /// - `Error::NotFound`: The `source` entry does not exist.
     /// - `Error::AlreadyExists`: The `dest` file already exists.
     /// - `Error::Deserialize`: The file metadata could not be deserialized.
@@ -748,7 +811,7 @@ where
         Ok(self
             .0
             .state()
-            .walk(RelativePathBuf::new())
+            .walk(&*EMPTY_PATH)
             .unwrap()
             .filter(|(_, entry_handle)| {
                 let entry_corrupt = corrupt_keys.contains(&entry_handle.entry);

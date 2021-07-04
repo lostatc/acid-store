@@ -27,18 +27,25 @@
 //! copied to the file system using [`FileRepo::extract`] and [`FileRepo::extract_tree`]. It is also
 //! possible to manually add, remove, query, and modify entries.
 //!
-//! While files in the file system are located using a `Path`, entries in the repository are located
-//! using a [`RelativePath`], which is a platform-independent path representation. A
-//! [`RelativePath`] is always relative to the root of the repository.
-//!
 //! This repository is designed so that files archived on one platform can be extracted on another
-//! platform. Because many aspects of file systems—such as file metadata and special file types—are
-//! heavily platform-dependent, the behavior of [`FileRepo`] can be customized through the
-//! [`FileMetadata`] and [`SpecialType`] traits.
+//! platform. Because many aspects of file systems—such as file paths, file metadata, and special
+//! file types—are heavily platform-dependent, the behavior of [`FileRepo`] can be customized
+//! through the [`FileMetadata`] and [`SpecialType`] traits.
 //!
 //! Like other repositories, changes made to the repository are not persisted to the data store
 //! until [`Commit::commit`] is called. For details about deduplication, compression, encryption,
 //! and locking, see the module-level documentation for [`crate::repo`].
+//!
+//! # Paths
+//!
+//! While files in the file system are located using a `Path`, entries in the repository are located
+//! using a [`RelativePath`], which is a platform-independent path representation. While some
+//! platforms support arbitrary bytes sequences in file paths, a [`RelativePath`] must consist of
+//! valid UTF-8.
+//!
+//! Because file system roots are platform-dependent, [`FileRepo`] does not have a root entry.
+//! Instead, entry paths are relative paths relative to the root of the repository. A top-level
+//! directory `foo` containing a file `bar` is represented as `foo/bar`.
 //!
 //! # Metadata
 //!
