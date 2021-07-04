@@ -16,34 +16,51 @@
 
 use std::collections::HashMap;
 
+use fuse::FileType as FuseFileType;
 use nix::fcntl::OFlag;
 
-use crate::repo::common::IdTable;
+use super::id_table::IdTable;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HandleType {
-    File,
-    Directory,
+/// A directory entry for an open file handle.
+#[derive(Debug, Clone)]
+pub struct DirectoryEntry {
+    pub file_name: String,
+    pub file_type: FuseFileType,
+    pub inode: u64,
 }
 
-/// Information about a file handle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HandleInfo {
-    /// The flags used to open the file.
+/// The state associated with a file handle.
+#[derive(Debug, Clone)]
+pub struct FileHandle {
+    /// The flags the handle was opened with.
     pub flags: OFlag,
 
-    /// Whether the handle refers to a file or directory.
-    pub handle_type: HandleType,
+    /// The current seek position of the file.
+    pub position: u64,
+}
+
+/// The state associated with a directory handle.
+#[derive(Debug, Clone)]
+pub struct DirectoryHandle {
+    /// The list of directory entries for this directory handle.
+    pub entries: Vec<DirectoryEntry>,
+}
+
+/// The state associated with a file or directory handle.
+#[derive(Debug, Clone)]
+pub enum HandleState {
+    File(FileHandle),
+    Directory(DirectoryHandle),
 }
 
 /// A table for allocating file handles in a virtual file system.
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct HandleTable {
     /// The table which uniquely allocates integers to act as file handles.
     id_table: IdTable,
 
     /// A map of file handles to the flags they were opened with.
-    info: HashMap<u64, HandleInfo>,
+    state: HashMap<u64, HandleState>,
 }
 
 impl HandleTable {
@@ -52,22 +69,26 @@ impl HandleTable {
         Self::default()
     }
 
-    /// Get a new file handle for the file opened with the given `flags`.
-    pub fn open(&mut self, flags: OFlag, handle_type: HandleType) -> u64 {
+    /// Get a new file handle with the given `state`.
+    pub fn open(&mut self, state: HandleState) -> u64 {
         let fh = self.id_table.next();
-        let info = HandleInfo { flags, handle_type };
-        self.info.insert(fh, info);
+        self.state.insert(fh, state);
         fh
     }
 
     /// Remove the given `fh` from the table.
     pub fn close(&mut self, fh: u64) {
         self.id_table.recycle(fh);
-        self.info.remove(&fh);
+        self.state.remove(&fh);
     }
 
-    /// Get information about the given `fh`.
-    pub fn info(&self, fh: u64) -> Option<HandleInfo> {
-        self.info.get(&fh).copied()
+    /// Get the state associated with the given `fh`.
+    pub fn state(&self, fh: u64) -> Option<&HandleState> {
+        self.state.get(&fh)
+    }
+
+    /// Get the state associated with the given `fh`.
+    pub fn state_mut(&mut self, fh: u64) -> Option<&mut HandleState> {
+        self.state.get_mut(&fh)
     }
 }

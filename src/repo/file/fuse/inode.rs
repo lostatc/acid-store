@@ -20,7 +20,7 @@ use bimap::BiMap;
 use fuse::FUSE_ROOT_ID;
 use relative_path::{RelativePath, RelativePathBuf};
 
-use crate::repo::common::IdTable;
+use super::id_table::IdTable;
 
 /// A table for allocating inodes in a virtual file system.
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
@@ -43,7 +43,11 @@ pub struct InodeTable {
 impl InodeTable {
     /// Return a new empty `InodeTable`.
     pub fn new(root: &RelativePath) -> Self {
-        let mut table = Self::default();
+        let mut table = Self {
+            id_table: IdTable::with_reserved(vec![FUSE_ROOT_ID]),
+            paths: BiMap::new(),
+            generations: HashMap::new(),
+        };
         // Add the root entry to the table.
         table.paths.insert(FUSE_ROOT_ID, root.to_owned());
         table

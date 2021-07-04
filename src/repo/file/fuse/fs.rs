@@ -27,13 +27,14 @@ use fuse::{
 };
 use nix::fcntl::OFlag;
 use nix::libc;
-use nix::sys::stat;
+use nix::sys::stat::{self, SFlag};
 use once_cell::sync::Lazy;
 use relative_path::RelativePath;
 use time::Timespec;
 
-use super::handle::{HandleInfo, HandleTable, HandleType};
+use super::handle::{DirectoryEntry, DirectoryHandle, FileHandle, HandleState, HandleTable};
 use super::inode::InodeTable;
+use super::object::ObjectTable;
 
 use crate::repo::file::{
     entry::{Entry, FileType},
@@ -41,7 +42,7 @@ use crate::repo::file::{
     repository::{FileRepo, EMPTY_PATH},
     special::UnixSpecialType,
 };
-use crate::repo::{Commit, Object};
+use crate::repo::Commit;
 
 /// The block size used to calculate `st_blocks`.
 const BLOCK_SIZE: u64 = 512;
@@ -65,7 +66,7 @@ const DEFAULT_DIR_MODE: u32 = 0o775;
 const DEFAULT_FILE_MODE: u32 = 0o664;
 
 /// The set of `open` flags which are not supported by this file system.
-const UNSUPPORTED_OPEN_FLAGS: Lazy<OFlag> = Lazy::new(|| OFlag::O_DIRECT | OFlag::O_TMPFILE);
+static UNSUPPORTED_OPEN_FLAGS: Lazy<OFlag> = Lazy::new(|| OFlag::O_DIRECT | OFlag::O_TMPFILE);
 
 /// Handle a `crate::Result` in a FUSE method.
 macro_rules! try_result {
@@ -187,14 +188,6 @@ impl FileType<UnixSpecialType> {
     }
 }
 
-/// A directory entry for an open file handle.
-#[derive(Debug)]
-pub struct DirectoryEntry {
-    pub file_name: String,
-    pub file_type: FuseFileType,
-    pub inode: u64,
-}
-
 #[derive(Debug)]
 pub struct FuseAdapter<'a> {
     /// The repository which contains the virtual file system.
@@ -207,10 +200,7 @@ pub struct FuseAdapter<'a> {
     handles: HandleTable,
 
     /// A map of inodes to currently open file objects.
-    objects: HashMap<u64, Object>,
-
-    /// A map of open directory handles to lists of their child entries.
-    directories: HashMap<u64, Vec<DirectoryEntry>>,
+    objects: ObjectTable,
 }
 
 impl<'a> FuseAdapter<'a> {
@@ -233,8 +223,7 @@ impl<'a> FuseAdapter<'a> {
             repo,
             inodes,
             handles: HandleTable::new(),
-            objects: HashMap::new(),
-            directories: HashMap::new(),
+            objects: ObjectTable::new(),
         })
     }
 
@@ -245,11 +234,16 @@ impl<'a> FuseAdapter<'a> {
         inode: u64,
         req: &Request,
     ) -> crate::Result<FileAttr> {
+        let entry_path = self.inodes.path(inode).ok_or(crate::Error::NotFound)?;
         let default_metadata = entry.default_metadata(req);
         let metadata = entry.metadata.as_ref().unwrap_or(&default_metadata);
 
         let size = match &entry.file_type {
-            FileType::File => self.open_file_commit(inode)?.size().unwrap(),
+            FileType::File => self
+                .objects
+                .open_commit(inode, self.repo.open(entry_path).unwrap())?
+                .size()
+                .unwrap(),
             FileType::Directory => 0,
             FileType::Special(special) => match special {
                 // The `st_size` of a symlink should be the length of the pathname it contains.
@@ -294,38 +288,6 @@ impl<'a> FuseAdapter<'a> {
             },
             flags: 0,
         })
-    }
-
-    /// Return an `Object` for the file at the given `inode`.
-    ///
-    /// The returned object may have a transaction in progress.
-    fn open_file(&mut self, inode: u64) -> crate::Result<&mut Object> {
-        match self.objects.entry(inode) {
-            HashMapEntry::Occupied(entry) => Ok(entry.into_mut()),
-            HashMapEntry::Vacant(entry) => {
-                let entry_path = self.inodes.path(inode).ok_or(crate::Error::NotFound)?;
-                Ok(entry.insert(self.repo.open(entry_path).unwrap()))
-            }
-        }
-    }
-
-    /// Return an `Object` for the file at the given `inode`.
-    ///
-    /// This commits changes if the object was already open to ensure there is not a transaction in
-    /// progress when this method returns.
-    fn open_file_commit(&mut self, inode: u64) -> crate::Result<&mut Object> {
-        match self.objects.entry(inode) {
-            HashMapEntry::Occupied(entry) => {
-                let object = entry.into_mut();
-                // We must commit changes in case this object has a transaction in progress.
-                object.commit()?;
-                Ok(object)
-            }
-            HashMapEntry::Vacant(entry) => {
-                let entry_path = self.inodes.path(inode).ok_or(crate::Error::NotFound)?;
-                Ok(entry.insert(self.repo.open(entry_path).unwrap()))
-            }
-        }
     }
 }
 
@@ -372,7 +334,11 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         // If `size` is not `None`, that means we must truncate the file.
         if let Some(size) = size {
-            let object = try_result!(self.open_file_commit(ino), reply);
+            let object = try_result!(
+                self.objects
+                    .open_commit(ino, self.repo.open(&entry_path).unwrap()),
+                reply
+            );
             try_result!(object.truncate(size), reply);
         }
 
@@ -434,40 +400,32 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         rdev: u32,
         reply: ReplyEntry,
     ) {
+        let flags = SFlag::from_bits_truncate(mode);
         let file_name = try_option!(name.to_str(), reply, libc::EINVAL);
         let entry_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).join(file_name);
 
-        let file_type = match stat::SFlag::from_bits(mode) {
-            Some(s_flag) => {
-                if s_flag.contains(stat::SFlag::S_IFREG) {
-                    FileType::File
-                } else if s_flag.contains(stat::SFlag::S_IFCHR) {
-                    let major = stat::major(rdev as u64);
-                    let minor = stat::minor(rdev as u64);
-                    FileType::Special(UnixSpecialType::CharacterDevice { major, minor })
-                } else if s_flag.contains(stat::SFlag::S_IFBLK) {
-                    let major = stat::major(rdev as u64);
-                    let minor = stat::minor(rdev as u64);
-                    FileType::Special(UnixSpecialType::BlockDevice { major, minor })
-                } else if s_flag.contains(stat::SFlag::S_IFIFO) {
-                    FileType::Special(UnixSpecialType::NamedPipe)
-                } else if s_flag.contains(stat::SFlag::S_IFSOCK) {
-                    // Sockets aren't supported by `FileRepo`. `mknod(2)` specifies that `EPERM`
-                    // should be returned if the file system doesn't support the type of node being
-                    // requested.
-                    reply.error(libc::EPERM);
-                    return;
-                } else {
-                    // Other file types aren't supported by `mknod`.
-                    reply.error(libc::EINVAL);
-                    return;
-                }
-            }
-            None => {
-                // The file mode could not be parsed as a valid file type.
-                reply.error(libc::EINVAL);
-                return;
-            }
+        let file_type = if flags.contains(SFlag::S_IFREG) {
+            FileType::File
+        } else if flags.contains(SFlag::S_IFCHR) {
+            let major = stat::major(rdev as u64);
+            let minor = stat::minor(rdev as u64);
+            FileType::Special(UnixSpecialType::CharacterDevice { major, minor })
+        } else if flags.contains(SFlag::S_IFBLK) {
+            let major = stat::major(rdev as u64);
+            let minor = stat::minor(rdev as u64);
+            FileType::Special(UnixSpecialType::BlockDevice { major, minor })
+        } else if flags.contains(SFlag::S_IFIFO) {
+            FileType::Special(UnixSpecialType::NamedPipe)
+        } else if flags.contains(SFlag::S_IFSOCK) {
+            // Sockets aren't supported by `FileRepo`. `mknod(2)` specifies that `EPERM`
+            // should be returned if the file system doesn't support the type of node being
+            // requested.
+            reply.error(libc::EPERM);
+            return;
+        } else {
+            // Other file types aren't supported by `mknod`.
+            reply.error(libc::EINVAL);
+            return;
         };
 
         let mut entry = Entry::new(file_type, req);
@@ -619,7 +577,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     }
 
     fn open(&mut self, _req: &Request, ino: u64, flags: u32, reply: ReplyOpen) {
-        let flags = try_option!(OFlag::from_bits(flags as i32), reply, libc::EINVAL);
+        let flags = OFlag::from_bits_truncate(flags as i32);
 
         if flags.intersects(*UNSUPPORTED_OPEN_FLAGS) {
             reply.error(libc::ENOTSUP);
@@ -633,26 +591,13 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             return;
         }
 
-        let fh = self.handles.open(flags, HandleType::File);
+        let state = HandleState::File(FileHandle { flags, position: 0 });
+        let fh = self.handles.open(state);
+
         reply.opened(fh, 0);
     }
 
     fn read(&mut self, req: &Request, ino: u64, fh: u64, offset: i64, size: u32, reply: ReplyData) {
-        let flags = match self.handles.info(fh) {
-            Some(HandleInfo {
-                handle_type: HandleType::Directory,
-                ..
-            }) => {
-                reply.error(libc::EISDIR);
-                return;
-            }
-            Some(info) => info.flags,
-            None => {
-                reply.error(libc::EBADF);
-                return;
-            }
-        };
-
         // Technically, on Unix systems, a file should still be accessible via its file descriptor
         // once it's been unlinked. Because this isn't how repositories work, we will return `EBADF`
         // if the user tries to read from a file which has been unlinked since it was opened.
@@ -665,11 +610,27 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             }
         };
 
-        let mut buffer = Vec::with_capacity(size as usize);
+        let state = match self.handles.state_mut(fh) {
+            None => {
+                reply.error(libc::EBADF);
+                return;
+            }
+            Some(HandleState::Directory(_)) => {
+                reply.error(libc::EISDIR);
+                return;
+            }
+            Some(HandleState::File(state)) => state,
+        };
+
+        let mut buffer = vec![0u8; size as usize];
         let mut total_bytes_read = 0;
 
         {
-            let object = try_result!(self.open_file_commit(ino), reply);
+            let object = try_result!(
+                self.objects
+                    .open_commit(ino, self.repo.open(&entry_path).unwrap()),
+                reply
+            );
             try_result!(object.seek(SeekFrom::Start(offset as u64)), reply);
 
             // `Filesystem::read` should read the exact number of bytes requested except on EOF or error.
@@ -688,8 +649,10 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             }
         }
 
+        state.position = offset as u64 + total_bytes_read as u64;
+
         // Update the file's `st_atime` unless the `O_NOATIME` flag was passed.
-        if !flags.contains(OFlag::O_NOATIME) {
+        if !state.flags.contains(OFlag::O_NOATIME) {
             let mut metadata =
                 try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
             metadata.accessed = SystemTime::now();
@@ -709,21 +672,6 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         _flags: u32,
         reply: ReplyWrite,
     ) {
-        let flags = match self.handles.info(fh) {
-            Some(HandleInfo {
-                handle_type: HandleType::Directory,
-                ..
-            }) => {
-                reply.error(libc::EISDIR);
-                return;
-            }
-            Some(info) => info.flags,
-            None => {
-                reply.error(libc::EBADF);
-                return;
-            }
-        };
-
         // Technically, on Unix systems, a file should still be accessible via its file descriptor
         // once it's been unlinked. Because this isn't how repositories work, we will return `EBADF`
         // if the user tries to read from a file which has been unlinked since it was opened.
@@ -736,20 +684,48 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             }
         };
 
+        let state = match self.handles.state_mut(fh) {
+            None => {
+                reply.error(libc::EBADF);
+                return;
+            }
+            Some(HandleState::Directory(_)) => {
+                reply.error(libc::EISDIR);
+                return;
+            }
+            Some(HandleState::File(state)) => state,
+        };
+
         let mut metadata =
             try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
 
         let bytes_written = {
-            let object = try_result!(self.open_file(ino), reply);
-
-            if flags.contains(OFlag::O_APPEND) {
+            let object = if state.flags.contains(OFlag::O_APPEND) {
+                let object = try_result!(
+                    self.objects
+                        .open_commit(ino, self.repo.open(&entry_path).unwrap()),
+                    reply
+                );
                 try_result!(object.seek(SeekFrom::End(0)), reply);
+                object
+            } else if offset as u64 == state.position {
+                // Because the offset is the same as the previous offset, we don't need to seek and
+                // therefore don't need to commit changes.
+                self.objects.open(ino, self.repo.open(&entry_path).unwrap())
             } else {
+                let object = try_result!(
+                    self.objects
+                        .open_commit(ino, self.repo.open(&entry_path).unwrap()),
+                    reply
+                );
                 try_result!(object.seek(SeekFrom::Start(offset as u64)), reply);
-            }
+                object
+            };
 
             try_result!(object.write(data), reply)
         };
+
+        state.position = offset as u64 + bytes_written as u64;
 
         // After this point, we need to be more careful about error handling. Because bytes have
         // been written to the object, if an error occurs, we need to drop the `Object` to discard
@@ -760,22 +736,22 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         metadata.accessed = SystemTime::now();
         metadata.modified = SystemTime::now();
         if let Err(error) = self.repo.set_metadata(&entry_path, Some(metadata)) {
-            self.objects.remove(&ino);
+            self.objects.close(ino);
             reply.error(error.to_errno());
             return;
         }
 
         // If the `O_SYNC` or `O_DSYNC` flags were passed, we need to commit changes to the object
         // *and* commit changes to the repository after each write.
-        if flags.intersects(OFlag::O_SYNC | OFlag::O_DSYNC) {
-            if let Err(error) = self.open_file_commit(ino) {
-                self.objects.remove(&ino);
+        if state.flags.intersects(OFlag::O_SYNC | OFlag::O_DSYNC) {
+            if let Err(error) = self.objects.commit(ino) {
+                self.objects.close(ino);
                 reply.error(error.to_errno());
                 return;
             }
 
             if let Err(error) = self.repo.commit() {
-                self.objects.remove(&ino);
+                self.objects.close(ino);
                 reply.error(error.to_errno());
                 return;
             }
@@ -785,9 +761,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     }
 
     fn flush(&mut self, _req: &Request, ino: u64, _fh: u64, _lock_owner: u64, reply: ReplyEmpty) {
-        if let Some(object) = self.objects.get_mut(&ino) {
-            try_result!(object.commit(), reply);
-        }
+        try_result!(self.objects.commit(ino), reply);
         reply.ok()
     }
 
@@ -806,16 +780,12 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     }
 
     fn fsync(&mut self, _req: &Request, ino: u64, _fh: u64, _datasync: bool, reply: ReplyEmpty) {
-        if let Some(object) = self.objects.get_mut(&ino) {
-            try_result!(object.commit(), reply);
-        }
+        try_result!(self.objects.commit(ino), reply);
         try_result!(self.repo.commit(), reply);
         reply.ok();
     }
 
-    fn opendir(&mut self, _req: &Request, ino: u64, flags: u32, reply: ReplyOpen) {
-        let flags = try_option!(OFlag::from_bits(flags as i32), reply, libc::EINVAL);
-
+    fn opendir(&mut self, _req: &Request, ino: u64, _flags: u32, reply: ReplyOpen) {
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
 
         if !self.repo.is_directory(entry_path) {
@@ -823,22 +793,22 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             return;
         }
 
-        let mut children = Vec::new();
+        let mut entries = Vec::new();
         for child_path in try_result!(self.repo.list(entry_path), reply) {
             let file_name = child_path.file_name().unwrap().to_string();
             let inode = self.inodes.inode(&child_path).unwrap();
             let file_type = try_result!(self.repo.entry(&child_path), reply)
                 .file_type
                 .to_file_type();
-            children.push(DirectoryEntry {
+            entries.push(DirectoryEntry {
                 file_name,
                 file_type,
                 inode,
             })
         }
 
-        let fh = self.handles.open(flags, HandleType::Directory);
-        self.directories.insert(fh, children);
+        let state = HandleState::Directory(DirectoryHandle { entries });
+        let fh = self.handles.open(state);
 
         reply.opened(fh, 0);
     }
@@ -851,24 +821,19 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         offset: i64,
         mut reply: ReplyDirectory,
     ) {
-        match self.handles.info(fh) {
-            Some(HandleInfo {
-                handle_type: HandleType::File,
-                ..
-            }) => {
-                reply.error(libc::ENOTDIR);
-                return;
-            }
+        let entries = match self.handles.state(fh) {
             None => {
                 reply.error(libc::EBADF);
                 return;
             }
-            _ => {}
-        }
+            Some(HandleState::File(_)) => {
+                reply.error(libc::ENOTDIR);
+                return;
+            }
+            Some(HandleState::Directory(DirectoryHandle { entries })) => entries,
+        };
 
-        let children = self.directories.get(&fh).unwrap();
-
-        for (i, dir_entry) in children[offset as usize..].iter().enumerate() {
+        for (i, dir_entry) in entries[offset as usize..].iter().enumerate() {
             if reply.add(
                 dir_entry.inode,
                 (i + 1) as i64,

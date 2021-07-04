@@ -899,7 +899,7 @@ where
 }
 
 /// The default mount options which are always passed to libfuse.
-const DEFAULT_FUSE_MOUNT_OPTS: &'static [&str] = &["default_permissions", "auto_umount"];
+const DEFAULT_FUSE_MOUNT_OPTS: &[&str] = &["default_permissions", "auto_umount"];
 
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "fuse-mount"))))]
