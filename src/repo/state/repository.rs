@@ -18,43 +18,12 @@ use std::collections::HashSet;
 
 use hex_literal::hex;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use uuid::Uuid;
 
-use super::table::{IdTable, ObjectId};
-use crate::repo::{
-    key::KeyRepo, Commit, Object, OpenRepo, RepoInfo, Restore, RestoreSavepoint, Savepoint,
-};
-
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Serialize, Deserialize)]
-pub enum RepoKey {
-    Object(ObjectId),
-    State,
-    IdTable,
-    Stage,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct RepoState<State> {
-    pub state: State,
-    pub id_table: IdTable,
-}
-
-#[derive(Debug, Clone)]
-pub struct StateRestore<State> {
-    pub state: RepoState<State>,
-    pub restore: <KeyRepo<RepoKey> as RestoreSavepoint>::Restore,
-}
-
-impl<State: Clone> Restore for StateRestore<State> {
-    fn is_valid(&self) -> bool {
-        self.restore.is_valid()
-    }
-
-    fn instance(&self) -> Uuid {
-        self.restore.instance()
-    }
-}
+use super::info::{ObjectId, RepoKey, RepoState, StateRestore};
+use crate::repo::common::{IdTable, UniqueId};
+use crate::repo::{key::KeyRepo, Commit, Object, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint};
 
 /// A low-level repository type which can be used to implement higher-level repository types
 ///
@@ -145,6 +114,20 @@ where
         Ok(())
     }
 
+    /// Create a new `ObjectId` for the given `object_id`.
+    fn new_id(&self, object_id: UniqueId) -> ObjectId {
+        ObjectId {
+            repo_id: self.repo.info().id(),
+            instance_id: self.repo.instance(),
+            object_id,
+        }
+    }
+
+    /// Return whether the given ID belongs to this repository and instance.
+    fn check_id(&self, id: ObjectId) -> bool {
+        id.repo_id == self.repo.info().id() && id.instance_id == self.repo.instance()
+    }
+
     /// Return a reference to the encapsulated state.
     pub fn state(&self) -> &State {
         &self.state
@@ -157,14 +140,14 @@ where
 
     /// Return whether there is an object with the given `id` in this repository.
     pub fn contains(&self, id: ObjectId) -> bool {
-        self.repo.contains(&RepoKey::Object(id))
+        self.check_id(id) && self.repo.contains(&RepoKey::Object(id.object_id))
     }
 
     /// Create a new object in the repository and returns its `ObjectId`.
     pub fn create(&mut self) -> ObjectId {
-        let id = self.id_table.next();
-        self.repo.insert(RepoKey::Object(id));
-        id
+        let object_id = self.id_table.next();
+        self.repo.insert(RepoKey::Object(object_id));
+        self.new_id(object_id)
     }
 
     /// Remove the object with the given `id` from the repository.
@@ -176,10 +159,16 @@ where
     ///
     /// [`Commit::clean`]: crate::repo::Commit::clean
     pub fn remove(&mut self, id: ObjectId) -> bool {
-        if !self.id_table.recycle(id) {
+        if !self.check_id(id) {
             return false;
         }
-        assert!(self.repo.remove(&RepoKey::Object(id)));
+
+        if !self.id_table.recycle(id.object_id) {
+            return false;
+        }
+
+        assert!(self.repo.remove(&RepoKey::Object(id.object_id)));
+
         true
     }
 
@@ -187,13 +176,17 @@ where
     ///
     /// This returns `None` if there is no object with the given `id` in the repository.
     pub fn object(&self, id: ObjectId) -> Option<Object> {
-        self.repo.object(&RepoKey::Object(id))
+        if !self.check_id(id) {
+            return None;
+        }
+
+        self.repo.object(&RepoKey::Object(id.object_id))
     }
 
     /// Return an iterator over all the IDs of objects in this repository.
     pub fn list(&self) -> impl Iterator<Item = ObjectId> + '_ {
-        self.repo.keys().filter_map(|key| match key {
-            RepoKey::Object(id) => Some(*id),
+        self.repo.keys().filter_map(move |key| match key {
+            RepoKey::Object(object_id) => Some(self.new_id(*object_id)),
             _ => None,
         })
     }
@@ -204,14 +197,16 @@ where
     ///
     /// This is a cheap operation which does not require copying the bytes in the object.
     pub fn copy(&mut self, source: ObjectId) -> Option<ObjectId> {
-        if !self.repo.contains(&RepoKey::Object(source)) {
+        if !self.check_id(source) || !self.repo.contains(&RepoKey::Object(source.object_id)) {
             return None;
         }
         let dest_id = self.id_table.next();
+
         assert!(self
             .repo
-            .copy(&RepoKey::Object(source), RepoKey::Object(dest_id)));
-        Some(dest_id)
+            .copy(&RepoKey::Object(source.object_id), RepoKey::Object(dest_id)));
+
+        Some(self.new_id(dest_id))
     }
 
     /// Verify the integrity of all the data in the repository.
@@ -228,7 +223,7 @@ where
             .verify()?
             .iter()
             .filter_map(|key| match key {
-                RepoKey::Object(id) => Some(*id),
+                RepoKey::Object(id) => Some(self.new_id(*id)),
                 _ => None,
             })
             .collect())

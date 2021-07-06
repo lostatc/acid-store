@@ -16,8 +16,10 @@
 
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
+use uuid::Uuid;
+
 use acid_store::repo::state::StateRepo;
-use acid_store::repo::{Commit, OpenMode, OpenOptions, RestoreSavepoint};
+use acid_store::repo::{Commit, OpenMode, OpenOptions, RestoreSavepoint, SwitchInstance};
 use acid_store::store::MemoryConfig;
 
 fn create_repo(config: &MemoryConfig) -> acid_store::Result<StateRepo<String>> {
@@ -90,6 +92,23 @@ fn state_is_defaulted_on_clear_instance() -> anyhow::Result<()> {
     repo.clear_instance();
 
     assert_eq!(repo.state(), &String::default());
+
+    Ok(())
+}
+
+#[test]
+fn ids_from_different_instances_are_not_valid() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repo = create_repo(&config)?;
+
+    let id = repo.create();
+
+    let mut repo: StateRepo<String> = repo.switch_instance(Uuid::new_v4())?;
+
+    assert!(!repo.contains(id));
+    assert!(!repo.remove(id));
+    assert!(repo.object(id).is_none());
+    assert!(repo.copy(id).is_none());
 
     Ok(())
 }
