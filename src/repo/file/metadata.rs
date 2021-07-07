@@ -17,21 +17,20 @@
 use std::io;
 use std::path::Path;
 
-use bitflags::bitflags;
-#[cfg(all(target_os = "linux", feature = "file-metadata"))]
-use posix_acl::{PosixACL, Qualifier as PosixQualifier, ACL_EXECUTE, ACL_READ, ACL_WRITE};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "file-metadata")]
-use {filetime::set_file_times, std::time::SystemTime};
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
 use {
+    bitflags::bitflags,
     nix::unistd::{chown, Gid, Uid},
+    posix_acl::{PosixACL, Qualifier as PosixQualifier, ACL_EXECUTE, ACL_READ, ACL_WRITE},
     std::collections::HashMap,
     std::fs::set_permissions,
     std::os::unix::fs::{MetadataExt, PermissionsExt},
 };
+#[cfg(feature = "file-metadata")]
+use {filetime::set_file_times, std::time::SystemTime};
 
 /// The metadata for a file in the file system.
 ///
@@ -72,9 +71,9 @@ pub enum AccessQualifier {
     Group(u32),
 }
 
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
 bitflags! {
     /// The permission mode for an access control list.
-    #[cfg(all(any(unix, doc), feature = "file-metadata"))]
     #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
     #[derive(Serialize, Deserialize)]
     pub struct AccessMode: u32 {

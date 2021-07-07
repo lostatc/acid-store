@@ -32,13 +32,14 @@ use crate::repo::{
 };
 
 use super::entry::{Entry, EntryHandle, EntryType, FileType};
-use super::fuse::FuseAdapter;
 use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
 use super::special::{NoSpecialType, SpecialType};
-use std::ffi::OsStr;
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
-use {super::metadata::UnixMetadata, super::special::UnixSpecialType};
+use {
+    super::fuse::FuseAdapter, super::metadata::UnixMetadata, super::special::UnixSpecialType,
+    std::ffi::OsStr,
+};
 
 /// The path of the root entry.
 pub static EMPTY_PATH: Lazy<RelativePathBuf> = Lazy::new(|| RelativePath::new("").to_owned());
