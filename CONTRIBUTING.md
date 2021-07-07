@@ -1,5 +1,8 @@
 # Contributing
+
 ## Tests
+
+### `DataStore` Tests
 
 Some tests are not run in CI because they rely on outside resources. These tests must be run locally and be configured
 with environment variables. Below is a table of what those environment variables are and what Cargo features they are
@@ -18,6 +21,32 @@ test suite.
 | `SFTP_PATH` | The path to use on the SFTP server. | `store-sftp` |
 | `SFTP_USERNAME` | The username to access the SFTP server. | `store-sftp` |
 | `SFTP_PASSWORD` | The password to access the SFTP server. | `store-sftp` |
+
+### FUSE Tests
+
+To test the FUSE file system implementation provided by this library, the `/fuse-test` directory contains a `Dockerfile`
+which provides a test environment containing a number of file system testing tools. The `Dockerfile` builds `acid-store`
+and provides a binary which mounts a FUSE file system backed by a `MemoryStore`. To mount the FUSE file system, the
+container needs special permissions and access to the host's `/dev/fuse` device.
+
+To build the docker image:
+
+```shell
+docker build -t fuse-test -f ./fuse-test/Dockerfile .
+```
+
+To create the container and start an interactive shell:
+
+```shell
+docker run -it --rm --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined fuse-test bash
+```
+
+To mount the FUSE file system in the container:
+
+```shell
+mkdir ./mnt
+./fuse-mount ./mnt &
+```
 
 ## Documentation
 
