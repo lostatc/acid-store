@@ -1,0 +1,7 @@
+[package]
+name = "fuse-mount"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+acid-store = { path = "../acid-store", features = ["fuse-mount"] }
