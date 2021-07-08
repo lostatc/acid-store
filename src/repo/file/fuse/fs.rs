@@ -21,6 +21,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
+use capabilities::{Capabilities, Capability, Flag};
 use fuse::{
     FileAttr, FileType as FuseFileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory,
     ReplyEmpty, ReplyEntry, ReplyOpen, ReplyWrite, ReplyXattr, Request,
@@ -332,6 +333,29 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     ) {
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT).to_owned();
 
+        let mut entry = try_result!(self.repo.entry(&entry_path), reply);
+        let default_metadata = entry.default_metadata(req);
+        let metadata = entry.metadata.get_or_insert(default_metadata);
+        let process_caps = try_result!(Capabilities::from_pid(req.pid() as isize), reply);
+
+        // Changing the file times or permissions can only be performed by the file's owner or with
+        // the `CAP_FOWNER` capability.
+        if (atime.is_some() || mtime.is_some() || mode.is_some())
+            && req.uid() != metadata.user
+            && !process_caps.check(Capability::CAP_FOWNER, Flag::Effective)
+        {
+            reply.error(libc::EPERM);
+            return;
+        }
+
+        // Changing the owner or group of a file requires the `CAP_CHOWN` capability.
+        if (uid.is_some() || gid.is_some())
+            && !process_caps.check(Capability::CAP_CHOWN, Flag::Effective)
+        {
+            reply.error(libc::EPERM);
+            return;
+        }
+
         // If `size` is not `None`, that means we must truncate the file.
         if let Some(size) = size {
             let object = try_result!(
@@ -341,10 +365,6 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             );
             try_result!(object.truncate(size), reply);
         }
-
-        let mut entry = try_result!(self.repo.entry(&entry_path), reply);
-        let default_metadata = entry.default_metadata(req);
-        let metadata = entry.metadata.get_or_insert(default_metadata);
 
         if let Some(mode) = mode {
             metadata.mode = mode;
