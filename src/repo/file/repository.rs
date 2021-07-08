@@ -900,7 +900,7 @@ where
 }
 
 /// The default mount options which are always passed to libfuse.
-const DEFAULT_FUSE_MOUNT_OPTS: &[&str] = &["default_permissions", "auto_umount"];
+const DEFAULT_FUSE_MOUNT_OPTS: &[&str] = &["-o", "default_permissions"];
 
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "fuse-mount"))))]
@@ -928,8 +928,8 @@ impl FileRepo<UnixSpecialType, UnixMetadata> {
         let all_opts = [DEFAULT_FUSE_MOUNT_OPTS, options]
             .concat()
             .into_iter()
-            .map(|opt| OsStr::new(opt))
-            .collect::<Vec<_>>();
+            .map(|opt| opt.as_ref())
+            .collect::<Vec<&OsStr>>();
         Ok(fuse::mount(adapter, &mountpoint, &all_opts)?)
     }
 }

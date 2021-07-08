@@ -343,7 +343,6 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         }
 
         let mut entry = try_result!(self.repo.entry(&entry_path), reply);
-
         let default_metadata = entry.default_metadata(req);
         let metadata = entry.metadata.get_or_insert(default_metadata);
 
@@ -464,6 +463,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     fn unlink(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
         let file_name = try_option!(name.to_str(), reply, libc::ENOENT);
         let entry_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).join(file_name);
+        let entry_inode = try_option!(self.inodes.inode(&entry_path), reply, libc::ENOENT);
 
         if self.repo.is_directory(&entry_path) {
             reply.error(libc::EISDIR);
@@ -474,8 +474,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         try_result!(self.repo.commit(), reply);
 
-        let entry_inode = self.inodes.inode(&entry_path).unwrap();
         self.inodes.remove(entry_inode);
+        self.objects.close(entry_inode);
 
         reply.ok();
     }
@@ -483,6 +483,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     fn rmdir(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
         let file_name = try_option!(name.to_str(), reply, libc::ENOENT);
         let entry_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).join(file_name);
+        let entry_inode = try_option!(self.inodes.inode(&entry_path), reply, libc::ENOENT);
 
         if !self.repo.is_directory(&entry_path) {
             reply.error(libc::ENOTDIR);
@@ -494,7 +495,6 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         try_result!(self.repo.commit(), reply);
 
-        let entry_inode = self.inodes.inode(&entry_path).unwrap();
         self.inodes.remove(entry_inode);
 
         reply.ok();
@@ -768,7 +768,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     fn release(
         &mut self,
         _req: &Request,
-        _ino: u64,
+        ino: u64,
         fh: u64,
         _flags: u32,
         _lock_owner: u64,
@@ -776,6 +776,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         reply: ReplyEmpty,
     ) {
         self.handles.close(fh);
+        self.objects.close(ino);
         reply.ok()
     }
 
