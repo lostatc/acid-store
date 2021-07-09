@@ -74,6 +74,7 @@ macro_rules! try_result {
         match $result {
             Ok(result) => result,
             Err(error) => {
+                dbg!(&error);
                 $reply.error(crate::Error::from(error).to_errno());
                 return;
             }
@@ -87,6 +88,7 @@ macro_rules! try_option {
         match $result {
             Some(result) => result,
             None => {
+                dbg!($error);
                 $reply.error($error);
                 return;
             }
@@ -615,6 +617,18 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             return;
         }
 
+        // Commit and close any open file objects associated with the entries in the source tree.
+        let source_inode = self.inodes.inode(&source_path).unwrap();
+        try_result!(self.objects.commit(source_inode), reply);
+        self.objects.close(source_inode);
+        if let Ok(descendants) = self.repo.walk(&source_path) {
+            for source_descendant in descendants {
+                let descendant_inode = self.inodes.inode(&source_descendant).unwrap();
+                try_result!(self.objects.commit(descendant_inode), reply);
+                self.objects.close(descendant_inode);
+            }
+        }
+
         try_result!(self.repo.copy_tree(&source_path, &dest_path), reply);
         self.repo.remove_tree(&source_path).ok();
 
@@ -622,6 +636,16 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         try_result!(self.touch_modified(&dest_parent_path, req), reply);
 
         try_result!(self.repo.commit(), reply);
+
+        // Update the mappings from paths to inodes in the inode table.
+        self.inodes.rename(&source_path, dest_path.clone());
+        if let Ok(descendants) = self.repo.walk(&dest_path) {
+            for dest_descendant in descendants {
+                let relative_descendant = dest_descendant.strip_prefix(&dest_path).unwrap();
+                let source_descendant = source_path.join(relative_descendant);
+                self.inodes.rename(&source_descendant, dest_descendant);
+            }
+        }
 
         reply.ok();
     }
