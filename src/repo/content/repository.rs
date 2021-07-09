@@ -109,7 +109,7 @@ impl ContentRepo {
         let mut stage_object = self.0.object(stage_object_id).unwrap();
 
         // This object may have data in it from a past failed write.
-        stage_object.truncate(0)?;
+        stage_object.set_len(0)?;
 
         // Calculate the hash and write to the repository simultaneously so the `data` is only read
         // once.

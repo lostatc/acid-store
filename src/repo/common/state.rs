@@ -128,6 +128,18 @@ pub struct RepoState {
     pub lock: Lock<Uuid>,
 }
 
+/// The chunk at the object's current seek position.
+pub enum CurrentChunk {
+    /// The object is empty.
+    Empty,
+
+    /// The seek position is at the end of the object.
+    End,
+
+    /// The seek position is at the given chunk.
+    Chunk(ChunkLocation),
+}
+
 /// The location of a chunk in a stream of bytes.
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct ChunkLocation {
@@ -162,10 +174,8 @@ pub struct ObjectState {
     /// The list of chunks which have been written since `flush` was last called.
     pub new_chunks: Vec<Chunk>,
 
-    /// The location of the first chunk written to since `flush` was last called.
-    ///
-    /// If no data has been written, this is `None`.
-    pub start_location: Option<ChunkLocation>,
+    /// The current chunk when the transaction was started.
+    pub start_location: CurrentChunk,
 
     /// The current seek position of the object.
     pub position: u64,
@@ -191,7 +201,7 @@ impl ObjectState {
         Self {
             chunker: IncrementalChunker::new(chunker),
             new_chunks: Vec::new(),
-            start_location: None,
+            start_location: CurrentChunk::Empty,
             position: 0,
             buffered_chunk: None,
             read_buffer: Vec::new(),

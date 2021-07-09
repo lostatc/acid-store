@@ -64,6 +64,45 @@ fn read_written_data(config: RepoConfig) -> anyhow::Result<()> {
 #[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
 #[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn append_to_object(config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .config(config)
+        .password(b"Password")
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+    let mut object = repo.insert(String::from("test"));
+
+    let first_data = random_buffer();
+    let second_data = random_buffer();
+
+    object.write_all(first_data.as_slice())?;
+    object.commit()?;
+
+    object.seek(SeekFrom::End(0))?;
+
+    object.write_all(second_data.as_slice())?;
+    object.commit()?;
+
+    let mut expected_data = first_data;
+    expected_data.extend(second_data.as_slice());
+
+    let mut actual_data = Vec::new();
+    object.seek(SeekFrom::Start(0))?;
+    object.read_to_end(&mut actual_data)?;
+
+    assert_eq!(object.size().unwrap(), expected_data.len() as u64);
+    assert_eq!(&actual_data, &expected_data);
+
+    Ok(())
+}
+
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn seek_and_read_data(config: RepoConfig) -> anyhow::Result<()> {
     let store_config = MemoryConfig::new();
     let mut repo: KeyRepo<String> = OpenOptions::new()
@@ -260,13 +299,55 @@ fn truncate_object(config: RepoConfig) -> anyhow::Result<()> {
 
     // Truncate the object.
     let new_size = MIN_BUFFER_SIZE as u64 / 2;
-    object.truncate(new_size)?;
+    object.set_len(new_size)?;
 
     assert_eq!(object.size().unwrap(), new_size);
     assert_eq!(object.seek(SeekFrom::Current(0))?, new_size);
 
     // Read data from the object.
     let expected_data = &initial_data[..new_size as usize];
+    let mut actual_data = Vec::new();
+    object.seek(SeekFrom::Start(0))?;
+    object.read_to_end(&mut actual_data)?;
+
+    assert_eq!(actual_data, expected_data);
+
+    Ok(())
+}
+
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn extend_object(config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .config(config)
+        .password(b"Password")
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+    let mut object = repo.insert(String::from("test"));
+
+    // Write data to the object.
+    let initial_data = random_buffer();
+    object.write_all(initial_data.as_slice())?;
+    object.commit()?;
+
+    let original_bytes = initial_data.len() as u64;
+    let added_bytes = original_bytes;
+    let new_size = original_bytes + added_bytes;
+
+    // Truncate the object.
+    object.set_len(new_size)?;
+
+    // assert_eq!(object.size().unwrap(), new_size);
+    assert_eq!(object.seek(SeekFrom::Current(0))?, original_bytes);
+
+    // Read data from the object.
+    let mut expected_data = initial_data;
+    expected_data.resize(new_size as usize, 0);
     let mut actual_data = Vec::new();
     object.seek(SeekFrom::Start(0))?;
     object.read_to_end(&mut actual_data)?;
@@ -537,7 +618,7 @@ fn truncating_with_uncommitted_changes_errs() -> anyhow::Result<()> {
     object.write_all(b"test data")?;
 
     assert!(matches!(
-        object.truncate(0),
+        object.set_len(0),
         Err(acid_store::Error::TransactionInProgress)
     ));
 
@@ -576,18 +657,44 @@ fn truncating_from_another_instance_with_uncommitted_changes_errs() -> anyhow::R
         .open(&store_config)?;
 
     let mut object1 = repo.insert(String::from("test"));
-    object1.write_all(b"test data")?;
+    object1.write_all(b"test_data")?;
+    object1.commit()?;
 
     let mut object2 = repo.object("test").unwrap();
+    object2.write_all(b"test data")?;
 
     assert!(matches!(
-        object2.truncate(0),
+        object1.set_len(0),
         Err(acid_store::Error::TransactionInProgress)
     ));
 
-    object1.commit()?;
+    object2.commit()?;
 
-    assert!(object2.truncate(0).is_ok());
+    assert!(object1.set_len(0).is_ok());
+
+    Ok(())
+}
+
+#[test]
+fn extending_from_another_instance_with_uncommitted_changes_errs() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let mut object1 = repo.insert(String::from("test"));
+
+    let mut object2 = repo.object("test").unwrap();
+    object2.write_all(b"test data")?;
+
+    assert!(matches!(
+        object1.set_len(10),
+        Err(acid_store::Error::TransactionInProgress)
+    ));
+
+    object2.commit()?;
+
+    assert!(object1.set_len(10).is_ok());
 
     Ok(())
 }
@@ -683,7 +790,7 @@ fn accessing_once_repo_is_dropped_errs() -> anyhow::Result<()> {
         Err(acid_store::Error::InvalidObject)
     ));
     assert!(matches!(
-        object.truncate(0),
+        object.set_len(0),
         Err(acid_store::Error::InvalidObject)
     ));
     assert!(matches!(
@@ -726,7 +833,7 @@ fn accessing_once_object_is_removed_errs() -> anyhow::Result<()> {
         Err(acid_store::Error::InvalidObject)
     ));
     assert!(matches!(
-        object.truncate(0),
+        object.set_len(0),
         Err(acid_store::Error::InvalidObject)
     ));
     assert!(matches!(
