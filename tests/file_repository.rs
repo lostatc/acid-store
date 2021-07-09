@@ -843,6 +843,7 @@ fn write_unix_metadata() -> anyhow::Result<()> {
         mode: 0o666,
         modified: SystemTime::UNIX_EPOCH,
         accessed: SystemTime::UNIX_EPOCH,
+        changed: SystemTime::UNIX_EPOCH,
         user: 1000,
         group: 1000,
         attributes: HashMap::new(),
