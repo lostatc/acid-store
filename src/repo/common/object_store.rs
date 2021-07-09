@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use std::cmp::min;
+use std::cmp::{min, Ordering};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::mem;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak};
@@ -25,7 +25,10 @@ use serde::Serialize;
 
 use super::chunk_store::{ReadChunk, StoreReader, StoreWriter, WriteChunk};
 use super::handle::{chunk_hash, ContentId, ObjectHandle};
-use super::state::{ChunkLocation, ObjectState, RepoState};
+use super::state::{ChunkLocation, CurrentChunk, ObjectState, RepoState};
+
+/// The size of the buffer used to extend an object.
+const EXTEND_BUFFER: usize = 4096;
 
 pub struct ObjectStore {
     repo_state: Arc<RwLock<RepoState>>,
@@ -210,14 +213,18 @@ impl<'a> ObjectReader<'a> {
     }
 
     /// Return the chunk at the current seek position or `None` if there is none.
-    fn current_chunk(&self) -> Option<ChunkLocation> {
+    fn current_chunk(&self) -> CurrentChunk {
+        if self.handle.chunks.is_empty() {
+            return CurrentChunk::Empty;
+        }
+
         let mut chunk_start = 0u64;
         let mut chunk_end = 0u64;
 
         for (index, chunk) in self.handle.chunks.iter().enumerate() {
             chunk_end += chunk.size as u64;
             if self.object_state.position >= chunk_start && self.object_state.position < chunk_end {
-                return Some(ChunkLocation {
+                return CurrentChunk::Chunk(ChunkLocation {
                     chunk: *chunk,
                     start: chunk_start,
                     end: chunk_end,
@@ -228,8 +235,7 @@ impl<'a> ObjectReader<'a> {
             chunk_start += chunk.size as u64;
         }
 
-        // There are no chunks in the object.
-        None
+        CurrentChunk::End
     }
 
     /// Return the slice of bytes between the current seek position and the end of the chunk.
@@ -238,8 +244,8 @@ impl<'a> ObjectReader<'a> {
     fn read_chunk(&mut self, size: usize) -> crate::Result<&[u8]> {
         // If the object is empty, there's no data to read.
         let current_location = match self.current_chunk() {
-            Some(location) => location,
-            None => return Ok(&[]),
+            CurrentChunk::Empty | CurrentChunk::End => return Ok(&[]),
+            CurrentChunk::Chunk(location) => location,
         };
 
         // If we're reading from a new chunk, read the contents of that chunk into the read buffer.
@@ -350,7 +356,7 @@ impl<'a> ObjectWriter<'a> {
     }
 
     /// Truncate the object to the given `length`.
-    pub fn truncate(&mut self, length: u64) -> crate::Result<()> {
+    fn truncate(&mut self, length: u64) -> crate::Result<()> {
         // Because this modifies the object, we need to start a new transaction.
         match self.object_state.transaction_lock {
             None => match self.repo_state.transactions.acquire_lock(self.handle.id) {
@@ -372,8 +378,8 @@ impl<'a> ObjectWriter<'a> {
         // Truncating the object may mean slicing a chunk in half. Because we can't edit chunks
         // in-place, we need to read the final chunk, slice it, and write it back.
         let end_location = match self.object_reader().current_chunk() {
-            Some(location) => location,
-            None => return Ok(()),
+            CurrentChunk::Chunk(location) => location,
+            CurrentChunk::Empty | CurrentChunk::End => return Ok(()),
         };
         let last_chunk = self.store_writer().read_chunk(end_location.chunk)?;
         let new_last_chunk = &last_chunk[..end_location.relative_position()];
@@ -397,6 +403,44 @@ impl<'a> ObjectWriter<'a> {
         Ok(())
     }
 
+    /// Extend the object to the given `length`.
+    fn extend(&mut self, length: u64) -> crate::Result<()> {
+        if length <= self.handle.size() {
+            return Ok(());
+        }
+
+        let original_pos = self.seek(SeekFrom::Current(0))?;
+        self.seek(SeekFrom::End(0))?;
+
+        let mut bytes_remaining = length - self.handle.size();
+        let buffer = [0u8; EXTEND_BUFFER];
+        let mut bytes_to_write;
+
+        while bytes_remaining > 0 {
+            bytes_to_write = min(bytes_remaining, buffer.len() as u64) as usize;
+            self.write_all(&buffer[..bytes_to_write])?;
+            bytes_remaining -= bytes_to_write as u64;
+        }
+
+        self.commit()?;
+        self.seek(SeekFrom::Start(original_pos))?;
+
+        Ok(())
+    }
+
+    /// Set the length of the object.
+    pub fn set_len(&mut self, size: u64) -> crate::Result<()> {
+        if self.object_state.transaction_lock.is_some() {
+            return Err(crate::Error::TransactionInProgress);
+        }
+
+        match size.cmp(&self.handle.size()) {
+            Ordering::Less => self.truncate(size),
+            Ordering::Greater => self.extend(size),
+            Ordering::Equal => Ok(()),
+        }
+    }
+
     /// Write chunks stored in the chunker to the repository.
     fn write_chunks(&mut self) -> crate::Result<()> {
         for chunk_data in self.object_state.chunker.chunks() {
@@ -413,7 +457,7 @@ impl<'a> ObjectWriter<'a> {
         self.seek(SeekFrom::Start(0))?;
         self.write_all(serialized.as_slice())?;
         self.commit()?;
-        self.truncate(serialized.len() as u64)?;
+        self.set_len(serialized.len() as u64)?;
         Ok(())
     }
 
@@ -426,7 +470,7 @@ impl<'a> ObjectWriter<'a> {
 
         let current_chunk = self.object_reader().current_chunk();
 
-        if let Some(location) = &current_chunk {
+        if let CurrentChunk::Chunk(location) = &current_chunk {
             // We need to make sure the data after the seek position is saved when we replace the
             // current chunk. Read this data from the repository and write it to the chunker.
             let last_chunk = self.store_writer().read_chunk(location.chunk)?;
@@ -440,22 +484,20 @@ impl<'a> ObjectWriter<'a> {
         self.write_chunks()?;
 
         // Find the index of the first chunk which is being overwritten.
-        let start_index = self
-            .object_state
-            .start_location
-            .as_ref()
-            .map(|location| location.index)
-            .unwrap_or(0);
-
-        let end_index = {
-            // Find the index of the last chunk which is being overwritten.
-            match &current_chunk {
-                Some(location) => location.index + 1,
-                None => self.handle.chunks.len(),
-            }
+        let start_index = match &self.object_state.start_location {
+            CurrentChunk::Empty => 0,
+            CurrentChunk::End => self.handle.chunks.len(),
+            CurrentChunk::Chunk(location) => location.index,
         };
 
-        let new_chunks = mem::replace(&mut self.object_state.new_chunks, Vec::new());
+        // Find the index of the last chunk which is being overwritten.
+        let end_index = match &current_chunk {
+            CurrentChunk::Empty => 0,
+            CurrentChunk::End => self.handle.chunks.len(),
+            CurrentChunk::Chunk(location) => location.index + 1,
+        };
+
+        let new_chunks = mem::take(&mut self.object_state.new_chunks);
 
         {
             // Update chunk references in the object handle to reflect changes.
@@ -463,8 +505,6 @@ impl<'a> ObjectWriter<'a> {
                 .chunks
                 .splice(start_index..end_index, new_chunks);
         }
-
-        self.object_state.start_location = None;
 
         // Release the current transaction.
         self.object_state.transaction_lock = None;
@@ -495,13 +535,12 @@ impl<'a> Write for ObjectWriter<'a> {
         if first_write {
             // Because we're starting a new write, we need to set the starting location.
             self.object_state.start_location = self.object_reader().current_chunk();
-
-            if let Some(location) = &self.object_state.start_location {
+            // We need to make sure the data before the seek position in the current chunk is saved
+            // when we replace the chunk. Read this data from the repository and write it to the
+            // chunker.
+            if let CurrentChunk::Chunk(location) = &self.object_state.start_location {
                 let chunk = location.chunk;
                 let position = location.relative_position();
-
-                // We need to make sure the data before the seek position is saved when we replace
-                // the chunk. Read this data from the repository and write it to the chunker.
                 let first_chunk = self.store_writer().read_chunk(chunk)?;
                 self.object_state
                     .chunker
