@@ -50,7 +50,7 @@
 //!
 //!         // Modify the current version of the object.
 //!         let mut object = repository.object("Key").unwrap();
-//!         object.truncate(0)?;
+//!         object.set_len(0)?;
 //!         drop(object);
 //!
 //!         // Restore from the version we created earlier.
