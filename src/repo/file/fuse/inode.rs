@@ -83,6 +83,18 @@ impl InodeTable {
         Some(self.paths.remove_by_left(&inode).unwrap().1)
     }
 
+    /// Change the path for the inode at `source` to `dest`.
+    ///
+    /// This returns `true` if the inode was renamed or `false` if `source` is not in the table.
+    pub fn rename(&mut self, source: &RelativePath, dest: RelativePathBuf) -> bool {
+        let inode = match self.paths.remove_by_right(source) {
+            Some((inode, _)) => inode,
+            None => return false,
+        };
+        self.paths.insert(inode, dest);
+        true
+    }
+
     /// Get the path associated with `inode` or `None` if it is not in the table.
     pub fn path(&self, inode: u64) -> Option<&RelativePath> {
         self.paths
