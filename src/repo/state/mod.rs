@@ -41,8 +41,8 @@
 //! [`clear_instance`]: crate::repo::state::StateRepo::clear_instance
 //! [`ObjectId`]: crate::repo::state::ObjectId
 
+pub use self::info::ObjectId;
 pub use self::repository::StateRepo;
-pub use self::table::ObjectId;
 
+mod info;
 mod repository;
-mod table;
