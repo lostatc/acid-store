@@ -419,6 +419,19 @@ fn copy_tree() -> anyhow::Result<()> {
 }
 
 #[test]
+fn copy_subdirectory_tree() -> anyhow::Result<()> {
+    let config = MemoryConfig::new();
+    let mut repository = create_repo(&config)?;
+    repository.create_parents("root/source/file1", &Entry::file())?;
+
+    repository.copy_tree("root/source", "root/dest")?;
+
+    assert!(repository.entry("root/dest/file1")?.is_file());
+
+    Ok(())
+}
+
+#[test]
 fn copy_tree_which_is_a_file() -> anyhow::Result<()> {
     let config = MemoryConfig::new();
     let mut repository = create_repo(&config)?;

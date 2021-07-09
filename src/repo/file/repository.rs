@@ -493,34 +493,40 @@ where
             return Err(crate::Error::InvalidPath);
         }
 
-        // Because we can't walk the path tree and insert into it at the same time, we need to
-        // construct a tree of the destination paths before inserting them back into the path table.
-        // Using this prefix tree type should consume less memory than collecting the paths into a
-        // vector.
-        let mut dest_tree = PathTree::new();
-
-        // Copy the root path into the destination tree.
+        // Copy the root path.
         let source_root_handle = *self
             .0
             .state()
             .get(source.as_ref())
             .ok_or(crate::Error::NotFound)?;
         let dest_root_handle = self.copy_entry_handle(source_root_handle);
-        self.0.state_mut().insert(&dest, dest_root_handle);
-        dest_tree.insert(&dest, source_root_handle);
+        self.0.state_mut().insert(dest.as_ref(), dest_root_handle);
+
+        // Because we can't walk the path tree and insert into it at the same time, we need to
+        // construct a tree of the destination paths before inserting them back into the path table.
+        // Using this prefix tree type should consume less memory than collecting the paths into a
+        // vector.
+        let mut dest_tree = PathTree::new();
+
+        // Create an arbitrary root entry in the destination tree. The name of this root entry isn't
+        // significant.
+        let dest_tree_root = RelativePath::new("dest_rot");
+        dest_tree.insert(dest_tree_root, source_root_handle);
 
         // Get the destination paths for each path in the path table and insert them into the
         // destination tree.
         for (path, source_handle) in self.0.state().walk(source.as_ref()).unwrap() {
             let relative_path = path.strip_prefix(&source).unwrap();
-            let dest_path = dest.as_ref().join(relative_path);
-            dest_tree.insert(dest_path, *source_handle);
+            let dest_tree_path = dest_tree_root.join(relative_path);
+            dest_tree.insert(dest_tree_path, *source_handle);
         }
 
         // Move the rest of the paths from the destination tree into the path table.
-        for (dest_path, source_handle) in dest_tree.drain(&dest).unwrap() {
+        for (dest_tree_path, source_handle) in dest_tree.drain(dest_tree_root).unwrap() {
             let dest_handle = self.copy_entry_handle(source_handle);
-            self.0.state_mut().insert(dest_path, dest_handle);
+            let relative_path = dest_tree_path.strip_prefix(dest_tree_root).unwrap();
+            let dest_path = dest.as_ref().join(relative_path);
+            self.0.state_mut().insert(&dest_path, dest_handle);
         }
 
         Ok(())
