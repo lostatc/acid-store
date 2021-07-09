@@ -158,6 +158,7 @@ impl Entry<UnixSpecialType, UnixMetadata> {
             },
             modified: SystemTime::now(),
             accessed: SystemTime::now(),
+            changed: SystemTime::now(),
             user: req.uid(),
             group: req.gid(),
             attributes: HashMap::new(),
@@ -258,7 +259,7 @@ impl<'a> FuseAdapter<'a> {
             blocks: size / BLOCK_SIZE,
             atime: to_timespec(metadata.accessed),
             mtime: to_timespec(metadata.modified),
-            ctime: to_timespec(SystemTime::now()),
+            ctime: to_timespec(metadata.changed),
             crtime: to_timespec(SystemTime::now()),
             kind: match &entry.file_type {
                 FileType::File => fuse::FileType::RegularFile,
@@ -325,7 +326,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         mtime: Option<Timespec>,
         _fh: Option<u64>,
         _crtime: Option<Timespec>,
-        _chgtime: Option<Timespec>,
+        chgtime: Option<Timespec>,
         _bkuptime: Option<Timespec>,
         _flags: Option<u32>,
         reply: ReplyAttr,
@@ -365,6 +366,12 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         if let Some(mtime) = mtime {
             metadata.modified = to_system_time(mtime);
+        }
+
+        if let Some(ctime) = chgtime {
+            metadata.changed = to_system_time(ctime);
+        } else {
+            metadata.changed = SystemTime::now();
         }
 
         try_result!(
@@ -657,6 +664,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             let mut metadata =
                 try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
             metadata.accessed = SystemTime::now();
+            metadata.changed = SystemTime::now();
             try_result!(self.repo.set_metadata(&entry_path, Some(metadata)), reply);
         }
 
@@ -736,6 +744,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         // Update the `st_atime` and `st_mtime` for the entry.
         metadata.accessed = SystemTime::now();
         metadata.modified = SystemTime::now();
+        metadata.changed = SystemTime::now();
         if let Err(error) = self.repo.set_metadata(&entry_path, Some(metadata)) {
             self.objects.close(ino);
             reply.error(error.to_errno());
