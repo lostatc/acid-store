@@ -361,6 +361,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                 reply
             );
             try_result!(object.truncate(size), reply);
+            try_result!(self.touch_modified(&entry_path, req), reply);
         }
 
         let mut entry = try_result!(self.repo.entry(&entry_path), reply);
@@ -634,6 +635,11 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         }
 
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
+
+        if !self.repo.exists(&entry_path) {
+            reply.error(libc::ENOENT);
+            return;
+        }
 
         if !self.repo.is_file(&entry_path) {
             reply.error(libc::ENOTSUP);
