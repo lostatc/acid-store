@@ -74,7 +74,6 @@ macro_rules! try_result {
         match $result {
             Ok(result) => result,
             Err(error) => {
-                dbg!(&error);
                 $reply.error(crate::Error::from(error).to_errno());
                 return;
             }
@@ -88,7 +87,6 @@ macro_rules! try_option {
         match $result {
             Some(result) => result,
             None => {
-                dbg!($error);
                 $reply.error($error);
                 return;
             }
@@ -355,15 +353,17 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     ) {
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT).to_owned();
 
-        // If `size` is not `None`, that means we must truncate the file.
-        if let Some(size) = size {
+        // If `size` is not `None`, that means we must truncate or extend the file.
+        if let Some(new_size) = size {
             let object = try_result!(
                 self.objects
                     .open_commit(ino, self.repo.open(&entry_path).unwrap()),
                 reply
             );
-            try_result!(object.truncate(size), reply);
-            try_result!(self.touch_modified(&entry_path, req), reply);
+            if new_size != object.size().unwrap() {
+                try_result!(object.set_len(new_size), reply);
+                try_result!(self.touch_modified(&entry_path, req), reply);
+            }
         }
 
         let mut entry = try_result!(self.repo.entry(&entry_path), reply);
