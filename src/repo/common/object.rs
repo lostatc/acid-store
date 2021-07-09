@@ -136,11 +136,13 @@ impl Object {
             .verify()
     }
 
-    /// Truncate the object to the given `length`.
+    /// Truncate or extend the object to the given `size`.
     ///
-    /// If the given `length` is greater than or equal to the current size of the object, this does
-    /// nothing. If the seek position is past the point which the object is truncated to, it is
-    /// moved to the new end of the object.
+    /// If the given `size` is greater than the current size of the object, the object will be
+    /// extended to `size` and the intermediate data will be filled with null bytes.
+    ///
+    /// If `size` is less than the current size of the object and the seek position is past the
+    /// point which the object is truncated to, it is moved to the new end of the object.
     ///
     /// This method starts a new transaction and commits the transaction before it returns.
     ///
@@ -151,11 +153,11 @@ impl Object {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn truncate(&mut self, length: u64) -> crate::Result<()> {
+    pub fn set_len(&mut self, size: u64) -> crate::Result<()> {
         ObjectStore::new(&self.repo_state, &self.handle)?
             .writer_guard(&mut self.object_state)
             .writer()
-            .truncate(length)
+            .set_len(size)
     }
 
     /// Serialize the given `value` and write it to the object.
