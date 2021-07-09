@@ -31,6 +31,7 @@ use {
     std::collections::HashMap,
     std::fs::set_permissions,
     std::os::unix::fs::{MetadataExt, PermissionsExt},
+    std::time::{Duration, UNIX_EPOCH},
 };
 
 /// The metadata for a file in the file system.
@@ -85,6 +86,21 @@ bitflags! {
 
 }
 
+/// Construct a `SystemTime` from a unix timestamp.
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
+fn unix_file_time(secs: i64, nsec: i64) -> SystemTime {
+    let file_time = if secs.is_positive() {
+        UNIX_EPOCH + Duration::from_secs(secs as u64)
+    } else {
+        UNIX_EPOCH - Duration::from_secs(secs as u64)
+    };
+    if nsec.is_positive() {
+        file_time + Duration::from_nanos(nsec as u64)
+    } else {
+        file_time - Duration::from_nanos(nsec as u64)
+    }
+}
+
 /// A `FileMetadata` for unix-like operating systems.
 ///
 /// Extended attributes and access control lists may not work on all platforms. If a platform is
@@ -103,11 +119,14 @@ pub struct UnixMetadata {
     /// The file mode (st_mode).
     pub mode: u32,
 
-    /// The time the file was last modified (st_mtim).
+    /// The time the file was last modified (st_mtime).
     pub modified: SystemTime,
 
-    /// The time the file was last accessed (st_atim).
+    /// The time the file was last accessed (st_atime).
     pub accessed: SystemTime,
+
+    /// The time the file metadata was last changed (st_ctime).
+    pub changed: SystemTime,
 
     /// The UID of the user which owns the file (st_uid).
     pub user: u32,
@@ -162,8 +181,9 @@ impl FileMetadata for UnixMetadata {
 
         Ok(Self {
             mode: metadata.mode(),
-            modified: metadata.modified()?,
-            accessed: metadata.accessed()?,
+            modified: unix_file_time(metadata.mtime(), metadata.mtime_nsec()),
+            accessed: unix_file_time(metadata.atime(), metadata.atime_nsec()),
+            changed: unix_file_time(metadata.ctime(), metadata.ctime_nsec()),
             user: metadata.uid(),
             group: metadata.gid(),
             attributes,
