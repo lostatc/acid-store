@@ -150,15 +150,16 @@ impl Entry<UnixSpecialType, UnixMetadata> {
 
     /// The default `UnixMetadata` for an entry that has no metadata.
     fn default_metadata(&self, req: &Request) -> UnixMetadata {
+        let now = SystemTime::now();
         UnixMetadata {
             mode: if self.is_directory() {
                 DEFAULT_DIR_MODE
             } else {
                 DEFAULT_FILE_MODE
             },
-            modified: SystemTime::now(),
-            accessed: SystemTime::now(),
-            changed: SystemTime::now(),
+            modified: now,
+            accessed: now,
+            changed: now,
             user: req.uid(),
             group: req.gid(),
             attributes: HashMap::new(),
@@ -290,6 +291,25 @@ impl<'a> FuseAdapter<'a> {
             flags: 0,
         })
     }
+
+    /// Update an entry's `mtime`, `atime`, and `ctime`.
+    fn touch_modified(&mut self, path: &RelativePath, req: &Request) -> crate::Result<()> {
+        let mut metadata = self.repo.entry(path)?.metadata_or_default(req);
+        let now = SystemTime::now();
+        metadata.modified = now;
+        metadata.accessed = now;
+        metadata.changed = now;
+        self.repo.set_metadata(path, Some(metadata))
+    }
+
+    /// Update an entry's `atime` and `ctime`.
+    fn touch_accessed(&mut self, path: &RelativePath, req: &Request) -> crate::Result<()> {
+        let mut metadata = self.repo.entry(path)?.metadata_or_default(req);
+        let now = SystemTime::now();
+        metadata.accessed = now;
+        metadata.changed = now;
+        self.repo.set_metadata(path, Some(metadata))
+    }
 }
 
 impl<'a> Filesystem for FuseAdapter<'a> {
@@ -409,7 +429,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     ) {
         let flags = SFlag::from_bits_truncate(mode);
         let file_name = try_option!(name.to_str(), reply, libc::EINVAL);
-        let entry_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).join(file_name);
+        let parent_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).to_owned();
+        let entry_path = parent_path.join(file_name);
 
         let file_type = if flags.contains(SFlag::S_IFREG) {
             FileType::File
@@ -440,6 +461,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         try_result!(self.repo.create(&entry_path, &entry), reply);
 
+        try_result!(self.touch_modified(&parent_path, req), reply);
+
         try_result!(self.repo.commit(), reply);
 
         let entry_inode = self.inodes.insert(entry_path);
@@ -451,13 +474,16 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
     fn mkdir(&mut self, req: &Request, parent: u64, name: &OsStr, mode: u32, reply: ReplyEntry) {
         let file_name = try_option!(name.to_str(), reply, libc::EINVAL);
-        let entry_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).join(file_name);
+        let parent_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).to_owned();
+        let entry_path = parent_path.join(file_name);
 
         let mut entry = Entry::new(FileType::Directory, req);
         let metadata = entry.metadata.as_mut().unwrap();
         metadata.mode = mode;
 
         try_result!(self.repo.create(&entry_path, &entry), reply);
+
+        try_result!(self.touch_modified(&parent_path, req), reply);
 
         try_result!(self.repo.commit(), reply);
 
@@ -468,9 +494,10 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         reply.entry(&DEFAULT_TTL, &attr, generation);
     }
 
-    fn unlink(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
+    fn unlink(&mut self, req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
         let file_name = try_option!(name.to_str(), reply, libc::ENOENT);
-        let entry_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).join(file_name);
+        let parent_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).to_owned();
+        let entry_path = parent_path.join(file_name);
         let entry_inode = try_option!(self.inodes.inode(&entry_path), reply, libc::ENOENT);
 
         if self.repo.is_directory(&entry_path) {
@@ -480,6 +507,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         try_result!(self.repo.remove(&entry_path), reply);
 
+        try_result!(self.touch_modified(&parent_path, req), reply);
+
         try_result!(self.repo.commit(), reply);
 
         self.inodes.remove(entry_inode);
@@ -488,9 +517,10 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         reply.ok();
     }
 
-    fn rmdir(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
+    fn rmdir(&mut self, req: &Request, parent: u64, name: &OsStr, reply: ReplyEmpty) {
         let file_name = try_option!(name.to_str(), reply, libc::ENOENT);
-        let entry_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).join(file_name);
+        let parent_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).to_owned();
+        let entry_path = parent_path.join(file_name);
 
         if !self.repo.is_directory(&entry_path) {
             reply.error(libc::ENOTDIR);
@@ -499,6 +529,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         // `FileRepo::remove` method checks that the directory entry is empty.
         try_result!(self.repo.remove(&entry_path), reply);
+
+        try_result!(self.touch_modified(&parent_path, req), reply);
 
         try_result!(self.repo.commit(), reply);
 
@@ -517,7 +549,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         reply: ReplyEntry,
     ) {
         let file_name = try_option!(name.to_str(), reply, libc::EINVAL);
-        let entry_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).join(file_name);
+        let parent_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).to_owned();
+        let entry_path = parent_path.join(file_name);
 
         let entry = Entry::new(
             FileType::Special(UnixSpecialType::SymbolicLink {
@@ -527,6 +560,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         );
 
         try_result!(self.repo.create(&entry_path, &entry), reply);
+
+        try_result!(self.touch_modified(&parent_path, req), reply);
 
         try_result!(self.repo.commit(), reply);
 
@@ -539,7 +574,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
     fn rename(
         &mut self,
-        _req: &Request,
+        req: &Request,
         parent: u64,
         name: &OsStr,
         newparent: u64,
@@ -547,11 +582,14 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         reply: ReplyEmpty,
     ) {
         let source_name = try_option!(name.to_str(), reply, libc::ENOENT);
-        let source_path =
-            try_option!(self.inodes.path(parent), reply, libc::ENOENT).join(source_name);
+        let source_parent_path =
+            try_option!(self.inodes.path(parent), reply, libc::ENOENT).to_owned();
+        let source_path = source_parent_path.join(source_name);
+
         let dest_name = try_option!(newname.to_str(), reply, libc::EINVAL);
-        let dest_path =
-            try_option!(self.inodes.path(newparent), reply, libc::ENOENT).join(dest_name);
+        let dest_parent_path =
+            try_option!(self.inodes.path(newparent), reply, libc::ENOENT).to_owned();
+        let dest_path = dest_parent_path.join(dest_name);
 
         if !self.repo.exists(&source_path) {
             reply.error(libc::ENOENT);
@@ -576,8 +614,11 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             return;
         }
 
-        // We've already checked all the possible error conditions.
-        self.repo.copy(&source_path, &dest_path).ok();
+        try_result!(self.repo.copy_tree(&source_path, &dest_path), reply);
+        self.repo.remove_tree(&source_path).ok();
+
+        try_result!(self.touch_modified(&source_parent_path, req), reply);
+        try_result!(self.touch_modified(&dest_parent_path, req), reply);
 
         try_result!(self.repo.commit(), reply);
 
@@ -661,11 +702,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         // Update the file's `st_atime` unless the `O_NOATIME` flag was passed.
         if !state.flags.contains(OFlag::O_NOATIME) {
-            let mut metadata =
-                try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
-            metadata.accessed = SystemTime::now();
-            metadata.changed = SystemTime::now();
-            try_result!(self.repo.set_metadata(&entry_path, Some(metadata)), reply);
+            try_result!(self.touch_accessed(&entry_path, req), reply);
         }
 
         reply.data(&buffer[..total_bytes_read]);
@@ -693,22 +730,24 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             }
         };
 
-        let state = match self.handles.state_mut(fh) {
-            None => {
-                reply.error(libc::EBADF);
-                return;
-            }
-            Some(HandleState::Directory(_)) => {
-                reply.error(libc::EISDIR);
-                return;
-            }
-            Some(HandleState::File(state)) => state,
-        };
+        let flags;
+        let bytes_written;
 
-        let mut metadata =
-            try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
+        {
+            let state = match self.handles.state_mut(fh) {
+                None => {
+                    reply.error(libc::EBADF);
+                    return;
+                }
+                Some(HandleState::Directory(_)) => {
+                    reply.error(libc::EISDIR);
+                    return;
+                }
+                Some(HandleState::File(state)) => state,
+            };
 
-        let bytes_written = {
+            flags = state.flags;
+
             let object = if state.flags.contains(OFlag::O_APPEND) {
                 let object = try_result!(
                     self.objects
@@ -731,10 +770,10 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                 object
             };
 
-            try_result!(object.write(data), reply)
-        };
+            bytes_written = try_result!(object.write(data), reply);
 
-        state.position = offset as u64 + bytes_written as u64;
+            state.position = offset as u64 + bytes_written as u64;
+        }
 
         // After this point, we need to be more careful about error handling. Because bytes have
         // been written to the object, if an error occurs, we need to drop the `Object` to discard
@@ -742,10 +781,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         // object if this method returns successfully.
 
         // Update the `st_atime` and `st_mtime` for the entry.
-        metadata.accessed = SystemTime::now();
-        metadata.modified = SystemTime::now();
-        metadata.changed = SystemTime::now();
-        if let Err(error) = self.repo.set_metadata(&entry_path, Some(metadata)) {
+        if let Err(error) = self.touch_modified(&entry_path, req) {
             self.objects.close(ino);
             reply.error(error.to_errno());
             return;
@@ -753,7 +789,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         // If the `O_SYNC` or `O_DSYNC` flags were passed, we need to commit changes to the object
         // *and* commit changes to the repository after each write.
-        if state.flags.intersects(OFlag::O_SYNC | OFlag::O_DSYNC) {
+        if flags.intersects(OFlag::O_SYNC | OFlag::O_DSYNC) {
             if let Err(error) = self.objects.commit(ino) {
                 self.objects.close(ino);
                 reply.error(error.to_errno());
@@ -826,12 +862,17 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
     fn readdir(
         &mut self,
-        _req: &Request,
-        _ino: u64,
+        req: &Request,
+        ino: u64,
         fh: u64,
         offset: i64,
         mut reply: ReplyDirectory,
     ) {
+        let directory_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT).to_owned();
+
+        try_result!(self.touch_accessed(&directory_path, req), reply);
+        try_result!(self.repo.commit(), reply);
+
         let entries = match self.handles.state(fh) {
             None => {
                 reply.error(libc::EBADF);
