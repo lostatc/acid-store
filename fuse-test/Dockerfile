@@ -9,5 +9,7 @@ RUN apt-get -yq install libfuse-dev libacl1-dev pkg-config
 RUN cargo install --path ./fuse-mount
 
 FROM yujunz/secfs.test
-RUN apt-get -yq install fuse
+COPY ./fuse-test/fstest.patch ./fstest/fstest-acid-store.patch
 COPY --from=rust-build /usr/local/cargo/bin/fuse-mount ./fuse-mount
+RUN apt-get -yq install fuse acl bc git
+RUN git apply ./fstest/fstest-acid-store.patch
