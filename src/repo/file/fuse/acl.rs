@@ -51,14 +51,16 @@ impl Permissions {
 
         let mut metadata = UnixMetadata::from_file(temp_file.path())?;
         metadata.mode = self.mode;
-        metadata.acl = self.acl.clone();
+        metadata.acl = HashMap::new();
         metadata
             .attributes
             .insert(ACL_XATTR_NAME.to_owned(), attr.to_vec());
 
         metadata.write_metadata(temp_file.path())?;
         let UnixMetadata { mode, acl, .. } = UnixMetadata::from_file(temp_file.path())?;
-        self.mode = mode;
+
+        // We want to replace the rwx bits and keep the rest of the bits unchanged.
+        self.mode = (self.mode & !0o777) | (mode & 0o777);
         self.acl = acl;
 
         Ok(())
@@ -69,7 +71,7 @@ impl Permissions {
         let temp_file = tempfile::NamedTempFile::new()?;
 
         let mut metadata = UnixMetadata::from_file(temp_file.path())?;
-        metadata.mode = self.mode;
+        metadata.mode = self.mode & 0o777;
         metadata.acl = self.acl.clone();
         metadata.write_metadata(temp_file.path())?;
         let mut metadata = UnixMetadata::from_file(temp_file.path())?;

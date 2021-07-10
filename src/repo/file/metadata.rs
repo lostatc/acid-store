@@ -156,30 +156,45 @@ impl FileMetadata for UnixMetadata {
             }
         }
 
+        let mut mode = metadata.mode();
+
         #[cfg(not(target_os = "linux"))]
         let acl = HashMap::new();
 
         // This ACL library only supports Linux.
         #[cfg(target_os = "linux")]
-        let acl = PosixACL::read_acl(path)
-            .map_err(|error| io::Error::from(error.kind()))?
-            .entries()
-            .into_iter()
-            .filter_map(|entry| match entry.qual {
-                PosixQualifier::User(uid) => Some((
-                    AccessQualifier::User(uid),
-                    AccessMode::from_bits(entry.perm).unwrap(),
-                )),
-                PosixQualifier::Group(gid) => Some((
-                    AccessQualifier::Group(gid),
-                    AccessMode::from_bits(entry.perm).unwrap(),
-                )),
-                _ => None,
-            })
-            .collect();
+        let acl = {
+            let acl_entries =
+                PosixACL::read_acl(path).map_err(|error| io::Error::from(error.kind()))?;
+
+            // Calculate the mode stored in the ACL so we can ensure it stays in sync with the mode.
+            let user_bits = acl_entries.get(PosixQualifier::UserObj).unwrap();
+            let group_bits = acl_entries.get(PosixQualifier::GroupObj).unwrap();
+            let other_bits = acl_entries.get(PosixQualifier::Other).unwrap();
+            let acl_mode = (user_bits << 6) | (group_bits << 3) | other_bits;
+
+            // We want to replace the rwx bits and keep the rest of the bits unchanged.
+            mode = (mode & !0o777) | (acl_mode & 0o777);
+
+            acl_entries
+                .entries()
+                .into_iter()
+                .filter_map(|entry| match entry.qual {
+                    PosixQualifier::User(uid) => Some((
+                        AccessQualifier::User(uid),
+                        AccessMode::from_bits(entry.perm).unwrap(),
+                    )),
+                    PosixQualifier::Group(gid) => Some((
+                        AccessQualifier::Group(gid),
+                        AccessMode::from_bits(entry.perm).unwrap(),
+                    )),
+                    _ => None,
+                })
+                .collect()
+        };
 
         Ok(Self {
-            mode: metadata.mode(),
+            mode,
             modified: unix_file_time(metadata.mtime(), metadata.mtime_nsec()),
             accessed: unix_file_time(metadata.atime(), metadata.atime_nsec()),
             changed: unix_file_time(metadata.ctime(), metadata.ctime_nsec()),
@@ -191,13 +206,20 @@ impl FileMetadata for UnixMetadata {
     }
 
     fn write_metadata(&self, path: &Path) -> io::Result<()> {
+        // The order we do these in is important, because the mode, extended attributes, and ACLs
+        // all interact when it comes to file permissions. ACLs are technically stored as xattrs,
+        // and ACLs contain information which is redundant with the file mode. We want to set the
+        // file mode first so that any ACL information in the xattrs overwrites it. We want to set
+        // the ACLs after setting the xattrs so that ACL entries supplied in `UnixMetadata.acl`
+        // overwrites any information in the xattrs.
+
+        set_permissions(path, PermissionsExt::from_mode(self.mode))?;
+
         if xattr::SUPPORTED_PLATFORM {
             for (attr_name, attr_value) in self.attributes.iter() {
                 xattr::set(&path, &attr_name, &attr_value)?;
             }
         }
-
-        set_permissions(path, PermissionsExt::from_mode(self.mode))?;
 
         // This ACL library only supports Linux.
         #[cfg(target_os = "linux")]
