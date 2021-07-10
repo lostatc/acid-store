@@ -1000,6 +1000,9 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             metadata.acl = permissions.acl;
         }
 
+        // Update the ctime whenever xattrs are modified.
+        metadata.changed = SystemTime::now();
+
         try_result!(self.repo.set_metadata(entry_path, Some(metadata)), reply);
 
         try_result!(self.repo.commit(), reply);
@@ -1074,6 +1077,9 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
 
         metadata.attributes.remove(&attr_name);
+
+        // Update the ctime whenever xattrs are modified.
+        metadata.changed = SystemTime::now();
 
         try_result!(self.repo.set_metadata(entry_path, Some(metadata)), reply);
 
