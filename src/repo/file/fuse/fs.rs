@@ -273,7 +273,7 @@ impl<'a> FuseAdapter<'a> {
                 },
             },
             perm: metadata.mode as u16,
-            nlink: 0,
+            nlink: 1,
             uid: metadata.user,
             gid: metadata.group,
             rdev: match &entry.file_type {
