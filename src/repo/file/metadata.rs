@@ -70,6 +70,9 @@ pub enum AccessQualifier {
 
     /// The group with a given GID.
     Group(u32),
+
+    /// The ACL mask.
+    Mask,
 }
 
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
@@ -188,6 +191,10 @@ impl FileMetadata for UnixMetadata {
                         AccessQualifier::Group(gid),
                         AccessMode::from_bits(entry.perm).unwrap(),
                     )),
+                    PosixQualifier::Mask => Some((
+                        AccessQualifier::Mask,
+                        AccessMode::from_bits(entry.perm).unwrap(),
+                    )),
                     _ => None,
                 })
                 .collect()
@@ -229,6 +236,7 @@ impl FileMetadata for UnixMetadata {
                 let posix_qualifier = match qualifier {
                     AccessQualifier::User(uid) => PosixQualifier::User(*uid),
                     AccessQualifier::Group(gid) => PosixQualifier::Group(*gid),
+                    AccessQualifier::Mask => PosixQualifier::Mask,
                 };
                 acl.set(posix_qualifier, permissions.bits());
             }

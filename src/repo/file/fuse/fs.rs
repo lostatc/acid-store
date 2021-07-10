@@ -42,6 +42,7 @@ use crate::repo::file::{
     metadata::UnixMetadata,
     repository::{FileRepo, EMPTY_PATH},
     special::UnixSpecialType,
+    AccessQualifier,
 };
 use crate::repo::Commit;
 
@@ -255,6 +256,13 @@ impl<'a> FuseAdapter<'a> {
             },
         };
 
+        // The mode returned needs to take into account the ACL mask if it is set, because it
+        // affects the group permissions.
+        let mode = match metadata.acl.get(&AccessQualifier::Mask) {
+            None => metadata.mode,
+            Some(mask_mode) => (metadata.mode & 0o707) | (mask_mode.bits() << 3),
+        };
+
         Ok(FileAttr {
             ino: inode,
             size,
@@ -273,7 +281,7 @@ impl<'a> FuseAdapter<'a> {
                     UnixSpecialType::CharacterDevice { .. } => fuse::FileType::CharDevice,
                 },
             },
-            perm: metadata.mode as u16,
+            perm: mode as u16,
             nlink: 1,
             uid: metadata.user,
             gid: metadata.group,
