@@ -32,6 +32,7 @@ use once_cell::sync::Lazy;
 use relative_path::RelativePath;
 use time::Timespec;
 
+use super::acl::{Permissions, ACL_XATTR_NAME};
 use super::handle::{DirectoryEntry, DirectoryHandle, FileHandle, HandleState, HandleTable};
 use super::inode::InodeTable;
 use super::object::ObjectTable;
@@ -963,9 +964,11 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
 
         if flags == 0 {
-            metadata.attributes.insert(attr_name, value.to_vec());
+            metadata
+                .attributes
+                .insert(attr_name.clone(), value.to_vec());
         } else if flags == libc::XATTR_CREATE as u32 {
-            match metadata.attributes.entry(attr_name) {
+            match metadata.attributes.entry(attr_name.clone()) {
                 HashMapEntry::Occupied(_) => {
                     reply.error(libc::EEXIST);
                     return;
@@ -975,7 +978,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                 }
             }
         } else if flags == libc::XATTR_REPLACE as u32 {
-            match metadata.attributes.entry(attr_name) {
+            match metadata.attributes.entry(attr_name.clone()) {
                 HashMapEntry::Occupied(mut entry) => {
                     entry.insert(value.to_vec());
                 }
@@ -989,6 +992,14 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             return;
         }
 
+        // Synchronize the ACL entries stored in the xattrs with the entry metadata.
+        if attr_name == ACL_XATTR_NAME {
+            let mut permissions = Permissions::from(metadata.clone());
+            try_result!(permissions.update_attr(value), reply);
+            metadata.mode = permissions.mode;
+            metadata.acl = permissions.acl;
+        }
+
         try_result!(self.repo.set_metadata(entry_path, Some(metadata)), reply);
 
         try_result!(self.repo.commit(), reply);
@@ -1000,9 +1011,23 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let attr_name = try_option!(name.to_str(), reply, libc::ENODATA).to_owned();
 
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
-        let metadata = try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
+        let mut metadata =
+            try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
 
-        let attr_value = try_option!(metadata.attributes.get(&attr_name), reply, libc::ENODATA);
+        let attr_value = if attr_name == ACL_XATTR_NAME {
+            // `UnixMetadata.acl` is the single source of truth for ACL entries. We should intercept
+            // attempts to read the ACL xattr and generate its value from the ACL entries in the
+            // entry metadata instead of reading from the xattrs in the entry metadata.
+            if metadata.acl.is_empty() {
+                // If there are no ACL entries, the attr should not be set.
+                reply.error(libc::ENODATA);
+                return;
+            } else {
+                try_result!(Permissions::from(metadata).to_attr(), reply)
+            }
+        } else {
+            try_option!(metadata.attributes.remove(&attr_name), reply, libc::ENODATA)
+        };
 
         if size == 0 {
             reply.size(attr_value.len() as u32);
