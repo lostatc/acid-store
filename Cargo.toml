@@ -112,7 +112,7 @@ file-metadata = ["nix", "filetime", "xattr", "posix-acl"]
 hash-algorithms = ["blake2", "sha2", "sha3"]
 compression = ["lz4"]
 encryption = ["sodiumoxide", "rand"]
-fuse-mount = ["fuse", "bimap", "time", "file-metadata"]
+fuse-mount = ["fuse", "bimap", "time", "tempfile", "file-metadata"]
 
 [[bench]]
 name = "io"

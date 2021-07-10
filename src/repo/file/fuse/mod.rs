@@ -18,6 +18,7 @@
 
 pub use self::fs::FuseAdapter;
 
+mod acl;
 mod fs;
 mod handle;
 mod id_table;
