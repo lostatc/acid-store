@@ -201,7 +201,7 @@ impl FileMetadata for UnixMetadata {
 
         // This ACL library only supports Linux.
         #[cfg(target_os = "linux")]
-        {
+        if !self.acl.is_empty() {
             let mut acl = PosixACL::new(self.mode);
             for (qualifier, permissions) in self.acl.iter() {
                 let posix_qualifier = match qualifier {
