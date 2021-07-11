@@ -42,7 +42,7 @@ use crate::repo::file::{
     metadata::UnixMetadata,
     repository::{FileRepo, EMPTY_PATH},
     special::UnixSpecialType,
-    AccessQualifier,
+    AccessMode, AccessQualifier,
 };
 use crate::repo::Commit;
 
@@ -383,9 +383,21 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         if let Some(mode) = mode {
             metadata.mode = mode;
 
-            // If we change the mode, we also need to recalculate the ACL mask if it exists.
+            // If we change the mode, we need to update the mandatory ACL entries to match.
+            metadata.acl.remove(&AccessQualifier::UserObj);
+            metadata.acl.remove(&AccessQualifier::Other);
+            if !metadata.acl.contains_key(&AccessQualifier::Mask) {
+                // We only update the group permissions if there is no mask. Otherwise, we update
+                // the mask permissions instead.
+                metadata.acl.remove(&AccessQualifier::GroupObj);
+            }
+            metadata.update_acl();
+
+            // If we change the mode, and there is a mask entry in the ACL, we should use the group
+            // permissions to set the mask.
             if metadata.acl.contains_key(&AccessQualifier::Mask) {
-                metadata.update_mask();
+                let group_mode = AccessMode::from_bits((metadata.mode & 0o070) >> 3).unwrap();
+                metadata.acl.insert(AccessQualifier::Mask, group_mode);
             }
         }
 
