@@ -20,11 +20,11 @@ use std::path::Path;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use exacl::{AclEntry, AclEntryKind};
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
 use {
     bitflags::bitflags,
     nix::unistd::{chown, Gid, Uid},
-    posix_acl::{PosixACL, Qualifier as PosixQualifier, ACL_EXECUTE, ACL_READ, ACL_WRITE},
     std::collections::HashMap,
     std::fs::set_permissions,
     std::os::unix::fs::{MetadataExt, PermissionsExt},
@@ -81,9 +81,9 @@ bitflags! {
     #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
     #[derive(Serialize, Deserialize)]
     pub struct AccessMode: u32 {
-        const READ = ACL_READ;
-        const WRITE = ACL_WRITE;
-        const EXECUTE = ACL_EXECUTE;
+        const READ = exacl::Perm::READ.bits();
+        const WRITE = exacl::Perm::WRITE.bits();
+        const EXECUTE = exacl::Perm::EXECUTE.bits();
     }
 
 }
@@ -164,36 +164,54 @@ impl FileMetadata for UnixMetadata {
         #[cfg(not(target_os = "linux"))]
         let acl = HashMap::new();
 
-        // This ACL library only supports Linux.
+        // We only support ACLs on Linux currently.
         #[cfg(target_os = "linux")]
         let acl = {
-            let acl_entries =
-                PosixACL::read_acl(path).map_err(|error| io::Error::from(error.kind()))?;
+            let acl_entries = exacl::getfacl(path, exacl::AclOption::ACCESS_ACL)?;
 
-            // Calculate the mode stored in the ACL so we can ensure it stays in sync with the mode.
-            let user_bits = acl_entries.get(PosixQualifier::UserObj).unwrap();
-            let group_bits = acl_entries.get(PosixQualifier::GroupObj).unwrap();
-            let other_bits = acl_entries.get(PosixQualifier::Other).unwrap();
-            let acl_mode = (user_bits << 6) | (group_bits << 3) | other_bits;
+            // Calculate the owner permissions stored in the ACL so we can ensure it stays in sync
+            // with the file mode.
+            let mut acl_mode = 0;
+            for entry in &acl_entries {
+                // If the `AclEntry.name` of a user or group entry is empty, that means it
+                // represents the file owner.
+                match entry.kind {
+                    AclEntryKind::User if entry.name.is_empty() => {
+                        acl_mode |= entry.perms.bits() << 6;
+                    }
+                    AclEntryKind::Group if entry.name.is_empty() => {
+                        acl_mode |= entry.perms.bits() << 3;
+                    }
+                    AclEntryKind::Other => {
+                        acl_mode |= entry.perms.bits();
+                    }
+                    _ => {}
+                }
+            }
 
             // We want to replace the rwx bits and keep the rest of the bits unchanged.
             mode = (mode & !0o777) | (acl_mode & 0o777);
 
             acl_entries
-                .entries()
                 .into_iter()
-                .filter_map(|entry| match entry.qual {
-                    PosixQualifier::User(uid) => Some((
-                        AccessQualifier::User(uid),
-                        AccessMode::from_bits(entry.perm).unwrap(),
-                    )),
-                    PosixQualifier::Group(gid) => Some((
-                        AccessQualifier::Group(gid),
-                        AccessMode::from_bits(entry.perm).unwrap(),
-                    )),
-                    PosixQualifier::Mask => Some((
+                .filter_map(|entry| match entry.kind {
+                    AclEntryKind::User => match entry.name.parse().ok() {
+                        Some(uid) => Some((
+                            AccessQualifier::User(uid),
+                            AccessMode::from_bits(entry.perms.bits()).unwrap(),
+                        )),
+                        None => None,
+                    },
+                    AclEntryKind::Group => match entry.name.parse().ok() {
+                        Some(gid) => Some((
+                            AccessQualifier::Group(gid),
+                            AccessMode::from_bits(entry.perms.bits()).unwrap(),
+                        )),
+                        None => None,
+                    },
+                    AclEntryKind::Mask => Some((
                         AccessQualifier::Mask,
-                        AccessMode::from_bits(entry.perm).unwrap(),
+                        AccessMode::from_bits(entry.perms.bits()).unwrap(),
                     )),
                     _ => None,
                 })
@@ -228,20 +246,79 @@ impl FileMetadata for UnixMetadata {
             }
         }
 
-        // This ACL library only supports Linux.
+        // We only support ACLs on Linux currently.
         #[cfg(target_os = "linux")]
         if !self.acl.is_empty() {
-            let mut acl = PosixACL::new(self.mode);
-            for (qualifier, permissions) in self.acl.iter() {
-                let posix_qualifier = match qualifier {
-                    AccessQualifier::User(uid) => PosixQualifier::User(*uid),
-                    AccessQualifier::Group(gid) => PosixQualifier::Group(*gid),
-                    AccessQualifier::Mask => PosixQualifier::Mask,
-                };
-                acl.set(posix_qualifier, permissions.bits());
+            let mut acl_entries = self
+                .acl
+                .iter()
+                .map(|(qualifier, permissions)| match qualifier {
+                    AccessQualifier::User(uid) => AclEntry {
+                        kind: AclEntryKind::User,
+                        name: uid.to_string(),
+                        perms: exacl::Perm::from_bits(permissions.bits()).unwrap(),
+                        flags: exacl::Flag::empty(),
+                        allow: true,
+                    },
+                    AccessQualifier::Group(gid) => AclEntry {
+                        kind: AclEntryKind::Group,
+                        name: gid.to_string(),
+                        perms: exacl::Perm::from_bits(permissions.bits()).unwrap(),
+                        flags: exacl::Flag::empty(),
+                        allow: true,
+                    },
+                    AccessQualifier::Mask => AclEntry {
+                        kind: AclEntryKind::Mask,
+                        name: String::new(),
+                        perms: exacl::Perm::from_bits(permissions.bits()).unwrap(),
+                        flags: exacl::Flag::empty(),
+                        allow: true,
+                    },
+                })
+                .collect::<Vec<_>>();
+
+            // Add the entries for the owning user, group, and other.
+            let user_perm = (self.mode & 0o700) >> 6;
+            acl_entries.push(AclEntry {
+                kind: AclEntryKind::User,
+                name: String::new(),
+                perms: exacl::Perm::from_bits(user_perm).unwrap(),
+                flags: exacl::Flag::empty(),
+                allow: true,
+            });
+            let group_perm = (self.mode & 0o070) >> 3;
+            acl_entries.push(AclEntry {
+                kind: AclEntryKind::Group,
+                name: String::new(),
+                perms: exacl::Perm::from_bits(group_perm).unwrap(),
+                flags: exacl::Flag::empty(),
+                allow: true,
+            });
+            acl_entries.push(AclEntry {
+                kind: AclEntryKind::Other,
+                name: String::new(),
+                perms: exacl::Perm::from_bits(self.mode & 0o007).unwrap(),
+                flags: exacl::Flag::empty(),
+                allow: true,
+            });
+
+            // If an ACL mask is not provided, calculate the mask.
+            if !self.acl.contains_key(&AccessQualifier::Mask) {
+                let mut mask_perm = self
+                    .acl
+                    .values()
+                    .fold(0, |accumulator, perm| accumulator | perm.bits());
+                mask_perm |= group_perm;
+                acl_entries.push(AclEntry {
+                    kind: AclEntryKind::Mask,
+                    name: String::new(),
+                    perms: exacl::Perm::from_bits(mask_perm).unwrap(),
+                    flags: exacl::Flag::empty(),
+                    allow: true,
+                })
             }
-            acl.write_acl(path)
-                .map_err(|error| io::Error::from(error.kind()))?;
+
+            exacl::setfacl(&[path], &acl_entries, exacl::AclOption::ACCESS_ACL)?;
         }
 
         match chown(
