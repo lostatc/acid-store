@@ -14,29 +14,26 @@
  * limitations under the License.
  */
 
-use crate::repo::file::{AccessMode, AccessQualifier, FileMetadata, UnixMetadata};
-use std::collections::HashMap;
+use crate::repo::file::{Acl, FileMetadata, UnixMetadata};
 
-/// The name of the xattr which stores the ACL entries.
-pub const ACL_XATTR_NAME: &str = "system.posix_acl_access";
+/// The name of the xattr which stores the ACL access entries.
+pub const ACCESS_ACL_XATTR: &str = "system.posix_acl_access";
+
+/// The name of the xattr which stores the ACL default entries.
+pub const DEFAULT_ACL_XATTR: &str = "system.posix_acl_default";
 
 /// A set of file permissions.
 ///
 /// On platforms that support FUSE, ACL entries are implemented using extended attributes. ACL
-/// entries are stored in a single xattr with the name `ACL_XATTR_NAME`. This type can be used to
-/// convert between the value of this xattr and the permissions model used by `acid-store`.
+/// entries are stored the xattrs with the names `ACCESS_ACL_XATTR` and `DEFAULT_ACL_XATTR`. This
+/// type can be used to convert between the value of these xattrs and the permissions model used by
+/// `acid-store`.
 pub struct Permissions {
     /// The file mode (st_mode).
-    ///
-    /// This value is included in this struct because the metadata model used by `acid-store` does
-    /// not include the `ACL_USER_OBJ`, `ACL_GROUP_OBJ`, or `ACL_OTHER` entry tags. Instead, these
-    /// values are represented by the file mode so that there is no need to synchronize them.
     pub mode: u32,
 
-    /// The access control list for the file.
-    ///
-    /// This is a map of qualifiers to their associated permissions.
-    pub acl: HashMap<AccessQualifier, AccessMode>,
+    /// The access control lists for the file.
+    pub acl: Acl,
 }
 
 // Rather than try to manually parse the byte string used to represent the ACL entries or rely on
@@ -45,16 +42,16 @@ pub struct Permissions {
 // create a significant performance penalty.
 
 impl Permissions {
-    /// Update these permissions from the raw bytes of the ACL xattr.
-    pub fn update_attr(&mut self, attr: &[u8]) -> crate::Result<()> {
+    /// Update these permissions from the raw bytes of the given xattr.
+    ///
+    /// This accepts the `name` and `value` of the xattr.
+    pub fn update_attr(&mut self, name: &str, value: &[u8]) -> crate::Result<()> {
         let temp_file = tempfile::NamedTempFile::new()?;
 
         let mut metadata = UnixMetadata::from_file(temp_file.path())?;
         metadata.mode = self.mode;
-        metadata.acl = HashMap::new();
-        metadata
-            .attributes
-            .insert(ACL_XATTR_NAME.to_owned(), attr.to_vec());
+        metadata.acl = Acl::new();
+        metadata.attributes.insert(name.to_owned(), value.to_vec());
 
         metadata.write_metadata(temp_file.path())?;
         let UnixMetadata { mode, acl, .. } = UnixMetadata::from_file(temp_file.path())?;
@@ -67,7 +64,9 @@ impl Permissions {
     }
 
     /// Generate the raw bytes of the ACL xattr from this `Permissions`.
-    pub fn to_attr(&self) -> crate::Result<Vec<u8>> {
+    ///
+    /// This accepts the `name` of the xattr.
+    pub fn to_attr(&self, name: &str) -> crate::Result<Vec<u8>> {
         let temp_file = tempfile::NamedTempFile::new()?;
 
         let mut metadata = UnixMetadata::from_file(temp_file.path())?;
@@ -76,10 +75,7 @@ impl Permissions {
         metadata.write_metadata(temp_file.path())?;
         let mut metadata = UnixMetadata::from_file(temp_file.path())?;
 
-        Ok(metadata
-            .attributes
-            .remove(ACL_XATTR_NAME)
-            .unwrap_or_else(Vec::new))
+        Ok(metadata.attributes.remove(name).unwrap_or_else(Vec::new))
     }
 }
 
