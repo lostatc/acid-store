@@ -382,6 +382,11 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         if let Some(mode) = mode {
             metadata.mode = mode;
+
+            // If we change the mode, we also need to recalculate the ACL mask if it exists.
+            if metadata.acl.contains_key(&AccessQualifier::Mask) {
+                metadata.update_mask();
+            }
         }
 
         if let Some(uid) = uid {

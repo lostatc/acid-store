@@ -103,6 +103,17 @@ fn unix_file_time(secs: i64, nsec: i64) -> SystemTime {
     }
 }
 
+/// Calculate the ACL mask for the given `mode` and `acl`.
+fn calculate_mask(mode: u32, acl: &HashMap<AccessQualifier, AccessMode>) -> AccessMode {
+    let mut mask_perm = acl
+        .iter()
+        .filter(|(qualifier, _)| *qualifier != &AccessQualifier::Mask)
+        .map(|(_, access_mode)| access_mode)
+        .fold(0u32, |accumulator, perm| accumulator | perm.bits());
+    mask_perm |= (mode & 0o070) >> 3;
+    AccessMode::from_bits(mask_perm).unwrap()
+}
+
 /// A `FileMetadata` for unix-like operating systems.
 ///
 /// Extended attributes and access control lists may not work on all platforms. If a platform is
@@ -143,6 +154,14 @@ pub struct UnixMetadata {
     ///
     /// This is a map of qualifiers to their associated permissions.
     pub acl: HashMap<AccessQualifier, AccessMode>,
+}
+
+impl UnixMetadata {
+    /// Recalculate the ACL mask based on the current `mode` and `acl`.
+    pub fn update_mask(&mut self) {
+        let mode = calculate_mask(self.mode, &self.acl);
+        self.acl.insert(AccessQualifier::Mask, mode);
+    }
 }
 
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
@@ -278,19 +297,17 @@ impl FileMetadata for UnixMetadata {
                 .collect::<Vec<_>>();
 
             // Add the entries for the owning user, group, and other.
-            let user_perm = (self.mode & 0o700) >> 6;
             acl_entries.push(AclEntry {
                 kind: AclEntryKind::User,
                 name: String::new(),
-                perms: exacl::Perm::from_bits(user_perm).unwrap(),
+                perms: exacl::Perm::from_bits((self.mode & 0o700) >> 6).unwrap(),
                 flags: exacl::Flag::empty(),
                 allow: true,
             });
-            let group_perm = (self.mode & 0o070) >> 3;
             acl_entries.push(AclEntry {
                 kind: AclEntryKind::Group,
                 name: String::new(),
-                perms: exacl::Perm::from_bits(group_perm).unwrap(),
+                perms: exacl::Perm::from_bits((self.mode & 0o070) >> 3).unwrap(),
                 flags: exacl::Flag::empty(),
                 allow: true,
             });
@@ -301,22 +318,6 @@ impl FileMetadata for UnixMetadata {
                 flags: exacl::Flag::empty(),
                 allow: true,
             });
-
-            // If an ACL mask is not provided, calculate the mask.
-            if !self.acl.contains_key(&AccessQualifier::Mask) {
-                let mut mask_perm = self
-                    .acl
-                    .values()
-                    .fold(0, |accumulator, perm| accumulator | perm.bits());
-                mask_perm |= group_perm;
-                acl_entries.push(AclEntry {
-                    kind: AclEntryKind::Mask,
-                    name: String::new(),
-                    perms: exacl::Perm::from_bits(mask_perm).unwrap(),
-                    flags: exacl::Flag::empty(),
-                    allow: true,
-                })
-            }
 
             exacl::setfacl(&[path], &acl_entries, exacl::AclOption::ACCESS_ACL)?;
         }
