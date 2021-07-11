@@ -32,17 +32,14 @@ use once_cell::sync::Lazy;
 use relative_path::RelativePath;
 use time::Timespec;
 
-use super::acl::{Permissions, ACL_XATTR_NAME};
+use super::acl::{Permissions, ACCESS_ACL_XATTR, DEFAULT_ACL_XATTR};
 use super::handle::{DirectoryEntry, DirectoryHandle, FileHandle, HandleState, HandleTable};
 use super::inode::InodeTable;
 use super::object::ObjectTable;
 
 use crate::repo::file::{
-    entry::{Entry, FileType},
-    metadata::UnixMetadata,
-    repository::{FileRepo, EMPTY_PATH},
-    special::UnixSpecialType,
-    AccessMode, AccessQualifier,
+    repository::EMPTY_PATH, AccessMode, AccessQualifier, Acl, Entry, FileRepo, FileType,
+    UnixMetadata, UnixSpecialType,
 };
 use crate::repo::Commit;
 
@@ -165,7 +162,7 @@ impl Entry<UnixSpecialType, UnixMetadata> {
             user: req.uid(),
             group: req.gid(),
             attributes: HashMap::new(),
-            acl: HashMap::new(),
+            acl: Acl::new(),
         }
     }
 
@@ -258,7 +255,7 @@ impl<'a> FuseAdapter<'a> {
 
         // The mode returned needs to take into account the ACL mask if it is set, because it
         // affects the group permissions.
-        let mode = match metadata.acl.get(&AccessQualifier::Mask) {
+        let mode = match metadata.acl.access.get(&AccessQualifier::Mask) {
             None => metadata.mode,
             Some(mask_mode) => (metadata.mode & 0o707) | (mask_mode.bits() << 3),
         };
@@ -384,20 +381,22 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             metadata.mode = mode;
 
             // If we change the mode, we need to update the mandatory ACL entries to match.
-            metadata.acl.remove(&AccessQualifier::UserObj);
-            metadata.acl.remove(&AccessQualifier::Other);
-            if !metadata.acl.contains_key(&AccessQualifier::Mask) {
+            metadata.acl.access.remove(&AccessQualifier::UserObj);
+            metadata.acl.access.remove(&AccessQualifier::Other);
+            if !metadata.acl.access.contains_key(&AccessQualifier::Mask) {
                 // We only update the group permissions if there is no mask. Otherwise, we update
                 // the mask permissions instead.
-                metadata.acl.remove(&AccessQualifier::GroupObj);
+                metadata.acl.access.remove(&AccessQualifier::GroupObj);
             }
             metadata.update_acl();
 
             // If we change the mode, and there is a mask entry in the ACL, we should use the group
             // permissions to set the mask.
-            if metadata.acl.contains_key(&AccessQualifier::Mask) {
+            if let HashMapEntry::Occupied(mut mode_entry) =
+                metadata.acl.access.entry(AccessQualifier::Mask)
+            {
                 let group_mode = AccessMode::from_bits((metadata.mode & 0o070) >> 3).unwrap();
-                metadata.acl.insert(AccessQualifier::Mask, group_mode);
+                mode_entry.insert(group_mode);
             }
         }
 
@@ -1018,9 +1017,9 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         }
 
         // Synchronize the ACL entries stored in the xattrs with the entry metadata.
-        if attr_name == ACL_XATTR_NAME {
+        if matches!(attr_name.as_str(), ACCESS_ACL_XATTR | DEFAULT_ACL_XATTR) {
             let mut permissions = Permissions::from(metadata.clone());
-            try_result!(permissions.update_attr(value), reply);
+            try_result!(permissions.update_attr(&attr_name, value), reply);
             metadata.mode = permissions.mode;
             metadata.acl = permissions.acl;
         }
@@ -1042,19 +1041,26 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let mut metadata =
             try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
 
-        let attr_value = if attr_name == ACL_XATTR_NAME {
-            // `UnixMetadata.acl` is the single source of truth for ACL entries. We should intercept
-            // attempts to read the ACL xattr and generate its value from the ACL entries in the
-            // entry metadata instead of reading from the xattrs in the entry metadata.
-            if metadata.acl.is_empty() {
+        // `UnixMetadata.acl` is the single source of truth for ACL entries. We should intercept
+        // attempts to read the ACL xattr and generate its value from the ACL entries in the
+        // entry metadata instead of reading from the xattrs in the entry metadata.
+        let attr_value = match attr_name.as_str() {
+            ACCESS_ACL_XATTR if metadata.acl.access.is_empty() => {
                 // If there are no ACL entries, the attr should not be set.
                 reply.error(libc::ENODATA);
                 return;
-            } else {
-                try_result!(Permissions::from(metadata).to_attr(), reply)
             }
-        } else {
-            try_option!(metadata.attributes.remove(&attr_name), reply, libc::ENODATA)
+            DEFAULT_ACL_XATTR if metadata.acl.default.is_empty() => {
+                // If there are no ACL entries, the attr should not be set.
+                reply.error(libc::ENODATA);
+                return;
+            }
+            ACCESS_ACL_XATTR | DEFAULT_ACL_XATTR => {
+                try_result!(Permissions::from(metadata).to_attr(&attr_name), reply)
+            }
+            _ => {
+                try_option!(metadata.attributes.remove(&attr_name), reply, libc::ENODATA)
+            }
         };
 
         if size == 0 {
