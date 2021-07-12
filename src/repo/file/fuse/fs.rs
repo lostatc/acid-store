@@ -136,15 +136,60 @@ fn to_timespec(time: SystemTime) -> Timespec {
     }
 }
 
+impl UnixMetadata {
+    /// Set the file mode and update the access ACLs accordingly.
+    fn update_permissions(&mut self, mode: u32) {
+        self.mode = mode;
+
+        // If we change the mode, we need to update the mandatory ACL entries to match.
+        self.acl.access.remove(&AccessQualifier::UserObj);
+        self.acl.access.remove(&AccessQualifier::Other);
+        if !self.acl.access.contains_key(&AccessQualifier::Mask) {
+            // We only update the group permissions if there is no mask. Otherwise, we update
+            // the mask permissions instead.
+            self.acl.access.remove(&AccessQualifier::GroupObj);
+        }
+        self.update_acl(AclType::ACCESS);
+
+        // If we change the mode, and there is a mask entry in the ACL, we should use the group
+        // permissions to set the mask.
+        if let HashMapEntry::Occupied(mut mode_entry) = self.acl.access.entry(AccessQualifier::Mask)
+        {
+            let group_mode = AccessMode::from_bits((self.mode & 0o070) >> 3).unwrap();
+            mode_entry.insert(group_mode);
+        }
+    }
+}
+
 impl Entry<UnixSpecialType, UnixMetadata> {
-    /// Create a new `Entry` of the given `file_type` with default metadata.
-    fn new(file_type: FileType<UnixSpecialType>, req: &Request) -> Self {
-        let mut entry = Self {
-            file_type,
-            metadata: None,
-        };
-        entry.metadata = Some(entry.default_metadata(req));
-        entry
+    /// Set the metadata of this entry to the default metadata for a new entry.
+    fn with_metadata(mut self, req: &Request) -> Self {
+        self.metadata = Some(self.default_metadata(req));
+        self
+    }
+
+    /// Inherit the access ACL from the given `parent`.
+    ///
+    /// If this entry has no metadata, this does nothing.
+    fn with_acl(mut self, parent: &Entry<UnixSpecialType, UnixMetadata>) -> Self {
+        if parent.is_directory() {
+            if let (Some(metadata), Some(parent_metadata)) = (&mut self.metadata, &parent.metadata)
+            {
+                metadata.acl.access = parent_metadata.acl.default.clone();
+            }
+        }
+
+        self
+    }
+
+    /// Set the mode and update the access ACL accordingly.
+    ///
+    /// If this entry has no metadata, this does nothing.
+    fn with_mode(mut self, mode: u32) -> Self {
+        if let Some(metadata) = &mut self.metadata {
+            metadata.update_permissions(mode);
+        }
+        self
     }
 
     /// The default `UnixMetadata` for an entry that has no metadata.
@@ -378,26 +423,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let metadata = entry.metadata.get_or_insert(default_metadata);
 
         if let Some(mode) = mode {
-            metadata.mode = mode;
-
-            // If we change the mode, we need to update the mandatory ACL entries to match.
-            metadata.acl.access.remove(&AccessQualifier::UserObj);
-            metadata.acl.access.remove(&AccessQualifier::Other);
-            if !metadata.acl.access.contains_key(&AccessQualifier::Mask) {
-                // We only update the group permissions if there is no mask. Otherwise, we update
-                // the mask permissions instead.
-                metadata.acl.access.remove(&AccessQualifier::GroupObj);
-            }
-            metadata.update_acl(AclType::ACCESS);
-
-            // If we change the mode, and there is a mask entry in the ACL, we should use the group
-            // permissions to set the mask.
-            if let HashMapEntry::Occupied(mut mode_entry) =
-                metadata.acl.access.entry(AccessQualifier::Mask)
-            {
-                let group_mode = AccessMode::from_bits((metadata.mode & 0o070) >> 3).unwrap();
-                mode_entry.insert(group_mode);
-            }
+            metadata.update_permissions(mode);
         }
 
         if let Some(uid) = uid {
@@ -484,8 +510,14 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             return;
         };
 
-        let mut entry = Entry::new(file_type, req);
-        entry.metadata.as_mut().unwrap().mode = mode;
+        let parent_entry = try_result!(self.repo.entry(&parent_path), reply);
+        let entry = Entry {
+            file_type,
+            metadata: None,
+        }
+        .with_metadata(req)
+        .with_acl(&parent_entry)
+        .with_mode(mode);
 
         try_result!(self.repo.create(&entry_path, &entry), reply);
 
@@ -505,9 +537,11 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let parent_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).to_owned();
         let entry_path = parent_path.join(file_name);
 
-        let mut entry = Entry::new(FileType::Directory, req);
-        let metadata = entry.metadata.as_mut().unwrap();
-        metadata.mode = mode;
+        let parent_entry = try_result!(self.repo.entry(&parent_path), reply);
+        let entry = Entry::directory()
+            .with_metadata(req)
+            .with_acl(&parent_entry)
+            .with_mode(mode);
 
         try_result!(self.repo.create(&entry_path, &entry), reply);
 
@@ -580,12 +614,12 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let parent_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).to_owned();
         let entry_path = parent_path.join(file_name);
 
-        let entry = Entry::new(
-            FileType::Special(UnixSpecialType::SymbolicLink {
-                target: link.to_owned(),
-            }),
-            req,
-        );
+        let parent_entry = try_result!(self.repo.entry(&parent_path), reply);
+        let entry = Entry::special(UnixSpecialType::SymbolicLink {
+            target: link.to_owned(),
+        })
+        .with_metadata(req)
+        .with_acl(&parent_entry);
 
         try_result!(self.repo.create(&entry_path, &entry), reply);
 
