@@ -38,7 +38,7 @@ use super::inode::InodeTable;
 use super::object::ObjectTable;
 
 use crate::repo::file::{
-    repository::EMPTY_PATH, AccessMode, AccessQualifier, Acl, Entry, FileRepo, FileType,
+    repository::EMPTY_PATH, AccessMode, AccessQualifier, Acl, AclType, Entry, FileRepo, FileType,
     UnixMetadata, UnixSpecialType,
 };
 use crate::repo::Commit;
@@ -388,7 +388,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                 // the mask permissions instead.
                 metadata.acl.access.remove(&AccessQualifier::GroupObj);
             }
-            metadata.update_acl();
+            metadata.update_acl(AclType::ACCESS);
 
             // If we change the mode, and there is a mask entry in the ACL, we should use the group
             // permissions to set the mask.

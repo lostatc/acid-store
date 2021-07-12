@@ -46,7 +46,8 @@ impl Permissions {
     ///
     /// This accepts the `name` and `value` of the xattr.
     pub fn update_attr(&mut self, name: &str, value: &[u8]) -> crate::Result<()> {
-        let temp_file = tempfile::NamedTempFile::new()?;
+        // We use a directory because default ACLs can only be set on a directory.
+        let temp_file = tempfile::tempdir()?;
 
         let mut metadata = UnixMetadata::from_file(temp_file.path())?;
         metadata.mode = self.mode;
@@ -67,7 +68,8 @@ impl Permissions {
     ///
     /// This accepts the `name` of the xattr.
     pub fn to_attr(&self, name: &str) -> crate::Result<Vec<u8>> {
-        let temp_file = tempfile::NamedTempFile::new()?;
+        // We use a directory because default ACLs can only be set on a directory.
+        let temp_file = tempfile::tempdir()?;
 
         let mut metadata = UnixMetadata::from_file(temp_file.path())?;
         metadata.mode = self.mode & 0o777;
