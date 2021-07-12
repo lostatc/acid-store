@@ -20,15 +20,16 @@ use std::path::Path;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use exacl::{AclEntry, AclEntryKind};
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
 use {
     bitflags::bitflags,
+    exacl::{AclEntry, AclEntryKind},
     nix::unistd::{chown, Gid, Uid},
     std::collections::HashMap,
     std::fs::set_permissions,
     std::os::unix::fs::{MetadataExt, PermissionsExt},
     std::time::{Duration, UNIX_EPOCH},
+    users::{get_group_by_name, get_user_by_name},
 };
 #[cfg(feature = "file-metadata")]
 use {filetime::set_file_times, std::time::SystemTime};
@@ -192,12 +193,19 @@ fn calculate_mask(acl: &HashMap<AccessQualifier, AccessMode>, mode: u32) -> Acce
 /// Convert the given `entry` into an `AccessQualifier`.
 ///
 /// This returns `None` if it could not be converted.
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
 fn entry_to_qualifier(entry: &AclEntry) -> Option<AccessQualifier> {
     match entry.kind {
         AclEntryKind::User if entry.name.is_empty() => Some(AccessQualifier::UserObj),
-        AclEntryKind::User => entry.name.parse().ok().map(AccessQualifier::User),
+        AclEntryKind::User => match entry.name.parse().ok() {
+            Some(uid) => Some(AccessQualifier::User(uid)),
+            None => get_user_by_name(&entry.name).map(|name| AccessQualifier::User(name.uid())),
+        },
         AclEntryKind::Group if entry.name.is_empty() => Some(AccessQualifier::GroupObj),
-        AclEntryKind::Group => entry.name.parse().ok().map(AccessQualifier::Group),
+        AclEntryKind::Group => match entry.name.parse().ok() {
+            Some(gid) => Some(AccessQualifier::Group(gid)),
+            None => get_group_by_name(&entry.name).map(|group| AccessQualifier::Group(group.gid())),
+        },
         AclEntryKind::Other => Some(AccessQualifier::Other),
         AclEntryKind::Mask => Some(AccessQualifier::Mask),
         _ => None,
@@ -205,6 +213,7 @@ fn entry_to_qualifier(entry: &AclEntry) -> Option<AccessQualifier> {
 }
 
 /// Convert the given `qualifier`, `mode`, and `flags` into an `AclEntry`.
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
 fn qualifier_to_entry(
     qualifier: AccessQualifier,
     mode: AccessMode,
