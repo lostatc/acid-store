@@ -23,4 +23,5 @@ mod fs;
 mod handle;
 mod id_table;
 mod inode;
+mod metadata;
 mod object;
