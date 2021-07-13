@@ -904,11 +904,20 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         }
 
         // Synchronize the ACL entries stored in the xattrs with the entry metadata.
-        if matches!(attr_name.as_str(), ACCESS_ACL_XATTR | DEFAULT_ACL_XATTR) {
-            let mut permissions = Permissions::from(metadata.clone());
-            try_result!(permissions.update_attr(&attr_name, value), reply);
-            metadata.mode = permissions.mode;
-            metadata.acl = permissions.acl;
+        match attr_name.as_str() {
+            ACCESS_ACL_XATTR => {
+                let mut permissions = Permissions::from(metadata.clone());
+                try_result!(permissions.update_attr(&attr_name, value), reply);
+                metadata.mode = permissions.mode;
+                metadata.acl.access = permissions.acl.access;
+            }
+            DEFAULT_ACL_XATTR => {
+                let mut permissions = Permissions::from(metadata.clone());
+                try_result!(permissions.update_attr(&attr_name, value), reply);
+                metadata.mode = permissions.mode;
+                metadata.acl.default = permissions.acl.default;
+            }
+            _ => {}
         }
 
         // Update the ctime whenever xattrs are modified.
