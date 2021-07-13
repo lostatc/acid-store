@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-use std::collections::{hash_map::Entry as HashMapEntry, HashMap};
+use std::collections::hash_map::Entry as HashMapEntry;
 use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
 use fuse::{
-    FileAttr, FileType as FuseFileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory,
-    ReplyEmpty, ReplyEntry, ReplyOpen, ReplyWrite, ReplyXattr, Request,
+    FileAttr, Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyOpen,
+    ReplyWrite, ReplyXattr, Request,
 };
 use nix::fcntl::OFlag;
 use nix::libc;
@@ -35,11 +35,13 @@ use time::Timespec;
 use super::acl::{Permissions, ACCESS_ACL_XATTR, DEFAULT_ACL_XATTR};
 use super::handle::{DirectoryEntry, DirectoryHandle, FileHandle, HandleState, HandleTable};
 use super::inode::InodeTable;
+use super::metadata::to_timespec;
 use super::object::ObjectTable;
 
+use crate::repo::file::fuse::metadata::to_system_time;
 use crate::repo::file::{
-    repository::EMPTY_PATH, AccessMode, AccessQualifier, Acl, AclType, Entry, FileRepo, FileType,
-    UnixMetadata, UnixSpecialType,
+    repository::EMPTY_PATH, AccessQualifier, Entry, FileRepo, FileType, UnixMetadata,
+    UnixSpecialType,
 };
 use crate::repo::Commit;
 
@@ -48,24 +50,18 @@ const BLOCK_SIZE: u64 = 512;
 
 /// The default TTL value to use in FUSE replies.
 ///
-/// Because the backing `FileRepo` can only be safely modified through the FUSE file system, while
-/// it is mounted, we can set this to an arbitrarily large value.
+/// Because the backing `FileRepo` can only be safely modified through the FUSE file system, we can
+/// set this to an arbitrarily large value.
 const DEFAULT_TTL: Timespec = Timespec {
     sec: i64::MAX,
     nsec: i32::MAX,
 };
 
-/// The value of `st_rdev` value to use if the file is not a character or block device.
-const NON_SPECIAL_RDEV: u32 = 0;
-
-/// The default permissions bits for a directory.
-const DEFAULT_DIR_MODE: u32 = 0o775;
-
-/// The default permissions bits for a file.
-const DEFAULT_FILE_MODE: u32 = 0o664;
-
 /// The set of `open` flags which are not supported by this file system.
 static UNSUPPORTED_OPEN_FLAGS: Lazy<OFlag> = Lazy::new(|| OFlag::O_DIRECT | OFlag::O_TMPFILE);
+
+/// The value of `st_rdev` value to use if the file is not a character or block device.
+const NON_SPECIAL_RDEV: u32 = 0;
 
 /// Handle a `crate::Result` in a FUSE method.
 macro_rules! try_result {
@@ -91,147 +87,6 @@ macro_rules! try_option {
             }
         }
     };
-}
-
-impl crate::Error {
-    /// Get the libc errno for this error.
-    fn to_errno(&self) -> i32 {
-        match self {
-            crate::Error::AlreadyExists => libc::EEXIST,
-            crate::Error::NotFound => libc::ENOENT,
-            crate::Error::InvalidPath => libc::ENOENT,
-            crate::Error::NotEmpty => libc::ENOTEMPTY,
-            crate::Error::NotDirectory => libc::ENOTDIR,
-            crate::Error::NotFile => libc::EISDIR,
-            crate::Error::Io(error) => match error.raw_os_error() {
-                Some(errno) => errno,
-                None => libc::EIO,
-            },
-            _ => libc::EIO,
-        }
-    }
-}
-
-/// Convert the given `time` to a `SystemTime`.
-fn to_system_time(time: Timespec) -> SystemTime {
-    let duration = Duration::new(time.sec.abs() as u64, time.nsec.abs() as u32);
-    if time.sec.is_positive() {
-        SystemTime::UNIX_EPOCH + duration
-    } else {
-        SystemTime::UNIX_EPOCH - duration
-    }
-}
-
-/// Convert the given `time` to a `Timespec`.
-fn to_timespec(time: SystemTime) -> Timespec {
-    match time.duration_since(SystemTime::UNIX_EPOCH) {
-        Ok(duration) => Timespec {
-            sec: duration.as_secs() as i64,
-            nsec: duration.subsec_nanos() as i32,
-        },
-        Err(error) => Timespec {
-            sec: -(error.duration().as_secs() as i64),
-            nsec: -(error.duration().subsec_nanos() as i32),
-        },
-    }
-}
-
-impl UnixMetadata {
-    /// Set the file mode and update the access ACLs accordingly.
-    fn update_permissions(&mut self, mode: u32) {
-        self.mode = mode;
-
-        // If we change the mode, we need to update the mandatory ACL entries to match.
-        self.acl.access.remove(&AccessQualifier::UserObj);
-        self.acl.access.remove(&AccessQualifier::Other);
-        if !self.acl.access.contains_key(&AccessQualifier::Mask) {
-            // We only update the group permissions if there is no mask. Otherwise, we update
-            // the mask permissions instead.
-            self.acl.access.remove(&AccessQualifier::GroupObj);
-        }
-        self.update_acl(AclType::ACCESS);
-
-        // If we change the mode, and there is a mask entry in the ACL, we should use the group
-        // permissions to set the mask.
-        if let HashMapEntry::Occupied(mut mode_entry) = self.acl.access.entry(AccessQualifier::Mask)
-        {
-            let group_mode = AccessMode::from_bits((self.mode & 0o070) >> 3).unwrap();
-            mode_entry.insert(group_mode);
-        }
-    }
-}
-
-impl Entry<UnixSpecialType, UnixMetadata> {
-    /// Set the metadata of this entry to the default metadata for a new entry.
-    fn with_metadata(mut self, req: &Request) -> Self {
-        self.metadata = Some(self.default_metadata(req));
-        self
-    }
-
-    /// Inherit the access ACL from the given `parent`.
-    ///
-    /// If this entry has no metadata, this does nothing.
-    fn with_acl(mut self, parent: &Entry<UnixSpecialType, UnixMetadata>) -> Self {
-        if parent.is_directory() {
-            if let (Some(metadata), Some(parent_metadata)) = (&mut self.metadata, &parent.metadata)
-            {
-                metadata.acl.access = parent_metadata.acl.default.clone();
-            }
-        }
-
-        self
-    }
-
-    /// Set the mode and update the access ACL accordingly.
-    ///
-    /// If this entry has no metadata, this does nothing.
-    fn with_mode(mut self, mode: u32) -> Self {
-        if let Some(metadata) = &mut self.metadata {
-            metadata.update_permissions(mode);
-        }
-        self
-    }
-
-    /// The default `UnixMetadata` for an entry that has no metadata.
-    fn default_metadata(&self, req: &Request) -> UnixMetadata {
-        let now = SystemTime::now();
-        UnixMetadata {
-            mode: if self.is_directory() {
-                DEFAULT_DIR_MODE
-            } else {
-                DEFAULT_FILE_MODE
-            },
-            modified: now,
-            accessed: now,
-            changed: now,
-            user: req.uid(),
-            group: req.gid(),
-            attributes: HashMap::new(),
-            acl: Acl::new(),
-        }
-    }
-
-    /// Return this entry's metadata or the default metadata if it's `None`.
-    fn metadata_or_default(self, req: &Request) -> UnixMetadata {
-        match self.metadata {
-            Some(metadata) => metadata,
-            None => self.default_metadata(req),
-        }
-    }
-}
-
-impl FileType<UnixSpecialType> {
-    /// Convert this `FileType` to a `fuse`-compatible file type.
-    pub fn to_file_type(&self) -> FuseFileType {
-        match self {
-            FileType::File => FuseFileType::RegularFile,
-            FileType::Directory => FuseFileType::Directory,
-            FileType::Special(UnixSpecialType::BlockDevice { .. }) => FuseFileType::BlockDevice,
-            FileType::Special(UnixSpecialType::CharacterDevice { .. }) => FuseFileType::CharDevice,
-            FileType::Special(UnixSpecialType::SymbolicLink { .. }) => FuseFileType::Symlink,
-            FileType::Special(UnixSpecialType::NamedPipe { .. }) => FuseFileType::NamedPipe,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -423,7 +278,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let metadata = entry.metadata.get_or_insert(default_metadata);
 
         if let Some(mode) = mode {
-            metadata.update_permissions(mode);
+            metadata.change_permissions(mode);
         }
 
         if let Some(uid) = uid {
@@ -516,8 +371,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             metadata: None,
         }
         .with_metadata(req)
-        .with_acl(&parent_entry)
-        .with_mode(mode);
+        .with_permissions(&parent_entry, Some(mode));
 
         try_result!(self.repo.create(&entry_path, &entry), reply);
 
@@ -540,8 +394,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let parent_entry = try_result!(self.repo.entry(&parent_path), reply);
         let entry = Entry::directory()
             .with_metadata(req)
-            .with_acl(&parent_entry)
-            .with_mode(mode);
+            .with_permissions(&parent_entry, Some(mode));
 
         try_result!(self.repo.create(&entry_path, &entry), reply);
 
@@ -619,7 +472,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             target: link.to_owned(),
         })
         .with_metadata(req)
-        .with_acl(&parent_entry);
+        .with_permissions(&parent_entry, None);
 
         try_result!(self.repo.create(&entry_path, &entry), reply);
 
