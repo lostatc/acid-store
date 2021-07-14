@@ -723,3 +723,174 @@ index fbe54f6..852d201 100755
  #
  # Clean
  #
+diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/04.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/04.t
+index 6984e87..6386a60 100755
+--- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/04.t
++++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/04.t
+@@ -20,8 +20,15 @@ if setfacl -m 'm::5' ${n1} 2> /dev/null
+ then
+ 
+ rmdir ${n1}
++
++# FUSE file systems mounted with `default_permissions` do not support ACL access checking.
++if [ "$fs" = "acid-store" ]; then
++    quick_exit
++fi
++
+ echo "1..53"
+ 
++
+ # create a basic directory, clean its inherited ACLs, and check initial ACL
+ # 1
+ expect 0 mkdir ${d0} 0777
+diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/05.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/05.t
+index 24eba0e..d2ac7bb 100755
+--- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/05.t
++++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/05.t
+@@ -18,7 +18,15 @@ if setfacl -m 'm::5' ${n1} 2> /dev/null
+ then
+ 
+ rmdir ${n1}
+-echo "1..21"
++
++case "${os}:${fs}" in
++*:acid-store)
++    echo "1..17"
++    ;;
++*)
++    echo "1..21"
++    ;;
++esac
+ 
+ # create a basic directory, clean its inherited ACLs, and check initial ACL
+ # 1
+@@ -47,10 +55,13 @@ expect EACCES -u 65533 -g 65533 getfacl ${d0}/${n1} default
+ #
+ # ENAMETOOLONG path to file name is too long
+ # 15
+-expect 0 create ${d0}/${name255} 0644
+-expect 'u::rw-,g::r--,o::r--' getfacl ${d0}/${name255} access
+-expect 0 unlink ${d0}/${name255}
+-expect ENAMETOOLONG getfacl ${d0}/${name256} access
++if [ "$fs" != "acid-store" ]; then
++    # acid-store does not have a maximum file name length.
++    expect 0 create ${d0}/${name255} 0644
++    expect 'u::rw-,g::r--,o::r--' getfacl ${d0}/${name255} access
++    expect 0 unlink ${d0}/${name255}
++    expect ENAMETOOLONG getfacl ${d0}/${name256} access
++fi
+ #
+ # ENOENT file does not exist
+ #       or no file name
+@@ -76,4 +87,3 @@ else
+ rmdir ${n1}
+ quick_exit
+ fi
+-
+diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/06.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/06.t
+index 55fe3c6..ddb535e 100755
+--- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/06.t
++++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/06.t
+@@ -18,7 +18,15 @@ if setfacl -m 'm::5' ${n1} 2> /dev/null
+ then
+ 
+ rmdir ${n1}
+-echo "1..42"
++
++case "${os}:${fs}" in
++*:acid-store)
++    echo "1..15"
++    ;;
++*)
++    echo "1..42"
++    ;;
++esac
+ 
+ # create a basic file, clean its inherited ACLs, and check initial ACL
+ # 1
+@@ -34,13 +42,16 @@ expect EACCES getfacl ${d0}/${n1} default
+ #       or wrong ACL type
+ #  only for acl_set_file()
+ # 8
+-expect 0 setfacl ${d0} m 'u::rw,g::rwx,o::rwx,m::rwx'
+-expect 'u::rw-,g::rwx,m::rwx,o::rwx' getfacl ${d0} access
+-expect EACCES -u 65533 -g 65533 setfacl ${d0}/${n1} m 'u::rw-,g::r--,o::r--'
+-expect 0 setfacl ${d0} m 'u::rwx,g::rwx,o::rwx,m::rwx'
+-expect 'u::rwx,g::rwx,m::rwx,o::rwx' getfacl ${d0} access
+-expect 0 -u 65533 -g 65533 setfacl ${d0}/${n1} m 'u::rw-,g::r--,o::r--'
+-expect EACCES -u 65533 -g 65533 setfacl ${d0}/${n1} md 'u::rw-,g::r--,o::r--'
++if [ "$fs" != "acid-store" ]; then
++    # FUSE file systems mounted with `default_permissions` do not support ACL access checking.
++    expect 0 setfacl ${d0} m 'u::rw,g::rwx,o::rwx,m::rwx'
++    expect 'u::rw-,g::rwx,m::rwx,o::rwx' getfacl ${d0} access
++    expect EACCES -u 65533 -g 65533 setfacl ${d0}/${n1} m 'u::rw-,g::r--,o::r--'
++    expect 0 setfacl ${d0} m 'u::rwx,g::rwx,o::rwx,m::rwx'
++    expect 'u::rwx,g::rwx,m::rwx,o::rwx' getfacl ${d0} access
++    expect 0 -u 65533 -g 65533 setfacl ${d0}/${n1} m 'u::rw-,g::r--,o::r--'
++    expect EACCES -u 65533 -g 65533 setfacl ${d0}/${n1} md 'u::rw-,g::r--,o::r--'
++fi
+ #
+ #
+ # EINVAL argument does not point to a valid ACL
+@@ -60,21 +71,23 @@ expect 0 -u 65533 -g 65533 setfacl ${d0}/${n1} k
+ #               not mentioned for acl_delete_def_file(), but it obviously
+ #		happens nevertheless
+ # 17
+-expect 0 create ${d0}/${name255} 0644
+-expect 0 setfacl ${d0}/${name255} m 'u::rw,g::rwx,o::-,u:65532:x,m::w'
+-expect 0620 stat ${d0}/${name255} mode
+-expect 'u::rw-,u:65532:--x,g::rwx,m::-w-,o::---' getfacl ${d0}/${name255} access
+-expect 0 unlink ${d0}/${name255}
+-expect ENAMETOOLONG setfacl ${d0}/${name256} m 'u::w,g::r--,o::r--'
+-#
+-expect 0 mkdir ${d0}/${name255} 0755
+-expect 0 setfacl ${d0}/${name255} md 'u::rw,g::rwx,o::-,u:65532:x,m::w'
+-expect 'u::rw-,u:65532:--x,g::rwx,m::-w-,o::---' getfacl ${d0}/${name255} default
+-expect 0 setfacl ${d0}/${name255} k
+-expect void getfacl ${d0}/${name255} default
+-expect 'u::rwx,g::r-x,o::r-x' getfacl ${d0}/${name255} access
+-expect 0 rmdir ${d0}/${name255}
+-expect ENAMETOOLONG setfacl ${d0}/${name256} k
++if [ "$fs" != "acid-store" ]; then
++    # acid-store does not have a maximum file name length.
++    expect 0 create ${d0}/${name255} 0644
++    expect 0 setfacl ${d0}/${name255} m 'u::rw,g::rwx,o::-,u:65532:x,m::w'
++    expect 0620 stat ${d0}/${name255} mode
++    expect 'u::rw-,u:65532:--x,g::rwx,m::-w-,o::---' getfacl ${d0}/${name255} access
++    expect 0 unlink ${d0}/${name255}
++    expect ENAMETOOLONG setfacl ${d0}/${name256} m 'u::w,g::r--,o::r--'
++    expect 0 mkdir ${d0}/${name255} 0755
++    expect 0 setfacl ${d0}/${name255} md 'u::rw,g::rwx,o::-,u:65532:x,m::w'
++    expect 'u::rw-,u:65532:--x,g::rwx,m::-w-,o::---' getfacl ${d0}/${name255} default
++    expect 0 setfacl ${d0}/${name255} k
++    expect void getfacl ${d0}/${name255} default
++    expect 'u::rwx,g::r-x,o::r-x' getfacl ${d0}/${name255} access
++    expect 0 rmdir ${d0}/${name255}
++    expect ENAMETOOLONG setfacl ${d0}/${name256} k
++fi
+ #
+ # ENOENT file does not exist
+ #       or no file name
+@@ -101,13 +114,15 @@ expect ENOTDIR setfacl ${d0}/${n1}/none k
+ #
+ # EPERM process is not allowed to set the ACL
+ # 37
+-expect EPERM -u 65531 -g 65531 setfacl ${d0}/${n1} m 'u::rw-,g::r--,o::r--'
+-expect EPERM -u 65531 -g 65533 setfacl ${d0}/${n1} m 'u::rw-,g::r--,o::r--'
+-expect 0 -u 65533 -g 65533 setfacl ${d0}/${n1} m 'u::rw-,g::r--,o::r--'
+-#
+-expect EPERM -u 65531 -g 65531 setfacl ${d0} k
+-expect EPERM -u 65531 -g 65533 setfacl ${d0} k
+-expect 0 -u 65533 -g 65533 setfacl ${d0} k
++if [ "$fs" != "acid-store" ]; then
++    # FUSE file systems mounted with `default_permissions` do not support ACL access checking.
++    expect EPERM -u 65531 -g 65531 setfacl ${d0}/${n1} m 'u::rw-,g::r--,o::r--'
++    expect EPERM -u 65531 -g 65533 setfacl ${d0}/${n1} m 'u::rw-,g::r--,o::r--'
++    expect 0 -u 65533 -g 65533 setfacl ${d0}/${n1} m 'u::rw-,g::r--,o::r--'
++    expect EPERM -u 65531 -g 65531 setfacl ${d0} k
++    expect EPERM -u 65531 -g 65533 setfacl ${d0} k
++    expect 0 -u 65533 -g 65533 setfacl ${d0} k
++fi
+ #
+ # EROFS file system is read-only
+ #       not done, meaningless here
