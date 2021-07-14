@@ -16,6 +16,7 @@
 
 use std::collections::hash_map::Entry as HashMapEntry;
 use std::collections::HashMap;
+use std::io;
 use std::time::{Duration, SystemTime};
 
 use fuse::{FileType as FuseFileType, Request};
@@ -44,7 +45,26 @@ impl crate::Error {
             crate::Error::NotFile => libc::EISDIR,
             crate::Error::Io(error) => match error.raw_os_error() {
                 Some(errno) => errno,
-                None => libc::EIO,
+                // Some third-party libraries use `std::io::Error` without there being an underlying
+                // `Error::raw_os_error`.
+                None => match error.kind() {
+                    io::ErrorKind::NotFound => libc::ENOENT,
+                    io::ErrorKind::PermissionDenied => libc::EPERM,
+                    io::ErrorKind::ConnectionRefused => libc::ECONNREFUSED,
+                    io::ErrorKind::ConnectionReset => libc::ECONNRESET,
+                    io::ErrorKind::ConnectionAborted => libc::ECONNABORTED,
+                    io::ErrorKind::NotConnected => libc::ENOTCONN,
+                    io::ErrorKind::AddrInUse => libc::EADDRINUSE,
+                    io::ErrorKind::AddrNotAvailable => libc::EADDRNOTAVAIL,
+                    io::ErrorKind::BrokenPipe => libc::EPIPE,
+                    io::ErrorKind::AlreadyExists => libc::EEXIST,
+                    io::ErrorKind::WouldBlock => libc::EWOULDBLOCK,
+                    io::ErrorKind::InvalidInput => libc::EINVAL,
+                    io::ErrorKind::TimedOut => libc::ETIMEDOUT,
+                    io::ErrorKind::Interrupted => libc::EINTR,
+                    io::ErrorKind::Unsupported => libc::ENOSYS,
+                    _ => libc::EIO,
+                },
             },
             _ => libc::EIO,
         }
