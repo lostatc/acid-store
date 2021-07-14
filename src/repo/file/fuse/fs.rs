@@ -1005,6 +1005,17 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         metadata.attributes.remove(&attr_name);
 
+        // Synchronize the ACL entries stored in the xattrs with the entry metadata.
+        match attr_name.as_str() {
+            ACCESS_ACL_XATTR => {
+                metadata.acl.access.clear();
+            }
+            DEFAULT_ACL_XATTR => {
+                metadata.acl.default.clear();
+            }
+            _ => {}
+        }
+
         // Update the ctime whenever xattrs are modified.
         metadata.changed = SystemTime::now();
 
