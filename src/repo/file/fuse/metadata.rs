@@ -98,12 +98,45 @@ fn constrain_acl(acl: &mut HashMap<AccessQualifier, AccessMode>, mode: u32) {
     if let Some(acl_mode) = acl.get_mut(&AccessQualifier::UserObj) {
         *acl_mode = AccessMode::from_bits(acl_mode.bits() & user_perm(mode)).unwrap();
     }
-    if let Some(acl_mode) = acl.get_mut(&AccessQualifier::GroupObj) {
+    if let Some(acl_mode) = match acl.get_mut(&AccessQualifier::Mask) {
+        Some(acl_mode) => Some(acl_mode),
+        None => acl.get_mut(&AccessQualifier::GroupObj),
+    } {
         *acl_mode = AccessMode::from_bits(acl_mode.bits() & group_perm(mode)).unwrap();
     }
     if let Some(acl_mode) = acl.get_mut(&AccessQualifier::Other) {
         *acl_mode = AccessMode::from_bits(acl_mode.bits() & other_perm(mode)).unwrap();
     }
+}
+
+/// Return a new `mode` which does not exceed the permissions of the given `acl`.
+fn constrain_mode(acl: &HashMap<AccessQualifier, AccessMode>, mode: u32) -> u32 {
+    let mut acl_mode = 0u32;
+
+    let user_mode = acl
+        .get(&AccessQualifier::UserObj)
+        .copied()
+        .unwrap_or(AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE)
+        .bits();
+    acl_mode |= user_mode << 6;
+
+    let group_mode = acl.get(&AccessQualifier::GroupObj).copied();
+    let mask_or_group_mode = acl
+        .get(&AccessQualifier::Mask)
+        .copied()
+        .or(group_mode)
+        .unwrap_or(AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE)
+        .bits();
+    acl_mode |= mask_or_group_mode << 3;
+
+    let other_mode = acl
+        .get(&AccessQualifier::Other)
+        .copied()
+        .unwrap_or(AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE)
+        .bits();
+    acl_mode |= other_mode;
+
+    acl_mode & mode
 }
 
 impl UnixMetadata {
@@ -149,16 +182,16 @@ impl Entry<UnixSpecialType, UnixMetadata> {
         parent: &Entry<UnixSpecialType, UnixMetadata>,
         mode: Option<u32>,
     ) -> Self {
-        if parent.is_directory() {
-            if let (Some(metadata), Some(parent_metadata)) = (&mut self.metadata, &parent.metadata)
-            {
-                metadata.acl.access = parent_metadata.acl.default.clone();
+        let is_directory = self.is_directory();
+        if let (Some(metadata), Some(parent_metadata)) = (&mut self.metadata, &parent.metadata) {
+            metadata.acl.access = parent_metadata.acl.default.clone();
+            if is_directory {
                 metadata.acl.default = parent_metadata.acl.default.clone();
+            }
 
-                if let Some(mode) = mode {
-                    metadata.mode = mode;
-                    constrain_acl(&mut metadata.acl.access, mode);
-                }
+            if let Some(mode) = mode {
+                constrain_acl(&mut metadata.acl.access, mode);
+                metadata.mode = constrain_mode(&metadata.acl.access, mode);
             }
         }
 
