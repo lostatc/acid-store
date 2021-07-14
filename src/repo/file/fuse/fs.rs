@@ -690,25 +690,29 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
             flags = state.flags;
 
-            let object = if state.flags.contains(OFlag::O_APPEND) {
-                let object = try_result!(
-                    self.objects
-                        .open_commit(ino, self.repo.open(&entry_path).unwrap()),
-                    reply
-                );
-                try_result!(object.seek(SeekFrom::End(0)), reply);
-                object
-            } else if offset as u64 == state.position {
-                // Because the offset is the same as the previous offset, we don't need to seek and
-                // therefore don't need to commit changes.
+            let object = if offset as u64 == state.position {
+                // If the offset is the same as the previous offset, we don't need to seek and
+                // therefore don't need to commit changes to the object.
                 self.objects.open(ino, self.repo.open(&entry_path).unwrap())
             } else {
+                // If the offset is not the same as the previous offset, we need to seek, which
+                // requires committing changes first.
                 let object = try_result!(
                     self.objects
                         .open_commit(ino, self.repo.open(&entry_path).unwrap()),
                     reply
                 );
+
+                let object_size = object.size().unwrap();
+
+                // If the offset is past the end of the file, we need to extend it. It's not
+                // possible to seek past the end of an object.
+                if offset as u64 > object_size {
+                    try_result!(object.set_len(object_size + offset as u64), reply);
+                }
+
                 try_result!(object.seek(SeekFrom::Start(offset as u64)), reply);
+
                 object
             };
 
