@@ -690,7 +690,7 @@ index af9a386..df4c379 100755
  
  expect 0 create ${name255} 0644
 diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/01.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/01.t
-index fbe54f6..13e6487 100755
+index fbe54f6..852d201 100755
 --- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/01.t
 +++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/xacl/01.t
 @@ -69,11 +69,24 @@ expect 'u::r-x,u:root:--x,u:65531:-wx,g::-wx,g:root:r-x,g:65532:--x,m::rwx,o::r-
@@ -707,9 +707,9 @@ index fbe54f6..13e6487 100755
 +*:acid-store)
 +    rm -rf ${d0}/${n2} ${d0}/${d1}
 +    expect 0 -U 077 create ${d0}/${n2} 077
-+    expect 'u::---,u:root:--x,u:65531:-wx,g::---,g:root:r-x,g:65532:--x,m::rwx,o::---' getfacl ${d0}/${n2} access
++    expect 'u::---,u:root:--x,u:65531:-wx,g::-wx,g:root:r-x,g:65532:--x,m::---,o::---' getfacl ${d0}/${n2} access
 +    expect 0 -U 077 mkdir ${d0}/${d1} 077
-+    expect 'u::---,u:root:--x,u:65531:-wx,g::---,g:root:r-x,g:65532:--x,m::rwx,o::---' getfacl ${d0}/${d1} access
++    expect 'u::---,u:root:--x,u:65531:-wx,g::-wx,g:root:r-x,g:65532:--x,m::---,o::---' getfacl ${d0}/${d1} access
 +    ;;
 +*)
 +    rm -rf ${d0}/${n2} ${d0}/${d1}
