@@ -29,7 +29,7 @@ use nix::fcntl::OFlag;
 use nix::libc;
 use nix::sys::stat::{self, SFlag};
 use once_cell::sync::Lazy;
-use relative_path::RelativePath;
+use relative_path::{RelativePath, RelativePathBuf};
 use time::Timespec;
 
 use super::acl::{Permissions, ACCESS_ACL_XATTR, DEFAULT_ACL_XATTR};
@@ -43,7 +43,7 @@ use crate::repo::file::{
     repository::EMPTY_PATH, AccessQualifier, Entry, FileRepo, FileType, UnixMetadata,
     UnixSpecialType,
 };
-use crate::repo::Commit;
+use crate::repo::{Commit, RestoreSavepoint};
 
 /// The block size used to calculate `st_blocks`.
 const BLOCK_SIZE: u64 = 512;
@@ -89,6 +89,22 @@ macro_rules! try_option {
     };
 }
 
+// A note about atomicity:
+//
+// Each implemented method of `Filesystem` should be atomic, meaning it only modifies the file
+// system state when it returns successfully. If a method return an error, the file system should
+// be unchanged. To accomplish this, this implementation follows the following pattern:
+//
+// 1. Modifications to the backing `FileRepo` should happen as an atomic transaction using the
+// savepoint API. If the transaction fails, the repository should be restored to a savepoint and the
+// method should return an error.
+// 2. The file system state should not be modified before this transaction occurs.
+// 3. All modifications to the file system state after the transaction completes successfully should
+// be infallible.
+//
+// TODO: Refactor this module to enforce this pattern.
+
+/// An adapter for implementing a FUSE file system backed by a `FileRepo`.
 #[derive(Debug)]
 pub struct FuseAdapter<'a> {
     /// The repository which contains the virtual file system.
@@ -198,23 +214,53 @@ impl<'a> FuseAdapter<'a> {
         })
     }
 
-    /// Update an entry's `mtime`, `atime`, and `ctime`.
-    fn touch_modified(&mut self, path: &RelativePath, req: &Request) -> crate::Result<()> {
-        let mut metadata = self.repo.entry(path)?.metadata_or_default(req);
-        let now = SystemTime::now();
-        metadata.modified = now;
-        metadata.accessed = now;
-        metadata.changed = now;
-        self.repo.set_metadata(path, Some(metadata))
+    /// Get the `FileAttr` for the `entry` at the given `path`.
+    ///
+    /// This also allocates an inode in the inode table for the entry. If this returns `Err`, the
+    /// inode table is unchanged.
+    pub fn create_attr(
+        &mut self,
+        path: RelativePathBuf,
+        entry: &Entry<UnixSpecialType, UnixMetadata>,
+        req: &Request,
+    ) -> crate::Result<FileAttr> {
+        let entry_inode = self.inodes.insert(path);
+        match self.entry_attr(&entry, entry_inode, req) {
+            Ok(attr) => Ok(attr),
+            Err(error) => {
+                self.inodes.remove(entry_inode);
+                Err(error)
+            }
+        }
     }
 
-    /// Update an entry's `atime` and `ctime`.
-    fn touch_accessed(&mut self, path: &RelativePath, req: &Request) -> crate::Result<()> {
-        let mut metadata = self.repo.entry(path)?.metadata_or_default(req);
-        let now = SystemTime::now();
-        metadata.accessed = now;
-        metadata.changed = now;
-        self.repo.set_metadata(path, Some(metadata))
+    /// Execute an atomic transaction.
+    ///
+    /// If `block` returns `Ok`, this function commits changes. If `block` returns `Err`, this
+    /// function atomically rolls back all changes make in `block`.
+    fn transaction<T>(
+        &mut self,
+        block: impl FnOnce(&mut Self) -> crate::Result<T>,
+    ) -> crate::Result<T> {
+        // We need to commit changes to all open objects because restoring to a savepoint will
+        // invalidate them, causing all changes to be lost.
+        self.objects.commit_all()?;
+
+        let savepoint = self.repo.savepoint()?;
+        let restore = self.repo.start_restore(&savepoint)?;
+        match block(self) {
+            Ok(result) => match self.repo.commit() {
+                Ok(()) => Ok(result),
+                Err(error) => {
+                    self.repo.finish_restore(restore);
+                    Err(error)
+                }
+            },
+            Err(error) => {
+                self.repo.finish_restore(restore);
+                Err(error)
+            }
+        }
     }
 }
 
@@ -257,31 +303,20 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         _flags: Option<u32>,
         reply: ReplyAttr,
     ) {
+        let now = SystemTime::now();
+
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT).to_owned();
 
-        // If this method truncates the file to make it smaller, we need to clean the repository.
+        // Whether the repository needs to be cleaned before this method returns.
         let mut needs_cleaned = false;
-
-        // If `size` is not `None`, that means we must truncate or extend the file.
-        if let Some(new_size) = size {
-            let object = try_result!(
-                self.objects
-                    .open_commit(ino, self.repo.open(&entry_path).unwrap()),
-                reply
-            );
-
-            needs_cleaned = new_size < object.size().unwrap();
-
-            if new_size != object.size().unwrap() {
-                try_result!(object.set_len(new_size), reply);
-                try_result!(self.touch_modified(&entry_path, req), reply);
-            }
-        }
 
         let mut entry = try_result!(self.repo.entry(&entry_path), reply);
 
         let default_metadata = entry.default_metadata(req);
-        let metadata = entry.metadata.get_or_insert(default_metadata);
+        entry.metadata.get_or_insert(default_metadata);
+
+        let file_type = entry.file_type;
+        let mut metadata = entry.metadata.unwrap();
 
         if let Some(mode) = mode {
             metadata.change_permissions(mode);
@@ -306,21 +341,48 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         if let Some(ctime) = chgtime {
             metadata.changed = to_system_time(ctime);
         } else {
-            metadata.changed = SystemTime::now();
+            metadata.changed = now;
         }
 
-        try_result!(
-            self.repo.set_metadata(&entry_path, entry.metadata.clone()),
+        let attr = try_result!(
+            self.transaction(|fs| {
+                // If `size` is no                        // Truncating the file should update its `mtime`, `atime`, and `ctime`.t `None`, that means we must truncate or extend the file.
+                if let Some(new_size) = size {
+                    let object = fs
+                        .objects
+                        .open_commit(ino, fs.repo.open(&entry_path).unwrap())?;
+
+                    // If this method truncates the file to make it smaller, we need to clean the
+                    // repository to free the unused space.
+                    needs_cleaned = new_size < object.size().unwrap();
+
+                    if new_size != object.size().unwrap() {
+                        object.set_len(new_size)?;
+
+                        // Truncating the file should update its `mtime`, `atime`, and `ctime`.
+                        metadata.modified = now;
+                        metadata.accessed = now;
+                        metadata.changed = now;
+                    }
+                }
+
+                fs.repo.set_metadata(&entry_path, Some(metadata.clone()))?;
+
+                let entry = Entry {
+                    file_type,
+                    metadata: Some(metadata),
+                };
+                fs.entry_attr(&entry, ino, req)
+            }),
             reply
         );
 
-        try_result!(self.repo.commit(), reply);
-
         if needs_cleaned {
-            try_result!(self.repo.clean(), reply);
+            // Attempt to clean the repository to free unused space. We ignore any errors because this
+            // method must return successfully once the transaction is complete.
+            self.repo.clean().ok();
         }
 
-        let attr = try_result!(self.entry_attr(&entry, ino, req), reply);
         reply.attr(&DEFAULT_TTL, &attr);
     }
 
@@ -383,15 +445,16 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         .with_metadata(req)
         .with_permissions(&parent_entry, Some(mode));
 
-        try_result!(self.repo.create(&entry_path, &entry), reply);
+        let attr = try_result!(
+            self.transaction(|fs| {
+                fs.repo.create(&entry_path, &entry)?;
+                fs.repo.touch_modified(&parent_path, req)?;
+                fs.create_attr(entry_path, &entry, req)
+            }),
+            reply
+        );
 
-        try_result!(self.touch_modified(&parent_path, req), reply);
-
-        try_result!(self.repo.commit(), reply);
-
-        let entry_inode = self.inodes.insert(entry_path);
-        let attr = try_result!(self.entry_attr(&entry, entry_inode, req), reply);
-        let generation = self.inodes.generation(entry_inode);
+        let generation = self.inodes.generation(attr.ino);
 
         reply.entry(&DEFAULT_TTL, &attr, generation);
     }
@@ -406,15 +469,16 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             .with_metadata(req)
             .with_permissions(&parent_entry, Some(mode));
 
-        try_result!(self.repo.create(&entry_path, &entry), reply);
+        let attr = try_result!(
+            self.transaction(|fs| {
+                fs.repo.create(&entry_path, &entry)?;
+                fs.repo.touch_modified(&parent_path, req)?;
+                fs.create_attr(entry_path, &entry, req)
+            }),
+            reply
+        );
 
-        try_result!(self.touch_modified(&parent_path, req), reply);
-
-        try_result!(self.repo.commit(), reply);
-
-        let entry_inode = self.inodes.insert(entry_path);
-        let attr = try_result!(self.entry_attr(&entry, entry_inode, req), reply);
-        let generation = self.inodes.generation(entry_inode);
+        let generation = self.inodes.generation(attr.ino);
 
         reply.entry(&DEFAULT_TTL, &attr, generation);
     }
@@ -430,12 +494,17 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             return;
         }
 
-        try_result!(self.repo.remove(&entry_path), reply);
+        try_result!(
+            self.transaction(|fs| {
+                fs.repo.remove(&entry_path)?;
+                fs.repo.touch_modified(&parent_path, req)
+            }),
+            reply
+        );
 
-        try_result!(self.touch_modified(&parent_path, req), reply);
-
-        try_result!(self.repo.commit(), reply);
-        try_result!(self.repo.clean(), reply);
+        // Attempt to clean the repository to free unused space. We ignore any errors because this
+        // method must return successfully once the transaction is complete.
+        self.repo.clean().ok();
 
         self.inodes.remove(entry_inode);
         self.objects.close(entry_inode);
@@ -453,13 +522,18 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             return;
         }
 
-        // `FileRepo::remove` method checks that the directory entry is empty.
-        try_result!(self.repo.remove(&entry_path), reply);
+        try_result!(
+            self.transaction(|fs| {
+                // `FileRepo::remove` method checks that the directory entry is empty.
+                fs.repo.remove(&entry_path)?;
+                fs.repo.touch_modified(&parent_path, req)
+            }),
+            reply
+        );
 
-        try_result!(self.touch_modified(&parent_path, req), reply);
-
-        try_result!(self.repo.commit(), reply);
-        try_result!(self.repo.clean(), reply);
+        // Attempt to clean the repository to free unused space. We ignore any errors because this
+        // method must return successfully once the transaction is complete.
+        self.repo.clean().ok();
 
         let entry_inode = self.inodes.inode(&entry_path).unwrap();
         self.inodes.remove(entry_inode);
@@ -486,15 +560,16 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         .with_metadata(req)
         .with_permissions(&parent_entry, None);
 
-        try_result!(self.repo.create(&entry_path, &entry), reply);
+        let attr = try_result!(
+            self.transaction(|fs| {
+                fs.repo.create(&entry_path, &entry)?;
+                fs.repo.touch_modified(&parent_path, req)?;
+                fs.create_attr(entry_path, &entry, req)
+            }),
+            reply
+        );
 
-        try_result!(self.touch_modified(&parent_path, req), reply);
-
-        try_result!(self.repo.commit(), reply);
-
-        let entry_inode = self.inodes.insert(entry_path);
-        let attr = try_result!(self.entry_attr(&entry, entry_inode, req), reply);
-        let generation = self.inodes.generation(entry_inode);
+        let generation = self.inodes.generation(attr.ino);
 
         reply.entry(&DEFAULT_TTL, &attr, generation);
     }
@@ -535,12 +610,6 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             return;
         }
 
-        // Remove the destination path unless it is a non-empty directory.
-        if let Err(error @ crate::Error::NotEmpty) = self.repo.remove(&dest_path) {
-            reply.error(error.to_errno());
-            return;
-        }
-
         // Commit and close any open file objects associated with the entries in the source tree.
         let source_inode = self.inodes.inode(&source_path).unwrap();
         try_result!(self.objects.commit(source_inode), reply);
@@ -553,13 +622,21 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             }
         }
 
-        try_result!(self.repo.copy_tree(&source_path, &dest_path), reply);
-        self.repo.remove_tree(&source_path).ok();
+        try_result!(
+            self.transaction(|fs| {
+                // Remove the destination path unless it is a non-empty directory.
+                if let Err(error @ crate::Error::NotEmpty) = fs.repo.remove(&dest_path) {
+                    return Err(error);
+                }
 
-        try_result!(self.touch_modified(&source_parent_path, req), reply);
-        try_result!(self.touch_modified(&dest_parent_path, req), reply);
+                fs.repo.copy_tree(&source_path, &dest_path)?;
+                fs.repo.remove_tree(&source_path).ok();
 
-        try_result!(self.repo.commit(), reply);
+                fs.repo.touch_modified(&source_parent_path, req)?;
+                fs.repo.touch_modified(&dest_parent_path, req)
+            }),
+            reply
+        );
 
         // Update the mappings from paths to inodes in the inode table.
         self.inodes.rename(&source_path, dest_path.clone());
@@ -656,7 +733,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         // Update the file's `st_atime` unless the `O_NOATIME` flag was passed.
         if !state.flags.contains(OFlag::O_NOATIME) {
-            try_result!(self.touch_accessed(&entry_path, req), reply);
+            try_result!(self.repo.touch_accessed(&entry_path, req), reply);
         }
 
         reply.data(&buffer[..total_bytes_read]);
@@ -689,7 +766,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         {
             let state = match self.handles.state_mut(fh) {
                 None => {
-                    reply.error(libc::EBADF);
+                    reply.error(libc::EBADR);
                     return;
                 }
                 Some(HandleState::Directory(_)) => {
@@ -738,7 +815,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         // object if this method returns successfully.
 
         // Update the `st_atime` and `st_mtime` for the entry.
-        if let Err(error) = self.touch_modified(&entry_path, req) {
+        if let Err(error) = self.repo.touch_modified(&entry_path, req) {
             self.objects.close(ino);
             reply.error(error.to_errno());
             return;
@@ -827,8 +904,10 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     ) {
         let directory_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT).to_owned();
 
-        try_result!(self.touch_accessed(&directory_path, req), reply);
-        try_result!(self.repo.commit(), reply);
+        try_result!(
+            self.transaction(|fs| fs.repo.touch_accessed(&directory_path, req)),
+            reply
+        );
 
         let entries = match self.handles.state(fh) {
             None => {
@@ -885,7 +964,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     ) {
         let attr_name = try_option!(name.to_str(), reply, libc::EINVAL).to_owned();
 
-        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
+        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT).to_owned();
         let mut metadata =
             try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
 
@@ -938,9 +1017,10 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         // Update the ctime whenever xattrs are modified.
         metadata.changed = SystemTime::now();
 
-        try_result!(self.repo.set_metadata(entry_path, Some(metadata)), reply);
-
-        try_result!(self.repo.commit(), reply);
+        try_result!(
+            self.transaction(|fs| fs.repo.set_metadata(entry_path, Some(metadata))),
+            reply
+        );
 
         reply.ok();
     }
@@ -1014,7 +1094,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     fn removexattr(&mut self, req: &Request, ino: u64, name: &OsStr, reply: ReplyEmpty) {
         let attr_name = try_option!(name.to_str(), reply, libc::ENODATA).to_owned();
 
-        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
+        let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT).to_owned();
         let mut metadata =
             try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
 
@@ -1034,9 +1114,10 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         // Update the ctime whenever xattrs are modified.
         metadata.changed = SystemTime::now();
 
-        try_result!(self.repo.set_metadata(entry_path, Some(metadata)), reply);
-
-        try_result!(self.repo.commit(), reply);
+        try_result!(
+            self.transaction(|fs| fs.repo.set_metadata(entry_path, Some(metadata))),
+            reply
+        );
 
         reply.ok();
     }
