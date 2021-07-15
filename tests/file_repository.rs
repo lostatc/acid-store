@@ -20,9 +20,9 @@ use std::collections::HashMap;
 use std::fs::{create_dir, File};
 use std::io::{Read, Write};
 
-use maplit::hashmap;
 #[cfg(all(target_os = "linux", feature = "file-metadata"))]
-use posix_acl::{PosixACL, Qualifier as PosixQualifier, ACL_RWX};
+use exacl::{AclEntry, AclEntryKind, AclOption, Flag, Perm};
+use maplit::hashmap;
 use relative_path::RelativePathBuf;
 use tempfile::tempdir;
 
@@ -34,7 +34,7 @@ use common::{assert_contains_all, random_buffer};
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
     acid_store::repo::file::{
-        AccessMode, AccessQualifier, CommonMetadata, FileType, UnixMetadata, UnixSpecialType,
+        AccessMode, AccessQualifier, Acl, CommonMetadata, FileType, UnixMetadata, UnixSpecialType,
     },
     nix::sys::stat::{Mode, SFlag},
     nix::unistd::mkfifo,
@@ -853,14 +853,17 @@ fn write_unix_metadata() -> anyhow::Result<()> {
     // on tmpfs, which is most likely where the temporary directory will be created.
 
     let entry_metadata = UnixMetadata {
-        mode: 0o666,
+        mode: 0o246,
         modified: SystemTime::UNIX_EPOCH,
         accessed: SystemTime::UNIX_EPOCH,
         changed: SystemTime::UNIX_EPOCH,
         user: 1000,
         group: 1000,
         attributes: HashMap::new(),
-        acl: hashmap! { AccessQualifier::User(1001) => AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE },
+        acl: Acl {
+            access: hashmap! { AccessQualifier::User(1001) => AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE },
+            default: HashMap::new(),
+        },
     };
     let entry = Entry {
         file_type: FileType::File,
@@ -880,8 +883,49 @@ fn write_unix_metadata() -> anyhow::Result<()> {
 
     #[cfg(target_os = "linux")]
     {
-        let dest_acl = PosixACL::read_acl(dest_path)?;
-        assert_eq!(dest_acl.get(PosixQualifier::User(1001)), Some(ACL_RWX));
+        let actual_entries = exacl::getfacl(dest_path, AclOption::ACCESS_ACL)?;
+        let user_entry = AclEntry {
+            kind: AclEntryKind::User,
+            name: String::new(),
+            perms: Perm::WRITE,
+            flags: Flag::empty(),
+            allow: true,
+        };
+        let group_entry = AclEntry {
+            kind: AclEntryKind::Group,
+            name: String::new(),
+            perms: Perm::READ,
+            flags: Flag::empty(),
+            allow: true,
+        };
+        let other_entry = AclEntry {
+            kind: AclEntryKind::Other,
+            name: String::new(),
+            perms: Perm::READ | Perm::WRITE,
+            flags: Flag::empty(),
+            allow: true,
+        };
+        let mask_entry = AclEntry {
+            kind: AclEntryKind::Mask,
+            name: String::new(),
+            perms: Perm::READ | Perm::WRITE | Perm::EXECUTE,
+            flags: Flag::empty(),
+            allow: true,
+        };
+        let new_entry = AclEntry {
+            kind: AclEntryKind::User,
+            name: "1001".to_string(),
+            perms: Perm::READ | Perm::WRITE | Perm::EXECUTE,
+            flags: Flag::empty(),
+            allow: true,
+        };
+
+        assert_eq!(actual_entries.len(), 5);
+        assert!(actual_entries.contains(&user_entry));
+        assert!(actual_entries.contains(&group_entry));
+        assert!(actual_entries.contains(&other_entry));
+        assert!(actual_entries.contains(&mask_entry));
+        assert!(actual_entries.contains(&new_entry));
     }
 
     Ok(())
@@ -893,12 +937,19 @@ fn read_unix_metadata() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let source_path = temp_dir.as_ref().join("source");
     File::create(&source_path)?;
+    let source_metadata = source_path.metadata()?;
 
     #[cfg(target_os = "linux")]
     {
-        let mut dest_acl = PosixACL::new(source_path.metadata()?.mode());
-        dest_acl.set(PosixQualifier::User(1001), ACL_RWX);
-        dest_acl.write_acl(&source_path)?;
+        let mut entries = exacl::getfacl(&source_path, AclOption::ACCESS_ACL)?;
+        entries.push(AclEntry {
+            kind: AclEntryKind::User,
+            name: "1001".to_string(),
+            perms: Perm::READ | Perm::WRITE | Perm::EXECUTE,
+            flags: Flag::empty(),
+            allow: true,
+        });
+        exacl::setfacl(&[&source_path], &entries, AclOption::ACCESS_ACL)?;
     }
 
     let config = MemoryConfig::new();
@@ -908,7 +959,6 @@ fn read_unix_metadata() -> anyhow::Result<()> {
     repository.archive(&source_path, "dest")?;
     let entry = repository.entry("dest")?;
     let entry_metadata = entry.metadata.unwrap();
-    let source_metadata = source_path.metadata()?;
 
     // This does not test extended attributes because user extended attributes are not supported
     // on tmpfs, which is most likely where the temporary directory will be created.
@@ -921,8 +971,12 @@ fn read_unix_metadata() -> anyhow::Result<()> {
     #[cfg(target_os = "linux")]
     {
         assert_eq!(
-            entry_metadata.acl,
-            hashmap! { AccessQualifier::User(1001) => AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE }
+            entry_metadata
+                .acl
+                .access
+                .get(&AccessQualifier::User(1001))
+                .copied(),
+            Some(AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE)
         );
     }
 
