@@ -21,11 +21,13 @@ use std::time::{Duration, SystemTime};
 
 use fuse::{FileType as FuseFileType, Request};
 use nix::libc;
+use relative_path::RelativePath;
+use time::Timespec;
 
 use crate::repo::file::{
-    AccessMode, AccessQualifier, Acl, AclType, Entry, FileType, UnixMetadata, UnixSpecialType,
+    AccessMode, AccessQualifier, Acl, AclType, Entry, FileRepo, FileType, UnixMetadata,
+    UnixSpecialType,
 };
-use time::Timespec;
 
 /// The default permissions bits for a directory.
 const DEFAULT_DIR_MODE: u32 = 0o775;
@@ -257,5 +259,34 @@ impl FileType<UnixSpecialType> {
             FileType::Special(UnixSpecialType::SymbolicLink { .. }) => FuseFileType::Symlink,
             FileType::Special(UnixSpecialType::NamedPipe { .. }) => FuseFileType::NamedPipe,
         }
+    }
+}
+
+impl FileRepo<UnixSpecialType, UnixMetadata> {
+    /// Update an entry's `mtime`, `atime`, and `ctime`.
+    pub(super) fn touch_modified(
+        &mut self,
+        path: &RelativePath,
+        req: &Request,
+    ) -> crate::Result<()> {
+        let mut metadata = self.entry(path)?.metadata_or_default(req);
+        let now = SystemTime::now();
+        metadata.modified = now;
+        metadata.accessed = now;
+        metadata.changed = now;
+        self.set_metadata(path, Some(metadata))
+    }
+
+    /// Update an entry's `atime` and `ctime`.
+    pub(super) fn touch_accessed(
+        &mut self,
+        path: &RelativePath,
+        req: &Request,
+    ) -> crate::Result<()> {
+        let mut metadata = self.entry(path)?.metadata_or_default(req);
+        let now = SystemTime::now();
+        metadata.accessed = now;
+        metadata.changed = now;
+        self.set_metadata(path, Some(metadata))
     }
 }
