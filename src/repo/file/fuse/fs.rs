@@ -662,7 +662,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     ) {
         // Technically, on Unix systems, a file should still be accessible via its file descriptor
         // once it's been unlinked. Because this isn't how repositories work, we will return `EBADF`
-        // if the user tries to read from a file which has been unlinked since it was opened.
+        // if the user tries to write to a file which has been unlinked since it was opened.
         let entry_path = match self.inodes.path(ino) {
             Some(path) => path.to_owned(),
             None => {
@@ -673,7 +673,6 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         };
 
         let flags;
-        let bytes_written;
 
         {
             let state = match self.handles.state_mut(fh) {
@@ -708,7 +707,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                 // If the offset is past the end of the file, we need to extend it. It's not
                 // possible to seek past the end of an object.
                 if offset as u64 > object_size {
-                    try_result!(object.set_len(object_size + offset as u64), reply);
+                    try_result!(object.set_len(offset as u64), reply);
                 }
 
                 try_result!(object.seek(SeekFrom::Start(offset as u64)), reply);
@@ -716,9 +715,9 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                 object
             };
 
-            bytes_written = try_result!(object.write(data), reply);
+            try_result!(object.write_all(data), reply);
 
-            state.position = offset as u64 + bytes_written as u64;
+            state.position = offset as u64 + data.len() as u64;
         }
 
         // After this point, we need to be more careful about error handling. Because bytes have
@@ -749,7 +748,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             }
         }
 
-        reply.written(bytes_written as u32);
+        reply.written(data.len() as u32);
     }
 
     fn flush(&mut self, _req: &Request, ino: u64, _fh: u64, _lock_owner: u64, reply: ReplyEmpty) {
