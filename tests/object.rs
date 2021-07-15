@@ -23,7 +23,8 @@ use test_case::test_case;
 
 use acid_store::repo::key::KeyRepo;
 use acid_store::repo::{
-    Chunking, Compression, Encryption, OpenMode, OpenOptions, ReadOnlyObject, RepoConfig,
+    Chunking, Commit, Compression, Encryption, OpenMode, OpenOptions, ReadOnlyObject, RepoConfig,
+    RestoreSavepoint,
 };
 use acid_store::store::MemoryConfig;
 use common::{random_buffer, random_bytes, MIN_BUFFER_SIZE};
@@ -865,6 +866,51 @@ fn converting_to_read_only_with_uncommitted_changes_errs() -> anyhow::Result<()>
     assert!(matches!(
         ReadOnlyObject::try_from(object),
         Err(acid_store::Error::TransactionInProgress)
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn rolling_back_repo_invalidates_objects() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let object = repo.insert(String::from("test"));
+
+    assert!(object.is_valid());
+
+    repo.rollback()?;
+
+    assert!(!object.is_valid());
+    assert!(matches!(
+        object.size(),
+        Err(acid_store::Error::InvalidObject)
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn restoring_to_savepoint_invalidates_objects() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let object = repo.insert(String::from("test"));
+
+    assert!(object.is_valid());
+
+    let savepoint = repo.savepoint()?;
+    repo.restore(&savepoint)?;
+
+    assert!(!object.is_valid());
+    assert!(matches!(
+        object.size(),
+        Err(acid_store::Error::InvalidObject)
     ));
 
     Ok(())

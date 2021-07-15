@@ -92,6 +92,9 @@ pub trait Restore: Clone {
 /// also invalidated if the repository it is associated with is dropped. You can use
 /// [`Savepoint::is_valid`] to determine whether the current savepoint is valid.
 ///
+/// Restoring to a savepoint invalidates all [`Object`] and [`ReadOnlyObject`] instances associated
+/// with the repository.
+///
 /// Creating a savepoint does not commit changes to the repository; if the repository is
 /// dropped, it will revert to the previous commit and not the most recent savepoint.
 ///
@@ -129,6 +132,8 @@ pub trait Restore: Clone {
 /// [`finish_restore`]: crate::repo::RestoreSavepoint::finish_restore
 /// [`restore`]: crate::repo::RestoreSavepoint::restore
 /// [`Savepoint::is_valid`]: crate::repo::Savepoint::is_valid
+/// [`Object`]: crate::repo::Object
+/// [`ReadOnlyObject`]: crate::repo::ReadOnlyObject
 pub trait RestoreSavepoint {
     type Restore: Restore;
 

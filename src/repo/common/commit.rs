@@ -51,11 +51,17 @@ pub trait Commit {
     ///
     /// This method rolls back changes for all instances of the repository.
     ///
+    /// Rolling back changes invalidates all [`Object`] and [`ReadOnlyObject`] instances associated
+    /// with the repository.
+    ///
     /// # Errors
     /// - `Error::Corrupt`: The repository is corrupt. This is most likely unrecoverable.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`Object`]: crate::repo::Object
+    /// [`ReadOnlyObject`]: crate::repo::ReadOnlyObject
     fn rollback(&mut self) -> crate::Result<()>;
 
     /// Clean up the repository to reclaim space in the backing data store.
