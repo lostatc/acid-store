@@ -44,6 +44,16 @@ use super::state::{ObjectState, RepoState};
 /// Additionally, changes to an object are not visible to other instances until the transaction is
 /// committed.
 ///
+/// An object can be invalidated, in which case methods of `Object` and [`ReadOnlyObject`] will
+/// return [`Error::InvalidObject`]. An object is invalidated when:
+///
+/// 1. The repository it is associated with is dropped.
+/// 2. The object is removed from the repository.
+/// 3. The repository is rolled back.
+/// 4. The repository is restored to a savepoint.
+///
+/// You can use [`is_valid`] to determine whether an object has been invalidated.
+///
 /// Because `Object` internally buffers data when reading, there's no need to use a buffered reader
 /// like `BufReader`.
 ///
@@ -59,6 +69,8 @@ use super::state::{ObjectState, RepoState};
 /// [`Commit::clean`]: crate::repo::Commit::clean
 /// [`Error::TransactionInProgress`]: crate::Error::TransactionInProgress
 /// [`ReadOnlyObject`]: crate::repo::ReadOnlyObject
+/// [`Error::InvalidObject`]: crate::Error::InvalidObject
+/// [`is_valid`]: crate::repo::Object::is_valid
 /// [`Error::InvalidData`]: crate::Error::InvalidData
 /// [`verify`]: crate::repo::Object::verify
 #[derive(Debug)]
@@ -91,8 +103,7 @@ impl Object {
     ///
     /// # Errors
     /// - `Error::TransactionInProgress`: A transaction is currently in progress for this object.
-    /// - `Error::InvalidObject`: The repository associated with this object was dropped or the
-    /// object was removed.
+    /// - `Error::InvalidObject`: The object has been invalidated.
     pub fn size(&self) -> crate::Result<u64> {
         ObjectStore::new(&self.repo_state, &self.handle)?
             .info_guard(&self.object_state)
@@ -109,8 +120,7 @@ impl Object {
     ///
     /// # Errors
     /// - `Error::TransactionInProgress`: A transaction is currently in progress for this object.
-    /// - `Error::InvalidObject`: The repository associated with this object was dropped or the
-    /// object was removed.
+    /// - `Error::InvalidObject`: The object has been invalidated.
     pub fn content_id(&self) -> crate::Result<ContentId> {
         ObjectStore::new(&self.repo_state, &self.handle)?
             .info_guard(&self.object_state)
@@ -124,8 +134,7 @@ impl Object {
     ///
     /// # Errors
     /// - `Error::TransactionInProgress`: A transaction is currently in progress for this object.
-    /// - `Error::InvalidObject`: The repository associated with this object was dropped or the
-    /// object was removed.
+    /// - `Error::InvalidObject`: The object has been invalidated.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -148,8 +157,7 @@ impl Object {
     ///
     /// # Errors
     /// - `Error::TransactionInProgress`: A transaction is currently in progress for this object.
-    /// - `Error::InvalidObject`: The repository associated with this object was dropped or the
-    /// object was removed.
+    /// - `Error::InvalidObject`: The object has been invalidated.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -171,8 +179,7 @@ impl Object {
     /// # Errors
     /// - `Error::Serialize`: The given value could not be serialized.
     /// - `Error::TransactionInProgress`: A transaction is currently in progress for this object.
-    /// - `Error::InvalidObject`: The repository associated with this object was dropped or the
-    /// object was removed.
+    /// - `Error::InvalidObject`: The object has been invalidated.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -191,8 +198,7 @@ impl Object {
     /// # Errors
     /// - `Error::Deserialize`: The data could not be deserialized as a value of type `T`.
     /// - `Error::TransactionInProgress`: A transaction is currently in progress for this object.
-    /// - `Error::InvalidObject`: The repository associated with this object was dropped or the
-    /// object was removed.
+    /// - `Error::InvalidObject`: The object has been invalidated.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -216,8 +222,7 @@ impl Object {
     /// object is associated with.
     ///
     /// # Errors
-    /// - `Error::InvalidObject`: The repository associated with this object was dropped or the
-    /// object was removed.
+    /// - `Error::InvalidObject`: The object has been invalidated.
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
@@ -229,6 +234,11 @@ impl Object {
             .writer_guard(&mut self.object_state)
             .writer()
             .commit()
+    }
+
+    /// Return whether this object is valid.
+    pub fn is_valid(&self) -> bool {
+        ObjectStore::new(&self.repo_state, &self.handle).is_ok()
     }
 }
 
@@ -314,6 +324,11 @@ impl ReadOnlyObject {
     /// [`Object::deserialize`]: crate::repo::Object::deserialize
     pub fn deserialize<T: DeserializeOwned>(&mut self) -> crate::Result<T> {
         self.0.deserialize()
+    }
+
+    /// Return whether this object is valid.
+    pub fn is_valid(&self) -> bool {
+        self.0.is_valid()
     }
 }
 
