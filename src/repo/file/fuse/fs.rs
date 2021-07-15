@@ -259,6 +259,9 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     ) {
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT).to_owned();
 
+        // If this method truncates the file to make it smaller, we need to clean the repository.
+        let mut needs_cleaned = false;
+
         // If `size` is not `None`, that means we must truncate or extend the file.
         if let Some(new_size) = size {
             let object = try_result!(
@@ -266,6 +269,9 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                     .open_commit(ino, self.repo.open(&entry_path).unwrap()),
                 reply
             );
+
+            needs_cleaned = new_size < object.size().unwrap();
+
             if new_size != object.size().unwrap() {
                 try_result!(object.set_len(new_size), reply);
                 try_result!(self.touch_modified(&entry_path, req), reply);
@@ -309,6 +315,10 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         );
 
         try_result!(self.repo.commit(), reply);
+
+        if needs_cleaned {
+            try_result!(self.repo.clean(), reply);
+        }
 
         let attr = try_result!(self.entry_attr(&entry, ino, req), reply);
         reply.attr(&DEFAULT_TTL, &attr);
@@ -425,6 +435,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         try_result!(self.touch_modified(&parent_path, req), reply);
 
         try_result!(self.repo.commit(), reply);
+        try_result!(self.repo.clean(), reply);
 
         self.inodes.remove(entry_inode);
         self.objects.close(entry_inode);
@@ -448,6 +459,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         try_result!(self.touch_modified(&parent_path, req), reply);
 
         try_result!(self.repo.commit(), reply);
+        try_result!(self.repo.clean(), reply);
 
         let entry_inode = self.inodes.inode(&entry_path).unwrap();
         self.inodes.remove(entry_inode);
