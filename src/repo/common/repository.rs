@@ -149,7 +149,7 @@ impl<K: Key> KeyRepo<K> {
         let object_id = self.object_id(handle_id);
         let handle = ObjectHandle {
             id: handle_id,
-            chunks: Vec::new(),
+            extents: Vec::new(),
         };
         assert!(!self.objects.contains_key(&key));
         let handle = self
@@ -162,14 +162,14 @@ impl<K: Key> KeyRepo<K> {
     /// Remove the given object `handle` from the repository.
     fn remove_handle(&mut self, handle: &ObjectHandle) {
         let mut state = self.state.write().unwrap();
-        for chunk in &handle.chunks {
+        for chunk in handle.chunks() {
             let chunk_info = state
                 .chunks
-                .get_mut(chunk)
+                .get_mut(&chunk)
                 .expect("This chunk was not found in the repository.");
             chunk_info.references.remove(&handle.id);
             if chunk_info.references.is_empty() {
-                state.chunks.remove(chunk);
+                state.chunks.remove(&chunk);
             }
         }
         self.handle_table.recycle(handle.id);
@@ -228,7 +228,7 @@ impl<K: Key> KeyRepo<K> {
         Q: Eq + Hash + ?Sized,
     {
         let source_chunks = match self.objects.get(source) {
-            Some(handle) => handle.read().unwrap().chunks.clone(),
+            Some(handle) => handle.read().unwrap().extents.clone(),
             None => return false,
         };
 
@@ -236,15 +236,15 @@ impl<K: Key> KeyRepo<K> {
 
         let dest_handle = ObjectHandle {
             id: self.handle_table.next(),
-            chunks: source_chunks,
+            extents: source_chunks,
         };
 
         // Update the chunk map to include the new handle in the list of references for each chunk.
         let mut state = self.state.write().unwrap();
-        for chunk in &dest_handle.chunks {
+        for chunk in dest_handle.chunks() {
             let chunk_info = state
                 .chunks
-                .get_mut(chunk)
+                .get_mut(&chunk)
                 .expect("This chunk was not found in the repository.");
             chunk_info.references.insert(dest_handle.id);
         }
@@ -299,7 +299,7 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// This does not write the object map for the current instance before switching to the new
     /// instance.
-    pub(super) fn set_instance<R: OpenRepo>(mut self, instance_id: Uuid) -> crate::Result<R> {
+    pub(super) fn change_instance<R: OpenRepo>(mut self, instance_id: Uuid) -> crate::Result<R> {
         let is_new_instance = !self.instances.contains_key(&instance_id);
 
         let new_objects = if is_new_instance {
@@ -307,7 +307,7 @@ impl<K: Key> KeyRepo<K> {
             // instance.
             let mut handle = ObjectHandle {
                 id: self.handle_table.next(),
-                chunks: Vec::new(),
+                extents: Vec::new(),
             };
 
             // Because this is a new instance, we return an empty object map.
@@ -513,7 +513,7 @@ impl<K: Key> KeyRepo<K> {
 
         let mut corrupt_keys = HashSet::new();
         for (key, handle) in &self.objects {
-            for chunk in &handle.read().unwrap().chunks {
+            for chunk in handle.read().unwrap().chunks() {
                 // If any one of the object's chunks is corrupt, the object is corrupt.
                 if corrupt_chunks.contains(&chunk.hash) {
                     corrupt_keys.insert(key);

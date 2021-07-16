@@ -27,7 +27,7 @@ use crate::store::DataStore;
 use super::chunk_store::StoreState;
 use super::chunking::IncrementalChunker;
 use super::encryption::EncryptionKey;
-use super::handle::{Chunk, ObjectHandle};
+use super::handle::{Chunk, Extent, ObjectHandle};
 use super::id_table::UniqueId;
 use super::lock::Lock;
 use super::lock::LockTable;
@@ -128,29 +128,26 @@ pub struct RepoState {
     pub lock: Lock<Uuid>,
 }
 
-/// The chunk at the object's current seek position.
-pub enum CurrentChunk {
+/// A seek position in an object.
+pub enum SeekPosition {
     /// The object is empty.
     Empty,
 
     /// The seek position is at the end of the object.
     End,
 
-    /// The seek position is at the given chunk.
-    Chunk(ChunkLocation),
+    /// The seek position is at the given extent.
+    Extent(ExtentLocation),
 }
 
-/// The location of a chunk in a stream of bytes.
-#[derive(Debug, PartialEq, Eq, Clone, Default)]
-pub struct ChunkLocation {
-    /// The chunk itself.
-    pub chunk: Chunk,
+/// The location of an extent in a stream of bytes.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ExtentLocation {
+    /// The extent itself.
+    pub extent: Extent,
 
     /// The offset of the start of the chunk from the beginning of the object.
     pub start: u64,
-
-    /// The offset of the end of the chunk from the beginning of the object.
-    pub end: u64,
 
     /// The offset of the seek position from the beginning of the object.
     pub position: u64,
@@ -159,10 +156,10 @@ pub struct ChunkLocation {
     pub index: usize,
 }
 
-impl ChunkLocation {
-    /// The offset of the seek position from the beginning of the chunk.
-    pub fn relative_position(&self) -> usize {
-        (self.position - self.start) as usize
+impl ExtentLocation {
+    /// The offset of the seek position from the beginning of the extent.
+    pub fn relative_position(&self) -> u64 {
+        self.position - self.start
     }
 }
 
@@ -171,11 +168,11 @@ pub struct ObjectState {
     /// An object responsible for buffering and chunking data which has been written.
     pub chunker: IncrementalChunker,
 
-    /// The list of chunks which have been written since `flush` was last called.
+    /// The list of chunks which have been written in the current transaction.
     pub new_chunks: Vec<Chunk>,
 
-    /// The current chunk when the transaction was started.
-    pub start_location: CurrentChunk,
+    /// The seek position when the transaction was started.
+    pub start_position: SeekPosition,
 
     /// The current seek position of the object.
     pub position: u64,
@@ -187,6 +184,9 @@ pub struct ObjectState {
 
     /// The contents of the chunk which was most recently read from.
     pub read_buffer: Vec<u8>,
+
+    /// A pre-allocated buffer of null bytes to read from when reading a hole.
+    pub hole_buffer: Vec<u8>,
 
     /// A lock representing the current transaction if there is one.
     pub transaction_lock: Option<Lock<UniqueId>>,
@@ -201,10 +201,11 @@ impl ObjectState {
         Self {
             chunker: IncrementalChunker::new(chunker),
             new_chunks: Vec::new(),
-            start_location: CurrentChunk::Empty,
+            start_position: SeekPosition::Empty,
             position: 0,
             buffered_chunk: None,
             read_buffer: Vec::new(),
+            hole_buffer: Vec::new(),
             transaction_lock: None,
             store_state: StoreState::new(),
         }

@@ -164,6 +164,6 @@ impl<T: OpenRepo> SwitchInstance for T {
     {
         let mut repo = self.into_repo()?;
         repo.write_object_map()?;
-        repo.set_instance(id)
+        repo.change_instance(id)
     }
 }

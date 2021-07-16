@@ -48,7 +48,7 @@ pub const DEFAULT_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92
 ///
 /// This must be changed any time a backwards-incompatible change is made to the repository
 /// format.
-const VERSION_ID: Uuid = Uuid::from_bytes(hex!("25df72b4 8368 4409 910b fef908e1cf90"));
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("6f1c893c e6a8 11eb a198 b7fa995cc83b"));
 
 /// A table of locks on repositories.
 static REPO_LOCKS: Lazy<Mutex<LockTable<Uuid>>> = Lazy::new(|| Mutex::new(LockTable::new()));
@@ -353,7 +353,7 @@ impl OpenOptions {
             transaction_id: Arc::new(Uuid::new_v4()),
         };
 
-        repo.set_instance(self.instance)
+        repo.change_instance(self.instance)
     }
 
     /// Create a new repository, failing if one already exists.
@@ -480,7 +480,7 @@ impl OpenOptions {
             transaction_id: Arc::new(Uuid::new_v4()),
         };
 
-        repo.set_instance(self.instance)
+        repo.change_instance(self.instance)
     }
 
     /// Open or create the repository.

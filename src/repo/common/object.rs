@@ -163,7 +163,8 @@ impl Object {
     /// Truncate or extend the object to the given `size`.
     ///
     /// If the given `size` is greater than the current size of the object, the object will be
-    /// extended to `size` and the intermediate data will be filled with null bytes.
+    /// extended to `size` and the intermediate space will be filled with null bytes. This creates a
+    /// sparse object, so no additional space is used in the backing data store.
     ///
     /// If `size` is less than the current size of the object and the seek position is past the
     /// point which the object is truncated to, it is moved to the new end of the object.
