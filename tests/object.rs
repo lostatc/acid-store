@@ -340,15 +340,121 @@ fn extend_object(config: RepoConfig) -> anyhow::Result<()> {
     let added_bytes = original_bytes;
     let new_size = original_bytes + added_bytes;
 
-    // Truncate the object.
+    // Extend the object.
     object.set_len(new_size)?;
 
-    // assert_eq!(object.size().unwrap(), new_size);
+    assert_eq!(object.size().unwrap(), new_size);
     assert_eq!(object.seek(SeekFrom::Current(0))?, original_bytes);
 
     // Read data from the object.
     let mut expected_data = initial_data;
     expected_data.resize(new_size as usize, 0);
+    let mut actual_data = Vec::new();
+    object.seek(SeekFrom::Start(0))?;
+    object.read_to_end(&mut actual_data)?;
+
+    assert_eq!(actual_data, expected_data);
+
+    Ok(())
+}
+
+#[test]
+fn extend_to_absurd_size() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+    let mut object = repo.insert(String::from("test"));
+
+    let new_size = u64::MAX;
+
+    object.set_len(new_size)?;
+
+    assert_eq!(object.size().unwrap(), new_size);
+
+    Ok(())
+}
+
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn extend_then_append(config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .config(config)
+        .password(b"Password")
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+    let mut object = repo.insert(String::from("test"));
+
+    let mut expected_data = Vec::new();
+
+    // Write data to the object.
+    let data = random_buffer();
+    expected_data.extend_from_slice(&data);
+    object.write_all(data.as_slice())?;
+    object.commit()?;
+
+    // Extend the object.
+    object.set_len(data.len() as u64 * 2)?;
+    expected_data.resize(data.len() * 2, 0);
+
+    // Append more data to the object after the hole.
+    let data = random_buffer();
+    expected_data.extend_from_slice(&data);
+    object.seek(SeekFrom::End(0))?;
+    object.write_all(data.as_slice())?;
+    object.commit()?;
+
+    assert_eq!(object.size().unwrap(), expected_data.len() as u64);
+
+    // Read data from the object.
+    let mut actual_data = Vec::new();
+    object.seek(SeekFrom::Start(0))?;
+    object.read_to_end(&mut actual_data)?;
+
+    assert_eq!(actual_data, expected_data);
+
+    Ok(())
+}
+
+#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
+#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
+#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
+#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
+#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
+#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
+fn extend_then_write_in_hole(config: RepoConfig) -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .config(config)
+        .password(b"Password")
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+    let mut object = repo.insert(String::from("test"));
+
+    let data = random_buffer();
+
+    // Extend the object before writing data.
+    object.set_len(data.len() as u64 * 2)?;
+
+    // Seek partway into the hole.
+    object.seek(SeekFrom::Start(data.len() as u64 / 2))?;
+
+    // Write in the middle of the hole.
+    object.write_all(&data)?;
+    object.commit()?;
+
+    // Calculate the expected buffer;
+    let mut expected_data = vec![0u8; data.len() * 2];
+    let buffer_start = data.len() / 2;
+    let buffer_end = buffer_start + data.len();
+    expected_data[buffer_start..buffer_end].copy_from_slice(&data);
+
+    // Read the actual data from the object.
     let mut actual_data = Vec::new();
     object.seek(SeekFrom::Start(0))?;
     object.read_to_end(&mut actual_data)?;
