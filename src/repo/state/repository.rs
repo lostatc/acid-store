@@ -21,7 +21,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use uuid::Uuid;
 
-use super::info::{ObjectId, RepoKey, RepoState, StateRestore};
+use super::info::{ObjectKey, RepoKey, RepoState, StateRestore};
 use crate::repo::common::{IdTable, UniqueId};
 use crate::repo::{key::KeyRepo, Commit, Object, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint};
 
@@ -114,18 +114,18 @@ where
         Ok(())
     }
 
-    /// Create a new `ObjectId` for the given `object_id`.
-    fn new_id(&self, object_id: UniqueId) -> ObjectId {
-        ObjectId {
+    /// Create a new `ObjectKey` for the given `object_id`.
+    fn new_id(&self, object_id: UniqueId) -> ObjectKey {
+        ObjectKey {
             repo_id: self.repo.info().id(),
             instance_id: self.repo.instance(),
             object_id,
         }
     }
 
-    /// Return whether the given ID belongs to this repository and instance.
-    fn check_id(&self, id: ObjectId) -> bool {
-        id.repo_id == self.repo.info().id() && id.instance_id == self.repo.instance()
+    /// Return whether the given key belongs to this repository and instance.
+    fn check_key(&self, key: ObjectKey) -> bool {
+        key.repo_id == self.repo.info().id() && key.instance_id == self.repo.instance()
     }
 
     /// Return a reference to the encapsulated state.
@@ -138,19 +138,19 @@ where
         &mut self.state
     }
 
-    /// Return whether there is an object with the given `id` in this repository.
-    pub fn contains(&self, id: ObjectId) -> bool {
-        self.check_id(id) && self.repo.contains(&RepoKey::Object(id.object_id))
+    /// Return whether there is an object with the given `key` in this repository.
+    pub fn contains(&self, key: ObjectKey) -> bool {
+        self.check_key(key) && self.repo.contains(&RepoKey::Object(key.object_id))
     }
 
-    /// Create a new object in the repository and returns its `ObjectId`.
-    pub fn create(&mut self) -> ObjectId {
+    /// Create a new object in the repository and returns its `ObjectKey`.
+    pub fn create(&mut self) -> ObjectKey {
         let object_id = self.id_table.next();
         self.repo.insert(RepoKey::Object(object_id));
         self.new_id(object_id)
     }
 
-    /// Remove the object with the given `id` from the repository.
+    /// Remove the object with the given `key` from the repository.
     ///
     /// This returns `true` if the object was removed or `false` if it didn't exist.
     ///
@@ -158,46 +158,46 @@ where
     /// are committed and [`Commit::clean`] is called.
     ///
     /// [`Commit::clean`]: crate::repo::Commit::clean
-    pub fn remove(&mut self, id: ObjectId) -> bool {
-        if !self.check_id(id) {
+    pub fn remove(&mut self, key: ObjectKey) -> bool {
+        if !self.check_key(key) {
             return false;
         }
 
-        if !self.id_table.recycle(id.object_id) {
+        if !self.id_table.recycle(key.object_id) {
             return false;
         }
 
-        assert!(self.repo.remove(&RepoKey::Object(id.object_id)));
+        assert!(self.repo.remove(&RepoKey::Object(key.object_id)));
 
         true
     }
 
-    /// Return an `Object` for reading the object with the given `id`.
+    /// Return an `Object` for reading and writing the object with the given `key`.
     ///
-    /// This returns `None` if there is no object with the given `id` in the repository.
-    pub fn object(&self, id: ObjectId) -> Option<Object> {
-        if !self.check_id(id) {
+    /// This returns `None` if there is no object with the given `key` in the repository.
+    pub fn object(&self, key: ObjectKey) -> Option<Object> {
+        if !self.check_key(key) {
             return None;
         }
 
-        self.repo.object(&RepoKey::Object(id.object_id))
+        self.repo.object(&RepoKey::Object(key.object_id))
     }
 
-    /// Return an iterator over all the IDs of objects in this repository.
-    pub fn list(&self) -> impl Iterator<Item = ObjectId> + '_ {
+    /// Return an iterator over all the keys of objects in this repository.
+    pub fn keys(&self) -> impl Iterator<Item = ObjectKey> + '_ {
         self.repo.keys().filter_map(move |key| match key {
             RepoKey::Object(object_id) => Some(self.new_id(*object_id)),
             _ => None,
         })
     }
 
-    /// Create a copy of the object at `source` and return its `ObjectId`.
+    /// Create a copy of the object at `source` and return its `ObjectKey`.
     ///
     /// If there was no object at `source`, this returns `None`.
     ///
     /// This is a cheap operation which does not require copying the bytes in the object.
-    pub fn copy(&mut self, source: ObjectId) -> Option<ObjectId> {
-        if !self.check_id(source) || !self.repo.contains(&RepoKey::Object(source.object_id)) {
+    pub fn copy(&mut self, source: ObjectKey) -> Option<ObjectKey> {
+        if !self.check_key(source) || !self.repo.contains(&RepoKey::Object(source.object_id)) {
             return None;
         }
         let dest_id = self.id_table.next();
@@ -211,13 +211,13 @@ where
 
     /// Verify the integrity of all the data in the repository.
     ///
-    /// This returns the set of IDs of objects which are corrupt.
+    /// This returns the set of keys of objects which are corrupt.
     ///
     /// # Errors
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn verify(&self) -> crate::Result<HashSet<ObjectId>> {
+    pub fn verify(&self) -> crate::Result<HashSet<ObjectKey>> {
         Ok(self
             .repo
             .verify()?

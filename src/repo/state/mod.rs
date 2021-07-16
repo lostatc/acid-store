@@ -29,19 +29,19 @@
 //! the value the repository state will have when the repository is created or when
 //! [`clear_instance`] is called.
 //!
-//! 2. Objects are accessed via [`ObjectId`] values instead of generic keys. Creating a new object
-//! returns an [`ObjectId`] value which can be used to access the object. These [`ObjectId`] values
-//! are opaque, but they're serializable, meaning that an [`ObjectId`] can be written to another
-//! object or stored in the repository state.
+//! 2. Objects are accessed via [`ObjectKey`] values instead of generic keys. Creating a new object
+//! returns an [`ObjectKey`] value which can be used to access the object. These [`ObjectKey`]
+//! values are opaque, but they're serializable, meaning that an [`ObjectKey`] can be written to
+//! another object or stored in the repository state.
 //!
 //! [`StateRepo`]: crate::repo::state::StateRepo
 //! [`KeyRepo`]: crate::repo::key::KeyRepo
 //! [`state`]: crate::repo::state::StateRepo::state
 //! [`state_mut`]: crate::repo::state::StateRepo::state_mut
 //! [`clear_instance`]: crate::repo::state::StateRepo::clear_instance
-//! [`ObjectId`]: crate::repo::state::ObjectId
+//! [`ObjectKey`]: crate::repo::state::ObjectKey
 
-pub use self::info::ObjectId;
+pub use self::info::ObjectKey;
 pub use self::repository::StateRepo;
 
 mod info;

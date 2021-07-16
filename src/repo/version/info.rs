@@ -19,7 +19,7 @@ use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 
-use crate::repo::state::ObjectId;
+use crate::repo::state::ObjectKey;
 use crate::repo::ContentId;
 
 /// Information about a version in a [`VersionRepo`].
@@ -67,7 +67,7 @@ pub struct VersionInfo {
     pub(super) created: SystemTime,
 
     /// The handle of the object which contains the contents of the version.
-    pub(super) id: ObjectId,
+    pub(super) id: ObjectKey,
 }
 
 /// Information associated with each key.
@@ -77,5 +77,5 @@ pub struct KeyInfo {
     pub versions: BTreeMap<u32, VersionInfo>,
 
     /// The handle of the object which contains the current contents.
-    pub object: ObjectId,
+    pub object: ObjectKey,
 }

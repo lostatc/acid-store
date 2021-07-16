@@ -16,7 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::repo::state::ObjectId;
+use crate::repo::state::ObjectKey;
 
 use super::metadata::FileMetadata;
 use super::special::SpecialType;
@@ -109,7 +109,7 @@ impl<S: SpecialType, M: FileMetadata> Entry<S, M> {
 /// A type of entry handle.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum EntryType {
-    File(ObjectId),
+    File(ObjectKey),
     Directory,
     Special,
 }
@@ -117,6 +117,6 @@ pub enum EntryType {
 /// A handle for accessing the data associated with each entry.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct EntryHandle {
-    pub entry: ObjectId,
+    pub entry: ObjectKey,
     pub entry_type: EntryType,
 }

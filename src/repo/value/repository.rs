@@ -26,11 +26,11 @@ use uuid::Uuid;
 
 use crate::repo::{
     key::{Key, KeyRepo},
-    state::{ObjectId, StateRepo},
+    state::{ObjectKey, StateRepo},
     Commit, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint,
 };
 
-type RepoState<K> = HashMap<K, ObjectId>;
+type RepoState<K> = HashMap<K, ObjectKey>;
 
 /// A persistent, heterogeneous, map-like collection.
 ///
