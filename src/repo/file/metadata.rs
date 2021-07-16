@@ -280,6 +280,7 @@ pub struct UnixMetadata {
     /// calculated automatically using [`update_acl`].
     ///
     /// [`FileMetadata::write_metadata`]: crate::repo::file::FileMetadata::write_metadata
+    /// [`update_acl`]: crate::repo::file::UnixMetadata::update_acl
     pub acl: Acl,
 }
 
