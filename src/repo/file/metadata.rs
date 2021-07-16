@@ -170,6 +170,7 @@ fn other_perm(mode: u32) -> u32 {
 }
 
 /// Calculate the `AccessMode` for the ACL mask entry.
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
 fn calculate_mask(acl: &HashMap<AccessQualifier, AccessMode>, mode: u32) -> AccessMode {
     let mut mask_perm = acl
         .iter()
