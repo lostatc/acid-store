@@ -24,7 +24,7 @@ use uuid::Uuid;
 
 use crate::repo::{
     key::KeyRepo,
-    state::{ObjectId, StateRepo},
+    state::{ObjectKey, StateRepo},
     Commit, OpenRepo, ReadOnlyObject, RepoInfo, RestoreSavepoint, Savepoint,
 };
 
@@ -34,13 +34,13 @@ use super::hash::{HashAlgorithm, BUFFER_SIZE, DEFAULT_ALGORITHM};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoState {
     /// A map of content hashes to IDs for the objects which store the contents.
-    pub table: HashMap<Vec<u8>, ObjectId>,
+    pub table: HashMap<Vec<u8>, ObjectKey>,
 
     /// The currently selected hash algorithm.
     pub algorithm: HashAlgorithm,
 
     /// The ID of the object which is used to store data while calculating its hash.
-    pub stage: Option<ObjectId>,
+    pub stage: Option<ObjectKey>,
 }
 
 impl Default for RepoState {

@@ -51,11 +51,11 @@ impl<State: Clone> Restore for StateRestore<State> {
     }
 }
 
-/// An opaque ID which uniquely identifies an object in a [`StateRepo`].
+/// An opaque key which can be used to access an object in a [`StateRepo`].
 ///
 /// [`StateRepo`]: crate::repo::state::StateRepo
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
-pub struct ObjectId {
+pub struct ObjectKey {
     pub(super) repo_id: Uuid,
     pub(super) instance_id: Uuid,
     pub(super) object_id: UniqueId,
