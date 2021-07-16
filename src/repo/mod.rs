@@ -116,8 +116,8 @@
 //! [`VersionRepo`]: crate::repo::version::VersionRepo
 
 pub use self::common::{
-    peek_info, Chunking, Commit, Compression, ContentId, Encryption, Object, OpenMode, OpenOptions,
-    OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit, Restore,
+    peek_info, Chunking, Commit, Compression, ContentId, Encryption, Object, ObjectId, OpenMode,
+    OpenOptions, OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoInfo, ResourceLimit, Restore,
     RestoreSavepoint, Savepoint, SwitchInstance, DEFAULT_INSTANCE,
 };
 

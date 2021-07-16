@@ -60,6 +60,51 @@ impl ObjectHandle {
     }
 }
 
+/// A value that represents the identity of an object.
+///
+/// This value can be used to determine if two [`Object`] or [`ReadOnlyObject`] instances refer to
+/// the same underlying object in the repository. This is different from a [`ContentId`], which is
+/// used to compare the contents of objects.
+///
+/// # Examples
+/// ```
+/// # use acid_store::repo::{OpenOptions, OpenMode};
+/// # use acid_store::store::MemoryConfig;
+/// # use acid_store::repo::key::KeyRepo;
+/// let mut repo: KeyRepo<String> = OpenOptions::new()
+///    .mode(OpenMode::CreateNew)
+///    .open(&MemoryConfig::new())
+///    .unwrap();
+///
+/// let apple1 = repo.insert(String::from("Apple"));
+/// let apple2 = repo.object("Apple").unwrap();
+/// let orange = repo.insert(String::from("Orange"));
+///
+/// assert_eq!(apple1.object_id(), apple2.object_id());
+/// assert_ne!(apple1.object_id(), orange.object_id());
+/// assert_ne!(apple2.object_id(), orange.object_id());
+/// ```
+///
+/// [`Object`]: crate::repo::Object
+/// [`ReadOnlyObject`]: crate::repo::ReadOnlyObject
+/// [`ContentId`]: crate::repo::ContentId
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub struct ObjectId {
+    repo_id: Uuid,
+    instance_id: Uuid,
+    handle_id: UniqueId,
+}
+
+impl ObjectId {
+    pub(super) fn new(repo_id: Uuid, instance_id: Uuid, handle_id: UniqueId) -> Self {
+        Self {
+            repo_id,
+            instance_id,
+            handle_id,
+        }
+    }
+}
+
 /// A value that uniquely identifies the contents of an object at a certain point in time.
 ///
 /// A `ContentId` is like a checksum of the data in an object except it is cheap to compute.

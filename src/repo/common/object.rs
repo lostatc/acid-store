@@ -22,7 +22,7 @@ use std::sync::{Arc, RwLock, Weak};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use super::handle::{ContentId, ObjectHandle};
+use super::handle::{ContentId, ObjectHandle, ObjectId};
 use super::object_store::ObjectStore;
 use super::state::{ObjectState, RepoState};
 
@@ -38,11 +38,12 @@ use super::state::{ObjectState, RepoState};
 /// `Object` with uncommitted changes will return [`Error::TransactionInProgress`].
 ///
 /// It is possible to have multiple `Object` and [`ReadOnlyObject`] instances which all refer to the
-/// same object. Different instances can all read from the object concurrently, but only one
-/// instance can have a transaction in progress. Attempting to write to an `Object` if another
+/// same underlying object. Different instances can all read from the object concurrently, but only
+/// one instance can have a transaction in progress. Attempting to write to an `Object` if another
 /// instance already has a transaction in progress will return [`Error::TransactionInProgress`].
 /// Additionally, changes to an object are not visible to other instances until the transaction is
-/// committed.
+/// committed. You can use [`object_id`] to determine if two `Object` or [`ReadOnlyObject`]
+/// instances refer to the same underlying object.
 ///
 /// An object can be invalidated, in which case methods of `Object` and [`ReadOnlyObject`] will
 /// return [`Error::InvalidObject`]. An object is invalidated when:
@@ -69,6 +70,7 @@ use super::state::{ObjectState, RepoState};
 /// [`Commit::clean`]: crate::repo::Commit::clean
 /// [`Error::TransactionInProgress`]: crate::Error::TransactionInProgress
 /// [`ReadOnlyObject`]: crate::repo::ReadOnlyObject
+/// [`object_id`]: crate::repo::Object::object_id
 /// [`Error::InvalidObject`]: crate::Error::InvalidObject
 /// [`is_valid`]: crate::repo::Object::is_valid
 /// [`Error::InvalidData`]: crate::Error::InvalidData
@@ -83,12 +85,19 @@ pub struct Object {
 
     /// The state for the object itself.
     object_state: ObjectState,
+
+    /// The `ObjectId` which uniquely identifies this object.
+    ///
+    /// This value is passed in separately so that `object_id` can return a value even if there is a
+    /// transaction in progress or the object has been invalidated.
+    object_id: ObjectId,
 }
 
 impl Object {
     pub(super) fn new(
         repo_state: &Arc<RwLock<RepoState>>,
         handle: &Arc<RwLock<ObjectHandle>>,
+        object_id: ObjectId,
     ) -> Self {
         let metadata = &repo_state.read().unwrap().metadata;
         let object_state = ObjectState::new(metadata.config.chunking.to_chunker());
@@ -96,6 +105,7 @@ impl Object {
             repo_state: Arc::downgrade(repo_state),
             handle: Arc::downgrade(handle),
             object_state,
+            object_id,
         }
     }
 
@@ -109,6 +119,11 @@ impl Object {
             .info_guard(&self.object_state)
             .info()
             .size()
+    }
+
+    /// Return an `ObjectId` representing the identity of the object.
+    pub fn object_id(&self) -> ObjectId {
+        self.object_id
     }
 
     /// Return a `ContentId` representing the contents of the object.
@@ -296,6 +311,11 @@ impl ReadOnlyObject {
     /// [`Object::size`]: crate::repo::Object::size
     pub fn size(&self) -> crate::Result<u64> {
         self.0.size()
+    }
+
+    /// Return an `ObjectId` representing the identity of the object.
+    pub fn object_id(&self) -> ObjectId {
+        self.0.object_id()
     }
 
     /// Return a `ContentId` representing the contents of this object.
