@@ -861,7 +861,7 @@ fn write_unix_metadata() -> anyhow::Result<()> {
         group: 1000,
         attributes: HashMap::new(),
         acl: Acl {
-            access: hashmap! { AccessQualifier::User(1001) => AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE },
+            access: hashmap! { AccessQualifier::User(65533) => AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE },
             default: HashMap::new(),
         },
     };
@@ -914,7 +914,7 @@ fn write_unix_metadata() -> anyhow::Result<()> {
         };
         let new_entry = AclEntry {
             kind: AclEntryKind::User,
-            name: "1001".to_string(),
+            name: "65533".to_string(),
             perms: Perm::READ | Perm::WRITE | Perm::EXECUTE,
             flags: Flag::empty(),
             allow: true,
@@ -944,7 +944,7 @@ fn read_unix_metadata() -> anyhow::Result<()> {
         let mut entries = exacl::getfacl(&source_path, AclOption::ACCESS_ACL)?;
         entries.push(AclEntry {
             kind: AclEntryKind::User,
-            name: "1001".to_string(),
+            name: "65533".to_string(),
             perms: Perm::READ | Perm::WRITE | Perm::EXECUTE,
             flags: Flag::empty(),
             allow: true,
@@ -974,7 +974,7 @@ fn read_unix_metadata() -> anyhow::Result<()> {
             entry_metadata
                 .acl
                 .access
-                .get(&AccessQualifier::User(1001))
+                .get(&AccessQualifier::User(65533))
                 .copied(),
             Some(AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE)
         );
