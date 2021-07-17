@@ -45,9 +45,7 @@ pub fn random_bytes(size: usize) -> Vec<u8> {
 
 fn create_repo_fixed() -> ObjectRepo {
     OpenOptions::new()
-        .chunking(Chunking::Fixed {
-            size: bytesize::mib(1u64) as u32,
-        })
+        .chunking(Chunking::fixed())
         .mode(OpenMode::CreateNew)
         .open(&MemoryConfig::new())
         .unwrap()
@@ -55,7 +53,7 @@ fn create_repo_fixed() -> ObjectRepo {
 
 fn create_repo_zpaq() -> ObjectRepo {
     OpenOptions::new()
-        .chunking(Chunking::Zpaq { bits: 18 })
+        .chunking(Chunking::zpaq())
         .mode(OpenMode::CreateNew)
         .open(&MemoryConfig::new())
         .unwrap()
@@ -63,11 +61,9 @@ fn create_repo_zpaq() -> ObjectRepo {
 
 fn create_repo_fixed_encryption() -> ObjectRepo {
     OpenOptions::new()
-        .chunking(Chunking::Fixed {
-            size: bytesize::mib(1u64) as u32,
-        })
+        .chunking(Chunking::fixed())
         .encryption(Encryption::XChaCha20Poly1305)
-        .packing(Packing::Fixed(bytesize::kib(64u64) as u32))
+        .packing(Packing::fixed())
         .password(b"password")
         .mode(OpenMode::CreateNew)
         .open(&MemoryConfig::new())
@@ -76,9 +72,9 @@ fn create_repo_fixed_encryption() -> ObjectRepo {
 
 fn create_repo_zpaq_encryption() -> ObjectRepo {
     OpenOptions::new()
-        .chunking(Chunking::Zpaq { bits: 18 })
+        .chunking(Chunking::zpaq())
         .encryption(Encryption::XChaCha20Poly1305)
-        .packing(Packing::Fixed(bytesize::kib(16u64) as u32))
+        .packing(Packing::fixed())
         .password(b"password")
         .mode(OpenMode::CreateNew)
         .open(&MemoryConfig::new())

@@ -60,6 +60,16 @@ impl Chunking {
             Chunking::Zpaq { bits } => Box::new(ZPAQ::new(*bits as usize)),
         }
     }
+
+    /// Return a reasonable default value of `Chunking::Fixed`.
+    pub const fn fixed() -> Self {
+        Chunking::Fixed { size: 1024 * 1024 }
+    }
+
+    /// Return a reasonable default value of `Chunking::Zpaq`.
+    pub const fn zpaq() -> Self {
+        Chunking::Zpaq { bits: 18 }
+    }
 }
 
 /// A `ChunkerImpl` which chunks data into fixed-size chunks.
