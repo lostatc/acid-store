@@ -73,8 +73,8 @@ OS | Linux 5.11
 
 Chunking | Packing | Encryption | Compression | Read | Write
 --- | --- | --- | --- | --- | ---
-Fixed | None | None | None | 4680 MiB/s | 890 MiB/s
-ZPAQ | None | None | None | 2870 MiB/s | 500 MiB/s
-Fixed | Fixed | XChaCha20-Poly1305 | None | 820 MiB/s | 600 MiB/s
-ZPAQ | Fixed | XChaCha20-Poly1305 | None | 820 MiB/s | 300 MiB/s
+Fixed | None | None | None | 6090 MiB/s | 1920 MiB/s
+ZPAQ | None | None | None | 2670 MiB/s | 520 MiB/s
+Fixed | Fixed | XChaCha20-Poly1305 | None | 870 MiB/s | 610 MiB/s
+ZPAQ | Fixed | XChaCha20-Poly1305 | None | 840 MiB/s | 300 MiB/s
 

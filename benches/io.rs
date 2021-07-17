@@ -143,7 +143,7 @@ pub fn write_object(criterion: &mut Criterion) {
                         object.write_all(data.as_slice()).unwrap();
                         object.commit().unwrap();
                     },
-                    BatchSize::PerIteration,
+                    BatchSize::LargeInput,
                 );
             },
         );
@@ -188,7 +188,7 @@ pub fn read_object(criterion: &mut Criterion) {
                         object.read_to_end(&mut buffer).unwrap();
                         buffer
                     },
-                    BatchSize::PerIteration,
+                    BatchSize::LargeInput,
                 );
             },
         );
