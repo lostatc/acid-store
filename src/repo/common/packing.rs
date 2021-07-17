@@ -43,3 +43,10 @@ pub enum Packing {
     /// This typically results in worse performance than `Packing::None`.
     Fixed(u32),
 }
+
+impl Packing {
+    /// Return a reasonable default value of `Packing::Fixed`.
+    pub const fn fixed() -> Self {
+        Packing::Fixed(1024 * 64)
+    }
+}

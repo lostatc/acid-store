@@ -85,10 +85,10 @@ pub enum OpenMode {
 ///
 /// let store_config = DirectoryConfig { path: "/path/to/store".into() };
 /// let mut repo: KeyRepo<String> = OpenOptions::new()
-///     .chunking(Chunking::Zpaq { bits: 18 })
+///     .chunking(Chunking::zpaq())
 ///     .compression(Compression::Lz4 { level: 1 })
 ///     .encryption(Encryption::XChaCha20Poly1305)
-///     .packing(Packing::Fixed(1024 * 16))
+///     .packing(Packing::fixed())
 ///     .password(b"password")
 ///     .mode(OpenMode::Create)
 ///     .open(&store_config)
@@ -101,10 +101,10 @@ pub enum OpenMode {
 /// use acid_store::store::DirectoryConfig;
 ///
 /// let mut repo_config = RepoConfig::default();
-/// repo_config.chunking = Chunking::Zpaq { bits: 18 };
+/// repo_config.chunking = Chunking::zpaq();
 /// repo_config.compression = Compression::Lz4 { level: 1 };
 /// repo_config.encryption = Encryption::XChaCha20Poly1305;
-/// repo_config.packing = Packing::Fixed(1024 * 16);
+/// repo_config.packing = Packing::fixed();
 ///
 /// let store_config = DirectoryConfig { path: "/path/to/store".into() };
 /// let mut repo: KeyRepo<String> = OpenOptions::new()
