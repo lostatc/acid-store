@@ -29,6 +29,12 @@ use once_cell::sync::Lazy;
 /// The object key to use when performing I/O tests.
 const TEST_KEY: &str = "test";
 
+/// The criterion sample size to use.
+const SAMPLE_SIZE: usize = 100;
+
+/// The criterion measurement time.
+const MEASUREMENT_TIME: Duration = Duration::from_secs(30);
+
 /// The size of the data to read and write to objects.
 static OBJECT_SIZE: Lazy<u64> = Lazy::new(|| bytesize::mib(1u64));
 
@@ -110,8 +116,8 @@ pub fn write_object(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("Write to an object");
 
     group.throughput(Throughput::Bytes(*OBJECT_SIZE));
-    group.measurement_time(Duration::from_secs(10));
-    group.sample_size(50);
+    group.sample_size(SAMPLE_SIZE);
+    group.measurement_time(MEASUREMENT_TIME);
 
     for TestSpec {
         config,
@@ -148,8 +154,8 @@ pub fn read_object(criterion: &mut Criterion) {
     let mut group = criterion.benchmark_group("Read from an object");
 
     group.throughput(Throughput::Bytes(*OBJECT_SIZE));
-    group.measurement_time(Duration::from_secs(10));
-    group.sample_size(50);
+    group.sample_size(SAMPLE_SIZE);
+    group.measurement_time(MEASUREMENT_TIME);
 
     for TestSpec {
         config,
