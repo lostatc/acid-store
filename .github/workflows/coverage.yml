@@ -15,15 +15,13 @@ jobs:
           toolchain: stable
           override: true
         
-      - name: Install ACL library
-        run: sudo apt-get install libacl1-dev
+      - name: Install native dependencies
+        run: sudo apt-get install libacl1-dev libfuse-dev pkg-config
 
       - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
         with:
           args: --features 'file-metadata hash-algorithms encryption compression' --ignore-tests
-        env:
-          REDIS_URL: redis://localhost:6379
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v1.0.2

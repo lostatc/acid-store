@@ -10,8 +10,8 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Install ACL library
-        run: sudo apt-get install libacl1-dev
+      - name: Install native dependencies
+        run: sudo apt-get install libacl1-dev libfuse-dev pkg-config
 
       - name: Build
         run: cargo build --all-features
