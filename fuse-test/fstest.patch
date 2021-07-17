@@ -568,21 +568,6 @@ index b104ec6..6b67aae 100755
  echo "1..5"
  
  expect 0 create ${name255} 0644
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/truncate/12.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/truncate/12.t
-index 4d27f9a..e62b973 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/truncate/12.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/truncate/12.t
-@@ -7,8 +7,9 @@ dir=`dirname $0`
- . ${dir}/../misc.sh
- 
- case "${os}:${fs}" in
--Darwin:HFS+|Darwin:cgofuse)
-+Darwin:HFS+|Darwin:cgofuse|*:acid-store)
-     # This test makes the filesystem unusable on OS X 10.10; so disable it!
-+    # This also makes the file system unusable in acid-store.
-     quick_exit
-     ;;
- *)
 diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/unlink/00.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/unlink/00.t
 index e0e8b61..52da9e8 100755
 --- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/unlink/00.t
