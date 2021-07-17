@@ -67,14 +67,14 @@ Spec | Value
 --- | ---
 Processor | Ryzen 5 1600x
 Memory | 32 GB (3200MHz)
-OS | Linux 5.8
+OS | Linux 5.11
 
 ### Results
 
 Chunking | Packing | Encryption | Compression | Read | Write
 --- | --- | --- | --- | --- | ---
-Fixed | None | None | None | 2410 MiB/s | 1360 MiB/s
-ZPAQ | None | None | None | 2210 MiB/s | 470 MiB/s
-Fixed | Fixed | XChaCha20-Poly1305 | None | 805 MiB/s | 565 MiB/s
-ZPAQ | Fixed | XChaCha20-Poly1305 | None | 805 MiB/s | 300 MiB/s
+Fixed | None | None | None | 4680 MiB/s | 890 MiB/s
+ZPAQ | None | None | None | 2870 MiB/s | 500 MiB/s
+Fixed | Fixed | XChaCha20-Poly1305 | None | 820 MiB/s | 600 MiB/s
+ZPAQ | Fixed | XChaCha20-Poly1305 | None | 820 MiB/s | 300 MiB/s
 
