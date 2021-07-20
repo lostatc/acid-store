@@ -25,7 +25,7 @@ use relative_path::RelativePath;
 use time::Timespec;
 
 use crate::repo::file::{
-    AccessMode, AccessQualifier, Acl, AclType, Entry, FileRepo, FileType, UnixMetadata,
+    AccessMode, AccessQualifier, Acl, AclType, Entry, EntryType, FileRepo, UnixMetadata,
     UnixSpecialType,
 };
 
@@ -248,16 +248,16 @@ impl Entry<UnixSpecialType, UnixMetadata> {
     }
 }
 
-impl FileType<UnixSpecialType> {
+impl EntryType<UnixSpecialType> {
     /// Convert this `FileType` to a `fuse`-compatible file type.
     pub(super) fn to_file_type(&self) -> FuseFileType {
         match self {
-            FileType::File => FuseFileType::RegularFile,
-            FileType::Directory => FuseFileType::Directory,
-            FileType::Special(UnixSpecialType::BlockDevice { .. }) => FuseFileType::BlockDevice,
-            FileType::Special(UnixSpecialType::CharacterDevice { .. }) => FuseFileType::CharDevice,
-            FileType::Special(UnixSpecialType::SymbolicLink { .. }) => FuseFileType::Symlink,
-            FileType::Special(UnixSpecialType::NamedPipe { .. }) => FuseFileType::NamedPipe,
+            EntryType::File => FuseFileType::RegularFile,
+            EntryType::Directory => FuseFileType::Directory,
+            EntryType::Special(UnixSpecialType::BlockDevice { .. }) => FuseFileType::BlockDevice,
+            EntryType::Special(UnixSpecialType::CharacterDevice { .. }) => FuseFileType::CharDevice,
+            EntryType::Special(UnixSpecialType::SymbolicLink { .. }) => FuseFileType::Symlink,
+            EntryType::Special(UnixSpecialType::NamedPipe { .. }) => FuseFileType::NamedPipe,
         }
     }
 }

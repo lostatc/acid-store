@@ -40,7 +40,7 @@ use super::object::ObjectTable;
 
 use crate::repo::file::fuse::metadata::to_system_time;
 use crate::repo::file::{
-    repository::EMPTY_PATH, AccessQualifier, Entry, FileRepo, FileType, UnixMetadata,
+    repository::EMPTY_PATH, AccessQualifier, Entry, EntryType, FileRepo, UnixMetadata,
     UnixSpecialType,
 };
 use crate::repo::{Commit, RestoreSavepoint};
@@ -155,14 +155,14 @@ impl<'a> FuseAdapter<'a> {
         let default_metadata = entry.default_metadata(req);
         let metadata = entry.metadata.as_ref().unwrap_or(&default_metadata);
 
-        let size = match &entry.file_type {
-            FileType::File => self
+        let size = match &entry.kind {
+            EntryType::File => self
                 .objects
                 .open_commit(inode, self.repo.open(entry_path).unwrap())?
                 .size()
                 .unwrap(),
-            FileType::Directory => 0,
-            FileType::Special(special) => match special {
+            EntryType::Directory => 0,
+            EntryType::Special(special) => match special {
                 // The `st_size` of a symlink should be the length of the pathname it contains.
                 UnixSpecialType::SymbolicLink { target } => target.as_os_str().len() as u64,
                 _ => 0,
@@ -184,10 +184,10 @@ impl<'a> FuseAdapter<'a> {
             mtime: to_timespec(metadata.modified),
             ctime: to_timespec(metadata.changed),
             crtime: to_timespec(SystemTime::now()),
-            kind: match &entry.file_type {
-                FileType::File => fuse::FileType::RegularFile,
-                FileType::Directory => fuse::FileType::Directory,
-                FileType::Special(special) => match special {
+            kind: match &entry.kind {
+                EntryType::File => fuse::FileType::RegularFile,
+                EntryType::Directory => fuse::FileType::Directory,
+                EntryType::Special(special) => match special {
                     UnixSpecialType::SymbolicLink { .. } => fuse::FileType::Symlink,
                     UnixSpecialType::NamedPipe => fuse::FileType::NamedPipe,
                     UnixSpecialType::BlockDevice { .. } => fuse::FileType::BlockDevice,
@@ -198,8 +198,8 @@ impl<'a> FuseAdapter<'a> {
             nlink: 1,
             uid: metadata.user,
             gid: metadata.group,
-            rdev: match &entry.file_type {
-                FileType::Special(special) => match special {
+            rdev: match &entry.kind {
+                EntryType::Special(special) => match special {
                     UnixSpecialType::BlockDevice { major, minor } => {
                         stat::makedev(*major, *minor) as u32
                     }
@@ -315,7 +315,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let default_metadata = entry.default_metadata(req);
         entry.metadata.get_or_insert(default_metadata);
 
-        let file_type = entry.file_type;
+        let file_type = entry.kind;
         let mut metadata = entry.metadata.unwrap();
 
         if let Some(mode) = mode {
@@ -369,7 +369,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                 fs.repo.set_metadata(&entry_path, Some(metadata.clone()))?;
 
                 let entry = Entry {
-                    file_type,
+                    kind,
                     metadata: Some(metadata),
                 };
                 fs.entry_attr(&entry, ino, req)
@@ -389,8 +389,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     fn readlink(&mut self, _req: &Request, ino: u64, reply: ReplyData) {
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
         let entry = try_result!(self.repo.entry(&entry_path), reply);
-        match &entry.file_type {
-            FileType::Special(UnixSpecialType::SymbolicLink { target }) => {
+        match &entry.kind {
+            EntryType::Special(UnixSpecialType::SymbolicLink { target }) => {
                 reply.data(target.as_os_str().as_bytes());
             }
             _ => {
@@ -414,17 +414,17 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let entry_path = parent_path.join(file_name);
 
         let file_type = if flags.contains(SFlag::S_IFREG) {
-            FileType::File
+            EntryType::File
         } else if flags.contains(SFlag::S_IFCHR) {
             let major = stat::major(rdev as u64);
             let minor = stat::minor(rdev as u64);
-            FileType::Special(UnixSpecialType::CharacterDevice { major, minor })
+            EntryType::Special(UnixSpecialType::CharacterDevice { major, minor })
         } else if flags.contains(SFlag::S_IFBLK) {
             let major = stat::major(rdev as u64);
             let minor = stat::minor(rdev as u64);
-            FileType::Special(UnixSpecialType::BlockDevice { major, minor })
+            EntryType::Special(UnixSpecialType::BlockDevice { major, minor })
         } else if flags.contains(SFlag::S_IFIFO) {
-            FileType::Special(UnixSpecialType::NamedPipe)
+            EntryType::Special(UnixSpecialType::NamedPipe)
         } else if flags.contains(SFlag::S_IFSOCK) {
             // Sockets aren't supported by `FileRepo`. `mknod(2)` specifies that `EPERM`
             // should be returned if the file system doesn't support the type of node being
@@ -439,7 +439,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         let parent_entry = try_result!(self.repo.entry(&parent_path), reply);
         let entry = Entry {
-            file_type,
+            kind: file_type,
             metadata: None,
         }
         .with_metadata(req)
@@ -879,7 +879,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             let file_name = child_path.file_name().unwrap().to_string();
             let inode = self.inodes.inode(&child_path).unwrap();
             let file_type = try_result!(self.repo.entry(&child_path), reply)
-                .file_type
+                .kind
                 .to_file_type();
             entries.push(DirectoryEntry {
                 file_name,

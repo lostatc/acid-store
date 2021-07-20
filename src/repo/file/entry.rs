@@ -21,9 +21,9 @@ use crate::repo::state::ObjectKey;
 use super::metadata::FileMetadata;
 use super::special::SpecialType;
 
-/// A type of file in a `FileRepo`.
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FileType<S> {
+/// A type of entry in a `FileRepo`.
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+pub enum EntryType<S> {
     /// A regular file.
     File,
 
@@ -34,9 +34,9 @@ pub enum FileType<S> {
     Special(S),
 }
 
-impl<S: SpecialType> From<S> for FileType<S> {
+impl<S: SpecialType> From<S> for EntryType<S> {
     fn from(file: S) -> Self {
-        FileType::Special(file)
+        EntryType::Special(file)
     }
 }
 
@@ -50,10 +50,10 @@ impl<S: SpecialType> From<S> for FileType<S> {
 /// [`FileRepo`]: crate::repo::file::FileRepo
 /// [`FileRepo::archive`]: crate::repo::file::FileRepo::archive
 /// [`FileRepo::extract`]: crate::repo::file::FileRepo::extract
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct Entry<S, M> {
     /// The type of file this entry represents.
-    pub file_type: FileType<S>,
+    pub kind: EntryType<S>,
 
     /// The metadata for the file or `None` if the entry has no metadata.
     pub metadata: Option<M>,
@@ -65,7 +65,7 @@ impl<S: SpecialType, M: FileMetadata> Entry<S, M> {
     /// The created entry will have no metadata.
     pub fn file() -> Self {
         Entry {
-            file_type: FileType::File,
+            kind: EntryType::File,
             metadata: None,
         }
     }
@@ -75,7 +75,7 @@ impl<S: SpecialType, M: FileMetadata> Entry<S, M> {
     /// The created entry will have no metadata.
     pub fn directory() -> Self {
         Entry {
-            file_type: FileType::Directory,
+            kind: EntryType::Directory,
             metadata: None,
         }
     }
@@ -85,30 +85,30 @@ impl<S: SpecialType, M: FileMetadata> Entry<S, M> {
     /// The created entry will have no metadata.
     pub fn special(file: S) -> Self {
         Entry {
-            file_type: FileType::Special(file),
+            kind: EntryType::Special(file),
             metadata: None,
         }
     }
 
     /// Return whether this entry is a regular file.
     pub fn is_file(&self) -> bool {
-        matches!(self.file_type, FileType::File)
+        matches!(self.kind, EntryType::File)
     }
 
     /// Return whether this entry is a directory.
     pub fn is_directory(&self) -> bool {
-        matches!(self.file_type, FileType::Directory)
+        matches!(self.kind, EntryType::Directory)
     }
 
     /// Return whether this entry is a special file.
     pub fn is_special(&self) -> bool {
-        matches!(self.file_type, FileType::Special(..))
+        matches!(self.kind, EntryType::Special(_))
     }
 }
 
 /// A type of entry handle.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum EntryType {
+pub enum HandleType {
     File(ObjectKey),
     Directory,
     Special,
@@ -118,5 +118,5 @@ pub enum EntryType {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct EntryHandle {
     pub entry: ObjectKey,
-    pub entry_type: EntryType,
+    pub kind: HandleType,
 }
