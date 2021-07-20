@@ -88,7 +88,7 @@ pub use {
     self::special::UnixSpecialType,
 };
 
-pub use self::entry::{Entry, FileType};
+pub use self::entry::{Entry, EntryType};
 #[cfg(feature = "file-metadata")]
 pub use self::metadata::CommonMetadata;
 pub use self::metadata::{FileMetadata, NoMetadata};

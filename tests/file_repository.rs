@@ -34,7 +34,7 @@ use common::{assert_contains_all, random_buffer};
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
     acid_store::repo::file::{
-        AccessMode, AccessQualifier, Acl, CommonMetadata, FileType, UnixMetadata, UnixSpecialType,
+        AccessMode, AccessQualifier, Acl, CommonMetadata, EntryType, UnixMetadata, UnixSpecialType,
     },
     nix::sys::stat::{Mode, SFlag},
     nix::unistd::mkfifo,
@@ -646,16 +646,16 @@ fn archive_unix_special_files() -> anyhow::Result<()> {
     let symlink_entry = repository.entry("dest/symlink")?;
     let device_entry = repository.entry("dest/device")?;
 
-    assert_eq!(fifo_entry.file_type, UnixSpecialType::NamedPipe.into());
+    assert_eq!(fifo_entry.kind, UnixSpecialType::NamedPipe.into());
     assert_eq!(
-        symlink_entry.file_type,
+        symlink_entry.kind,
         UnixSpecialType::SymbolicLink {
             target: "/dev/null".into()
         }
         .into()
     );
     assert_eq!(
-        device_entry.file_type,
+        device_entry.kind,
         UnixSpecialType::CharacterDevice { major: 1, minor: 3 }.into()
     );
     Ok(())
@@ -870,7 +870,7 @@ fn write_unix_metadata() -> anyhow::Result<()> {
         },
     };
     let entry = Entry {
-        file_type: FileType::File,
+        kind: EntryType::File,
         metadata: Some(entry_metadata.clone()),
     };
 
@@ -1002,7 +1002,7 @@ fn write_common_metadata() -> anyhow::Result<()> {
         accessed: SystemTime::UNIX_EPOCH,
     };
     let entry = Entry {
-        file_type: FileType::File,
+        kind: EntryType::File,
         metadata: Some(entry_metadata.clone()),
     };
 

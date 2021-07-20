@@ -31,7 +31,7 @@ use crate::repo::{
     key::KeyRepo, state::StateRepo, Commit, Object, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint,
 };
 
-use super::entry::{Entry, EntryHandle, EntryType, FileType};
+use super::entry::{Entry, EntryHandle, EntryType, HandleType};
 use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
 use super::special::{NoSpecialType, SpecialType};
@@ -101,7 +101,7 @@ where
     /// If there is no entry at `path`, this returns `false`.
     pub fn is_file(&self, path: impl AsRef<RelativePath>) -> bool {
         match self.0.state().get(path.as_ref()) {
-            Some(entry) => matches!(entry.entry_type, EntryType::File(_)),
+            Some(entry) => matches!(entry.kind, HandleType::File(_)),
             None => false,
         }
     }
@@ -111,7 +111,7 @@ where
     /// If there is no entry at `path`, this returns `false`.
     pub fn is_directory(&self, path: impl AsRef<RelativePath>) -> bool {
         match self.0.state().get(path.as_ref()) {
-            Some(entry) => matches!(entry.entry_type, EntryType::Directory),
+            Some(entry) => matches!(entry.kind, HandleType::Directory),
             None => false,
         }
     }
@@ -121,7 +121,7 @@ where
     /// If there is no entry at `path`, this returns `false`.
     pub fn is_special(&self, path: impl AsRef<RelativePath>) -> bool {
         match self.0.state().get(path.as_ref()) {
-            Some(entry) => matches!(entry.entry_type, EntryType::Special),
+            Some(entry) => matches!(entry.kind, HandleType::Special),
             None => false,
         }
     }
@@ -135,9 +135,9 @@ where
             Some(parent) if parent == *EMPTY_PATH => Ok(()),
             // This path has a parent segment.
             Some(parent) => match self.0.state().get(parent) {
-                Some(handle) => match handle.entry_type {
-                    EntryType::File(_) | EntryType::Special => Err(crate::Error::NotDirectory),
-                    EntryType::Directory => Ok(()),
+                Some(handle) => match handle.kind {
+                    HandleType::File(_) | HandleType::Special => Err(crate::Error::NotDirectory),
+                    HandleType::Directory => Ok(()),
                 },
                 None => Err(crate::Error::NotFound),
             },
@@ -216,15 +216,15 @@ where
             return Err(error);
         }
 
-        let entry_type = match entry.file_type {
-            FileType::File => EntryType::File(self.0.create()),
-            FileType::Directory => EntryType::Directory,
-            FileType::Special(_) => EntryType::Special,
+        let entry_type = match entry.kind {
+            EntryType::File => HandleType::File(self.0.create()),
+            EntryType::Directory => HandleType::Directory,
+            EntryType::Special(_) => HandleType::Special,
         };
 
         let handle = EntryHandle {
             entry: entry_id,
-            entry_type,
+            kind: entry_type,
         };
 
         self.0.state_mut().insert(path.as_ref(), handle);
@@ -293,7 +293,7 @@ where
         }
 
         let entry_handle = self.0.state_mut().remove(path.as_ref()).unwrap();
-        if let EntryType::File(object_id) = entry_handle.entry_type {
+        if let HandleType::File(object_id) = entry_handle.kind {
             self.0.remove(object_id);
         }
         self.0.remove(entry_handle.entry);
@@ -325,7 +325,7 @@ where
             .collect::<Vec<_>>();
 
         for handle in handles {
-            if let EntryType::File(object_id) = &handle.entry_type {
+            if let HandleType::File(object_id) = &handle.kind {
                 self.0.remove(*object_id);
             }
             self.0.remove(handle.entry);
@@ -403,7 +403,7 @@ where
             .get(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
 
-        if let EntryType::File(object_id) = entry_handle.entry_type {
+        if let HandleType::File(object_id) = entry_handle.kind {
             Ok(self.0.object(object_id).unwrap())
         } else {
             Err(crate::Error::NotFile)
@@ -415,10 +415,10 @@ where
         let new_entry_id = self.0.copy(handle.entry).unwrap();
         EntryHandle {
             entry: new_entry_id,
-            entry_type: match handle.entry_type {
-                EntryType::File(file_id) => EntryType::File(self.0.copy(file_id).unwrap()),
-                EntryType::Directory => EntryType::Directory,
-                EntryType::Special => EntryType::Special,
+            kind: match handle.kind {
+                HandleType::File(file_id) => HandleType::File(self.0.copy(file_id).unwrap()),
+                HandleType::Directory => HandleType::Directory,
+                HandleType::Special => HandleType::Special,
             },
         }
     }
@@ -560,7 +560,7 @@ where
                 .state()
                 .get(parent.as_ref())
                 .ok_or(crate::Error::NotFound)?;
-            if !matches!(entry_handle.entry_type, EntryType::Directory) {
+            if !matches!(entry_handle.kind, HandleType::Directory) {
                 return Err(crate::Error::NotDirectory);
             }
         }
@@ -589,7 +589,7 @@ where
                 .state()
                 .get(parent.as_ref())
                 .ok_or(crate::Error::NotFound)?;
-            if !matches!(entry_handle.entry_type, EntryType::Directory) {
+            if !matches!(entry_handle.kind, HandleType::Directory) {
                 return Err(crate::Error::NotDirectory);
             }
         }
@@ -632,15 +632,15 @@ where
         let file_metadata = metadata(&source)?;
 
         let file_type = if file_metadata.is_file() {
-            FileType::File
+            EntryType::File
         } else if file_metadata.is_dir() {
-            FileType::Directory
+            EntryType::Directory
         } else {
-            FileType::Special(S::from_file(source.as_ref())?.ok_or(crate::Error::FileType)?)
+            EntryType::Special(S::from_file(source.as_ref())?.ok_or(crate::Error::FileType)?)
         };
 
         let entry = Entry {
-            file_type,
+            kind: file_type,
             metadata: Some(M::from_file(source.as_ref())?),
         };
 
@@ -648,7 +648,7 @@ where
 
         // Write the contents of the file entry if it's a file.
         let entry_handle = self.0.state().get(dest.as_ref()).unwrap();
-        if let EntryType::File(object_id) = entry_handle.entry_type {
+        if let HandleType::File(object_id) = entry_handle.kind {
             let mut object = self.0.object(object_id).unwrap();
             let mut file = File::open(&source)?;
             copy(&mut file, &mut object)?;
@@ -740,8 +740,8 @@ where
         }
 
         // Create the file or directory.
-        match entry.file_type {
-            FileType::File => {
+        match entry.kind {
+            EntryType::File => {
                 let mut object = self.open(source.as_ref()).unwrap();
                 let mut file = OpenOptions::new()
                     .write(true)
@@ -749,10 +749,10 @@ where
                     .open(&dest)?;
                 copy(&mut object, &mut file)?;
             }
-            FileType::Directory => {
+            EntryType::Directory => {
                 create_dir(&dest)?;
             }
-            FileType::Special(special_type) => {
+            EntryType::Special(special_type) => {
                 special_type.create_file(dest.as_ref())?;
             }
         }
@@ -833,8 +833,8 @@ where
             .unwrap()
             .filter(|(_, entry_handle)| {
                 let entry_corrupt = corrupt_keys.contains(&entry_handle.entry);
-                let file_corrupt = match &entry_handle.entry_type {
-                    EntryType::File(object_id) => corrupt_keys.contains(object_id),
+                let file_corrupt = match &entry_handle.kind {
+                    HandleType::File(object_id) => corrupt_keys.contains(object_id),
                     _ => false,
                 };
                 entry_corrupt || file_corrupt
