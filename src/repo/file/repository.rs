@@ -126,14 +126,23 @@ where
         }
     }
 
-    /// Return `true` if the given `path` has a parent directory in the repository.
-    fn has_parent(&self, path: &RelativePath) -> bool {
+    /// Validate that the parent of the given `path` exists and is a directory.
+    ///
+    /// If the `path` is a root, this returns `Ok`.
+    fn validate_parent(&self, path: &RelativePath) -> crate::Result<()> {
         match path.parent() {
-            Some(parent) if parent != *EMPTY_PATH => match self.0.state().get(parent) {
-                Some(handle) => matches!(handle.entry_type, EntryType::Directory),
-                None => false,
+            // This path is a root.
+            Some(parent) if parent == *EMPTY_PATH => Ok(()),
+            // This path has a parent segment.
+            Some(parent) => match self.0.state().get(parent) {
+                Some(handle) => match handle.entry_type {
+                    EntryType::File(_) | EntryType::Special => Err(crate::Error::NotDirectory),
+                    EntryType::Directory => Ok(()),
+                },
+                None => Err(crate::Error::NotFound),
             },
-            _ => true,
+            // This path is empty.
+            None => Err(crate::Error::InvalidPath),
         }
     }
 
@@ -178,7 +187,8 @@ where
     /// ```
     ///
     /// # Errors
-    /// - `Error::InvalidPath`: The parent of `path` does not exist or is not a directory.
+    /// - `Error::NotFound`: The parent of `path` does not exist.
+    /// - `Error::NotDirectory`: The parent of `path` is not a directory entry.
     /// - `Error::InvalidPath`: The given `path` is empty.
     /// - `Error::AlreadyExists`: There is already an entry at `path`.
     /// - `Error::Serialize`: The new file metadata could not be serialized.
@@ -191,16 +201,10 @@ where
         path: impl AsRef<RelativePath>,
         entry: &Entry<S, M>,
     ) -> crate::Result<()> {
-        if path.as_ref() == *EMPTY_PATH {
-            return Err(crate::Error::InvalidPath);
-        }
+        self.validate_parent(path.as_ref())?;
 
         if self.exists(&path) {
             return Err(crate::Error::AlreadyExists);
-        }
-
-        if !self.has_parent(path.as_ref()) {
-            return Err(crate::Error::InvalidPath);
         }
 
         let entry_id = self.0.create();
@@ -430,9 +434,10 @@ where
     /// This is a cheap operation which does not require copying the bytes in the files.
     ///
     /// # Errors
-    /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
-    /// - `Error::InvalidPath`: The given `source` or `dest` paths are empty.
+    /// - `Error::NotFound`: The parent of `dest` does not exist.
     /// - `Error::NotFound`: There is no entry at `source`.
+    /// - `Error::NotDirectory`: The parent of `dest` is not a directory entry.
+    /// - `Error::InvalidPath`: The given `source` or `dest` paths are empty.
     /// - `Error::AlreadyExists`: There is already an entry at `dest`.
     ///
     /// [`archive`]: crate::repo::file::FileRepo::archive
@@ -446,12 +451,10 @@ where
             return Err(crate::Error::InvalidPath);
         }
 
+        self.validate_parent(dest.as_ref())?;
+
         if self.exists(dest.as_ref()) {
             return Err(crate::Error::AlreadyExists);
-        }
-
-        if !self.has_parent(dest.as_ref()) {
-            return Err(crate::Error::InvalidPath);
         }
 
         let entry_handle = *self
@@ -477,9 +480,10 @@ where
     /// This is a cheap operation which does not require copying the bytes in the files.
     ///
     /// # Errors
-    /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
-    /// - `Error::InvalidPath`: The given `source` or `dest` paths are empty.
+    /// - `Error::NotFound`: The parent of `dest` does not exist.
     /// - `Error::NotFound`: There is no entry at `source`.
+    /// - `Error::NotDirectory`: The parent of `dest` is not a directory entry.
+    /// - `Error::InvalidPath`: The given `source` or `dest` paths are empty.
     /// - `Error::AlreadyExists`: There is already an entry at `dest`.
     ///
     /// [`archive_tree`]: crate::repo::file::FileRepo::archive
@@ -493,12 +497,10 @@ where
             return Err(crate::Error::InvalidPath);
         }
 
+        self.validate_parent(dest.as_ref())?;
+
         if self.exists(dest.as_ref()) {
             return Err(crate::Error::AlreadyExists);
-        }
-
-        if !self.has_parent(dest.as_ref()) {
-            return Err(crate::Error::InvalidPath);
         }
 
         // Copy the root path.
@@ -603,7 +605,8 @@ where
     /// [`FileMetadata`] implementation.
     ///
     /// # Errors
-    /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
+    /// - `Error::NotFound`: The parent of `dest` does not exist.
+    /// - `Error::NotDirectory`: The parent of `dest` is not a directory entry.
     /// - `Error::InvalidPath`: The given `dest` path is empty.
     /// - `Error::AlreadyExists`: There is already an entry at `dest`.
     /// - `Error::FileType`: The file at `source` is not a regular file, directory, or supported
@@ -665,7 +668,8 @@ where
     /// [`FileMetadata`] implementation.
     ///
     /// # Errors
-    /// - `Error::InvalidPath`: The parent of `dest` does not exist or is not a directory.
+    /// - `Error::NotFound`: The parent of `dest` does not exist.
+    /// - `Error::NotDirectory`: The parent of `dest` is not a directory entry.
     /// - `Error::InvalidPath`: The given `dest` path is empty.
     /// - `Error::AlreadyExists`: There is already an entry at `dest`.
     /// - `Error::InvalidData`: Ciphertext verification failed.
