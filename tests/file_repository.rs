@@ -139,17 +139,14 @@ fn creating_file_without_parent_errs() -> anyhow::Result<()> {
 
     // Creating a directory without a parent fails.
     let result = repository.create("home/lostatc", &Entry::directory());
-    assert!(matches!(
-        result.unwrap_err(),
-        acid_store::Error::InvalidPath
-    ));
+    assert!(matches!(result.unwrap_err(), acid_store::Error::NotFound));
 
     // Creating a directory as a child of a file fails.
     repository.create("home", &Entry::file())?;
     let result = repository.create("home/lostatc", &Entry::directory());
     assert!(matches!(
         result.unwrap_err(),
-        acid_store::Error::InvalidPath
+        acid_store::Error::NotDirectory
     ));
 
     Ok(())
@@ -390,10 +387,17 @@ fn copy_file_with_invalid_destination() -> anyhow::Result<()> {
 
     assert!(matches!(
         repository.copy("source", "nonexistent/dest"),
-        Err(acid_store::Error::InvalidPath)
+        Err(acid_store::Error::NotFound)
     ));
 
-    repository.create("dest", &Entry::file())?;
+    repository.create("file", &Entry::file())?;
+
+    assert!(matches!(
+        repository.copy("source", "file/dest"),
+        Err(acid_store::Error::NotDirectory)
+    ));
+
+    repository.create("dest", &Entry::directory())?;
 
     assert!(matches!(
         repository.copy("source", "dest"),
