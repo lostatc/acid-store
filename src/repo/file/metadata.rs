@@ -290,7 +290,7 @@ impl UnixMetadata {
     ///
     /// If [`AccessQualifier::UserObj`], [`AccessQualifier::GroupObj`], or
     /// [`AccessQualifier::Other`] are missing from [`acl`], this method calculates them from the
-    /// [`mode`] and adds inserts them into the map. A `kind` can be passed which determines whether
+    /// [`mode`] and inserts them into the map. A `kind` can be passed which determines whether
     /// this affects the access ACL, the default ACL, or both.
     ///
     /// [`AccessQualifier::UserObj`]: crate::repo::file::AccessQualifier::UserObj
