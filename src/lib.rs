@@ -84,13 +84,16 @@
 //! # Features
 //! Some functionality is gated behind cargo features.
 //!
-//! Feature | Description | Default
-//! --- | --- | ---
+//! If a feature has native dependencies, this table shows those dependencies as their package names
+//! on Ubuntu.
+//!
+//! Feature | Description | Default | Build Dependencies | Runtime Dependencies
+//! --- | --- | --- | --- | ---
 //! `encryption` | Encrypt repositories | No
 //! `compression` | Compress repositories | No
-//! `file-metadata` | Store file metadata and special file types in [`FileRepo`] | No
+//! `file-metadata` | Store file metadata and special file types in [`FileRepo`] | No | `libacl1-dev` | `acl`
 //! `hash-algorithms` | Use hash algorithms other than BLAKE3 in [`ContentRepo`] | No
-//! `fuse-mount` | Mount a [`FileRepo`] as a FUSE file system | No
+//! `fuse-mount` | Mount a [`FileRepo`] as a FUSE file system | No | `libfuse-dev`, `pkg-config` | `fuse`
 //! `store-directory` | Store data in a directory in the local file system | No
 //! `store-sqlite` | Store data in a SQLite database | No
 //! `store-redis` | Store data on a Redis server | No
