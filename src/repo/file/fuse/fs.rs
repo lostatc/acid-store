@@ -369,7 +369,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                 fs.repo.set_metadata(&entry_path, Some(metadata.clone()))?;
 
                 let entry = Entry {
-                    kind,
+                    kind: file_type,
                     metadata: Some(metadata),
                 };
                 fs.entry_attr(&entry, ino, req)
