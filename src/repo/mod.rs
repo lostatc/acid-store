@@ -73,9 +73,9 @@
 //! repository using [`peek_info`].
 //!
 //! # Instances
-//! A repository can consist of multiple instances, each identified by a UUID. Each repository
-//! instance has completely separate contents, meaning that data in one instance won't appear in
-//! others.
+//! A repository can consist of multiple instances, each identified by an [`InstanceId`]. Each
+//! repository instance has completely separate contents, meaning that data in one instance won't
+//! appear in others.
 //!
 //! You can specify the ID of the instance you want to access when you open or create a repository
 //! using [`OpenOptions`]. You can also switch from one instance to another using
@@ -111,14 +111,15 @@
 //! [`Packing`]: crate::repo::Packing
 //! [`RepoInfo`]: crate::repo::RepoInfo
 //! [`peek_info`]: crate::repo::peek_info
+//! [`InstanceId`]: crate::repo::InstanceId
 //! [`SwitchInstance::switch_instance`]: crate::repo::SwitchInstance::switch_instance
 //! [`FileRepo`]: crate::repo::file::FileRepo
 //! [`VersionRepo`]: crate::repo::version::VersionRepo
 
 pub use self::common::{
-    peek_info, Chunking, Commit, Compression, ContentId, Encryption, Object, ObjectId, OpenMode,
-    OpenOptions, OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoId, RepoInfo, ResourceLimit,
-    Restore, RestoreSavepoint, Savepoint, SwitchInstance, DEFAULT_INSTANCE,
+    peek_info, Chunking, Commit, Compression, ContentId, Encryption, InstanceId, Object, ObjectId,
+    OpenMode, OpenOptions, OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoId, RepoInfo,
+    ResourceLimit, Restore, RestoreSavepoint, Savepoint, SwitchInstance, DEFAULT_INSTANCE,
 };
 
 /// An object store which maps keys to seekable binary blobs.

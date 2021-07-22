@@ -18,6 +18,7 @@ use uuid::Uuid;
 
 use super::key::Key;
 use super::repository::KeyRepo;
+use super::state::InstanceId;
 
 /// A repository which can be opened using [`OpenOptions`].
 ///
@@ -122,8 +123,8 @@ pub trait SwitchInstance {
     /// use acid_store::repo::{SwitchInstance, Commit, OpenMode, OpenOptions, key::KeyRepo, value::ValueRepo};
     /// use acid_store::store::MemoryConfig;
     ///
-    /// let key_instance = Uuid::new_v4();
-    /// let value_instance = Uuid::new_v4();
+    /// let key_instance = Uuid::new_v4().into();
+    /// let value_instance = Uuid::new_v4().into();
     ///
     /// // Open a repository, specifying an instance ID.
     /// let key_repo: KeyRepo<String> = OpenOptions::new()
@@ -150,14 +151,14 @@ pub trait SwitchInstance {
     /// - `Error::Io`: An I/O error occurred.
     ///
     /// [`OpenOptions::instance`]: crate::repo::OpenOptions::instance
-    fn switch_instance<R>(self, id: Uuid) -> crate::Result<R>
+    fn switch_instance<R>(self, id: InstanceId) -> crate::Result<R>
     where
         R: OpenRepo,
         Self: Sized;
 }
 
 impl<T: OpenRepo> SwitchInstance for T {
-    fn switch_instance<R>(self, id: Uuid) -> crate::Result<R>
+    fn switch_instance<R>(self, id: InstanceId) -> crate::Result<R>
     where
         R: OpenRepo,
         Self: Sized,

@@ -28,7 +28,8 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 use crate::repo::{
-    key::KeyRepo, state::StateRepo, Commit, Object, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint,
+    key::KeyRepo, state::StateRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo,
+    RestoreSavepoint, Savepoint,
 };
 
 use super::entry::{Entry, EntryHandle, EntryType, HandleType};
@@ -862,7 +863,7 @@ where
     }
 
     /// Return this repository's instance ID.
-    pub fn instance(&self) -> Uuid {
+    pub fn instance(&self) -> InstanceId {
         self.0.instance()
     }
 

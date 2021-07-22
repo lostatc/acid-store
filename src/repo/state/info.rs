@@ -15,11 +15,10 @@
  */
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use crate::repo::common::{IdTable, UniqueId};
 use crate::repo::key::KeyRepo;
-use crate::repo::{RepoId, Restore, RestoreSavepoint};
+use crate::repo::{InstanceId, RepoId, Restore, RestoreSavepoint};
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Serialize, Deserialize)]
 pub enum RepoKey {
@@ -46,7 +45,7 @@ impl<State: Clone> Restore for StateRestore<State> {
         self.restore.is_valid()
     }
 
-    fn instance(&self) -> Uuid {
+    fn instance(&self) -> InstanceId {
         self.restore.instance()
     }
 }
@@ -57,6 +56,6 @@ impl<State: Clone> Restore for StateRestore<State> {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct ObjectKey {
     pub(super) repo_id: RepoId,
-    pub(super) instance_id: Uuid,
+    pub(super) instance_id: InstanceId,
     pub(super) object_id: UniqueId,
 }

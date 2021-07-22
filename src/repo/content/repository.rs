@@ -25,7 +25,7 @@ use uuid::Uuid;
 use crate::repo::{
     key::KeyRepo,
     state::{ObjectKey, StateRepo},
-    Commit, OpenRepo, ReadOnlyObject, RepoInfo, RestoreSavepoint, Savepoint,
+    Commit, InstanceId, OpenRepo, ReadOnlyObject, RepoInfo, RestoreSavepoint, Savepoint,
 };
 
 use super::hash::{HashAlgorithm, BUFFER_SIZE, DEFAULT_ALGORITHM};
@@ -244,7 +244,7 @@ impl ContentRepo {
     }
 
     /// Return this repository's instance ID.
-    pub fn instance(&self) -> Uuid {
+    pub fn instance(&self) -> InstanceId {
         self.0.instance()
     }
 

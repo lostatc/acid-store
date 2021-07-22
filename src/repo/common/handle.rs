@@ -18,10 +18,10 @@ use std::cmp::min;
 use std::io::{self, Read};
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::id_table::UniqueId;
 use super::metadata::RepoId;
+use super::state::InstanceId;
 
 /// A checksum used for uniquely identifying a chunk.
 pub type ChunkHash = [u8; blake3::OUT_LEN];
@@ -129,12 +129,12 @@ impl ObjectHandle {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ObjectId {
     repo_id: RepoId,
-    instance_id: Uuid,
+    instance_id: InstanceId,
     handle_id: UniqueId,
 }
 
 impl ObjectId {
-    pub(super) fn new(repo_id: RepoId, instance_id: Uuid, handle_id: UniqueId) -> Self {
+    pub(super) fn new(repo_id: RepoId, instance_id: InstanceId, handle_id: UniqueId) -> Self {
         Self {
             repo_id,
             instance_id,

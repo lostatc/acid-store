@@ -41,7 +41,7 @@ use super::object_store::{ObjectReader, ObjectWriter};
 use super::open_repo::OpenRepo;
 use super::packing::Packing;
 use super::savepoint::{KeyRestore, RestoreSavepoint, Savepoint};
-use super::state::{InstanceInfo, ObjectState, RepoState};
+use super::state::{InstanceId, InstanceInfo, ObjectState, RepoState};
 
 /// The block ID of the block which stores the repository metadata.
 pub(super) const METADATA_BLOCK_ID: BlockId = BlockId::new(Uuid::from_bytes(hex!(
@@ -80,13 +80,13 @@ pub struct KeyRepo<K: Key> {
     pub(super) state: Arc<RwLock<RepoState>>,
 
     /// The instance ID of this repository instance.
-    pub(super) instance_id: Uuid,
+    pub(super) instance_id: InstanceId,
 
     /// A map of object keys to their object handles for the current instance.
     pub(super) objects: HashMap<K, Arc<RwLock<ObjectHandle>>>,
 
     /// A map of instance IDs to information about those instances.
-    pub(super) instances: HashMap<Uuid, InstanceInfo>,
+    pub(super) instances: HashMap<InstanceId, InstanceInfo>,
 
     /// A table of unique IDs of existing handles.
     ///
@@ -301,7 +301,10 @@ impl<K: Key> KeyRepo<K> {
     ///
     /// This does not write the object map for the current instance before switching to the new
     /// instance.
-    pub(super) fn change_instance<R: OpenRepo>(mut self, instance_id: Uuid) -> crate::Result<R> {
+    pub(super) fn change_instance<R: OpenRepo>(
+        mut self,
+        instance_id: InstanceId,
+    ) -> crate::Result<R> {
         let is_new_instance = !self.instances.contains_key(&instance_id);
 
         let new_objects = if is_new_instance {
@@ -580,7 +583,7 @@ impl<K: Key> KeyRepo<K> {
     }
 
     /// Return this repository's current instance ID.
-    pub fn instance(&self) -> Uuid {
+    pub fn instance(&self) -> InstanceId {
         self.instance_id
     }
 

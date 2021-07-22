@@ -103,7 +103,7 @@ fn ids_from_different_instances_are_not_valid() -> anyhow::Result<()> {
 
     let id = repo.create();
 
-    let mut repo: StateRepo<String> = repo.switch_instance(Uuid::new_v4())?;
+    let mut repo: StateRepo<String> = repo.switch_instance(Uuid::new_v4().into())?;
 
     assert!(!repo.contains(id));
     assert!(!repo.remove(id));
