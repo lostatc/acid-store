@@ -19,7 +19,7 @@ pub use self::commit::Commit;
 pub use self::compression::Compression;
 pub use self::config::RepoConfig;
 pub use self::encryption::{Encryption, ResourceLimit};
-pub use self::handle::{ContentId, ObjectId};
+pub use self::handle::{ContentId, ObjectId, ObjectStats};
 pub use self::id_table::{IdTable, UniqueId};
 pub use self::key::Key;
 pub use self::metadata::{peek_info, RepoId, RepoInfo};

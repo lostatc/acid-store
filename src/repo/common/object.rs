@@ -22,7 +22,7 @@ use std::sync::{Arc, RwLock, Weak};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use super::handle::{ContentId, ObjectHandle, ObjectId};
+use super::handle::{ContentId, ObjectHandle, ObjectId, ObjectStats};
 use super::object_store::ObjectStore;
 use super::state::{ObjectState, RepoState};
 
@@ -141,6 +141,21 @@ impl Object {
             .info_guard(&self.object_state)
             .info()
             .content_id()
+    }
+
+    /// Return statistics about the object.
+    ///
+    /// The returned `ObjectStats` represents the contents of the object at the time this method was
+    /// called. It is not updated when the object is modified.
+    ///
+    /// # Errors
+    /// - `Error::TransactionInProgress`: A transaction is currently in progress for this object.
+    /// - `Error::InvalidObject`: The object has been invalidated.
+    pub fn stats(&self) -> crate::Result<ObjectStats> {
+        ObjectStore::new(&self.repo_state, &self.handle)?
+            .info_guard(&self.object_state)
+            .info()
+            .stats()
     }
 
     /// Verify the integrity of the data in this object.
@@ -326,6 +341,15 @@ impl ReadOnlyObject {
     /// [`Object::content_id`]: crate::repo::Object::content_id
     pub fn content_id(&self) -> crate::Result<ContentId> {
         self.0.content_id()
+    }
+
+    /// Return statistics about the object.
+    ///
+    /// See [`Object::stats`] for details.
+    ///
+    /// [`Object::stats`]: crate::repo::Object::stats
+    pub fn stats(&self) -> crate::Result<ObjectStats> {
+        self.0.stats()
     }
 
     /// Verify the integrity of the data in this object.

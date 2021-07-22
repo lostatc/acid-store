@@ -23,9 +23,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use super::chunk_store::{ReadChunk, StoreReader, StoreWriter, WriteChunk};
-use super::handle::{chunk_hash, ContentId, ObjectHandle};
+use super::handle::{chunk_hash, ContentId, Extent, ObjectHandle, ObjectStats};
 use super::state::{ExtentLocation, ObjectState, RepoState, SeekPosition};
-use crate::repo::common::handle::Extent;
 
 pub struct ObjectStore {
     repo_state: Arc<RwLock<RepoState>>,
@@ -156,6 +155,36 @@ impl<'a> ObjectInfo<'a> {
         Ok(ContentId {
             repo_id: self.repo_state.metadata.id,
             extents: self.handle.extents.clone(),
+        })
+    }
+
+    /// Return an `ObjectStats` containing statistics about the object.
+    pub fn stats(&self) -> crate::Result<ObjectStats> {
+        if self.object_state.transaction_lock.is_some() {
+            return Err(crate::Error::TransactionInProgress);
+        }
+        let mut current_position = 0u64;
+        let mut actual_size = 0u64;
+        let mut apparent_size = 0u64;
+        let mut holes = Vec::new();
+
+        for extent in &self.handle.extents {
+            match extent {
+                Extent::Chunk(_) => {
+                    actual_size += extent.size();
+                }
+                Extent::Hole { .. } => {
+                    holes.push(current_position..(current_position + extent.size()));
+                }
+            }
+            current_position += extent.size();
+            apparent_size += extent.size();
+        }
+
+        Ok(ObjectStats {
+            actual: actual_size,
+            apparent: apparent_size,
+            holes,
         })
     }
 }
