@@ -31,7 +31,7 @@ use super::config::RepoConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt, ResourceLimit};
 use super::id_table::IdTable;
 use super::lock::LockTable;
-use super::metadata::{peek_info_store, Header, RepoMetadata};
+use super::metadata::{peek_info_store, Header, RepoId, RepoMetadata};
 use super::open_repo::OpenRepo;
 use super::packing::Packing;
 use super::repository::{KeyRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
@@ -51,7 +51,7 @@ pub const DEFAULT_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92
 const VERSION_ID: Uuid = Uuid::from_bytes(hex!("6f1c893c e6a8 11eb a198 b7fa995cc83b"));
 
 /// A table of locks on repositories.
-static REPO_LOCKS: Lazy<Mutex<LockTable<Uuid>>> = Lazy::new(|| Mutex::new(LockTable::new()));
+static REPO_LOCKS: Lazy<Mutex<LockTable<RepoId>>> = Lazy::new(|| Mutex::new(LockTable::new()));
 
 /// The mode to use to open a repository.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -368,7 +368,7 @@ impl OpenOptions {
         };
 
         // Acquire an exclusive lock on the repository.
-        let id = Uuid::new_v4();
+        let id = Uuid::new_v4().into();
         let lock = REPO_LOCKS
             .lock()
             .unwrap()
@@ -436,6 +436,7 @@ impl OpenOptions {
         // Create the repository metadata with the header block references.
         let metadata = RepoMetadata {
             id,
+
             config: self.config.clone(),
             master_key: encrypted_master_key,
             salt,

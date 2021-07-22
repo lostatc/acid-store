@@ -21,10 +21,8 @@ macro_rules! uuid_type {
         $(#[$meta:meta])*
         $name:ident
     } => {
-        use serde::{Deserialize, Serialize};
-
         $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
         #[serde(transparent)]
         pub struct $name(uuid::Uuid);
 
@@ -44,6 +42,12 @@ macro_rules! uuid_type {
         impl From<uuid::Uuid> for $name {
             fn from(uuid: uuid::Uuid) -> Self {
                 Self(uuid)
+            }
+        }
+
+        impl From<$name> for uuid::Uuid {
+            fn from(id: $name) -> Self {
+                id.0
             }
         }
     };

@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::repo::common::{IdTable, UniqueId};
 use crate::repo::key::KeyRepo;
-use crate::repo::{Restore, RestoreSavepoint};
+use crate::repo::{RepoId, Restore, RestoreSavepoint};
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Serialize, Deserialize)]
 pub enum RepoKey {
@@ -56,7 +56,7 @@ impl<State: Clone> Restore for StateRestore<State> {
 /// [`StateRepo`]: crate::repo::state::StateRepo
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct ObjectKey {
-    pub(super) repo_id: Uuid,
+    pub(super) repo_id: RepoId,
     pub(super) instance_id: Uuid,
     pub(super) object_id: UniqueId,
 }

@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::id_table::UniqueId;
+use super::metadata::RepoId;
 
 /// A checksum used for uniquely identifying a chunk.
 pub type ChunkHash = [u8; blake3::OUT_LEN];
@@ -127,13 +128,13 @@ impl ObjectHandle {
 /// [`ContentId`]: crate::repo::ContentId
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ObjectId {
-    repo_id: Uuid,
+    repo_id: RepoId,
     instance_id: Uuid,
     handle_id: UniqueId,
 }
 
 impl ObjectId {
-    pub(super) fn new(repo_id: Uuid, instance_id: Uuid, handle_id: UniqueId) -> Self {
+    pub(super) fn new(repo_id: RepoId, instance_id: Uuid, handle_id: UniqueId) -> Self {
         Self {
             repo_id,
             instance_id,
@@ -160,7 +161,7 @@ pub struct ContentId {
     // different a chunking configuration. To ensure consistent behavior, we include the
     // repository's UUID to ensure that content IDs from different repositories are never equal.
     /// The ID of the repository the object is associated with.
-    pub(super) repo_id: Uuid,
+    pub(super) repo_id: RepoId,
 
     /// The extents which make up the data.
     pub(super) extents: Vec<Extent>,

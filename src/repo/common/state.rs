@@ -31,7 +31,7 @@ use super::handle::{Chunk, Extent, ObjectHandle};
 use super::id_table::UniqueId;
 use super::lock::Lock;
 use super::lock::LockTable;
-use super::metadata::RepoMetadata;
+use super::metadata::{RepoId, RepoMetadata};
 
 /// Information about a chunk in a repository.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -125,7 +125,7 @@ pub struct RepoState {
     pub master_key: EncryptionKey,
 
     /// The lock on the repository.
-    pub lock: Lock<Uuid>,
+    pub lock: Lock<RepoId>,
 }
 
 /// A seek position in an object.
@@ -146,13 +146,13 @@ pub struct ExtentLocation {
     /// The extent itself.
     pub extent: Extent,
 
-    /// The offset of the start of the chunk from the beginning of the object.
+    /// The offset of the start of the extent from the beginning of the object.
     pub start: u64,
 
     /// The offset of the seek position from the beginning of the object.
     pub position: u64,
 
-    /// The index of the chunk in the list of chunks.
+    /// The index of the extent in the list of extents.
     pub index: usize,
 }
 
