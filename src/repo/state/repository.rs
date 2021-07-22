@@ -25,6 +25,7 @@ use super::info::{ObjectKey, RepoKey, RepoState, StateRestore};
 use crate::repo::common::{IdTable, UniqueId};
 use crate::repo::{
     key::KeyRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint,
+    VersionId,
 };
 
 /// A low-level repository type which can be used to implement higher-level repository types
@@ -46,7 +47,9 @@ where
 {
     type Key = RepoKey;
 
-    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("bb93f91a ce4a 11eb 9c6b b78939b5b629"));
+    const VERSION_ID: VersionId = VersionId::new(Uuid::from_bytes(hex!(
+        "bb93f91a ce4a 11eb 9c6b b78939b5b629"
+    )));
 
     fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where

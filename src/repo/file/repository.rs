@@ -29,7 +29,7 @@ use walkdir::WalkDir;
 
 use crate::repo::{
     key::KeyRepo, state::StateRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo,
-    RestoreSavepoint, Savepoint,
+    RestoreSavepoint, Savepoint, VersionId,
 };
 
 use super::entry::{Entry, EntryHandle, EntryType, HandleType};
@@ -66,7 +66,9 @@ where
 {
     type Key = <StateRepo<RepoState> as OpenRepo>::Key;
 
-    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("075bc448 d03c 11eb a9e8 43df5f0eb6a0"));
+    const VERSION_ID: VersionId = VersionId::new(Uuid::from_bytes(hex!(
+        "075bc448 d03c 11eb a9e8 43df5f0eb6a0"
+    )));
 
     fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where

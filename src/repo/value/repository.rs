@@ -27,7 +27,7 @@ use uuid::Uuid;
 use crate::repo::{
     key::{Key, KeyRepo},
     state::{ObjectKey, StateRepo},
-    Commit, InstanceId, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint,
+    Commit, InstanceId, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint, VersionId,
 };
 
 type RepoState<K> = HashMap<K, ObjectKey>;
@@ -41,7 +41,9 @@ pub struct ValueRepo<K: Key>(StateRepo<RepoState<K>>);
 impl<K: Key> OpenRepo for ValueRepo<K> {
     type Key = <StateRepo<RepoState<K>> as OpenRepo>::Key;
 
-    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("4db4c84c cfc7 11eb 9e06 77121c3277f7"));
+    const VERSION_ID: VersionId = VersionId::new(Uuid::from_bytes(hex!(
+        "4db4c84c cfc7 11eb 9e06 77121c3277f7"
+    )));
 
     fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
