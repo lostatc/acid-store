@@ -464,6 +464,54 @@ fn extend_then_write_in_hole(config: RepoConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn check_file_stats_with_holes() -> anyhow::Result<()> {
+    let store_config = MemoryConfig::new();
+    let mut repo: KeyRepo<String> = OpenOptions::new()
+        .mode(OpenMode::CreateNew)
+        .open(&store_config)?;
+
+    let first_data = random_buffer();
+    let second_data = random_buffer();
+    let first_data_size = first_data.len() as u64;
+    let second_data_size = second_data.len() as u64;
+    let first_hole_size = 100u64;
+    let second_hole_size = 2000u64;
+
+    // Write some initial data.
+    let mut object = repo.insert(String::from("test"));
+    object.write_all(first_data.as_slice())?;
+    object.commit()?;
+
+    // Write the first hole.
+    object.set_len(object.size()? + first_hole_size)?;
+
+    // Write some more data.
+    object.seek(SeekFrom::End(0))?;
+    object.write_all(second_data.as_slice())?;
+    object.commit()?;
+
+    // Write a second hole.
+    object.set_len(object.size()? + second_hole_size)?;
+
+    let stats = object.stats()?;
+    let expected_apparent_size =
+        first_data_size + first_hole_size + second_data_size + second_hole_size;
+    let expected_actual_size = first_data_size + second_data_size;
+    let expected_holes = &[
+        first_data_size..(first_data_size + first_hole_size),
+        (first_data_size + first_hole_size + second_data_size)
+            ..(first_data_size + first_hole_size + second_data_size + second_hole_size),
+    ];
+
+    assert_eq!(stats.apparent(), object.size()?);
+    assert_eq!(stats.apparent(), expected_apparent_size);
+    assert_eq!(stats.actual(), expected_actual_size);
+    assert_eq!(stats.holes(), expected_holes);
+
+    Ok(())
+}
+
 #[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
 #[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
 #[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]

@@ -118,8 +118,8 @@
 
 pub use self::common::{
     peek_info, Chunking, Commit, Compression, ContentId, Encryption, InstanceId, Object, ObjectId,
-    OpenMode, OpenOptions, OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoId, RepoInfo,
-    ResourceLimit, Restore, RestoreSavepoint, Savepoint, SwitchInstance, VersionId,
+    ObjectStats, OpenMode, OpenOptions, OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoId,
+    RepoInfo, ResourceLimit, Restore, RestoreSavepoint, Savepoint, SwitchInstance, VersionId,
     DEFAULT_INSTANCE,
 };
 

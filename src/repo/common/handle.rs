@@ -16,6 +16,7 @@
 
 use std::cmp::min;
 use std::io::{self, Read};
+use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
@@ -247,5 +248,49 @@ impl ContentId {
         }
 
         Ok(true)
+    }
+}
+
+/// Statistics about an [`Object`] or [`ReadOnlyObject`].
+///
+/// [`Object`]: crate::repo::Object
+/// [`ReadOnlyObject`]: crate::repo::ReadOnlyObject
+#[derive(Debug, Clone)]
+pub struct ObjectStats {
+    pub(super) apparent: u64,
+    pub(super) actual: u64,
+    pub(super) holes: Vec<Range<u64>>,
+}
+
+impl ObjectStats {
+    /// The object's apparent size.
+    ///
+    /// This is the number of bytes in the object including any sparse holes created with
+    /// [`Object::set_len`]. This is the same value returned by [`Object::size`].
+    ///
+    /// [`Object::set_len`]: crate::repo::Object::set_len
+    /// [`Object::size`]: crate::repo::Object::size
+    pub fn apparent(&self) -> u64 {
+        self.apparent
+    }
+
+    /// The object's actual size.
+    ///
+    /// This is the number of bytes in the object not including any sparse holes created with
+    /// [`Object::set_len`].
+    ///
+    /// [`Object::set_len`]: crate::repo::Object::set_len
+    pub fn actual(&self) -> u64 {
+        self.actual
+    }
+
+    /// The locations of sparse holes in the object.
+    ///
+    /// This returns a slice of the ranges of bytes which are sparse holes created with
+    /// [`Object::set_len`].
+    ///
+    /// [`Object::set_len`]: crate::repo::Object::set_len
+    pub fn holes(&self) -> &[Range<u64>] {
+        &self.holes
     }
 }
