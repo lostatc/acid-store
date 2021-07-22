@@ -35,14 +35,16 @@ use super::metadata::{peek_info_store, Header, RepoId, RepoMetadata};
 use super::open_repo::OpenRepo;
 use super::packing::Packing;
 use super::repository::{KeyRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
-use super::state::RepoState;
+use super::state::{InstanceId, RepoState};
 
 /// The default repository instance ID.
 ///
 /// This is the instance ID that is used by [`OpenOptions`] when an instance isn't specified.
 ///
 /// [`OpenOptions`]: crate::repo::OpenOptions
-pub const DEFAULT_INSTANCE: Uuid = Uuid::from_bytes(hex!("ea978302 bfd8 11ea b92b 031a9ad75c07"));
+pub const DEFAULT_INSTANCE: InstanceId = InstanceId::new(Uuid::from_bytes(hex!(
+    "ea978302 bfd8 11ea b92b 031a9ad75c07"
+)));
 
 /// The current repository format version ID.
 ///
@@ -125,7 +127,7 @@ pub struct OpenOptions {
     config: RepoConfig,
     mode: OpenMode,
     password: Option<Vec<u8>>,
-    instance: Uuid,
+    instance: InstanceId,
 }
 
 impl Default for OpenOptions {
@@ -245,7 +247,7 @@ impl OpenOptions {
     /// instances.
     ///
     /// [`DEFAULT_INSTANCE`]: crate::repo::DEFAULT_INSTANCE
-    pub fn instance(&mut self, id: Uuid) -> &mut Self {
+    pub fn instance(&mut self, id: InstanceId) -> &mut Self {
         self.instance = id;
         self
     }

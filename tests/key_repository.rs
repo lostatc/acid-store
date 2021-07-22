@@ -253,7 +253,7 @@ fn object_is_not_accessible_from_another_instance(repo_config: RepoConfig) -> an
     assert!(repo.contains("test"));
     assert!(repo.object("test").is_some());
 
-    let repo: KeyRepo<String> = repo.switch_instance(Uuid::new_v4())?;
+    let repo: KeyRepo<String> = repo.switch_instance(Uuid::new_v4().into())?;
 
     assert!(!repo.contains("test"));
     assert!(repo.object("test").is_none());
@@ -268,8 +268,8 @@ fn object_is_not_accessible_from_another_instance(repo_config: RepoConfig) -> an
 #[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
 #[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
 fn committing_commits_all_instances(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let instance_1 = Uuid::new_v4();
-    let instance_2 = Uuid::new_v4();
+    let instance_1 = Uuid::new_v4().into();
+    let instance_2 = Uuid::new_v4().into();
 
     let store_config = MemoryConfig::new();
     let repo = create_repo(repo_config.clone(), &store_config)?;

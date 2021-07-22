@@ -18,14 +18,13 @@ use std::collections::HashMap;
 
 use rmp_serde::from_read;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 
 use super::config::RepoConfig;
 use super::encryption::KeySalt;
 use super::handle::Chunk;
 use super::id_table::IdTable;
 use super::repository::METADATA_BLOCK_ID;
-use super::state::{ChunkInfo, InstanceInfo, PackIndex};
+use super::state::{ChunkInfo, InstanceId, InstanceInfo, PackIndex};
 use crate::store::{BlockId, DataStore, OpenStore};
 
 /// The repository state which is persisted to the data store on each commit.
@@ -38,7 +37,7 @@ pub struct Header {
     pub packs: HashMap<BlockId, Vec<PackIndex>>,
 
     /// A map of instance IDs to information about each instance.
-    pub instances: HashMap<Uuid, InstanceInfo>,
+    pub instances: HashMap<InstanceId, InstanceInfo>,
 
     /// The table of object handle IDs.
     pub handle_table: IdTable,

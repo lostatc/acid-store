@@ -50,7 +50,7 @@ fn switching_instance_does_not_roll_back() -> anyhow::Result<()> {
     object.commit()?;
     drop(object);
 
-    let repo: VersionRepo<String> = repo.switch_instance(Uuid::new_v4())?;
+    let repo: VersionRepo<String> = repo.switch_instance(Uuid::new_v4().into())?;
     let repo: VersionRepo<String> = repo.switch_instance(DEFAULT_INSTANCE)?;
 
     assert!(repo.contains("test"));
@@ -69,7 +69,7 @@ fn switching_instance_does_not_commit() -> anyhow::Result<()> {
     object.commit()?;
     drop(object);
 
-    let repo: VersionRepo<String> = repo.switch_instance(Uuid::new_v4())?;
+    let repo: VersionRepo<String> = repo.switch_instance(Uuid::new_v4().into())?;
     let mut repo: VersionRepo<String> = repo.switch_instance(DEFAULT_INSTANCE)?;
     repo.rollback()?;
 

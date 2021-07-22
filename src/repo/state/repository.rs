@@ -23,7 +23,9 @@ use uuid::Uuid;
 
 use super::info::{ObjectKey, RepoKey, RepoState, StateRestore};
 use crate::repo::common::{IdTable, UniqueId};
-use crate::repo::{key::KeyRepo, Commit, Object, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint};
+use crate::repo::{
+    key::KeyRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint,
+};
 
 /// A low-level repository type which can be used to implement higher-level repository types
 ///
@@ -250,7 +252,7 @@ where
     }
 
     /// Return this repository's instance ID.
-    pub fn instance(&self) -> Uuid {
+    pub fn instance(&self) -> InstanceId {
         self.repo.instance()
     }
 

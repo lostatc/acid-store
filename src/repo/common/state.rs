@@ -87,6 +87,11 @@ impl Pack {
     }
 }
 
+uuid_type! {
+    /// A UUID which uniquely identifies an instance of a repository.
+    InstanceId
+}
+
 /// Information about an instance of a repository.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstanceInfo {

@@ -28,7 +28,8 @@ use uuid::Uuid;
 use crate::repo::key::KeyRepo;
 use crate::repo::state::StateRepo;
 use crate::repo::{
-    key::Key, Commit, Object, OpenRepo, ReadOnlyObject, RepoInfo, RestoreSavepoint, Savepoint,
+    key::Key, Commit, InstanceId, Object, OpenRepo, ReadOnlyObject, RepoInfo, RestoreSavepoint,
+    Savepoint,
 };
 
 use super::info::{KeyInfo, Version, VersionInfo};
@@ -320,7 +321,7 @@ impl<K: Key> VersionRepo<K> {
     }
 
     /// Return this repository's instance ID.
-    pub fn instance(&self) -> Uuid {
+    pub fn instance(&self) -> InstanceId {
         self.0.instance()
     }
 

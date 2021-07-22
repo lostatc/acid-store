@@ -21,6 +21,7 @@ use uuid::Uuid;
 
 use super::handle::ObjectHandle;
 use super::metadata::Header;
+use super::state::InstanceId;
 
 /// A target for rolling back changes in a repository.
 ///
@@ -71,7 +72,7 @@ pub trait Restore: Clone {
     fn is_valid(&self) -> bool;
 
     /// The ID of the repository instance this `Restore` is associated with.
-    fn instance(&self) -> Uuid;
+    fn instance(&self) -> InstanceId;
 }
 
 /// A repository which supports restoring to a [`Savepoint`].
@@ -207,7 +208,7 @@ pub struct KeyRestore<K> {
     // We need to store the instance ID because it should not be possible to complete this restore
     // if the user switches instances. This value contains the object map for the current instance
     // only, so switching instances should invalidate it.
-    pub(super) instance_id: Uuid,
+    pub(super) instance_id: InstanceId,
 }
 
 impl<K: Clone> Restore for KeyRestore<K> {
@@ -217,7 +218,7 @@ impl<K: Clone> Restore for KeyRestore<K> {
     }
 
     /// The ID of the repository instance this `Restore` is associated with.
-    fn instance(&self) -> Uuid {
+    fn instance(&self) -> InstanceId {
         self.instance_id
     }
 }

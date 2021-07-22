@@ -27,7 +27,7 @@ use uuid::Uuid;
 use crate::repo::{
     key::{Key, KeyRepo},
     state::{ObjectKey, StateRepo},
-    Commit, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint,
+    Commit, InstanceId, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint,
 };
 
 type RepoState<K> = HashMap<K, ObjectKey>;
@@ -203,7 +203,7 @@ impl<K: Key> ValueRepo<K> {
     }
 
     /// Return this repository's instance ID.
-    pub fn instance(&self) -> Uuid {
+    pub fn instance(&self) -> InstanceId {
         self.0.instance()
     }
 

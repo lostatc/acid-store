@@ -71,7 +71,7 @@ fn switching_instance_does_not_roll_back() -> anyhow::Result<()> {
     object.commit()?;
     drop(object);
 
-    let repo: FileRepo = repo.switch_instance(Uuid::new_v4())?;
+    let repo: FileRepo = repo.switch_instance(Uuid::new_v4().into())?;
     let repo: FileRepo = repo.switch_instance(DEFAULT_INSTANCE)?;
 
     assert!(repo.exists("file"));
@@ -91,7 +91,7 @@ fn switching_instance_does_not_commit() -> anyhow::Result<()> {
     object.commit()?;
     drop(object);
 
-    let repo: FileRepo = repo.switch_instance(Uuid::new_v4())?;
+    let repo: FileRepo = repo.switch_instance(Uuid::new_v4().into())?;
     let mut repo: FileRepo = repo.switch_instance(DEFAULT_INSTANCE)?;
     repo.rollback()?;
 

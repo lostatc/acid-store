@@ -48,7 +48,7 @@ fn switching_instance_does_not_roll_back() -> anyhow::Result<()> {
 
     let hash = repo.put(random_buffer().as_slice())?;
 
-    let repo: ContentRepo = repo.switch_instance(Uuid::new_v4())?;
+    let repo: ContentRepo = repo.switch_instance(Uuid::new_v4().into())?;
     let repo: ContentRepo = repo.switch_instance(DEFAULT_INSTANCE)?;
 
     assert!(repo.contains(&hash));
@@ -64,7 +64,7 @@ fn switching_instance_does_not_commit() -> anyhow::Result<()> {
 
     let hash = repo.put(random_buffer().as_slice())?;
 
-    let repo: ContentRepo = repo.switch_instance(Uuid::new_v4())?;
+    let repo: ContentRepo = repo.switch_instance(Uuid::new_v4().into())?;
     let mut repo: ContentRepo = repo.switch_instance(DEFAULT_INSTANCE)?;
     repo.rollback()?;
 

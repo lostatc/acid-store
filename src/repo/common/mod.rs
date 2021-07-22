@@ -29,6 +29,7 @@ pub use self::open_repo::{OpenRepo, SwitchInstance};
 pub use self::packing::Packing;
 pub use self::repository::KeyRepo;
 pub use self::savepoint::{Restore, RestoreSavepoint, Savepoint};
+pub use self::state::InstanceId;
 
 mod chunk_store;
 mod chunking;

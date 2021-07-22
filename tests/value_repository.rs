@@ -48,7 +48,7 @@ fn switching_instance_does_not_roll_back() -> anyhow::Result<()> {
 
     repo.insert("test".to_string(), &SERIALIZABLE_VALUE)?;
 
-    let repo: ValueRepo<String> = repo.switch_instance(Uuid::new_v4())?;
+    let repo: ValueRepo<String> = repo.switch_instance(Uuid::new_v4().into())?;
     let repo: ValueRepo<String> = repo.switch_instance(DEFAULT_INSTANCE)?;
 
     assert!(repo.contains("test"));
@@ -64,7 +64,7 @@ fn switching_instance_does_not_commit() -> anyhow::Result<()> {
 
     repo.insert("test".to_string(), &SERIALIZABLE_VALUE)?;
 
-    let repo: ValueRepo<String> = repo.switch_instance(Uuid::new_v4())?;
+    let repo: ValueRepo<String> = repo.switch_instance(Uuid::new_v4().into())?;
     let mut repo: ValueRepo<String> = repo.switch_instance(DEFAULT_INSTANCE)?;
     repo.rollback()?;
 
