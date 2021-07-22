@@ -25,7 +25,7 @@ pub use self::key::Key;
 pub use self::metadata::{peek_info, RepoId, RepoInfo};
 pub use self::object::{Object, ReadOnlyObject};
 pub use self::open_options::{OpenMode, OpenOptions, DEFAULT_INSTANCE};
-pub use self::open_repo::{OpenRepo, SwitchInstance};
+pub use self::open_repo::{OpenRepo, SwitchInstance, VersionId};
 pub use self::packing::Packing;
 pub use self::repository::KeyRepo;
 pub use self::savepoint::{Restore, RestoreSavepoint, Savepoint};

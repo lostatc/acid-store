@@ -32,6 +32,7 @@ use super::id_table::UniqueId;
 use super::lock::Lock;
 use super::lock::LockTable;
 use super::metadata::{RepoId, RepoMetadata};
+use super::open_repo::VersionId;
 
 /// Information about a chunk in a repository.
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -99,7 +100,7 @@ pub struct InstanceInfo {
     ///
     /// This corresponds to the `OpenRepo::VERSION_ID` of the repository which was created in this
     /// instance.
-    pub version_id: Uuid,
+    pub version_id: VersionId,
 
     /// The object handle used to store the serialized object map.
     ///

@@ -29,7 +29,7 @@ use crate::repo::key::KeyRepo;
 use crate::repo::state::StateRepo;
 use crate::repo::{
     key::Key, Commit, InstanceId, Object, OpenRepo, ReadOnlyObject, RepoInfo, RestoreSavepoint,
-    Savepoint,
+    Savepoint, VersionId,
 };
 
 use super::info::{KeyInfo, Version, VersionInfo};
@@ -49,7 +49,9 @@ pub struct VersionRepo<K: Key>(StateRepo<RepoState<K>>);
 impl<K: Key> OpenRepo for VersionRepo<K> {
     type Key = <StateRepo<RepoState<K>> as OpenRepo>::Key;
 
-    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("41a76832 cfc4 11eb ad05 93c1b714dd17"));
+    const VERSION_ID: VersionId = VersionId::new(Uuid::from_bytes(hex!(
+        "41a76832 cfc4 11eb ad05 93c1b714dd17"
+    )));
 
     fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where

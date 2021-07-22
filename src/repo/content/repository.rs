@@ -25,7 +25,7 @@ use uuid::Uuid;
 use crate::repo::{
     key::KeyRepo,
     state::{ObjectKey, StateRepo},
-    Commit, InstanceId, OpenRepo, ReadOnlyObject, RepoInfo, RestoreSavepoint, Savepoint,
+    Commit, InstanceId, OpenRepo, ReadOnlyObject, RepoInfo, RestoreSavepoint, Savepoint, VersionId,
 };
 
 use super::hash::{HashAlgorithm, BUFFER_SIZE, DEFAULT_ALGORITHM};
@@ -62,7 +62,9 @@ pub struct ContentRepo(StateRepo<RepoState>);
 impl OpenRepo for ContentRepo {
     type Key = <StateRepo<RepoState> as OpenRepo>::Key;
 
-    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("91e098e0 cfe3 11eb 8823 77511adc39c8"));
+    const VERSION_ID: VersionId = VersionId::new(Uuid::from_bytes(hex!(
+        "91e098e0 cfe3 11eb 8823 77511adc39c8"
+    )));
 
     fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where

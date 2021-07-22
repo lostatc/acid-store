@@ -14,11 +14,14 @@
  * limitations under the License.
  */
 
-use uuid::Uuid;
-
 use super::key::Key;
 use super::repository::KeyRepo;
 use super::state::InstanceId;
+
+uuid_type! {
+    /// A UUID which represents the serialized data format of a repository.
+    VersionId
+}
 
 /// A repository which can be opened using [`OpenOptions`].
 ///
@@ -39,7 +42,7 @@ pub trait OpenRepo {
     /// This ID is used to distinguish between different repository types and to detect when the
     /// serialized data format of a repository changes. All backwards-incompatible changes to a
     /// repository's serialized data format must change this value.
-    const VERSION_ID: Uuid;
+    const VERSION_ID: VersionId;
 
     /// Open an existing repository of this type in the backing `repo`.
     ///

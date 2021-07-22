@@ -39,6 +39,7 @@ use super::metadata::{Header, RepoInfo};
 use super::object::Object;
 use super::object_store::{ObjectReader, ObjectWriter};
 use super::open_repo::OpenRepo;
+use super::open_repo::VersionId;
 use super::packing::Packing;
 use super::savepoint::{KeyRestore, RestoreSavepoint, Savepoint};
 use super::state::{InstanceId, InstanceInfo, ObjectState, RepoState};
@@ -104,7 +105,9 @@ pub struct KeyRepo<K: Key> {
 impl<K: Key> OpenRepo for KeyRepo<K> {
     type Key = K;
 
-    const VERSION_ID: Uuid = Uuid::from_bytes(hex!("989a6a76 9d8b 46b7 9c05 d1c5e0d9471a"));
+    const VERSION_ID: VersionId = VersionId::new(Uuid::from_bytes(hex!(
+        "989a6a76 9d8b 46b7 9c05 d1c5e0d9471a"
+    )));
 
     fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
