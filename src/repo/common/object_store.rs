@@ -182,8 +182,8 @@ impl<'a> ObjectInfo<'a> {
         }
 
         Ok(ObjectStats {
-            actual: actual_size,
-            apparent: apparent_size,
+            actual_size: actual_size,
+            apparent_size: apparent_size,
             holes,
         })
     }

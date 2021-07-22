@@ -504,9 +504,9 @@ fn check_file_stats_with_holes() -> anyhow::Result<()> {
             ..(first_data_size + first_hole_size + second_data_size + second_hole_size),
     ];
 
-    assert_eq!(stats.apparent(), object.size()?);
-    assert_eq!(stats.apparent(), expected_apparent_size);
-    assert_eq!(stats.actual(), expected_actual_size);
+    assert_eq!(stats.apparent_size(), object.size()?);
+    assert_eq!(stats.apparent_size(), expected_apparent_size);
+    assert_eq!(stats.actual_size(), expected_actual_size);
     assert_eq!(stats.holes(), expected_holes);
 
     Ok(())

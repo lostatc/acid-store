@@ -257,8 +257,8 @@ impl ContentId {
 /// [`ReadOnlyObject`]: crate::repo::ReadOnlyObject
 #[derive(Debug, Clone)]
 pub struct ObjectStats {
-    pub(super) apparent: u64,
-    pub(super) actual: u64,
+    pub(super) apparent_size: u64,
+    pub(super) actual_size: u64,
     pub(super) holes: Vec<Range<u64>>,
 }
 
@@ -270,8 +270,8 @@ impl ObjectStats {
     ///
     /// [`Object::set_len`]: crate::repo::Object::set_len
     /// [`Object::size`]: crate::repo::Object::size
-    pub fn apparent(&self) -> u64 {
-        self.apparent
+    pub fn apparent_size(&self) -> u64 {
+        self.apparent_size
     }
 
     /// The object's actual size.
@@ -280,8 +280,8 @@ impl ObjectStats {
     /// [`Object::set_len`].
     ///
     /// [`Object::set_len`]: crate::repo::Object::set_len
-    pub fn actual(&self) -> u64 {
-        self.actual
+    pub fn actual_size(&self) -> u64 {
+        self.actual_size
     }
 
     /// The locations of sparse holes in the object.
