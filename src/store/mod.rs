@@ -33,7 +33,7 @@
 //! [`OpenStore`]: crate::store::OpenStore
 //! [`OpenOptions`]: crate::repo::OpenOptions
 
-pub use self::data_store::DataStore;
+pub use self::data_store::{BlockId, DataStore};
 #[cfg(feature = "store-directory")]
 pub use self::directory_store::{DirectoryConfig, DirectoryStore};
 pub use self::memory_store::{MemoryConfig, MemoryStore};

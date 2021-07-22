@@ -17,16 +17,14 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use uuid::Uuid;
-
-use super::data_store::DataStore;
+use super::data_store::{BlockId, DataStore};
 use super::open_store::OpenStore;
 
 /// The configuration for opening a [`MemoryStore`].
 ///
 /// [`MemoryStore`]: crate::store::MemoryStore
 #[derive(Debug, Clone, Default)]
-pub struct MemoryConfig(Arc<Mutex<HashMap<Uuid, Vec<u8>>>>);
+pub struct MemoryConfig(Arc<Mutex<HashMap<BlockId, Vec<u8>>>>);
 
 impl MemoryConfig {
     /// Create a new empty `MemoryConfig`.
@@ -57,19 +55,16 @@ impl OpenStore for MemoryConfig {
 /// [`MemoryConfig`]: crate::store::MemoryConfig
 #[derive(Debug)]
 pub struct MemoryStore {
-    blocks: Arc<Mutex<HashMap<Uuid, Vec<u8>>>>,
+    blocks: Arc<Mutex<HashMap<BlockId, Vec<u8>>>>,
 }
 
 impl DataStore for MemoryStore {
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()> {
-        self.blocks
-            .lock()
-            .unwrap()
-            .insert(id.to_owned(), data.to_owned());
+    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
+        self.blocks.lock().unwrap().insert(id, data.to_owned());
         Ok(())
     }
 
-    fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
         Ok(self
             .blocks
             .lock()
@@ -78,12 +73,12 @@ impl DataStore for MemoryStore {
             .map(|data| data.to_owned()))
     }
 
-    fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()> {
+    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
         self.blocks.lock().unwrap().remove(&id);
         Ok(())
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>> {
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
         Ok(self.blocks.lock().unwrap().keys().copied().collect())
     }
 }

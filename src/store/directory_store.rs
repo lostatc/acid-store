@@ -22,7 +22,7 @@ use std::path::PathBuf;
 
 use uuid::Uuid;
 
-use super::data_store::DataStore;
+use super::data_store::{BlockId, DataStore};
 use super::open_store::OpenStore;
 
 /// A UUID which acts as the version ID of the directory store format.
@@ -95,22 +95,22 @@ pub struct DirectoryStore {
 
 impl DirectoryStore {
     /// Return the path where a block with the given `id` will be stored.
-    fn block_path(&self, id: Uuid) -> PathBuf {
+    fn block_path(&self, id: BlockId) -> PathBuf {
         let mut buffer = Uuid::encode_buffer();
-        let hex = id.to_simple().encode_lower(&mut buffer);
+        let hex = id.as_ref().to_simple().encode_lower(&mut buffer);
         self.path.join(BLOCKS_DIRECTORY).join(&hex[..2]).join(hex)
     }
 
     /// Return the path where a block with the given `id` will be staged.
-    fn staging_path(&self, id: Uuid) -> PathBuf {
+    fn staging_path(&self, id: BlockId) -> PathBuf {
         let mut buffer = Uuid::encode_buffer();
-        let hex = id.to_simple().encode_lower(&mut buffer);
+        let hex = id.as_ref().to_simple().encode_lower(&mut buffer);
         self.path.join(STAGING_DIRECTORY).join(hex)
     }
 }
 
 impl DataStore for DirectoryStore {
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
         let staging_path = self.staging_path(id);
         let block_path = self.block_path(id);
 
@@ -130,7 +130,7 @@ impl DataStore for DirectoryStore {
         Ok(())
     }
 
-    fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
         let block_path = self.block_path(id);
 
         if block_path.exists() {
@@ -143,7 +143,7 @@ impl DataStore for DirectoryStore {
         }
     }
 
-    fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()> {
+    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
         let block_path = self.block_path(id);
 
         if block_path.exists() {
@@ -153,14 +153,15 @@ impl DataStore for DirectoryStore {
         Ok(())
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>> {
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
         let mut block_ids = Vec::new();
 
         for directory_entry in read_dir(self.path.join(BLOCKS_DIRECTORY))? {
             for block_entry in read_dir(directory_entry?.path())? {
                 let file_name = block_entry?.file_name();
                 let id = Uuid::parse_str(file_name.to_str().expect("Block file name is invalid."))
-                    .expect("Block file name is invalid.");
+                    .expect("Block file name is invalid.")
+                    .into();
                 block_ids.push(id);
             }
         }

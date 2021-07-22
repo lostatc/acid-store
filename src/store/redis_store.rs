@@ -22,7 +22,7 @@ use std::path::PathBuf;
 use redis::{Client, Commands, Connection, ConnectionAddr, ConnectionInfo, IntoConnectionInfo};
 use uuid::Uuid;
 
-use super::data_store::DataStore;
+use super::data_store::{BlockId, DataStore};
 use super::open_store::OpenStore;
 
 /// A UUID which acts as the version ID of the store format.
@@ -143,31 +143,31 @@ impl RedisStore {
 }
 
 impl DataStore for RedisStore {
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()> {
-        let key_id = id.to_hyphenated().to_string();
+    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
+        let key_id = id.as_ref().to_hyphenated().to_string();
         self.connection.set(format!("block:{}", key_id), data)?;
         Ok(())
     }
 
-    fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>> {
-        let key_id = id.to_hyphenated().to_string();
+    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
+        let key_id = id.as_ref().to_hyphenated().to_string();
         Ok(self.connection.get(format!("block:{}", key_id))?)
     }
 
-    fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()> {
-        let key_id = id.to_hyphenated().to_string();
+    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
+        let key_id = id.as_ref().to_hyphenated().to_string();
         self.connection.del(format!("block:{}", key_id))?;
         Ok(())
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>> {
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
         let blocks = self
             .connection
             .keys::<_, Vec<String>>("block:*")?
             .iter()
             .map(|key| {
                 let uuid = key.trim_start_matches("block:");
-                Uuid::parse_str(uuid).expect("Could not parse UUID.")
+                Uuid::parse_str(uuid).expect("Could not parse UUID.").into()
             })
             .collect();
         Ok(blocks)

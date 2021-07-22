@@ -428,7 +428,7 @@ impl OpenOptions {
             .config
             .encryption
             .encrypt(&compressed_header, &master_key);
-        let header_id = Uuid::new_v4();
+        let header_id = Uuid::new_v4().into();
         store
             .write_block(header_id, &encrypted_header)
             .map_err(crate::Error::Store)?;

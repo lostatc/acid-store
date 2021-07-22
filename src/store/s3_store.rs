@@ -25,7 +25,7 @@ use s3::region::Region;
 use tokio::runtime::Runtime;
 use uuid::Uuid;
 
-use super::data_store::DataStore;
+use super::data_store::{BlockId, DataStore};
 use super::open_store::OpenStore;
 
 /// The separator to use in S3 object keys.
@@ -410,13 +410,17 @@ pub struct S3Store {
 
 impl S3Store {
     /// Return the key of the block with the given `id`.
-    fn block_path(&self, id: Uuid) -> String {
-        join_key!(self.prefix, BLOCK_PREFIX, id.to_hyphenated().to_string())
+    fn block_path(&self, id: BlockId) -> String {
+        join_key!(
+            self.prefix,
+            BLOCK_PREFIX,
+            id.as_ref().to_hyphenated().to_string()
+        )
     }
 }
 
 impl DataStore for S3Store {
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
         let mut runtime = Runtime::new().unwrap();
 
         let block_path = self.block_path(id);
@@ -424,7 +428,7 @@ impl DataStore for S3Store {
         Ok(())
     }
 
-    fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
         let mut runtime = Runtime::new().unwrap();
 
         let block_path = self.block_path(id);
@@ -436,7 +440,7 @@ impl DataStore for S3Store {
         }
     }
 
-    fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()> {
+    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
         let mut runtime = Runtime::new().unwrap();
 
         let block_path = self.block_path(id);
@@ -444,7 +448,7 @@ impl DataStore for S3Store {
         Ok(())
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>> {
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
         let mut runtime = Runtime::new().unwrap();
 
         let blocks_path = join_key!(self.prefix, BLOCK_PREFIX) + SEPARATOR;
@@ -455,6 +459,7 @@ impl DataStore for S3Store {
             .map(|object| {
                 Uuid::parse_str(object.key.trim_start_matches(&blocks_path))
                     .expect("Could not parse UUID.")
+                    .into()
             })
             .collect::<Vec<_>>();
         Ok(block_ids)

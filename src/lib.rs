@@ -130,5 +130,6 @@ pub use uuid;
 pub use error::{Error, Result};
 
 mod error;
+mod id;
 pub mod repo;
 pub mod store;

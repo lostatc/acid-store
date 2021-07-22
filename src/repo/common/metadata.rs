@@ -26,7 +26,7 @@ use super::handle::Chunk;
 use super::id_table::IdTable;
 use super::repository::METADATA_BLOCK_ID;
 use super::state::{ChunkInfo, InstanceInfo, PackIndex};
-use crate::store::{DataStore, OpenStore};
+use crate::store::{BlockId, DataStore, OpenStore};
 
 /// The repository state which is persisted to the data store on each commit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,7 +35,7 @@ pub struct Header {
     pub chunks: HashMap<Chunk, ChunkInfo>,
 
     /// A map of block IDs to their locations in packs.
-    pub packs: HashMap<Uuid, Vec<PackIndex>>,
+    pub packs: HashMap<BlockId, Vec<PackIndex>>,
 
     /// A map of instance IDs to information about each instance.
     pub instances: HashMap<Uuid, InstanceInfo>,
@@ -60,7 +60,7 @@ pub struct RepoMetadata {
     pub salt: KeySalt,
 
     /// The ID of the chunk which stores the repository header.
-    pub header_id: Uuid,
+    pub header_id: BlockId,
 }
 
 impl RepoMetadata {
