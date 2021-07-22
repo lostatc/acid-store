@@ -22,7 +22,7 @@ pub use self::encryption::{Encryption, ResourceLimit};
 pub use self::handle::{ContentId, ObjectId};
 pub use self::id_table::{IdTable, UniqueId};
 pub use self::key::Key;
-pub use self::metadata::{peek_info, RepoInfo};
+pub use self::metadata::{peek_info, RepoId, RepoInfo};
 pub use self::object::{Object, ReadOnlyObject};
 pub use self::open_options::{OpenMode, OpenOptions, DEFAULT_INSTANCE};
 pub use self::open_repo::{OpenRepo, SwitchInstance};

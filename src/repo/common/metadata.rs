@@ -48,7 +48,7 @@ pub struct Header {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RepoMetadata {
     /// The unique ID of this repository.
-    pub id: Uuid,
+    pub id: RepoId,
 
     /// The configuration for the repository.
     pub config: RepoConfig,
@@ -107,10 +107,18 @@ pub fn peek_info(config: &impl OpenStore) -> crate::Result<RepoInfo> {
     peek_info_store(&mut store)
 }
 
+uuid_type! {
+    /// A UUID which uniquely identifies a repository.
+    ///
+    /// This ID is different from the instance ID; this ID is shared between all instances of a
+    /// repository.
+    RepoId
+}
+
 /// Information about a repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RepoInfo {
-    id: Uuid,
+    id: RepoId,
     config: RepoConfig,
 }
 
@@ -119,7 +127,7 @@ impl RepoInfo {
     ///
     /// This ID is different from the instance ID; this ID is shared between all instances of a
     /// repository.
-    pub fn id(&self) -> Uuid {
+    pub fn id(&self) -> RepoId {
         self.id
     }
 
