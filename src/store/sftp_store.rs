@@ -25,7 +25,7 @@ use anyhow::anyhow;
 use ssh2::{self, RenameFlags, Session, Sftp};
 use uuid::Uuid;
 
-use super::data_store::DataStore;
+use super::data_store::{BlockId, DataStore};
 use super::open_store::OpenStore;
 
 // A UUID which acts as the version ID of the directory store format.
@@ -219,16 +219,16 @@ pub struct SftpStore {
 
 impl SftpStore {
     /// Return the path where a block with the given `id` will be stored.
-    fn block_path(&self, id: Uuid) -> PathBuf {
+    fn block_path(&self, id: BlockId) -> PathBuf {
         let mut buffer = Uuid::encode_buffer();
-        let hex = id.to_simple().encode_lower(&mut buffer);
+        let hex = id.as_ref().to_simple().encode_lower(&mut buffer);
         self.path.join(BLOCKS_DIRECTORY).join(&hex[..2]).join(hex)
     }
 
     /// Return the path where a block with the given `id` will be staged.
-    fn staging_path(&self, id: Uuid) -> PathBuf {
+    fn staging_path(&self, id: BlockId) -> PathBuf {
         let mut buffer = Uuid::encode_buffer();
-        let hex = id.to_simple().encode_lower(&mut buffer);
+        let hex = id.as_ref().to_simple().encode_lower(&mut buffer);
         self.path.join(STAGING_DIRECTORY).join(hex)
     }
 
@@ -239,7 +239,7 @@ impl SftpStore {
 }
 
 impl DataStore for SftpStore {
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
         let staging_path = self.staging_path(id);
         let block_path = self.block_path(id);
 
@@ -266,7 +266,7 @@ impl DataStore for SftpStore {
         Ok(())
     }
 
-    fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
         let block_path = self.block_path(id);
 
         if !self.exists(&block_path) {
@@ -280,7 +280,7 @@ impl DataStore for SftpStore {
         Ok(Some(buffer))
     }
 
-    fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()> {
+    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
         let block_path = self.block_path(id);
 
         if !self.exists(&block_path) {
@@ -292,7 +292,7 @@ impl DataStore for SftpStore {
         Ok(())
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>> {
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
         let block_directories = self.sftp.readdir(&self.path.join(BLOCKS_DIRECTORY))?;
         let mut block_ids = Vec::new();
 
@@ -303,7 +303,9 @@ impl DataStore for SftpStore {
                     .unwrap()
                     .to_str()
                     .expect("Block file name is invalid.");
-                let id = Uuid::parse_str(file_name).expect("Block file name is invalid.");
+                let id = Uuid::parse_str(file_name)
+                    .expect("Block file name is invalid.")
+                    .into();
                 block_ids.push(id);
             }
         }

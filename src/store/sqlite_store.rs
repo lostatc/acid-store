@@ -24,6 +24,7 @@ use uuid::Uuid;
 
 use super::data_store::DataStore;
 use super::open_store::OpenStore;
+use crate::store::BlockId;
 
 /// A UUID which acts as the version ID of the store format.
 const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("08d14eb8 4156 11ea 8ec7 a31cc3dfe2e4"));
@@ -111,19 +112,19 @@ pub struct SqliteStore {
 }
 
 impl DataStore for SqliteStore {
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
         self.connection.execute(
             r#"
                 REPLACE INTO Blocks (uuid, data)
                 VALUES (?1, ?2);
             "#,
-            params![&id.as_bytes()[..], data],
+            params![&id.as_ref().as_bytes()[..], data],
         )?;
 
         Ok(())
     }
 
-    fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
         Ok(self
             .connection
             .query_row(
@@ -131,34 +132,36 @@ impl DataStore for SqliteStore {
                     SELECT data FROM Blocks
                     WHERE uuid = ?1;
                 "#,
-                params![&id.as_bytes()[..]],
+                params![&id.as_ref().as_bytes()[..]],
                 |row| row.get(0),
             )
             .optional()?)
     }
 
-    fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()> {
+    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
         self.connection.execute(
             r#"
                 DELETE FROM Blocks
                 WHERE uuid = ?1;
             "#,
-            params![&id.as_bytes()[..]],
+            params![&id.as_ref().as_bytes()[..]],
         )?;
 
         Ok(())
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>> {
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
         let mut statement = self.connection.prepare(r#"SELECT uuid FROM Blocks;"#)?;
 
         let result = statement
             .query_map(params![], |row| {
                 row.get(0).map(|bytes: Vec<u8>| {
-                    Uuid::from_slice(bytes.as_slice()).expect("Could not parse UUID.")
+                    Uuid::from_slice(bytes.as_slice())
+                        .expect("Could not parse UUID.")
+                        .into()
                 })
             })?
-            .collect::<Result<Vec<Uuid>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(result)
     }

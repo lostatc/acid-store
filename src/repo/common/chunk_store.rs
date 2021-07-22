@@ -23,6 +23,7 @@ use super::handle::{chunk_hash, Chunk};
 use super::id_table::UniqueId;
 use super::packing::Packing;
 use super::state::{ChunkInfo, Pack, PackIndex, RepoState};
+use crate::store::BlockId;
 
 /// Encode and decode blocks of data.
 pub trait EncodeBlock {
@@ -64,7 +65,7 @@ pub trait ReadBlock {
     /// Return the bytes of the block with the given `id`.
     ///
     /// The data is decoded before it is returned.
-    fn read_block(&mut self, id: Uuid) -> crate::Result<Vec<u8>>;
+    fn read_block(&mut self, id: BlockId) -> crate::Result<Vec<u8>>;
 }
 
 /// Encode and write blocks of data.
@@ -74,7 +75,7 @@ pub trait WriteBlock: ReadBlock {
     /// If a block with the given `id` already exists, it is overwritten.
     ///
     /// The data is encoded before it is written.
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> crate::Result<()>;
+    fn write_block(&mut self, id: BlockId, data: &[u8]) -> crate::Result<()>;
 }
 
 struct PackingBlockReader<'a> {
@@ -84,7 +85,7 @@ struct PackingBlockReader<'a> {
 }
 
 impl<'a> ReadBlock for PackingBlockReader<'a> {
-    fn read_block(&mut self, id: Uuid) -> crate::Result<Vec<u8>> {
+    fn read_block(&mut self, id: BlockId) -> crate::Result<Vec<u8>> {
         let index_list = match self.repo_state.packs.get(&id) {
             Some(pack_index) => pack_index,
             None => return Err(crate::Error::InvalidData),
@@ -140,7 +141,7 @@ struct PackingBlockWriter<'a> {
 }
 
 impl<'a> ReadBlock for PackingBlockWriter<'a> {
-    fn read_block(&mut self, id: Uuid) -> crate::Result<Vec<u8>> {
+    fn read_block(&mut self, id: BlockId) -> crate::Result<Vec<u8>> {
         let mut reader = PackingBlockReader {
             repo_state: self.repo_state,
             store_state: self.store_state,
@@ -151,7 +152,7 @@ impl<'a> ReadBlock for PackingBlockWriter<'a> {
 }
 
 impl<'a> WriteBlock for PackingBlockWriter<'a> {
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> crate::Result<()> {
+    fn write_block(&mut self, id: BlockId, data: &[u8]) -> crate::Result<()> {
         let pack_size = self.pack_size;
         let current_pack = self
             .store_state
@@ -272,7 +273,7 @@ impl<'a> DirectBlockWriter<'a> {
 }
 
 impl<'a> ReadBlock for DirectBlockWriter<'a> {
-    fn read_block(&mut self, id: Uuid) -> crate::Result<Vec<u8>> {
+    fn read_block(&mut self, id: BlockId) -> crate::Result<Vec<u8>> {
         let encoded_block = self
             .state
             .store
@@ -286,7 +287,7 @@ impl<'a> ReadBlock for DirectBlockWriter<'a> {
 }
 
 impl<'a> WriteBlock for DirectBlockWriter<'a> {
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> crate::Result<()> {
+    fn write_block(&mut self, id: BlockId, data: &[u8]) -> crate::Result<()> {
         let encoded_block = self.state.encode_data(data)?;
         self.state
             .store
@@ -351,7 +352,7 @@ impl<'a> StoreReader<'a> {
 }
 
 impl<'a> ReadBlock for StoreReader<'a> {
-    fn read_block(&mut self, id: Uuid) -> crate::Result<Vec<u8>> {
+    fn read_block(&mut self, id: BlockId) -> crate::Result<Vec<u8>> {
         let mut read_block: Box<dyn ReadBlock> = match &self.repo_state.metadata.config.packing {
             Packing::None => Box::new(DirectBlockWriter {
                 state: &self.repo_state,
@@ -394,7 +395,7 @@ impl<'a> StoreWriter<'a> {
 }
 
 impl<'a> ReadBlock for StoreWriter<'a> {
-    fn read_block(&mut self, id: Uuid) -> crate::Result<Vec<u8>> {
+    fn read_block(&mut self, id: BlockId) -> crate::Result<Vec<u8>> {
         let mut chunk_reader = StoreReader {
             repo_state: self.repo_state,
             store_state: self.store_state,
@@ -404,7 +405,7 @@ impl<'a> ReadBlock for StoreWriter<'a> {
 }
 
 impl<'a> WriteBlock for StoreWriter<'a> {
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> crate::Result<()> {
+    fn write_block(&mut self, id: BlockId, data: &[u8]) -> crate::Result<()> {
         let mut block_writer: Box<dyn WriteBlock> =
             match self.repo_state.metadata.config.packing.clone() {
                 Packing::None => Box::new(DirectBlockWriter {
@@ -433,7 +434,7 @@ impl<'a> ReadChunk for StoreWriter<'a> {
 impl<'a> WriteChunk for StoreWriter<'a> {
     fn write_chunk(&mut self, data: &[u8], id: UniqueId) -> crate::Result<Chunk> {
         assert!(
-            data.len() <= std::u32::MAX as usize,
+            data.len() <= u32::MAX as usize,
             "Given data exceeds maximum chunk size."
         );
 
@@ -449,7 +450,7 @@ impl<'a> WriteChunk for StoreWriter<'a> {
             return Ok(chunk);
         }
 
-        let block_id = Uuid::new_v4();
+        let block_id = Uuid::new_v4().into();
         self.write_block(block_id, data)?;
 
         // Add the chunk to the header.

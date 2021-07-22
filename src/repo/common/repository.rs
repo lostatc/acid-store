@@ -25,7 +25,7 @@ use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
 use uuid::Uuid;
 
-use crate::store::DataStore;
+use crate::store::{BlockId, DataStore};
 
 use super::chunk_store::{
     EncodeBlock, ReadBlock, ReadChunk, StoreReader, StoreState, StoreWriter, WriteBlock,
@@ -44,15 +44,17 @@ use super::savepoint::{KeyRestore, RestoreSavepoint, Savepoint};
 use super::state::{InstanceInfo, ObjectState, RepoState};
 
 /// The block ID of the block which stores the repository metadata.
-pub(super) const METADATA_BLOCK_ID: Uuid =
-    Uuid::from_bytes(hex!("8691d360 29c6 11ea 8bc1 2fc8cfe66f33"));
+pub(super) const METADATA_BLOCK_ID: BlockId = BlockId::new(Uuid::from_bytes(hex!(
+    "8691d360 29c6 11ea 8bc1 2fc8cfe66f33"
+)));
 
 /// The block ID of the block which stores the repository format version.
-pub(super) const VERSION_BLOCK_ID: Uuid =
-    Uuid::from_bytes(hex!("cbf28b1c 3550 11ea 8cb0 87d7a14efe10"));
+pub(super) const VERSION_BLOCK_ID: BlockId = BlockId::new(Uuid::from_bytes(hex!(
+    "cbf28b1c 3550 11ea 8cb0 87d7a14efe10"
+)));
 
 /// Return a list of blocks in the data store excluding those used to store metadata.
-fn list_data_blocks(state: &RepoState) -> crate::Result<Vec<Uuid>> {
+fn list_data_blocks(state: &RepoState) -> crate::Result<Vec<BlockId>> {
     let all_blocks = state
         .store
         .lock()
@@ -364,7 +366,7 @@ impl<K: Key> KeyRepo<K> {
         let encoded_header = state.encode_data(serialized_header)?;
 
         // Write the new header to a new block.
-        let header_id = Uuid::new_v4();
+        let header_id = Uuid::new_v4().into();
         state
             .store
             .lock()

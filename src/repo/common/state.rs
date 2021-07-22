@@ -22,7 +22,7 @@ use cdchunking::ChunkerImpl;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::store::DataStore;
+use crate::store::{BlockId, DataStore};
 
 use super::chunk_store::StoreState;
 use super::chunking::IncrementalChunker;
@@ -34,10 +34,10 @@ use super::lock::LockTable;
 use super::metadata::RepoMetadata;
 
 /// Information about a chunk in a repository.
-#[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct ChunkInfo {
     /// The ID of the block in the data store which stores this chunk.
-    pub block_id: Uuid,
+    pub block_id: BlockId,
 
     /// The IDs of objects which reference this chunk.
     pub references: HashSet<UniqueId>,
@@ -47,7 +47,7 @@ pub struct ChunkInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackIndex {
     /// The UUID of the pack in the data store.
-    pub id: Uuid,
+    pub id: BlockId,
 
     /// The offset from the start of the pack where the block is located.
     pub offset: u32,
@@ -60,7 +60,7 @@ pub struct PackIndex {
 #[derive(Debug)]
 pub struct Pack {
     /// The UUID of this pack in the data store.
-    pub id: Uuid,
+    pub id: BlockId,
 
     /// The data contained in the pack.
     pub buffer: Vec<u8>,
@@ -70,7 +70,7 @@ impl Pack {
     /// Create a new empty pack with the given `pack_size`.
     pub fn new(pack_size: u32) -> Self {
         Pack {
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4().into(),
             buffer: Vec::with_capacity(pack_size as usize),
         }
     }
@@ -116,7 +116,7 @@ pub struct RepoState {
     pub chunks: HashMap<Chunk, ChunkInfo>,
 
     /// A map of block IDs to their locations in packs.
-    pub packs: HashMap<Uuid, Vec<PackIndex>>,
+    pub packs: HashMap<BlockId, Vec<PackIndex>>,
 
     /// A table used to track current transactions for each object.
     pub transactions: LockTable<UniqueId>,

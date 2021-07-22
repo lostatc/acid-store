@@ -25,9 +25,8 @@ use std::time::Duration;
 
 use rand::distributions::Alphanumeric;
 use rand::Rng;
-use uuid::Uuid;
 
-use super::data_store::DataStore;
+use super::data_store::{BlockId, DataStore};
 use super::open_store::OpenStore;
 use super::sftp_store::{SftpAuth, SftpConfig, SftpStore};
 
@@ -155,19 +154,19 @@ pub struct RcloneStore {
 }
 
 impl DataStore for RcloneStore {
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
         self.sftp_store.write_block(id, data)
     }
 
-    fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
         self.sftp_store.read_block(id)
     }
 
-    fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()> {
+    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
         self.sftp_store.remove_block(id)
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>> {
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
         self.sftp_store.list_blocks()
     }
 }

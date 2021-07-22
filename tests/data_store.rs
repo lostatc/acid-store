@@ -49,7 +49,7 @@ mod common;
 // return a `Result`, so those tests return `()` and unwrap `Result`s instead.
 
 fn read_block(mut store: impl DataStore) -> anyhow::Result<()> {
-    let id = Uuid::new_v4();
+    let id = Uuid::new_v4().into();
 
     assert_eq!(store.read_block(id)?, None);
 
@@ -115,7 +115,7 @@ fn rclone_read_block() {
 }
 
 fn overwrite_block(mut store: impl DataStore) -> anyhow::Result<()> {
-    let id = Uuid::new_v4();
+    let id = Uuid::new_v4().into();
     let expected_block = random_buffer();
 
     store.write_block(id, random_buffer().as_slice())?;
@@ -180,13 +180,13 @@ fn rclone_overwrite_block() {
 }
 
 fn remove_block(mut store: impl DataStore) -> anyhow::Result<()> {
-    let id = Uuid::new_v4();
+    let id = Uuid::new_v4().into();
     store.write_block(id, random_buffer().as_slice())?;
     store.remove_block(id)?;
     assert_eq!(store.read_block(id)?, None);
 
     // Removing a nonexistent block should return `Ok`.
-    store.remove_block(Uuid::new_v4())?;
+    store.remove_block(Uuid::new_v4().into())?;
 
     Ok(())
 }
@@ -245,9 +245,9 @@ fn rclone_remove_block() {
 }
 
 fn list_blocks(mut store: impl DataStore) -> anyhow::Result<()> {
-    let id1 = Uuid::new_v4();
-    let id2 = Uuid::new_v4();
-    let id3 = Uuid::new_v4();
+    let id1 = Uuid::new_v4().into();
+    let id2 = Uuid::new_v4().into();
+    let id3 = Uuid::new_v4().into();
 
     assert_eq!(store.list_blocks()?, Vec::new());
 

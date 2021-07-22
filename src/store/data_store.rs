@@ -15,7 +15,13 @@
  */
 
 use std::fmt::{self, Debug, Formatter};
-use uuid::Uuid;
+
+uuid_type! {
+    /// A UUID which uniquely identifies a block of data in a [`DataStore`].
+    ///
+    /// [`DataStore`]: crate::store::DataStore
+    BlockId
+}
 
 /// A persistent store for blocks of data.
 ///
@@ -32,12 +38,12 @@ pub trait DataStore {
     /// If a block with the given `id` already exists, it is overwritten.
     ///
     /// This is an atomic operation.
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()>;
+    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()>;
 
     /// Return the bytes of the block with the given `id`.
     ///
     /// If there is no block with the given `id`, return `None`.
-    fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>>;
+    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>>;
 
     /// Remove the block with the given `id` from the store.
     ///
@@ -48,26 +54,26 @@ pub trait DataStore {
     /// If there is no block with the given `id`, this method does nothing and returns `Ok`.
     ///
     /// This is an atomic operation.
-    fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()>;
+    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()>;
 
     /// Return a list of IDs of blocks in the store.
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>>;
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>>;
 }
 
 impl DataStore for Box<dyn DataStore> {
-    fn write_block(&mut self, id: Uuid, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
         self.as_mut().write_block(id, data)
     }
 
-    fn read_block(&mut self, id: Uuid) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
         self.as_mut().read_block(id)
     }
 
-    fn remove_block(&mut self, id: Uuid) -> anyhow::Result<()> {
+    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
         self.as_mut().remove_block(id)
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<Uuid>> {
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
         self.as_mut().list_blocks()
     }
 }
