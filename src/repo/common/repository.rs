@@ -412,10 +412,10 @@ impl<K: Key> KeyRepo<K> {
         // put them into the `Header`. This avoids the need to clone them. We'll put them back
         // later.
         let header = Header {
-            chunks: mem::replace(&mut state.chunks, HashMap::new()),
-            packs: mem::replace(&mut state.packs, HashMap::new()),
-            instances: mem::replace(&mut self.instances, HashMap::new()),
-            handle_table: mem::replace(&mut self.handle_table, HandleIdTable::new()),
+            chunks: std::mem::take(&mut state.chunks),
+            packs: std::mem::take(&mut state.packs),
+            instances: std::mem::take(&mut self.instances),
+            handle_table: std::mem::take(&mut self.handle_table),
         };
 
         // Serialize the header so we can write it to the data store.
@@ -817,7 +817,7 @@ impl<K: Key> Commit for KeyRepo<K> {
                     // Temporarily move the pack map into the previous header just so that we can
                     // serialize it. Once we're done, move it back. This avoids needing the clone
                     // the pack map.
-                    previous_header.packs = mem::replace(&mut state.packs, HashMap::new());
+                    previous_header.packs = std::mem::take(&mut state.packs);
                     let serialized_header = to_vec(&previous_header)
                         .expect("Could not serialize the repository header.");
                     mem::swap(&mut previous_header.packs, &mut state.packs);

@@ -15,7 +15,6 @@
  */
 
 use std::io::{self, Write};
-use std::mem::replace;
 
 use cdchunking::{ChunkerImpl, ZPAQ};
 use serde::{Deserialize, Serialize};
@@ -127,7 +126,7 @@ impl IncrementalChunker {
     /// still be buffered internally. Calling `flush` will make this method return the remaining
     /// buffered data as a new chunk.
     pub fn chunks(&mut self) -> Vec<Vec<u8>> {
-        replace(&mut self.chunks, Vec::new())
+        std::mem::take(&mut self.chunks)
     }
 
     /// Clear all the data in the chunker.
@@ -155,7 +154,7 @@ impl Write for IncrementalChunker {
                 }
                 Some(index) => {
                     self.buffer.extend_from_slice(&unchunked_data[..index]);
-                    let new_chunk = replace(&mut self.buffer, Vec::new());
+                    let new_chunk = std::mem::take(&mut self.buffer);
                     self.chunks.push(new_chunk);
                     unchunked_data = &unchunked_data[index..];
                     self.chunker.reset();
@@ -166,7 +165,7 @@ impl Write for IncrementalChunker {
 
     fn flush(&mut self) -> io::Result<()> {
         if !self.buffer.is_empty() {
-            let new_chunk = replace(&mut self.buffer, Vec::new());
+            let new_chunk = std::mem::take(&mut self.buffer);
             self.chunks.push(new_chunk);
         }
         self.chunker.reset();

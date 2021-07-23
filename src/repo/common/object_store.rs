@@ -182,8 +182,8 @@ impl<'a> ObjectInfo<'a> {
         }
 
         Ok(ObjectStats {
-            actual_size: actual_size,
-            apparent_size: apparent_size,
+            apparent_size,
+            actual_size,
             holes,
         })
     }
@@ -567,12 +567,7 @@ impl<'a> ObjectWriter<'a> {
         if let Some(hole_size) = start_hole_size {
             new_extents.push(Extent::Hole { size: hole_size });
         }
-        new_extents.extend(
-            self.object_state
-                .new_chunks
-                .drain(..)
-                .map(|chunk| Extent::Chunk(chunk)),
-        );
+        new_extents.extend(self.object_state.new_chunks.drain(..).map(Extent::Chunk));
         if let Some(hole_size) = end_hole_size {
             new_extents.push(Extent::Hole { size: hole_size });
         }

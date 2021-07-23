@@ -58,7 +58,7 @@ pub enum ResourceLimit {
 impl ResourceLimit {
     /// Get a memory limit based on this resource limit.
     #[cfg(feature = "encryption")]
-    fn to_mem_limit(&self) -> MemLimit {
+    fn to_mem_limit(self) -> MemLimit {
         match self {
             ResourceLimit::Interactive => MEMLIMIT_INTERACTIVE,
             ResourceLimit::Moderate => MEMLIMIT_MODERATE,
@@ -68,7 +68,7 @@ impl ResourceLimit {
 
     /// Get an operations limit based on this resource limit.
     #[cfg(feature = "encryption")]
-    fn to_ops_limit(&self) -> OpsLimit {
+    fn to_ops_limit(self) -> OpsLimit {
         match self {
             ResourceLimit::Interactive => OPSLIMIT_INTERACTIVE,
             ResourceLimit::Moderate => OPSLIMIT_MODERATE,
@@ -192,7 +192,7 @@ impl Debug for EncryptionKey {
 
 impl ExposeSecret<Vec<u8>> for EncryptionKey {
     fn expose_secret(&self) -> &Vec<u8> {
-        self.0.expose_secret().as_ref()
+        self.0.expose_secret()
     }
 }
 
