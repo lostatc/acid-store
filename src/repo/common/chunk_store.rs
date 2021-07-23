@@ -19,8 +19,8 @@ use std::collections::HashSet;
 
 use uuid::Uuid;
 
+use super::handle::HandleId;
 use super::handle::{chunk_hash, Chunk};
-use super::id_table::UniqueId;
 use super::packing::Packing;
 use super::state::{ChunkInfo, Pack, PackIndex, RepoState};
 use crate::store::BlockId;
@@ -332,7 +332,7 @@ pub trait WriteChunk: ReadChunk {
     /// writing any new data.
     ///
     /// This requires a unique `id` which is used for reference counting.
-    fn write_chunk(&mut self, data: &[u8], id: UniqueId) -> crate::Result<Chunk>;
+    fn write_chunk(&mut self, data: &[u8], id: HandleId) -> crate::Result<Chunk>;
 }
 
 /// A borrowed type for reading from a data store.
@@ -432,7 +432,7 @@ impl<'a> ReadChunk for StoreWriter<'a> {
 }
 
 impl<'a> WriteChunk for StoreWriter<'a> {
-    fn write_chunk(&mut self, data: &[u8], id: UniqueId) -> crate::Result<Chunk> {
+    fn write_chunk(&mut self, data: &[u8], id: HandleId) -> crate::Result<Chunk> {
         assert!(
             data.len() <= u32::MAX as usize,
             "Given data exceeds maximum chunk size."

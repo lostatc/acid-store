@@ -16,6 +16,10 @@
 
 #![macro_use]
 
+use std::collections::HashSet;
+
+use serde::{Deserialize, Serialize};
+
 macro_rules! uuid_type {
     {
         $(#[$meta:meta])*
@@ -51,4 +55,94 @@ macro_rules! uuid_type {
             }
         }
     };
+}
+
+/// A table for allocating `u64` values.
+#[derive(Debug, PartialEq, Eq, Clone, Default, Serialize, Deserialize)]
+pub struct IdTable {
+    /// The highest used ID value (the high water mark).
+    highest: u64,
+
+    /// A set of unused ID values below the high water mark.
+    unused: HashSet<u64>,
+}
+
+impl IdTable {
+    /// Return a new empty `IdTable`.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Return the next unused ID from the table.
+    pub fn next(&mut self) -> u64 {
+        match self.unused.iter().next().copied() {
+            Some(id) => {
+                self.unused.remove(&id);
+                id
+            }
+            None => {
+                self.highest += 1;
+                self.highest
+            }
+        }
+    }
+
+    /// Return whether the given `id` is in the table.
+    pub fn contains(&self, id: u64) -> bool {
+        id <= self.highest && !self.unused.contains(&id)
+    }
+
+    /// Return the given `id` back to the table.
+    ///
+    /// This returns `true` if the value was returned or `false` if it was unused.
+    pub fn recycle(&mut self, id: u64) -> bool {
+        if !self.contains(id) {
+            return false;
+        }
+        self.unused.insert(id);
+        true
+    }
+}
+
+macro_rules! id_table {
+    {
+        $(#[$id_meta:meta])*
+        $id_name:ident
+        $(#[$table_meta:meta])*
+        $table_name:ident
+    } => {
+        $(#[$id_meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+        #[serde(transparent)]
+        pub struct $id_name(u64);
+
+        $(#[$table_meta])*
+        #[derive(Debug, PartialEq, Eq, Clone, Default, serde::Serialize, serde::Deserialize)]
+        #[serde(transparent)]
+        pub struct $table_name(crate::id::IdTable);
+
+        impl $table_name {
+            /// Return a new empty instance.
+            pub fn new() -> Self {
+                Self(crate::id::IdTable::new())
+            }
+
+            /// Return the next unused ID from the table.
+            pub fn next(&mut self) -> $id_name {
+                $id_name(self.0.next())
+            }
+
+            /// Return whether the given `id` is in the table.
+            pub fn contains(&self, id: $id_name) -> bool {
+                self.0.contains(id.0)
+            }
+
+            /// Return the given `id` back to the table.
+            ///
+            /// This returns `true` if the value was returned or `false` if it was unused.
+            pub fn recycle(&mut self, id: $id_name) -> bool {
+                self.0.recycle(id.0)
+            }
+        }
+    }
 }

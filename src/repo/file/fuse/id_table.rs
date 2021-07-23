@@ -16,7 +16,7 @@
 
 use std::collections::HashSet;
 
-/// A table for allocating `UniqueId` values.
+/// A table for allocating inode numbers.
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
 pub struct IdTable {
     /// The highest used ID value (the high water mark).

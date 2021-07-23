@@ -27,8 +27,7 @@ use crate::store::{BlockId, DataStore};
 use super::chunk_store::StoreState;
 use super::chunking::IncrementalChunker;
 use super::encryption::EncryptionKey;
-use super::handle::{Chunk, Extent, ObjectHandle};
-use super::id_table::UniqueId;
+use super::handle::{Chunk, Extent, HandleId, ObjectHandle};
 use super::lock::Lock;
 use super::lock::LockTable;
 use super::metadata::{RepoId, RepoMetadata};
@@ -41,7 +40,7 @@ pub struct ChunkInfo {
     pub block_id: BlockId,
 
     /// The IDs of objects which reference this chunk.
-    pub references: HashSet<UniqueId>,
+    pub references: HashSet<HandleId>,
 }
 
 /// The location of a block in a pack.
@@ -125,7 +124,7 @@ pub struct RepoState {
     pub packs: HashMap<BlockId, Vec<PackIndex>>,
 
     /// A table used to track current transactions for each object.
-    pub transactions: LockTable<UniqueId>,
+    pub transactions: LockTable<HandleId>,
 
     /// The master encryption key for the repository.
     pub master_key: EncryptionKey,
@@ -195,7 +194,7 @@ pub struct ObjectState {
     pub hole_buffer: Vec<u8>,
 
     /// A lock representing the current transaction if there is one.
-    pub transaction_lock: Option<Lock<UniqueId>>,
+    pub transaction_lock: Option<Lock<HandleId>>,
 
     /// The state for reading and writing blocks to the data store.
     pub store_state: StoreState,

@@ -21,8 +21,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use uuid::Uuid;
 
-use super::info::{ObjectKey, RepoKey, RepoState, StateRestore};
-use crate::repo::common::{IdTable, UniqueId};
+use super::info::{KeyId, KeyIdTable, ObjectKey, RepoKey, RepoState, StateRestore};
 use crate::repo::{
     key::KeyRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint,
     VersionId,
@@ -37,7 +36,7 @@ where
     State: Serialize + DeserializeOwned + Default,
 {
     repo: KeyRepo<RepoKey>,
-    id_table: IdTable,
+    id_table: KeyIdTable,
     state: State,
 }
 
@@ -57,7 +56,7 @@ where
     {
         let mut state_repo = StateRepo {
             repo,
-            id_table: IdTable::default(),
+            id_table: KeyIdTable::new(),
             state: State::default(),
         };
         let RepoState { state, id_table } = state_repo.read_state()?;
@@ -72,7 +71,7 @@ where
     {
         let mut state_repo = StateRepo {
             repo,
-            id_table: IdTable::default(),
+            id_table: KeyIdTable::new(),
             state: State::default(),
         };
         state_repo.write_state()?;
@@ -97,7 +96,7 @@ where
         };
         let id_table = match self.repo.object(&RepoKey::IdTable) {
             Some(mut object) => object.deserialize()?,
-            None => IdTable::default(),
+            None => KeyIdTable::new(),
         };
         Ok(RepoState { state, id_table })
     }
@@ -120,11 +119,11 @@ where
     }
 
     /// Create a new `ObjectKey` for the given `object_id`.
-    fn new_id(&self, object_id: UniqueId) -> ObjectKey {
+    fn new_id(&self, key_id: KeyId) -> ObjectKey {
         ObjectKey {
             repo_id: self.repo.info().id(),
             instance_id: self.repo.instance(),
-            object_id,
+            key_id,
         }
     }
 
@@ -145,7 +144,7 @@ where
 
     /// Return whether there is an object with the given `key` in this repository.
     pub fn contains(&self, key: ObjectKey) -> bool {
-        self.check_key(key) && self.repo.contains(&RepoKey::Object(key.object_id))
+        self.check_key(key) && self.repo.contains(&RepoKey::Object(key.key_id))
     }
 
     /// Create a new object in the repository and returns its `ObjectKey`.
@@ -168,11 +167,11 @@ where
             return false;
         }
 
-        if !self.id_table.recycle(key.object_id) {
+        if !self.id_table.recycle(key.key_id) {
             return false;
         }
 
-        assert!(self.repo.remove(&RepoKey::Object(key.object_id)));
+        assert!(self.repo.remove(&RepoKey::Object(key.key_id)));
 
         true
     }
@@ -185,7 +184,7 @@ where
             return None;
         }
 
-        self.repo.object(&RepoKey::Object(key.object_id))
+        self.repo.object(&RepoKey::Object(key.key_id))
     }
 
     /// Return an iterator over all the keys of objects in this repository.
@@ -202,14 +201,14 @@ where
     ///
     /// This is a cheap operation which does not require copying the bytes in the object.
     pub fn copy(&mut self, source: ObjectKey) -> Option<ObjectKey> {
-        if !self.check_key(source) || !self.repo.contains(&RepoKey::Object(source.object_id)) {
+        if !self.check_key(source) || !self.repo.contains(&RepoKey::Object(source.key_id)) {
             return None;
         }
         let dest_id = self.id_table.next();
 
         assert!(self
             .repo
-            .copy(&RepoKey::Object(source.object_id), RepoKey::Object(dest_id)));
+            .copy(&RepoKey::Object(source.key_id), RepoKey::Object(dest_id)));
 
         Some(self.new_id(dest_id))
     }
@@ -241,7 +240,7 @@ where
     /// [`KeyRepo::clear_instance`]: crate::repo::key::KeyRepo::clear_instance
     pub fn clear_instance(&mut self) {
         self.state = State::default();
-        self.id_table = IdTable::new();
+        self.id_table = KeyIdTable::new();
         self.repo.clear_instance();
     }
 

@@ -16,13 +16,20 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::repo::common::{IdTable, UniqueId};
 use crate::repo::key::KeyRepo;
 use crate::repo::{InstanceId, RepoId, Restore, RestoreSavepoint};
 
+id_table! {
+    /// An ID that uniquely identifies an `ObjectKey` in a `StateRepo`.
+    KeyId
+
+    /// A table for allocating `KeyId` values.
+    KeyIdTable
+}
+
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Serialize, Deserialize)]
 pub enum RepoKey {
-    Object(UniqueId),
+    Object(KeyId),
     State,
     IdTable,
     Stage,
@@ -31,7 +38,7 @@ pub enum RepoKey {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RepoState<State> {
     pub state: State,
-    pub id_table: IdTable,
+    pub id_table: KeyIdTable,
 }
 
 #[derive(Debug, Clone)]
@@ -57,5 +64,5 @@ impl<State: Clone> Restore for StateRestore<State> {
 pub struct ObjectKey {
     pub(super) repo_id: RepoId,
     pub(super) instance_id: InstanceId,
-    pub(super) object_id: UniqueId,
+    pub(super) key_id: KeyId,
 }
