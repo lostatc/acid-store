@@ -96,6 +96,7 @@ pub use self::repository::FileRepo;
 pub use self::special::{NoSpecialType, SpecialType};
 
 mod entry;
+mod file;
 mod fuse;
 mod metadata;
 mod path_tree;
