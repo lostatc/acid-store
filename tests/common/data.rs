@@ -39,6 +39,12 @@ pub fn buffer() -> Vec<u8> {
     random_bytes(rng.gen_range(MIN_BUFFER_SIZE, MAX_BUFFER_SIZE))
 }
 
+/// Return a buffer of random bytes of a set size.
+#[fixture]
+pub fn fixed_buffer(#[default(MIN_BUFFER_SIZE)] size: usize) -> Vec<u8> {
+    random_bytes(size)
+}
+
 /// Return a randomly sized buffer of random bytes which is smaller than `buffer`.
 #[fixture]
 pub fn smaller_buffer() -> Vec<u8> {
