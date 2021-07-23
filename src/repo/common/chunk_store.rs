@@ -52,11 +52,10 @@ impl EncodeBlock for RepoState {
             .encryption
             .decrypt(data, &self.master_key)?;
 
-        Ok(self
-            .metadata
+        self.metadata
             .config
             .compression
-            .decompress(decrypted_data.as_slice())?)
+            .decompress(decrypted_data.as_slice())
     }
 }
 
