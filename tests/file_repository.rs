@@ -607,7 +607,8 @@ fn archive_file() -> anyhow::Result<()> {
     let temp_dir = tempdir()?;
     let source_path = temp_dir.as_ref().join("source");
     let mut source_file = File::create(&source_path)?;
-    source_file.write_all(b"file contents")?;
+    let expected_contents = random_buffer();
+    source_file.write_all(expected_contents.as_slice())?;
     source_file.flush()?;
 
     let config = MemoryConfig::new();
@@ -618,7 +619,7 @@ fn archive_file() -> anyhow::Result<()> {
     let mut actual_contents = Vec::new();
     object.read_to_end(&mut actual_contents)?;
 
-    assert_eq!(actual_contents, b"file contents");
+    assert_eq!(actual_contents, expected_contents);
     Ok(())
 }
 
