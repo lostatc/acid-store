@@ -17,16 +17,18 @@
 #![allow(dead_code)]
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
+mod assertions;
 mod config;
 mod data;
 mod repository;
 mod store;
 
+pub use assertions::ErrorVariantAssertions;
 pub use config::{
     ENCODING_CONFIG, FIXED_CONFIG, FIXED_PACKING_LARGE_CONFIG, FIXED_PACKING_SMALL_CONFIG,
     ZPAQ_CONFIG, ZPAQ_PACKING_CONFIG,
 };
-pub use data::{buffer, larger_buffer, smaller_buffer};
+pub use data::{buffer, fixed_buffer, larger_buffer, smaller_buffer};
 pub use repository::{open_repo, repo, repo_object, RepoObject};
 #[cfg(feature = "store-directory")]
 pub use store::directory_store;

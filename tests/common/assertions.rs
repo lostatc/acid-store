@@ -22,12 +22,13 @@ pub trait ErrorVariantAssertions {
     fn is_err_variant(&self, expected_value: acid_store::Error);
 }
 
-impl<'a, T> ErrorVariantAssertions for Spec<'a, acid_store::Result<T>>
+impl<'a, T, E> ErrorVariantAssertions for Spec<'a, Result<T, E>>
 where
     T: Debug,
+    acid_store::Error: From<E>,
 {
     fn is_err_variant(&self, expected_value: acid_store::Error) {
-        match self.subject {
+        match self.subject.map_err(acid_store::Error::from) {
             Ok(ref value) => {
                 AssertionFailure::from_spec(self)
                     .with_expected(format!("Err({:?})", expected_value))
