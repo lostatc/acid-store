@@ -16,8 +16,8 @@
 
 use std::collections::HashSet;
 use std::fmt::Debug;
-use std::fs::{create_dir, create_dir_all, metadata, File, OpenOptions};
-use std::io::{self, copy};
+use std::fs::{create_dir, create_dir_all, metadata};
+use std::io;
 use std::marker::PhantomData;
 use std::path::Path;
 
@@ -33,6 +33,7 @@ use crate::repo::{
 };
 
 use super::entry::{Entry, EntryHandle, EntryType, HandleType};
+use super::file::{archive_file, extract_file};
 use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
 use super::special::{NoSpecialType, SpecialType};
@@ -653,9 +654,7 @@ where
         let entry_handle = self.0.state().get(dest.as_ref()).unwrap();
         if let HandleType::File(object_id) = entry_handle.kind {
             let mut object = self.0.object(object_id).unwrap();
-            let mut file = File::open(&source)?;
-            copy(&mut file, &mut object)?;
-            object.commit()?;
+            archive_file(&mut object, source.as_ref())?;
         }
 
         Ok(())
@@ -746,11 +745,7 @@ where
         match entry.kind {
             EntryType::File => {
                 let mut object = self.open(source.as_ref()).unwrap();
-                let mut file = OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&dest)?;
-                copy(&mut object, &mut file)?;
+                extract_file(&mut object, dest.as_ref())?;
             }
             EntryType::Directory => {
                 create_dir(&dest)?;
