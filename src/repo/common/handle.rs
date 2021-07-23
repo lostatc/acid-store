@@ -20,9 +20,16 @@ use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
-use super::id_table::UniqueId;
 use super::metadata::RepoId;
 use super::state::InstanceId;
+
+id_table! {
+    /// An ID which uniquely identifies an object in a repository instance.
+    HandleId
+
+    /// A table for allocating `HandleId` values.
+    HandleIdTable
+}
 
 /// A checksum used for uniquely identifying a chunk.
 pub type ChunkHash = [u8; blake3::OUT_LEN];
@@ -78,7 +85,7 @@ pub struct ObjectHandle {
     /// The ID of this handle which is unique within its repository.
     ///
     /// Handle IDs are only guaranteed to be unique within the same repository.
-    pub id: UniqueId,
+    pub id: HandleId,
 
     /// The extents which make up the object.
     pub extents: Vec<Extent>,
@@ -131,11 +138,11 @@ impl ObjectHandle {
 pub struct ObjectId {
     repo_id: RepoId,
     instance_id: InstanceId,
-    handle_id: UniqueId,
+    handle_id: HandleId,
 }
 
 impl ObjectId {
-    pub(super) fn new(repo_id: RepoId, instance_id: InstanceId, handle_id: UniqueId) -> Self {
+    pub(super) fn new(repo_id: RepoId, instance_id: InstanceId, handle_id: HandleId) -> Self {
         Self {
             repo_id,
             instance_id,

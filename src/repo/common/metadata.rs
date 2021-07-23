@@ -21,8 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use super::config::RepoConfig;
 use super::encryption::KeySalt;
-use super::handle::Chunk;
-use super::id_table::IdTable;
+use super::handle::{Chunk, HandleIdTable};
 use super::repository::METADATA_BLOCK_ID;
 use super::state::{ChunkInfo, InstanceId, InstanceInfo, PackIndex};
 use crate::store::{BlockId, DataStore, OpenStore};
@@ -40,7 +39,7 @@ pub struct Header {
     pub instances: HashMap<InstanceId, InstanceInfo>,
 
     /// The table of object handle IDs.
-    pub handle_table: IdTable,
+    pub handle_table: HandleIdTable,
 }
 
 /// Metadata for a repository.

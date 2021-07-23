@@ -29,7 +29,7 @@ use super::chunking::Chunking;
 use super::compression::Compression;
 use super::config::RepoConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt, ResourceLimit};
-use super::id_table::IdTable;
+use super::handle::HandleIdTable;
 use super::lock::LockTable;
 use super::metadata::{peek_info_store, Header, RepoId, RepoMetadata};
 use super::open_repo::OpenRepo;
@@ -419,7 +419,7 @@ impl OpenOptions {
             chunks: HashMap::new(),
             packs: HashMap::new(),
             instances: HashMap::new(),
-            handle_table: IdTable::new(),
+            handle_table: HandleIdTable::new(),
         };
 
         // Serialize, encode, and write the header to the data store.

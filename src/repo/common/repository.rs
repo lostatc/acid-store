@@ -32,8 +32,7 @@ use super::chunk_store::{
 };
 use super::commit::Commit;
 use super::encryption::{EncryptionKey, KeySalt};
-use super::handle::{chunk_hash, ObjectHandle, ObjectId};
-use super::id_table::{IdTable, UniqueId};
+use super::handle::{chunk_hash, HandleId, HandleIdTable, ObjectHandle, ObjectId};
 use super::key::Key;
 use super::metadata::{Header, RepoInfo};
 use super::object::Object;
@@ -93,7 +92,7 @@ pub struct KeyRepo<K: Key> {
     ///
     /// We use this to determine whether a handle is contained in the repository without actually
     /// storing it.
-    pub(super) handle_table: IdTable,
+    pub(super) handle_table: HandleIdTable,
 
     /// The unique ID for the current transaction.
     ///
@@ -130,7 +129,7 @@ impl<K: Key> OpenRepo for KeyRepo<K> {
 
 impl<K: Key> KeyRepo<K> {
     /// Return the `object_id` for the object with the given `handle_id`.
-    fn object_id(&self, handle_id: UniqueId) -> ObjectId {
+    fn object_id(&self, handle_id: HandleId) -> ObjectId {
         let state = self.state.read().unwrap();
         let repo_id = state.metadata.id;
         ObjectId::new(repo_id, self.instance_id, handle_id)
@@ -416,7 +415,7 @@ impl<K: Key> KeyRepo<K> {
             chunks: mem::replace(&mut state.chunks, HashMap::new()),
             packs: mem::replace(&mut state.packs, HashMap::new()),
             instances: mem::replace(&mut self.instances, HashMap::new()),
-            handle_table: mem::replace(&mut self.handle_table, IdTable::new()),
+            handle_table: mem::replace(&mut self.handle_table, HandleIdTable::new()),
         };
 
         // Serialize the header so we can write it to the data store.
