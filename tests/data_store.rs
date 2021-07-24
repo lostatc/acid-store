@@ -16,31 +16,13 @@
 
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
-#[cfg(any(
-    feature = "store-s3",
-    feature = "store-redis",
-    feature = "store-rclone",
-    feature = "store_sftp",
-))]
-use serial_test::serial;
-#[cfg(any(feature = "store-directory", feature = "store-sqlite"))]
-use tempfile::tempdir;
-use uuid::Uuid;
-
 use acid_store::store::DataStore;
-#[cfg(feature = "store-directory")]
-use common::directory_store;
-#[cfg(feature = "store-rclone")]
-use common::rclone_store;
-#[cfg(feature = "store-redis")]
-use common::redis_store;
-#[cfg(feature = "store-s3")]
-use common::s3_store;
-#[cfg(feature = "store-sftp")]
-use common::sftp_store;
-#[cfg(feature = "store-sqlite")]
-use common::sqlite_store;
-use common::{assert_contains_all, memory_store, random_buffer};
+use common::*;
+use rstest::*;
+use rstest_reuse::{self, *};
+use serial_test::serial;
+use spectral::prelude::*;
+use uuid::Uuid;
 
 mod common;
 
@@ -48,15 +30,15 @@ mod common;
 // they access a shared resource. However, that crate doesn't seem to support test functions which
 // return a `Result`, so those tests return `()` and unwrap `Result`s instead.
 
-fn read_block(mut store: impl DataStore) -> anyhow::Result<()> {
+#[apply(data_stores)]
+fn read_block(#[case] mut store: Box<dyn DataStore>, buffer: Vec<u8>) -> anyhow::Result<()> {
     let id = Uuid::new_v4().into();
 
-    assert_eq!(store.read_block(id)?, None);
+    assert_that!(store.read_block(id)).is_ok_containing(None);
 
-    let expected_block = random_buffer();
-    store.write_block(id, expected_block.as_slice())?;
+    store.write_block(id, &buffer)?;
 
-    assert_eq!(store.read_block(id)?, Some(expected_block));
+    assert_that!(store.read_block(id)).is_ok_containing(Some(buffer));
 
     Ok(())
 }

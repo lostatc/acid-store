@@ -14,13 +14,17 @@
  * limitations under the License.
  */
 
+#![macro_use]
+
 #[cfg(any(feature = "store-directory", feature = "store-sqlite"))]
 use std::path::Path;
 
 use rstest::*;
+use rstest_reuse::{self, *};
+use serial_test::serial;
 use tempfile::TempDir;
 
-use acid_store::store::{DataStore, MemoryConfig, MemoryStore, OpenStore};
+use acid_store::store::{BlockId, DataStore, MemoryConfig, MemoryStore, OpenStore};
 #[cfg(feature = "store-directory")]
 use acid_store::store::{DirectoryConfig, DirectoryStore};
 #[cfg(feature = "store-sftp")]
@@ -47,73 +51,72 @@ fn truncate_store(store: &mut impl DataStore) -> anyhow::Result<()> {
 }
 
 /// A value which is tied to the lifetime of a temporary directory.
-pub struct WithTempDir<T> {
+struct WithTempDir<T> {
     directory: TempDir,
     value: T,
 }
 
-impl<T> Deref for WithTempDir<T> {
-    type Target = T;
+impl<T: DataStore> DataStore for WithTempDir<T> {
+    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
+        self.value.write_block(id, data)
+    }
 
-    fn deref(&self) -> &Self::Target {
-        &self.value
+    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
+        self.value.read_block(id)
+    }
+
+    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
+        self.value.remove_block(id)
+    }
+
+    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
+        self.value.list_blocks()
     }
 }
 
-impl<T> DerefMut for WithTempDir<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.value
-    }
-}
-
-#[fixture]
-pub fn memory_store() -> MemoryStore {
-    MemoryConfig::new().open().unwrap()
+pub fn memory_store() -> Box<dyn DataStore> {
+    Box::new(MemoryConfig::new().open().unwrap())
 }
 
 #[cfg(feature = "store-directory")]
-#[fixture]
-pub fn directory_store() -> WithTempDir<DirectoryStore> {
+pub fn directory_store() -> Box<dyn DataStore> {
     let directory = tempfile::tempdir().unwrap();
     let config = DirectoryConfig {
         path: directory.as_ref().join("store"),
     };
     let mut store = config.open().unwrap();
     truncate_store(&mut store).unwrap();
-    WithTempDir {
+    Box::new(WithTempDir {
         directory,
         value: store,
-    }
+    })
 }
 
 #[cfg(feature = "store-sqlite")]
-#[fixture]
-pub fn sqlite_store() -> WithTempDir<SqliteStore> {
+pub fn sqlite_store() -> Box<dyn DataStore> {
     let directory = tempfile::tempdir().unwrap();
     let config = SqliteConfig {
         path: directory.as_ref().join("store.db"),
     };
     let mut store = config.open().unwrap();
     truncate_store(&mut store).unwrap();
-    WithTempDir {
+    Box::new(WithTempDir {
         directory,
         value: store,
-    }
+    })
 }
 
 #[cfg(feature = "store-redis")]
-#[fixture]
-pub fn redis_store() -> RedisStore {
+pub fn redis_store() -> Box<dyn DataStore> {
     let url = dotenv::var("REDIS_URL").unwrap();
     let config = RedisConfig::from_url(&url).unwrap();
     let mut store = config.open().unwrap();
     truncate_store(&mut store).unwrap();
-    store
+    Box::new(store)
 }
 
 #[cfg(feature = "store-s3")]
-#[fixture]
-pub fn s3_store() -> S3Store {
+pub fn s3_store() -> Box<dyn DataStore> {
     let config = S3Config {
         bucket: dotenv::var("S3_BUCKET").unwrap(),
         region: S3Region::from_name(&dotenv::var("S3_REGION").unwrap()).unwrap(),
@@ -125,12 +128,11 @@ pub fn s3_store() -> S3Store {
     };
     let mut store = config.open().unwrap();
     truncate_store(&mut store).unwrap();
-    store
+    Box::new(store)
 }
 
 #[cfg(feature = "store-sftp")]
-#[fixture]
-pub fn sftp_store() -> SftpStore {
+pub fn sftp_store() -> Box<dyn DataStore> {
     let sftp_server: String = dotenv::var("SFTP_SERVER").unwrap();
     let sftp_path: String = dotenv::var("SFTP_PATH").unwrap();
     let sftp_username: String = dotenv::var("SFTP_USERNAME").unwrap();
@@ -147,16 +149,30 @@ pub fn sftp_store() -> SftpStore {
 
     let mut store = config.open().unwrap();
     truncate_store(&mut store).unwrap();
-    store
+    Box::new(store)
 }
 
 #[cfg(feature = "store-rclone")]
-#[fixture]
-pub fn rclone_store() -> RcloneStore {
+pub fn rclone_store() -> Box<dyn DataStore> {
     let config = RcloneConfig {
         config: dotenv::var("RCLONE_REMOTE").unwrap(),
     };
     let mut store = config.open().unwrap();
     truncate_store(&mut store).unwrap();
-    store
+    Box::new(store)
 }
+
+#[template]
+#[rstest]
+#[case(memory_store())]
+#[cfg_attr(feature = "store-directory", case(directory_store()))]
+#[cfg_attr(feature = "store-sqlite", case(sqlite_store()))]
+#[cfg_attr(feature = "store-redis", case(redis_store()))]
+#[cfg_attr(feature = "store-redis", serial(redis))]
+#[cfg_attr(feature = "store-s3", case(s3_store()))]
+#[cfg_attr(feature = "store-s3", serial(s3))]
+#[cfg_attr(feature = "store-sftp", case(sftp_store()))]
+#[cfg_attr(feature = "store-sftp", serial(sftp))]
+#[cfg_attr(feature = "store-rclone", case(rclone_store()))]
+#[cfg_attr(feature = "store-rclone", serial(rclone))]
+pub fn data_stores(#[case] store: Box<dyn DataStore>) {}
