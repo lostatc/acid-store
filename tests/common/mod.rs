@@ -30,8 +30,12 @@ pub use config::{
 };
 pub use data::{buffer, fixed_buffer, larger_buffer, smaller_buffer};
 pub use repository::{open_repo, repo, repo_object, RepoObject};
+pub use rstest::*;
+pub use serial_test::serial;
+pub use spectral::prelude::*;
 #[cfg(feature = "store-directory")]
 pub use store::directory_store;
+pub use store::memory_store;
 #[cfg(feature = "store-rclone")]
 pub use store::rclone_store;
 #[cfg(feature = "store-redis")]
@@ -42,4 +46,3 @@ pub use store::s3_store;
 pub use store::sftp_store;
 #[cfg(feature = "store-sqlite")]
 pub use store::sqlite_store;
-pub use store::{memory_store, WithTempDir};

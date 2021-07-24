@@ -16,29 +16,23 @@
 
 #![macro_use]
 
-#[cfg(any(feature = "store-directory", feature = "store-sqlite"))]
-use std::path::Path;
-
-use rstest::*;
 use rstest_reuse::{self, *};
-use serial_test::serial;
 use tempfile::TempDir;
 
-use acid_store::store::{BlockId, DataStore, MemoryConfig, MemoryStore, OpenStore};
 #[cfg(feature = "store-directory")]
-use acid_store::store::{DirectoryConfig, DirectoryStore};
+use acid_store::store::DirectoryConfig;
 #[cfg(feature = "store-sftp")]
-use acid_store::store::{RcloneConfig, RcloneStore};
+use acid_store::store::RcloneConfig;
 #[cfg(feature = "store-redis")]
-use acid_store::store::{RedisConfig, RedisStore};
-#[cfg(feature = "store-s3")]
-use acid_store::store::{S3Config, S3Credentials, S3Region, S3Store};
+use acid_store::store::RedisConfig;
 #[cfg(feature = "store-sqlite")]
-use acid_store::store::{SqliteConfig, SqliteStore};
-use std::ops::{Deref, DerefMut};
+use acid_store::store::SqliteConfig;
+use acid_store::store::{BlockId, DataStore, MemoryConfig, OpenStore};
+#[cfg(feature = "store-s3")]
+use acid_store::store::{S3Config, S3Credentials, S3Region};
 #[cfg(feature = "store-sftp")]
 use {
-    acid_store::store::{SftpAuth, SftpConfig, SftpStore},
+    acid_store::store::{SftpAuth, SftpConfig},
     std::path::PathBuf,
 };
 
@@ -164,15 +158,12 @@ pub fn rclone_store() -> Box<dyn DataStore> {
 
 #[template]
 #[rstest]
+#[serial]
 #[case(memory_store())]
 #[cfg_attr(feature = "store-directory", case(directory_store()))]
 #[cfg_attr(feature = "store-sqlite", case(sqlite_store()))]
 #[cfg_attr(feature = "store-redis", case(redis_store()))]
-#[cfg_attr(feature = "store-redis", serial(redis))]
 #[cfg_attr(feature = "store-s3", case(s3_store()))]
-#[cfg_attr(feature = "store-s3", serial(s3))]
 #[cfg_attr(feature = "store-sftp", case(sftp_store()))]
-#[cfg_attr(feature = "store-sftp", serial(sftp))]
 #[cfg_attr(feature = "store-rclone", case(rclone_store()))]
-#[cfg_attr(feature = "store-rclone", serial(rclone))]
 pub fn data_stores(#[case] store: Box<dyn DataStore>) {}
