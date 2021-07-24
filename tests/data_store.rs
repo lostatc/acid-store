@@ -18,282 +18,56 @@
 
 use acid_store::store::DataStore;
 use common::*;
-use rstest::*;
 use rstest_reuse::{self, *};
-use serial_test::serial;
-use spectral::prelude::*;
 use uuid::Uuid;
 
 mod common;
 
-// Some tests in this module use the `serial_test` crate to force them to run in sequence because
-// they access a shared resource. However, that crate doesn't seem to support test functions which
-// return a `Result`, so those tests return `()` and unwrap `Result`s instead.
-
 #[apply(data_stores)]
-fn read_block(#[case] mut store: Box<dyn DataStore>, buffer: Vec<u8>) -> anyhow::Result<()> {
+fn read_block(#[case] mut store: Box<dyn DataStore>, buffer: Vec<u8>) {
     let id = Uuid::new_v4().into();
 
     assert_that!(store.read_block(id)).is_ok_containing(None);
-
-    store.write_block(id, &buffer)?;
-
+    assert_that!(store.write_block(id, &buffer)).is_ok();
     assert_that!(store.read_block(id)).is_ok_containing(Some(buffer));
-
-    Ok(())
 }
 
-#[test]
-fn memory_read_block() -> anyhow::Result<()> {
-    read_block(memory_store()?)
-}
-
-#[test]
-#[cfg(feature = "store-directory")]
-fn directory_read_block() -> anyhow::Result<()> {
-    let temp_dir = tempdir()?;
-    let store = directory_store(temp_dir.as_ref())?;
-    read_block(store)
-}
-
-#[test]
-#[cfg(feature = "store-sqlite")]
-fn sqlite_read_block() -> anyhow::Result<()> {
-    let temp_dir = tempdir()?;
-    let store = sqlite_store(temp_dir.as_ref())?;
-    read_block(store)
-}
-
-#[test]
-#[serial(redis)]
-#[cfg(feature = "store-redis")]
-fn redis_read_block() {
-    let store = redis_store().unwrap();
-    read_block(store).unwrap();
-}
-
-#[test]
-#[serial(s3)]
-#[cfg(feature = "store-s3")]
-fn s3_read_block() {
-    let store = s3_store().unwrap();
-    read_block(store).unwrap();
-}
-
-#[test]
-#[serial(sftp)]
-#[cfg(feature = "store-sftp")]
-fn sftp_read_block() {
-    let store = sftp_store().unwrap();
-    read_block(store).unwrap();
-}
-
-#[test]
-#[serial(rclone)]
-#[cfg(feature = "store-rclone")]
-fn rclone_read_block() {
-    let store = rclone_store().unwrap();
-    read_block(store).unwrap();
-}
-
-fn overwrite_block(mut store: impl DataStore) -> anyhow::Result<()> {
+#[apply(data_stores)]
+fn overwrite_block(
+    #[case] mut store: Box<dyn DataStore>,
+    #[from(buffer)] first_buffer: Vec<u8>,
+    #[from(buffer)] second_buffer: Vec<u8>,
+) {
     let id = Uuid::new_v4().into();
-    let expected_block = random_buffer();
 
-    store.write_block(id, random_buffer().as_slice())?;
-    store.write_block(id, expected_block.as_slice())?;
-
-    assert_eq!(store.read_block(id)?, Some(expected_block));
-
-    Ok(())
+    assert_that!(store.write_block(id, &first_buffer)).is_ok();
+    assert_that!(store.write_block(id, &second_buffer)).is_ok();
+    assert_that!(store.read_block(id)).is_ok_containing(Some(second_buffer));
 }
 
-#[test]
-fn memory_overwrite_block() -> anyhow::Result<()> {
-    overwrite_block(memory_store()?)
-}
-
-#[test]
-#[cfg(feature = "store-directory")]
-fn directory_overwrite_block() -> anyhow::Result<()> {
-    let temp_dir = tempdir()?;
-    let store = directory_store(temp_dir.as_ref())?;
-    overwrite_block(store)
-}
-
-#[test]
-#[cfg(feature = "store-sqlite")]
-fn sqlite_overwrite_block() -> anyhow::Result<()> {
-    let temp_dir = tempdir()?;
-    let store = sqlite_store(temp_dir.as_ref())?;
-    overwrite_block(store)
-}
-
-#[test]
-#[serial(redis)]
-#[cfg(feature = "store-redis")]
-fn redis_overwrite_block() {
-    let store = redis_store().unwrap();
-    overwrite_block(store).unwrap();
-}
-
-#[test]
-#[serial(s3)]
-#[cfg(feature = "store-s3")]
-fn s3_overwrite_block() {
-    let store = s3_store().unwrap();
-    overwrite_block(store).unwrap();
-}
-
-#[test]
-#[serial(sftp)]
-#[cfg(feature = "store-sftp")]
-fn sftp_overwrite_block() {
-    let store = sftp_store().unwrap();
-    overwrite_block(store).unwrap();
-}
-
-#[test]
-#[serial(rclone)]
-#[cfg(feature = "store-rclone")]
-fn rclone_overwrite_block() {
-    let store = rclone_store().unwrap();
-    overwrite_block(store).unwrap();
-}
-
-fn remove_block(mut store: impl DataStore) -> anyhow::Result<()> {
+#[apply(data_stores)]
+fn remove_block(#[case] mut store: Box<dyn DataStore>, buffer: Vec<u8>) {
     let id = Uuid::new_v4().into();
-    store.write_block(id, random_buffer().as_slice())?;
-    store.remove_block(id)?;
-    assert_eq!(store.read_block(id)?, None);
 
-    // Removing a nonexistent block should return `Ok`.
-    store.remove_block(Uuid::new_v4().into())?;
-
-    Ok(())
+    assert_that!(store.write_block(id, &buffer)).is_ok();
+    assert_that!(store.remove_block(id)).is_ok();
+    assert_that!(store.read_block(id)).is_ok_containing(None);
+    assert_that!(store.remove_block(Uuid::new_v4().into())).is_ok();
 }
 
-#[test]
-fn memory_remove_block() -> anyhow::Result<()> {
-    remove_block(memory_store()?)
-}
-
-#[test]
-#[cfg(feature = "store-directory")]
-fn directory_remove_block() -> anyhow::Result<()> {
-    let temp_dir = tempdir()?;
-    let store = directory_store(temp_dir.as_ref())?;
-    remove_block(store)
-}
-
-#[test]
-#[cfg(feature = "store-sqlite")]
-fn sqlite_remove_block() -> anyhow::Result<()> {
-    let temp_dir = tempdir()?;
-    let store = sqlite_store(temp_dir.as_ref())?;
-    remove_block(store)
-}
-
-#[test]
-#[serial(redis)]
-#[cfg(feature = "store-redis")]
-fn redis_remove_block() {
-    let store = redis_store().unwrap();
-    remove_block(store).unwrap();
-}
-
-#[test]
-#[serial(s3)]
-#[cfg(feature = "store-s3")]
-fn s3_remove_block() {
-    let store = s3_store().unwrap();
-    remove_block(store).unwrap();
-}
-
-#[test]
-#[serial(sftp)]
-#[cfg(feature = "store-sftp")]
-fn sftp_remove_block() {
-    let store = sftp_store().unwrap();
-    remove_block(store).unwrap();
-}
-
-#[test]
-#[serial(rclone)]
-#[cfg(feature = "store-rclone")]
-fn rclone_remove_block() {
-    let store = rclone_store().unwrap();
-    remove_block(store).unwrap();
-}
-
-fn list_blocks(mut store: impl DataStore) -> anyhow::Result<()> {
+#[apply(data_stores)]
+fn list_blocks(#[case] mut store: Box<dyn DataStore>, buffer: Vec<u8>) {
     let id1 = Uuid::new_v4().into();
     let id2 = Uuid::new_v4().into();
     let id3 = Uuid::new_v4().into();
 
-    assert_eq!(store.list_blocks()?, Vec::new());
+    assert_that!(store.list_blocks()).is_ok_containing(Vec::new());
 
-    store.write_block(id1, random_buffer().as_slice())?;
-    store.write_block(id2, random_buffer().as_slice())?;
-    store.write_block(id3, random_buffer().as_slice())?;
+    assert_that!(store.write_block(id1, &buffer)).is_ok();
+    assert_that!(store.write_block(id2, &buffer)).is_ok();
+    assert_that!(store.write_block(id3, &buffer)).is_ok();
 
-    let actual_ids = store.list_blocks()?;
-    let expected_ids = vec![id1, id2, id3];
-
-    assert_contains_all(actual_ids, expected_ids);
-
-    Ok(())
-}
-
-#[test]
-fn memory_list_blocks() -> anyhow::Result<()> {
-    list_blocks(memory_store()?)
-}
-
-#[test]
-#[cfg(feature = "store-directory")]
-fn directory_list_blocks() -> anyhow::Result<()> {
-    let temp_dir = tempdir()?;
-    let store = directory_store(temp_dir.as_ref())?;
-    list_blocks(store)
-}
-
-#[test]
-#[cfg(feature = "store-sqlite")]
-fn sqlite_list_blocks() -> anyhow::Result<()> {
-    let temp_dir = tempdir()?;
-    let store = sqlite_store(temp_dir.as_ref())?;
-    list_blocks(store)
-}
-
-#[test]
-#[serial(redis)]
-#[cfg(feature = "store-redis")]
-fn redis_list_blocks() {
-    let store = redis_store().unwrap();
-    list_blocks(store).unwrap();
-}
-
-#[test]
-#[serial(s3)]
-#[cfg(feature = "store-s3")]
-fn s3_list_blocks() {
-    let store = s3_store().unwrap();
-    list_blocks(store).unwrap();
-}
-
-#[test]
-#[serial(sftp)]
-#[cfg(feature = "store-sftp")]
-fn sftp_list_blocks() {
-    let store = sftp_store().unwrap();
-    list_blocks(store).unwrap();
-}
-
-#[test]
-#[serial(rclone)]
-#[cfg(feature = "store-rclone")]
-fn rclone_list_block() {
-    let store = rclone_store().unwrap();
-    list_blocks(store).unwrap();
+    let list_result = store.list_blocks();
+    assert_that!(list_result).is_ok();
+    assert_that!(list_result.unwrap()).contains_all_of(&[&id1, &id2, &id3]);
 }
