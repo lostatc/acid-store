@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
+use rand::prelude::*;
 use rstest::*;
 
 use acid_store::repo::{key::KeyRepo, Object, OpenMode, OpenOptions, OpenRepo, RepoConfig};
 use acid_store::store::MemoryConfig;
+use rand::distributions::Alphanumeric;
 
-const OBJECT_KEY: &str = "test";
+const KEY_LEN: usize = 16;
 
 pub struct RepoObject {
     pub repo: KeyRepo<String>,
@@ -30,8 +32,9 @@ pub struct RepoObject {
 impl RepoObject {
     pub fn open(config: RepoConfig) -> anyhow::Result<Self> {
         let mut repo: KeyRepo<String> = open_repo(config)?;
-        let object = repo.insert(String::from(OBJECT_KEY));
-        let key = String::from(OBJECT_KEY);
+        let rng = SmallRng::from_entropy();
+        let key: String = rng.sample_iter(&Alphanumeric).take(KEY_LEN).collect();
+        let object = repo.insert(key.clone());
         Ok(RepoObject { repo, object, key })
     }
 }
