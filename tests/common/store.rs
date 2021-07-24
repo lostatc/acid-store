@@ -156,6 +156,10 @@ pub fn rclone_store() -> Box<dyn DataStore> {
     Box::new(store)
 }
 
+/// A parameterized test template which provides a data store of each type.
+///
+/// The generates tests are serialized to avoid race conditions with concurrent access to shared
+/// resources.
 #[template]
 #[rstest]
 #[serial]

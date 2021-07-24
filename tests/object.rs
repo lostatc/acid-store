@@ -526,7 +526,7 @@ fn write_buffer_with_same_size_as_fixed_chunk_size(
 ) -> anyhow::Result<()> {
     let mut config = RepoConfig::default();
     config.chunking = Chunking::Fixed { size: 1024 * 1024 };
-    let repo_object = RepoObject::open(config)?;
+    let repo_object = RepoObject::new(config)?;
     let mut object = repo_object.object;
 
     object.write_all(&fixed_buffer)?;
