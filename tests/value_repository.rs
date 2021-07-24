@@ -16,178 +16,128 @@
 
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
+use std::collections::HashSet;
+
 use acid_store::repo::value::ValueRepo;
-use acid_store::repo::{Commit, OpenMode, OpenOptions, SwitchInstance, DEFAULT_INSTANCE};
-use acid_store::store::MemoryConfig;
+use acid_store::repo::{Commit, SwitchInstance, DEFAULT_INSTANCE};
 use acid_store::uuid::Uuid;
-use common::assert_contains_all;
+use common::*;
 
 mod common;
 
-/// A serializable value to test with.
-const SERIALIZABLE_VALUE: (bool, i32) = (true, 42);
+type TestType = (bool, i32);
 
-fn create_repo(config: &MemoryConfig) -> acid_store::Result<ValueRepo<String>> {
-    OpenOptions::new().mode(OpenMode::CreateNew).open(config)
-}
+const TEST_VALUE: TestType = (true, 42);
 
-#[test]
-fn open_repository() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
-    repository.commit()?;
-    drop(repository);
-    OpenOptions::new().open::<ValueRepo<String>, _>(&config)?;
-    Ok(())
-}
-
-#[test]
-fn switching_instance_does_not_roll_back() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo = create_repo(&config)?;
-
-    repo.insert("test".to_string(), &SERIALIZABLE_VALUE)?;
+#[rstest]
+fn switching_instance_does_not_roll_back(mut repo: ValueRepo<String>) -> anyhow::Result<()> {
+    repo.insert("test".to_string(), &TEST_VALUE)?;
 
     let repo: ValueRepo<String> = repo.switch_instance(Uuid::new_v4().into())?;
     let repo: ValueRepo<String> = repo.switch_instance(DEFAULT_INSTANCE)?;
 
-    assert!(repo.contains("test"));
-    assert!(repo.get::<_, (bool, i32)>("test").is_ok());
+    assert_that!(repo.contains("test")).is_true();
+    assert_that!(repo.get::<_, TestType>("test")).is_ok();
 
     Ok(())
 }
 
-#[test]
-fn switching_instance_does_not_commit() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo = create_repo(&config)?;
-
-    repo.insert("test".to_string(), &SERIALIZABLE_VALUE)?;
+#[rstest]
+fn switching_instance_does_not_commit(mut repo: ValueRepo<String>) -> anyhow::Result<()> {
+    repo.insert("test".to_string(), &TEST_VALUE)?;
 
     let repo: ValueRepo<String> = repo.switch_instance(Uuid::new_v4().into())?;
     let mut repo: ValueRepo<String> = repo.switch_instance(DEFAULT_INSTANCE)?;
     repo.rollback()?;
 
-    assert!(!repo.contains("test"));
-    assert!(matches!(
-        repo.get::<_, (bool, i32)>("test"),
-        Err(acid_store::Error::NotFound)
-    ));
+    assert_that!(repo.contains("test")).is_false();
+    assert_that!(repo.get::<_, TestType>("test")).is_err_variant(acid_store::Error::NotFound);
 
     Ok(())
 }
 
-#[test]
-fn insert_value() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
-    repository.insert("Key".into(), &SERIALIZABLE_VALUE)?;
-    let actual: (bool, i32) = repository.get("Key")?;
-    assert_eq!(actual, SERIALIZABLE_VALUE);
-    Ok(())
+#[rstest]
+fn insert_value(mut repo: ValueRepo<String>) {
+    assert_that!(repo.insert("test".into(), &TEST_VALUE)).is_ok();
+    assert_that!(repo.get("test")).is_ok_containing(TEST_VALUE);
 }
 
-#[test]
-fn remove_value() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
+#[rstest]
+fn remove_value(mut repo: ValueRepo<String>) {
+    assert_that!(repo.remove("Key")).is_false();
+    assert_that!(repo.contains("Key")).is_false();
 
-    assert!(!repository.remove("Key"));
-    assert!(!repository.contains("Key"));
+    assert_that!(repo.insert("Key".into(), &TEST_VALUE)).is_ok();
 
-    repository.insert("Key".into(), &SERIALIZABLE_VALUE)?;
-
-    assert!(repository.contains("Key"));
-    assert!(repository.remove("Key"));
-    assert!(!repository.contains("Key"));
-
-    Ok(())
+    assert_that!(repo.contains("Key")).is_true();
+    assert_that!(repo.remove("Key")).is_true();
+    assert_that!(repo.contains("Key")).is_false();
 }
 
-#[test]
-fn deserializing_value_to_wrong_type_errs() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
-    repository.insert("Key".into(), &SERIALIZABLE_VALUE)?;
-    let actual = repository.get::<_, String>("Key");
-    assert!(matches!(actual, Err(acid_store::Error::Deserialize)));
-    Ok(())
+#[rstest]
+fn deserializing_value_to_wrong_type_errs(mut repo: ValueRepo<String>) {
+    assert_that!(repo.insert("Key".into(), &TEST_VALUE)).is_ok();
+    assert_that!(repo.get::<_, String>("Key")).is_err_variant(acid_store::Error::Deserialize);
 }
 
-#[test]
-fn list_keys() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
-    repository.insert("Key1".into(), &SERIALIZABLE_VALUE)?;
-    repository.insert("Key2".into(), &SERIALIZABLE_VALUE)?;
-    repository.insert("Key3".into(), &SERIALIZABLE_VALUE)?;
+#[rstest]
+fn list_keys(mut repo: ValueRepo<String>) -> anyhow::Result<()> {
+    repo.insert("Key1".into(), &TEST_VALUE)?;
+    repo.insert("Key2".into(), &TEST_VALUE)?;
+    repo.insert("Key3".into(), &TEST_VALUE)?;
 
-    let expected = vec!["Key1".to_string(), "Key2".to_string(), "Key3".to_string()];
-    let actual = repository.keys().cloned().collect::<Vec<_>>();
-
-    assert_contains_all(actual, expected);
-    Ok(())
-}
-
-#[test]
-fn values_removed_on_rollback() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
-    repository.insert("test".into(), &SERIALIZABLE_VALUE)?;
-
-    repository.rollback()?;
-
-    assert!(!repository.contains("test"));
-    assert!(repository.keys().next().is_none());
-    assert!(matches!(
-        repository.get::<_, (bool, i32)>("test"),
-        Err(acid_store::Error::NotFound)
-    ));
+    assert_that!(repo.keys().cloned().collect::<Vec<_>>()).contains_all_of(&[
+        &String::from("Key1"),
+        &String::from("Key2"),
+        &String::from("Key3"),
+    ]);
 
     Ok(())
 }
 
-#[test]
-fn clear_instance_removes_keys() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo = create_repo(&config)?;
+#[rstest]
+fn values_removed_on_rollback(mut repo: ValueRepo<String>) -> anyhow::Result<()> {
+    repo.insert("test".into(), &TEST_VALUE)?;
 
-    repo.insert("test".into(), &SERIALIZABLE_VALUE)?;
+    repo.rollback()?;
+
+    assert_that!(repo.contains("test")).is_false();
+    assert_that!(repo.get::<_, TestType>("test")).is_err_variant(acid_store::Error::NotFound);
+
+    Ok(())
+}
+
+#[rstest]
+fn clear_instance_removes_keys(mut repo: ValueRepo<String>) -> anyhow::Result<()> {
+    repo.insert("test".into(), &TEST_VALUE)?;
 
     repo.clear_instance();
 
-    assert!(!repo.contains("test"));
-    assert!(matches!(
-        repo.get::<_, (bool, u32)>("test"),
-        Err(acid_store::Error::NotFound)
-    ));
+    assert_that!(repo.contains("test")).is_false();
+    assert_that!(repo.get::<_, TestType>("test")).is_err_variant(acid_store::Error::NotFound);
 
     Ok(())
 }
 
-#[test]
-fn rollback_after_clear_instance() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo = create_repo(&config)?;
-
-    repo.insert("test".into(), &SERIALIZABLE_VALUE)?;
+#[rstest]
+fn rollback_after_clear_instance(mut repo: ValueRepo<String>) -> anyhow::Result<()> {
+    repo.insert("test".into(), &TEST_VALUE)?;
 
     repo.commit()?;
     repo.clear_instance();
     repo.rollback()?;
 
-    assert!(repo.contains("test"));
-    assert!(repo.get::<_, (bool, u32)>("test").is_ok());
+    assert_that!(repo.contains("test")).is_true();
+    assert_that!(repo.get::<_, TestType>("test")).is_ok();
 
     Ok(())
 }
 
-#[test]
-fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
-    repository.insert("Test".into(), &SERIALIZABLE_VALUE)?;
+#[rstest]
+fn verify_valid_repository_is_valid(mut repo: ValueRepo<String>) -> anyhow::Result<()> {
+    repo.insert("Test".into(), &TEST_VALUE)?;
 
-    assert!(repository.verify()?.is_empty());
+    assert_that!(repo.verify()).is_ok_containing(HashSet::new());
+
     Ok(())
 }
