@@ -16,88 +16,85 @@
 
 #![macro_use]
 
-use once_cell::sync::Lazy;
 use rstest_reuse::{self, *};
 
 use super::repository::RepoObject;
-use acid_store::repo::{
-    key::KeyRepo, Chunking, Compression, Encryption, OpenMode, OpenOptions, Packing, RepoConfig,
-};
+use acid_store::repo::{key::KeyRepo, Chunking, Compression, Encryption, Packing, RepoConfig};
 
 /// The repository config used for testing fixed-size chunking.
-pub static FIXED_CONFIG: Lazy<RepoConfig> = Lazy::new(|| {
+pub fn fixed_config() -> RepoConfig {
     let mut config = RepoConfig::default();
     config.chunking = Chunking::Fixed { size: 256 };
     config.packing = Packing::None;
     config.encryption = Encryption::None;
     config.compression = Compression::None;
     config
-});
+}
 
 /// The repository config used for testing encryption and compression.
-pub static ENCODING_CONFIG: Lazy<RepoConfig> = Lazy::new(|| {
-    let mut config = FIXED_CONFIG.to_owned();
+pub fn encoding_config() -> RepoConfig {
+    let mut config = fixed_config();
     config.encryption = Encryption::XChaCha20Poly1305;
     config.compression = Compression::Lz4 { level: 1 };
     config
-});
+}
 
 /// The repository config used for testing ZPAQ chunking.
-pub static ZPAQ_CONFIG: Lazy<RepoConfig> = Lazy::new(|| {
-    let mut config = FIXED_CONFIG.to_owned();
+pub fn zpaq_config() -> RepoConfig {
+    let mut config = fixed_config();
     config.chunking = Chunking::Zpaq { bits: 8 };
     config
-});
+}
 
 /// The repository config used for testing packing with a size smaller than the chunk size.
-pub static FIXED_PACKING_SMALL_CONFIG: Lazy<RepoConfig> = Lazy::new(|| {
-    let mut config = FIXED_CONFIG.to_owned();
+pub fn fixed_packing_small_config() -> RepoConfig {
+    let mut config = fixed_config();
     // Smaller than the chunk size and not a factor of it.
     config.packing = Packing::Fixed(100);
     config
-});
+}
 
 /// The repository config used for testing packing with a size larger than the chunk size.
-pub static FIXED_PACKING_LARGE_CONFIG: Lazy<RepoConfig> = Lazy::new(|| {
-    let mut config = FIXED_CONFIG.to_owned();
+pub fn fixed_packing_large_config() -> RepoConfig {
+    let mut config = fixed_config();
     // Larger than the chunk size and not a multiple of it.
     config.packing = Packing::Fixed(300);
     config
-});
+}
 
 /// The repository config used for testing packing with ZPAQ chunking.
-pub static ZPAQ_PACKING_CONFIG: Lazy<RepoConfig> = Lazy::new(|| {
-    let mut config = ZPAQ_CONFIG.to_owned();
+pub fn zpaq_packing_config() -> RepoConfig {
+    let mut config = fixed_config();
     config.packing = Packing::Fixed(256);
     config
-});
+}
 
 #[template]
 #[rstest]
-#[case(*FIXED_CONFIG)]
-#[case(*ENCODING_CONFIG)]
-#[case(*ZPAQ_CONFIG)]
-#[case(*FIXED_PACKING_SMALL_CONFIG)]
-#[case(*FIXED_PACKING_LARGE_CONFIG)]
-#[case(*ZPAQ_PACKING_CONFIG)]
+#[case(fixed_config())]
+#[case(encoding_config())]
+#[case(zpaq_config())]
+#[case(fixed_packing_small_config())]
+#[case(fixed_packing_large_config())]
+#[case(zpaq_packing_config())]
 pub fn config(#[case] config: RepoConfig) {}
 
 #[template]
 #[rstest]
-#[case(open_repo(*FIXED_CONFIG).unwrap())]
-#[case(open_repo(*ENCODING_CONFIG).unwrap())]
-#[case(open_repo(*ZPAQ_CONFIG).unwrap())]
-#[case(open_repo(*FIXED_PACKING_SMALL_CONFIG).unwrap())]
-#[case(open_repo(*FIXED_PACKING_LARGE_CONFIG).unwrap())]
-#[case(open_repo(*ZPAQ_PACKING_CONFIG).unwrap())]
+#[case(open_repo(fixed_config()).unwrap())]
+#[case(open_repo(encoding_config()).unwrap())]
+#[case(open_repo(zpaq_config()).unwrap())]
+#[case(open_repo(fixed_packing_small_config()).unwrap())]
+#[case(open_repo(fixed_packing_large_config()).unwrap())]
+#[case(open_repo(zpaq_packing_config()).unwrap())]
 pub fn repo_config(#[case] repo: KeyRepo<String>) {}
 
 #[template]
 #[rstest]
-#[case(RepoObject::open(*FIXED_CONFIG).unwrap())]
-#[case(RepoObject::open(*ENCODING_CONFIG).unwrap())]
-#[case(RepoObject::open(*ZPAQ_CONFIG).unwrap())]
-#[case(RepoObject::open(*FIXED_PACKING_SMALL_CONFIG).unwrap())]
-#[case(RepoObject::open(*FIXED_PACKING_LARGE_CONFIG).unwrap())]
-#[case(RepoObject::open(*ZPAQ_PACKING_CONFIG).unwrap())]
+#[case(RepoObject::open(fixed_config()).unwrap())]
+#[case(RepoObject::open(encoding_config()).unwrap())]
+#[case(RepoObject::open(zpaq_config()).unwrap())]
+#[case(RepoObject::open(fixed_packing_small_config()).unwrap())]
+#[case(RepoObject::open(fixed_packing_large_config()).unwrap())]
+#[case(RepoObject::open(zpaq_packing_config()).unwrap())]
 pub fn object_config(#[case] repo_object: RepoObject) {}

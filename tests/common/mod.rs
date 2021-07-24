@@ -25,8 +25,8 @@ mod store;
 
 pub use assertions::ErrorVariantAssertions;
 pub use config::{
-    ENCODING_CONFIG, FIXED_CONFIG, FIXED_PACKING_LARGE_CONFIG, FIXED_PACKING_SMALL_CONFIG,
-    ZPAQ_CONFIG, ZPAQ_PACKING_CONFIG,
+    encoding_config, fixed_config, fixed_packing_large_config, fixed_packing_small_config,
+    zpaq_config, zpaq_packing_config,
 };
 pub use data::{buffer, fixed_buffer, larger_buffer, smaller_buffer};
 pub use repository::{open_repo, repo, repo_object, RepoObject};
