@@ -28,7 +28,7 @@ pub use config::{
     encoding_config, fixed_config, fixed_packing_large_config, fixed_packing_small_config,
     zpaq_config, zpaq_packing_config,
 };
-pub use data::{buffer, fixed_buffer, larger_buffer, smaller_buffer};
+pub use data::{buffer, fixed_buffer, larger_buffer, smaller_buffer, temp_dir};
 pub use repository::{open_repo, repo, repo_object, RepoObject};
 pub use rstest::*;
 pub use serial_test::serial;
