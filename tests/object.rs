@@ -24,11 +24,7 @@ use rstest_reuse::{self, *};
 use spectral::prelude::*;
 
 use acid_store::repo::key::KeyRepo;
-use acid_store::repo::{
-    Chunking, Commit, Encryption, OpenMode, OpenOptions, ReadOnlyObject, RepoConfig,
-    RestoreSavepoint,
-};
-use acid_store::store::MemoryConfig;
+use acid_store::repo::{Chunking, Commit, ReadOnlyObject, RepoConfig, RestoreSavepoint};
 use common::*;
 
 mod common;
@@ -43,7 +39,7 @@ fn read_written_data(#[case] repo_object: RepoObject, buffer: Vec<u8>) -> anyhow
     object.seek(SeekFrom::Start(0))?;
     object.read_to_end(&mut actual_data)?;
 
-    assert_that!(&actual_data).is_equal_to(buffer);
+    assert_that!(&actual_data).is_equal_to(&buffer);
     assert_that!(&object.size()).is_ok_containing(buffer.len() as u64);
 
     Ok(())
