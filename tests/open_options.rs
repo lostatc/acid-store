@@ -19,42 +19,38 @@
 use acid_store::repo::key::KeyRepo;
 use acid_store::repo::value::ValueRepo;
 use acid_store::repo::{
-    Chunking, Commit, Compression, Encryption, OpenMode, OpenOptions, RepoConfig, ResourceLimit,
+    Chunking, Compression, Encryption, OpenMode, OpenOptions, RepoConfig, ResourceLimit,
 };
 use acid_store::store::MemoryConfig;
+use common::*;
 
 mod common;
 
-#[test]
-fn set_existing_config_and_create_new_repo() -> anyhow::Result<()> {
+#[rstest]
+fn set_existing_config_and_create_new_repo(mut repo_store: RepoStore) -> anyhow::Result<()> {
     // These are random config values for testing. This should not be used as an example config.
-    let mut repo_config = RepoConfig::default();
-    repo_config.chunking = Chunking::Fixed { size: 1024 * 16 };
-    repo_config.compression = Compression::Lz4 { level: 2 };
-    repo_config.encryption = Encryption::XChaCha20Poly1305;
-    repo_config.memory_limit = ResourceLimit::Moderate;
-    repo_config.operations_limit = ResourceLimit::Moderate;
+    repo_store.config.chunking = Chunking::Fixed { size: 1024 * 16 };
+    repo_store.config.compression = Compression::Lz4 { level: 2 };
+    repo_store.config.encryption = Encryption::XChaCha20Poly1305;
+    repo_store.config.memory_limit = ResourceLimit::Moderate;
+    repo_store.config.operations_limit = ResourceLimit::Moderate;
 
-    let config = MemoryConfig::new();
-    let repo: KeyRepo<String> = OpenOptions::new()
-        .config(repo_config.clone())
-        .password(b"password")
-        .mode(OpenMode::CreateNew)
-        .open(&config)?;
+    let repo: KeyRepo<String> = repo_store.create()?;
 
-    assert_eq!(repo.info().config(), &repo_config);
+    assert_that!(repo.info().config()).is_equal_to(&repo_store.config);
+
     Ok(())
 }
 
-#[test]
+#[rstest]
 fn configure_and_create_new_repo() -> anyhow::Result<()> {
     // These are random config values for testing. This should not be used as an example config.
-    let mut repo_config = RepoConfig::default();
-    repo_config.chunking = Chunking::Fixed { size: 1024 * 16 };
-    repo_config.compression = Compression::Lz4 { level: 2 };
-    repo_config.encryption = Encryption::XChaCha20Poly1305;
-    repo_config.memory_limit = ResourceLimit::Moderate;
-    repo_config.operations_limit = ResourceLimit::Moderate;
+    let mut expected_config = RepoConfig::default();
+    expected_config.chunking = Chunking::Fixed { size: 1024 * 16 };
+    expected_config.compression = Compression::Lz4 { level: 2 };
+    expected_config.encryption = Encryption::XChaCha20Poly1305;
+    expected_config.memory_limit = ResourceLimit::Moderate;
+    expected_config.operations_limit = ResourceLimit::Moderate;
 
     let config = MemoryConfig::new();
     let repo: KeyRepo<String> = OpenOptions::new()
@@ -67,132 +63,107 @@ fn configure_and_create_new_repo() -> anyhow::Result<()> {
         .mode(OpenMode::CreateNew)
         .open(&config)?;
 
-    assert_eq!(repo.info().config(), &repo_config);
+    assert_that!(repo.info().config()).is_equal_to(&expected_config);
+
     Ok(())
 }
 
-#[test]
-fn creating_new_existing_repo_errs() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    OpenOptions::new()
+#[rstest]
+fn creating_new_existing_repo_errs(repo_store: RepoStore) -> anyhow::Result<()> {
+    repo_store.create::<KeyRepo<String>>()?;
+
+    assert_that!(OpenOptions::new()
         .mode(OpenMode::CreateNew)
-        .open::<KeyRepo<String>, _>(&config)?;
-    let new_repo: Result<KeyRepo<String>, _> =
-        OpenOptions::new().mode(OpenMode::CreateNew).open(&config);
+        .open::<KeyRepo<String>, _>(&repo_store.store))
+    .is_err_variant(acid_store::Error::AlreadyExists);
 
-    assert!(matches!(new_repo, Err(acid_store::Error::AlreadyExists)));
     Ok(())
 }
 
-#[test]
-fn opening_or_creating_nonexistent_repo_succeeds() -> anyhow::Result<()> {
+#[rstest]
+fn opening_or_creating_nonexistent_repo_succeeds() {
     let config = MemoryConfig::new();
-    OpenOptions::new()
+    assert_that!(OpenOptions::new()
         .mode(OpenMode::Create)
-        .open::<KeyRepo<String>, _>(&config)?;
-    Ok(())
+        .open::<KeyRepo<String>, _>(&config))
+    .is_ok();
 }
 
-#[test]
-fn opening_or_creating_existing_repo_succeeds() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    OpenOptions::new()
-        .mode(OpenMode::CreateNew)
-        .open::<KeyRepo<String>, _>(&config)?;
-    OpenOptions::new()
+#[rstest]
+fn opening_or_creating_existing_repo_succeeds(repo_store: RepoStore) -> anyhow::Result<()> {
+    repo_store.create::<KeyRepo<String>>()?;
+    assert_that!(OpenOptions::new()
         .mode(OpenMode::Create)
-        .open::<KeyRepo<String>, _>(&config)?;
+        .open::<KeyRepo<String>, _>(&repo_store.store))
+    .is_ok();
     Ok(())
 }
 
-#[test]
-fn opening_nonexistent_repo_errs() {
-    let config = MemoryConfig::new();
-    let repo: Result<KeyRepo<String>, _> = OpenOptions::new().open(&config);
-    assert!(matches!(repo, Err(acid_store::Error::NotFound)));
+#[rstest]
+fn opening_nonexistent_repo_errs(repo_store: RepoStore) {
+    assert_that!(repo_store.open::<KeyRepo<String>>()).is_err_variant(acid_store::Error::NotFound);
 }
 
-#[test]
-fn opening_with_invalid_password_errs() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    OpenOptions::new()
-        .encryption(Encryption::XChaCha20Poly1305)
-        .password(b"Password")
-        .mode(OpenMode::CreateNew)
-        .open::<KeyRepo<String>, _>(&config)?;
-    let new_repo: Result<KeyRepo<String>, _> = OpenOptions::new()
-        .encryption(Encryption::XChaCha20Poly1305)
-        .password(b"Not the password")
-        .open(&config);
+#[rstest]
+fn opening_with_invalid_password_errs(mut repo_store: RepoStore) -> anyhow::Result<()> {
+    repo_store.config.encryption = Encryption::XChaCha20Poly1305;
+    repo_store.create::<KeyRepo<String>>()?;
+    repo_store.password = String::from("Not the password");
 
-    assert!(matches!(new_repo, Err(acid_store::Error::Password)));
+    assert_that!(repo_store.open::<KeyRepo<String>>()).is_err_variant(acid_store::Error::Password);
+
     Ok(())
 }
 
-#[test]
+#[rstest]
 fn creating_without_password_errs() {
     let config = MemoryConfig::new();
-    let repo = OpenOptions::new()
+    assert_that!(OpenOptions::new()
         .encryption(Encryption::XChaCha20Poly1305)
         .mode(OpenMode::CreateNew)
-        .open::<KeyRepo<String>, _>(&config);
-    assert!(matches!(repo, Err(acid_store::Error::Password)));
+        .open::<KeyRepo<String>, _>(&config))
+    .is_err_variant(acid_store::Error::Password);
 }
 
-#[test]
-fn opening_without_password_errs() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    OpenOptions::new()
-        .encryption(Encryption::XChaCha20Poly1305)
-        .password(b"Password")
-        .mode(OpenMode::CreateNew)
-        .open::<KeyRepo<String>, _>(&config)?;
-    let new_repo: Result<KeyRepo<String>, _> = OpenOptions::new().open(&config);
-    assert!(matches!(new_repo, Err(acid_store::Error::Password)));
+#[rstest]
+fn opening_without_password_errs(mut repo_store: RepoStore) -> anyhow::Result<()> {
+    repo_store.config.encryption = Encryption::XChaCha20Poly1305;
+    repo_store.create::<KeyRepo<String>>()?;
+    assert_that!(OpenOptions::new().open::<KeyRepo<String>, _>(&repo_store.store))
+        .is_err_variant(acid_store::Error::Password);
     Ok(())
 }
 
-#[test]
-fn opening_locked_repo_errs() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-
-    let mut repo: KeyRepo<String> = OpenOptions::new().mode(OpenMode::CreateNew).open(&config)?;
-    repo.commit()?;
-
-    let new_repo: Result<KeyRepo<String>, _> = OpenOptions::new().open(&config);
-
-    assert!(matches!(new_repo, Err(acid_store::Error::Locked)));
+#[rstest]
+fn opening_locked_repo_errs(repo_store: RepoStore) -> anyhow::Result<()> {
+    let _repo: KeyRepo<String> = repo_store.create()?;
+    assert_that!(repo_store.open::<KeyRepo<String>>()).is_err_variant(acid_store::Error::Locked);
     Ok(())
 }
 
-#[test]
-fn open_or_create_existing_repo() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    OpenOptions::new()
-        .mode(OpenMode::CreateNew)
-        .open::<KeyRepo<String>, _>(&config)?;
-    OpenOptions::new()
+#[rstest]
+fn open_or_create_existing_repo(repo_store: RepoStore) -> anyhow::Result<()> {
+    repo_store.create::<KeyRepo<String>>()?;
+    assert_that!(OpenOptions::new()
         .mode(OpenMode::Create)
-        .open::<KeyRepo<String>, _>(&config)?;
+        .open::<KeyRepo<String>, _>(&repo_store.store))
+    .is_ok();
     Ok(())
 }
 
-#[test]
-fn open_or_create_nonexistent_repo() -> anyhow::Result<()> {
+#[rstest]
+fn open_or_create_nonexistent_repo() {
     let config = MemoryConfig::new();
-    OpenOptions::new()
+    assert_that!(OpenOptions::new()
         .mode(OpenMode::Create)
-        .open::<KeyRepo<String>, _>(&config)?;
-    Ok(())
+        .open::<KeyRepo<String>, _>(&config))
+    .is_ok();
 }
 
-#[test]
-fn opening_existing_repo_of_different_type_errs() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo: ValueRepo<String> = OpenOptions::new().mode(OpenMode::CreateNew).open(&config)?;
-    repo.commit()?;
-    drop(repo);
-    let result = OpenOptions::new().open::<KeyRepo<String>, _>(&config);
-    assert!(matches!(result, Err(acid_store::Error::UnsupportedRepo)));
+#[rstest]
+fn opening_existing_repo_of_different_type_errs(repo_store: RepoStore) -> anyhow::Result<()> {
+    repo_store.create::<ValueRepo<String>>()?;
+    assert_that!(repo_store.open::<KeyRepo<String>>())
+        .is_err_variant(acid_store::Error::UnsupportedRepo);
     Ok(())
 }
