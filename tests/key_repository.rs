@@ -18,261 +18,181 @@
 
 use std::io::{Read, Write};
 
-use test_case::test_case;
-use uuid::Uuid;
-
 use acid_store::repo::key::KeyRepo;
-use acid_store::repo::{
-    peek_info, Commit, Encryption, OpenMode, OpenOptions, RepoConfig, RestoreSavepoint,
-    SwitchInstance,
-};
-use acid_store::store::{DataStore, MemoryConfig, OpenStore};
-use common::{assert_contains_all, random_buffer};
+use acid_store::repo::{peek_info, Commit, Encryption, RestoreSavepoint, SwitchInstance};
+use acid_store::store::{DataStore, OpenStore};
+use common::*;
+use rstest_reuse::{self, *};
+use std::collections::HashSet;
+use uuid::Uuid;
 
 mod common;
 
-fn create_repo(
-    repo_config: RepoConfig,
-    store_config: &MemoryConfig,
-) -> acid_store::Result<KeyRepo<String>> {
-    OpenOptions::new()
-        .config(repo_config)
-        .password(b"Password")
-        .mode(OpenMode::CreateNew)
-        .open(store_config)
-}
-
-fn open_repo(
-    repo_config: RepoConfig,
-    store_config: &MemoryConfig,
-) -> acid_store::Result<KeyRepo<String>> {
-    OpenOptions::new()
-        .config(repo_config)
-        .password(b"Password")
-        .mode(OpenMode::Open)
-        .open(store_config)
-}
-
-#[test]
-fn opening_with_wrong_key_type_errs() -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo: KeyRepo<String> = OpenOptions::new()
-        .mode(OpenMode::CreateNew)
-        .open(&store_config)?;
-
+#[rstest]
+fn opening_with_wrong_key_type_errs(repo_store: RepoStore) -> anyhow::Result<()> {
+    let mut repo: KeyRepo<String> = repo_store.create()?;
     repo.insert(String::from("Test"));
     repo.commit()?;
     drop(repo);
 
-    let repo_result: Result<KeyRepo<isize>, _> =
-        OpenOptions::new().mode(OpenMode::Open).open(&store_config);
+    assert_that!(repo_store.open::<KeyRepo<isize>>())
+        .is_err_variant(acid_store::Error::Deserialize);
 
-    assert!(matches!(repo_result, Err(acid_store::Error::Deserialize)));
     Ok(())
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn contains_key(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
+#[rstest]
+fn contains_key(mut repo: KeyRepo<String>) {
+    repo.insert(String::from("test"));
+    assert_that!(repo.contains("test")).is_true();
+}
+
+#[rstest]
+fn remove_key(mut repo: KeyRepo<String>) {
     repo.insert(String::from("test"));
 
-    assert!(repo.contains("test"));
-
-    Ok(())
+    assert_that!(repo.remove("test")).is_true();
+    assert_that!(repo.contains("test")).is_false();
+    assert_that!(repo.remove("test")).is_false();
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn remove_key(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-    repo.insert(String::from("test"));
-
-    assert!(repo.remove("test"));
-    assert!(!repo.contains("test"));
-    assert!(!repo.remove("test"));
-
-    Ok(())
-}
-
-#[test]
-fn list_keys() -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(RepoConfig::default(), &store_config)?;
-
+#[rstest]
+fn list_keys(mut repo: KeyRepo<String>) {
     repo.insert(String::from("test1"));
     repo.insert(String::from("test2"));
     repo.insert(String::from("test3"));
 
-    let expected = vec![
-        String::from("test1"),
-        String::from("test2"),
-        String::from("test3"),
-    ];
-
-    let actual = repo.keys().cloned().collect::<Vec<_>>();
-
-    assert_contains_all(actual, expected);
-
-    Ok(())
+    assert_that!(repo.keys().cloned().collect::<Vec<_>>()).contains_all_of(&[
+        &String::from("test1"),
+        &String::from("test2"),
+        &String::from("test3"),
+    ]);
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn can_not_get_object_from_removed_key(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
+#[rstest]
+fn can_not_get_object_from_removed_key(mut repo: KeyRepo<String>) {
     repo.insert(String::from("test"));
     repo.remove("test");
 
-    assert!(repo.object("test").is_none());
-
-    Ok(())
+    assert_that!(repo.object("test")).is_none();
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn removing_copy_does_not_affect_original(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
+#[rstest]
+fn removing_copy_does_not_affect_original(mut repo: KeyRepo<String>) {
     repo.insert(String::from("original"));
     repo.copy("original", String::from("copy"));
 
-    assert!(repo.remove("copy"));
-    assert!(repo.contains("original"));
-
-    Ok(())
+    assert_that!(repo.remove("copy")).is_true();
+    assert_that!(repo.contains("original")).is_true();
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn copy_has_same_contents(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-    let mut object = repo.insert(String::from("original"));
+#[apply(object_config)]
+fn copy_has_same_contents(#[case] repo_object: RepoObject, buffer: Vec<u8>) -> anyhow::Result<()> {
+    let RepoObject {
+        mut repo,
+        mut object,
+        key,
+    } = repo_object;
 
-    object.write_all(b"Data")?;
+    object.write_all(&buffer)?;
     object.commit()?;
     drop(object);
 
-    assert!(repo.copy("original", String::from("copy")));
+    assert_that!(repo.copy(&key, String::from("copy"))).is_true();
 
     let mut object = repo.object("copy").unwrap();
-    let mut contents = Vec::new();
-    object.read_to_end(&mut contents)?;
+    let mut actual_contents = Vec::new();
+    object.read_to_end(&mut actual_contents)?;
     drop(object);
 
-    assert_eq!(contents, b"Data");
+    assert_that!(actual_contents).is_equal_to(&buffer);
 
     Ok(())
 }
 
-#[test]
-fn copied_object_must_exist() -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(RepoConfig::default(), &store_config)?;
-
-    assert!(!repo.copy("nonexistent", String::from("copy")));
-
-    Ok(())
+#[rstest]
+fn copied_object_must_exist(mut repo: KeyRepo<String>) {
+    assert_that!(repo.copy("nonexistent", String::from("copy"))).is_false();
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn copying_overwrites_destination(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
+#[apply(object_config)]
+fn copying_overwrites_destination(
+    #[case] repo_object: RepoObject,
+    #[from(buffer)] junk_buffer: Vec<u8>,
+    #[from(buffer)] expected_buffer: Vec<u8>,
+) -> anyhow::Result<()> {
+    let RepoObject {
+        mut repo,
+        mut object,
+        key,
+    } = repo_object;
 
-    let expected_data = random_buffer();
-
-    let mut object = repo.insert(String::from("original"));
-    object.write_all(random_buffer().as_slice())?;
+    object.write_all(&expected_buffer)?;
     object.commit()?;
     drop(object);
 
     let mut object = repo.insert(String::from("destination"));
-    object.write_all(expected_data.as_slice())?;
+    object.write_all(&junk_buffer)?;
     object.commit()?;
     drop(object);
 
-    assert!(repo.copy("original", String::from("destination")));
+    assert_that!(repo.copy(&key, String::from("destination"))).is_true();
 
     let mut object = repo.object("destination").unwrap();
     let mut actual_data = Vec::new();
     object.read_to_end(&mut actual_data)?;
     drop(object);
 
-    assert_ne!(actual_data, expected_data);
+    assert_that!(actual_data).is_equal_to(&expected_buffer);
 
     Ok(())
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn existing_key_is_replaced(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
+#[rstest]
+fn existing_key_is_replaced(repo_object: RepoObject, buffer: Vec<u8>) -> anyhow::Result<()> {
+    let RepoObject {
+        mut repo,
+        mut object,
+        key,
+    } = repo_object;
 
-    let mut object = repo.insert(String::from("test"));
-    object.write_all(b"Data")?;
+    object.write_all(&buffer)?;
     object.commit()?;
     drop(object);
 
-    let object = repo.insert(String::from("test"));
-    assert_eq!(object.size().unwrap(), 0);
+    let object = repo.insert(key);
+
+    assert_that!(object.size()).is_ok_containing(0);
 
     Ok(())
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn copy_nonexistent_object(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-
-    assert!(!repo.copy("nonexistent1", String::from("nonexistent2")));
-
-    Ok(())
+#[rstest]
+fn copy_nonexistent_object(mut repo: KeyRepo<String>) {
+    assert_that!(repo.copy("nonexistent1", String::from("nonexistent2"))).is_false();
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-fn object_is_not_accessible_from_another_instance(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-    repo.insert(String::from("test"));
+#[rstest]
+fn object_is_not_accessible_from_another_instance(repo_object: RepoObject) -> anyhow::Result<()> {
+    let RepoObject { repo, key, .. } = repo_object;
 
-    assert!(repo.contains("test"));
-    assert!(repo.object("test").is_some());
+    assert_that!(repo.contains(&key)).is_true();
+    assert_that!(repo.object(&key)).is_some();
 
     let repo: KeyRepo<String> = repo.switch_instance(Uuid::new_v4().into())?;
 
-    assert!(!repo.contains("test"));
-    assert!(repo.object("test").is_none());
+    assert_that!(repo.contains(&key)).is_false();
+    assert_that!(repo.object(&key)).is_none();
 
     Ok(())
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn committing_commits_all_instances(repo_config: RepoConfig) -> anyhow::Result<()> {
+#[rstest]
+fn committing_commits_all_instances(repo_store: RepoStore) -> anyhow::Result<()> {
     let instance_1 = Uuid::new_v4().into();
     let instance_2 = Uuid::new_v4().into();
 
-    let store_config = MemoryConfig::new();
-    let repo = create_repo(repo_config.clone(), &store_config)?;
+    let repo: KeyRepo<String> = repo_store.create()?;
 
     let mut repo: KeyRepo<String> = repo.switch_instance(instance_1)?;
     repo.insert(String::from("test1"));
@@ -282,63 +202,54 @@ fn committing_commits_all_instances(repo_config: RepoConfig) -> anyhow::Result<(
 
     repo.commit()?;
     drop(repo);
-    let repo = open_repo(repo_config, &store_config)?;
+    let repo: KeyRepo<String> = repo_store.open()?;
 
     let repo: KeyRepo<String> = repo.switch_instance(instance_1)?;
-    assert!(repo.contains("test1"));
+    assert_that!(repo.contains("test1")).is_true();
 
     let repo: KeyRepo<String> = repo.switch_instance(instance_2)?;
-    assert!(repo.contains("test2"));
+    assert_that!(repo.contains("test2")).is_true();
 
     Ok(())
 }
 
-#[test]
-fn change_password() -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo: KeyRepo<String> = OpenOptions::new()
-        .encryption(Encryption::XChaCha20Poly1305)
-        .password(b"Password")
-        .mode(OpenMode::CreateNew)
-        .open(&store_config)?;
+#[rstest]
+fn change_password(mut repo_store: RepoStore) -> anyhow::Result<()> {
+    repo_store.config.encryption = Encryption::XChaCha20Poly1305;
+    let mut repo: KeyRepo<String> = repo_store.create()?;
+
     repo.change_password(b"New password");
     repo.commit()?;
     drop(repo);
 
-    OpenOptions::new()
-        .password(b"New password")
-        .open::<KeyRepo<String>, _>(&store_config)?;
+    repo_store.password = String::from("New password");
+
+    assert_that!(repo_store.open::<KeyRepo<String>>()).is_ok();
 
     Ok(())
 }
 
-#[test]
-fn peek_info_succeeds() -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let repository: KeyRepo<String> = OpenOptions::new()
-        .mode(OpenMode::CreateNew)
-        .open(&store_config)?;
-    let expected_info = repository.info();
-    let actual_info = peek_info(&store_config)?;
+#[rstest]
+fn peek_info_succeeds(repo_store: RepoStore) -> anyhow::Result<()> {
+    let repo: KeyRepo<String> = repo_store.create()?;
+    let expected_info = repo.info();
+    let actual_info = peek_info(&repo_store.store)?;
 
-    assert_eq!(actual_info, expected_info);
+    assert_that!(actual_info).is_equal_to(expected_info);
+
     Ok(())
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn committed_changes_are_persisted(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config.clone(), &store_config)?;
+#[apply(store_config)]
+fn committed_changes_are_persisted(
+    #[case] repo_store: RepoStore,
+    buffer: Vec<u8>,
+) -> anyhow::Result<()> {
+    let mut repo: KeyRepo<String> = repo_store.create()?;
     let mut object = repo.insert(String::from("test"));
 
     // Write some data to the repository.
-    let expected_data = random_buffer();
-    object.write_all(expected_data.as_slice())?;
+    object.write_all(&buffer)?;
     object.commit()?;
     drop(object);
 
@@ -346,351 +257,308 @@ fn committed_changes_are_persisted(repo_config: RepoConfig) -> anyhow::Result<()
     drop(repo);
 
     // Re-open the repository.
-    let repo = open_repo(repo_config, &store_config)?;
+    let repo: KeyRepo<String> = repo_store.open()?;
 
     // Read that data from the repository.
-    let mut actual_data = Vec::with_capacity(expected_data.len());
+    let mut actual_data = Vec::new();
     let mut object = repo.object("test").unwrap();
     object.read_to_end(&mut actual_data)?;
 
-    assert_eq!(actual_data, expected_data);
+    assert_that!(actual_data).is_equal_to(&buffer);
 
     Ok(())
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn uncommitted_changes_are_not_persisted(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config.clone(), &store_config)?;
+#[apply(store_config)]
+fn uncommitted_changes_are_not_persisted(
+    #[case] repo_store: RepoStore,
+    buffer: Vec<u8>,
+) -> anyhow::Result<()> {
+    let mut repo: KeyRepo<String> = repo_store.create()?;
     let mut object = repo.insert(String::from("test"));
 
     // Write some data to the repository.
-    let expected_data = random_buffer();
-    object.write_all(expected_data.as_slice())?;
+    object.write_all(&buffer)?;
     object.commit()?;
     drop(object);
     drop(repo);
 
     // Re-open the repository.
-    let repo = open_repo(repo_config, &store_config)?;
+    let repo: KeyRepo<String> = repo_store.open()?;
 
-    assert!(!repo.contains("test"));
-    assert!(repo.object("test").is_none());
+    assert_that!(repo.contains("test")).is_false();
+    assert_that!(repo.object("test")).is_none();
 
     Ok(())
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn objects_are_removed_on_rollback(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-    let mut object = repo.insert(String::from("test"));
+#[rstest]
+fn objects_are_removed_on_rollback(repo_object: RepoObject, buffer: Vec<u8>) -> anyhow::Result<()> {
+    let RepoObject {
+        mut repo,
+        mut object,
+        key,
+    } = repo_object;
 
-    object.write_all(random_buffer().as_slice())?;
+    object.write_all(&buffer)?;
     object.commit()?;
     drop(object);
 
     repo.rollback()?;
 
-    assert!(!repo.contains("test"));
-    assert!(repo.object("test").is_none());
+    assert_that!(repo.contains(&key)).is_false();
+    assert_that!(repo.object(&key)).is_none();
 
     Ok(())
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn object_contents_are_modified_on_rollback(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-    repo.insert(String::from("test"));
+#[apply(object_config)]
+fn object_contents_are_modified_on_rollback(
+    #[case] repo_object: RepoObject,
+    buffer: Vec<u8>,
+) -> anyhow::Result<()> {
+    let RepoObject {
+        mut repo,
+        mut object,
+        key,
+    } = repo_object;
 
     repo.commit()?;
 
-    let mut object = repo.object("test").unwrap();
-    object.write_all(random_buffer().as_slice())?;
+    object.write_all(&buffer)?;
     object.commit()?;
     drop(object);
 
     repo.rollback()?;
 
-    let mut object = repo.object("test").unwrap();
     let mut actual_data = Vec::new();
+    let mut object = repo.object(&key).unwrap();
     object.read_to_end(&mut actual_data)?;
 
-    assert_eq!(object.size().unwrap(), 0);
-    assert!(actual_data.is_empty());
+    assert_that!(object.size()).is_ok_containing(0);
+    assert_that!(actual_data).is_empty();
 
     Ok(())
 }
 
-#[test]
-fn rollback_before_first_commit_succeeds() -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(RepoConfig::default(), &store_config)?;
-    repo.commit()?;
-    Ok(())
+#[rstest]
+fn rollback_before_first_commit_succeeds(mut repo: KeyRepo<String>) {
+    assert_that!(repo.rollback()).is_ok();
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn objects_are_removed_on_restore(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-
+#[rstest]
+fn objects_are_removed_on_restore(mut repo: KeyRepo<String>) -> anyhow::Result<()> {
     let savepoint = repo.savepoint()?;
 
     let mut object = repo.insert(String::from("test"));
-    object.write_all(random_buffer().as_slice())?;
+    object.write_all(b"test data")?;
     object.commit()?;
     drop(object);
 
-    let restore = repo.start_restore(&savepoint)?;
+    repo.restore(&savepoint)?;
 
-    assert!(repo.finish_restore(restore));
-
-    assert!(!repo.contains("test"));
-    assert!(repo.object("test").is_none());
+    assert_that!(repo.contains("test")).is_false();
+    assert_that!(repo.object("test")).is_none();
 
     Ok(())
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn object_contents_are_modified_on_restore(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-    repo.insert(String::from("test"));
+#[apply(object_config)]
+fn object_contents_are_modified_on_restore(
+    #[case] repo_object: RepoObject,
+    buffer: Vec<u8>,
+) -> anyhow::Result<()> {
+    let RepoObject {
+        mut repo,
+        mut object,
+        key,
+    } = repo_object;
 
     let savepoint = repo.savepoint()?;
 
-    let mut object = repo.object("test").unwrap();
-    object.write_all(random_buffer().as_slice())?;
+    object.write_all(&buffer)?;
     object.commit()?;
     drop(object);
 
-    let restore = repo.start_restore(&savepoint)?;
+    assert_that!(repo.restore(&savepoint)).is_ok();
 
-    assert!(repo.finish_restore(restore));
-
-    let mut object = repo.object("test").unwrap();
     let mut actual_data = Vec::new();
+    let mut object = repo.object(&key).unwrap();
     object.read_to_end(&mut actual_data)?;
 
-    assert_eq!(object.size().unwrap(), 0);
-    assert!(actual_data.is_empty());
+    assert_that!(object.size()).is_ok_containing(0);
+    assert_that!(actual_data).is_empty();
 
     Ok(())
 }
 
-#[test]
-fn restore_can_redo_changes() -> anyhow::Result<()> {
-    let mut repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
+#[rstest]
+fn restore_can_redo_changes(repo_object: RepoObject, buffer: Vec<u8>) -> anyhow::Result<()> {
+    let RepoObject {
+        mut repo,
+        mut object,
+        key,
+    } = repo_object;
 
-    let mut object = repo.insert(String::from("test"));
-    object.write_all(random_buffer().as_slice())?;
+    object.write_all(&buffer)?;
     object.commit()?;
     drop(object);
 
     let before_savepoint = repo.savepoint()?;
 
-    repo.remove("test");
+    repo.remove(&key);
 
     let after_savepoint = repo.savepoint()?;
 
-    let restore = repo.start_restore(&before_savepoint)?;
-    repo.finish_restore(restore);
+    assert_that!(repo.restore(&before_savepoint)).is_ok();
+    assert_that!(repo.contains(&key)).is_true();
+    assert_that!(repo.object(&key)).is_some();
 
-    assert!(repo.contains("test"));
-    assert!(repo.object("test").is_some());
-
-    let restore = repo.start_restore(&after_savepoint)?;
-    repo.finish_restore(restore);
-
-    assert!(!repo.contains("test"));
-    assert!(repo.object("test").is_none());
+    assert_that!(repo.restore(&after_savepoint)).is_ok();
+    assert_that!(repo.contains(&key)).is_false();
+    assert_that!(repo.object(&key)).is_none();
 
     Ok(())
 }
 
-#[test]
-fn committing_repo_invalidates_savepoint() -> anyhow::Result<()> {
-    let mut repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
-
+#[rstest]
+fn committing_repo_invalidates_savepoint(mut repo: KeyRepo<String>) -> anyhow::Result<()> {
     let before_savepoint = repo.savepoint()?;
     repo.commit()?;
 
-    assert!(!before_savepoint.is_valid());
-    assert!(matches!(
-        repo.start_restore(&before_savepoint),
-        Err(acid_store::Error::InvalidSavepoint)
-    ));
+    assert_that!(before_savepoint.is_valid()).is_false();
+    assert_that!(repo.start_restore(&before_savepoint))
+        .is_err_variant(acid_store::Error::InvalidSavepoint);
 
     let after_savepoint = repo.savepoint()?;
 
-    assert!(after_savepoint.is_valid());
-    assert!(repo.start_restore(&after_savepoint).is_ok());
+    assert_that!(before_savepoint.is_valid()).is_true();
+    assert_that!(repo.start_restore(&after_savepoint)).is_ok();
 
     Ok(())
 }
 
-#[test]
-fn dropping_repo_invalidates_savepoint() -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(RepoConfig::default(), &store_config)?;
-
+#[rstest]
+fn dropping_repo_invalidates_savepoint(mut repo: KeyRepo<String>) -> anyhow::Result<()> {
     let savepoint = repo.savepoint()?;
     drop(repo);
 
-    assert!(!savepoint.is_valid());
+    assert_that!(savepoint.is_valid()).is_false();
 
     Ok(())
 }
 
-#[test]
-fn savepoint_must_be_associated_with_repo() -> anyhow::Result<()> {
-    let mut first_repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
-    let mut second_repo = create_repo(RepoConfig::default(), &MemoryConfig::new())?;
-
+#[rstest]
+fn savepoint_must_be_associated_with_repo(
+    #[from(repo)] mut first_repo: KeyRepo<String>,
+    #[from(repo)] mut second_repo: KeyRepo<String>,
+) -> anyhow::Result<()> {
     let savepoint = first_repo.savepoint()?;
 
-    assert!(savepoint.is_valid());
-    assert!(matches!(
-        second_repo.start_restore(&savepoint),
-        Err(acid_store::Error::InvalidSavepoint)
-    ));
+    assert_that!(savepoint.is_valid()).is_true();
+    assert_that!(second_repo.start_restore(&savepoint))
+        .is_err_variant(acid_store::Error::InvalidSavepoint);
 
     Ok(())
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn unused_data_is_reclaimed_on_commit(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config.clone(), &store_config)?;
+#[apply(store_config)]
+fn unused_data_is_reclaimed_on_clean(
+    #[case] repo_store: RepoStore,
+    buffer: Vec<u8>,
+) -> anyhow::Result<()> {
+    let mut repo: KeyRepo<String> = repo_store.create()?;
     let mut object = repo.insert(String::from("test"));
 
-    object.write_all(random_buffer().as_slice())?;
+    object.write_all(&buffer)?;
     object.commit()?;
     drop(object);
     repo.commit()?;
     drop(repo);
 
-    let mut store = store_config.open()?;
+    let mut store = repo_store.store.open()?;
     let original_blocks = store.list_blocks()?.len();
     drop(store);
 
-    let mut repo = open_repo(repo_config, &store_config)?;
+    let mut repo: KeyRepo<String> = repo_store.open()?;
     repo.remove("test");
     repo.commit()?;
     repo.clean()?;
     drop(repo);
 
-    let mut store = store_config.open()?;
+    let mut store = repo_store.store.open()?;
     let new_blocks = store.list_blocks()?.len();
 
-    assert!(new_blocks < original_blocks);
+    assert_that!(new_blocks).is_less_than(original_blocks);
+
     Ok(())
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn clean_before_commit_does_not_prevent_rollback(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-    let mut object = repo.insert(String::from("test"));
-
-    let expected_data = random_buffer();
-    let mut actual_data = Vec::new();
+#[apply(object_config)]
+fn clean_before_commit_does_not_prevent_rollback(
+    #[case] repo_object: RepoObject,
+    buffer: Vec<u8>,
+) -> anyhow::Result<()> {
+    let RepoObject {
+        mut repo,
+        mut object,
+        key,
+    } = repo_object;
 
     // Write to an object and commit.
-    object.write_all(expected_data.as_slice())?;
+    object.write_all(&buffer)?;
     object.commit()?;
     drop(object);
     repo.commit()?;
 
     // Delete that object, clean without committing first, and then roll back.
-    repo.remove("test");
+    repo.remove(&key);
     repo.clean()?;
-    repo.rollback()?;
+
+    assert_that!(repo.rollback()).is_ok();
 
     // Check if the object still exists.
-    assert!(repo.contains("test"));
+    assert_that!(repo.contains("test")).is_true();
 
     // Check if the object's data was cleaned up.
-    let mut object = repo.object("test").unwrap();
+    let mut actual_data = Vec::new();
+    let mut object = repo.object(&key).unwrap();
     object.read_to_end(&mut actual_data)?;
 
-    assert_eq!(actual_data.as_slice(), expected_data.as_slice());
+    assert_that!(actual_data).is_equal_to(&buffer);
 
     Ok(())
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn clear_instance_deletes_objects(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-    let mut object = repo.insert(String::from("test"));
+#[rstest]
+fn clear_instance_deletes_objects(repo_object: RepoObject) -> anyhow::Result<()> {
+    let RepoObject {
+        mut repo,
+        mut object,
+        key,
+    } = repo_object;
 
-    object.write_all(random_buffer().as_slice())?;
+    object.write_all(b"test data")?;
     object.commit()?;
     drop(object);
 
     repo.clear_instance();
 
-    assert!(!repo.contains("test"));
-    assert!(repo.object("test").is_none());
+    assert_that!(repo.contains(&key)).is_false();
+    assert_that!(repo.object("test")).is_none();
 
     Ok(())
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn rollback_after_clear_instance(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-    let mut object = repo.insert(String::from("test"));
+#[rstest]
+fn rollback_after_clear_instance(repo_object: RepoObject) -> anyhow::Result<()> {
+    let RepoObject {
+        mut repo,
+        mut object,
+        key,
+    } = repo_object;
 
-    object.write_all(random_buffer().as_slice())?;
+    object.write_all(b"test data")?;
     object.commit()?;
     drop(object);
 
@@ -698,28 +566,26 @@ fn rollback_after_clear_instance(repo_config: RepoConfig) -> anyhow::Result<()> 
     repo.clear_instance();
     repo.rollback()?;
 
-    assert!(repo.contains("test"));
-    assert!(repo.object("test").is_some());
+    assert_that!(repo.contains(&key)).is_true();
+    assert_that!(repo.object(&key)).is_some();
 
     Ok(())
 }
 
-#[test_case(common::FIXED_CONFIG.to_owned(); "with fixed-size chunking")]
-#[test_case(common::ENCODING_CONFIG.to_owned(); "with encryption and compression")]
-#[test_case(common::ZPAQ_CONFIG.to_owned(); "with ZPAQ chunking")]
-#[test_case(common::FIXED_PACKING_SMALL_CONFIG.to_owned(); "with a pack size smaller than the chunk size")]
-#[test_case(common::FIXED_PACKING_LARGE_CONFIG.to_owned(); "with a pack size larger than the chunk size")]
-#[test_case(common::ZPAQ_PACKING_CONFIG.to_owned(); "with packing and ZPAQ chunking")]
-fn verify_valid_repository_is_valid(repo_config: RepoConfig) -> anyhow::Result<()> {
-    let store_config = MemoryConfig::new();
-    let mut repo = create_repo(repo_config, &store_config)?;
-    let mut object = repo.insert(String::from("test"));
+#[apply(object_config)]
+fn verify_valid_repository_is_valid(
+    #[case] repo_object: RepoObject,
+    buffer: Vec<u8>,
+) -> anyhow::Result<()> {
+    let RepoObject {
+        repo, mut object, ..
+    } = repo_object;
 
-    object.write_all(random_buffer().as_slice())?;
+    object.write_all(&buffer)?;
     object.commit()?;
     drop(object);
 
-    assert!(repo.verify()?.is_empty());
+    assert_that!(repo.verify()).is_ok_containing(HashSet::new());
 
     Ok(())
 }

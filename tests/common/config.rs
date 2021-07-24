@@ -19,6 +19,7 @@
 use rstest_reuse::{self, *};
 
 use super::repository::RepoObject;
+use crate::common::RepoStore;
 use acid_store::repo::{key::KeyRepo, Chunking, Compression, Encryption, Packing, RepoConfig};
 
 /// The repository config used for testing fixed-size chunking.
@@ -69,6 +70,7 @@ pub fn zpaq_packing_config() -> RepoConfig {
     config
 }
 
+/// A parameterized test template which provides several different repository configurations.
 #[template]
 #[rstest]
 #[case(fixed_config())]
@@ -79,22 +81,35 @@ pub fn zpaq_packing_config() -> RepoConfig {
 #[case(zpaq_packing_config())]
 pub fn config(#[case] config: RepoConfig) {}
 
+/// A parameterized test template which provides several differently-configured repositories.
 #[template]
 #[rstest]
-#[case(open_repo(fixed_config()).unwrap())]
-#[case(open_repo(encoding_config()).unwrap())]
-#[case(open_repo(zpaq_config()).unwrap())]
-#[case(open_repo(fixed_packing_small_config()).unwrap())]
-#[case(open_repo(fixed_packing_large_config()).unwrap())]
-#[case(open_repo(zpaq_packing_config()).unwrap())]
+#[case(create_repo(fixed_config()).unwrap())]
+#[case(create_repo(encoding_config()).unwrap())]
+#[case(create_repo(zpaq_config()).unwrap())]
+#[case(create_repo(fixed_packing_small_config()).unwrap())]
+#[case(create_repo(fixed_packing_large_config()).unwrap())]
+#[case(create_repo(zpaq_packing_config()).unwrap())]
 pub fn repo_config(#[case] repo: KeyRepo<String>) {}
 
+/// A parameterized test template which provides several differently-configured `RepoObject` values.
 #[template]
 #[rstest]
-#[case(RepoObject::open(fixed_config()).unwrap())]
-#[case(RepoObject::open(encoding_config()).unwrap())]
-#[case(RepoObject::open(zpaq_config()).unwrap())]
-#[case(RepoObject::open(fixed_packing_small_config()).unwrap())]
-#[case(RepoObject::open(fixed_packing_large_config()).unwrap())]
-#[case(RepoObject::open(zpaq_packing_config()).unwrap())]
+#[case(RepoObject::new(fixed_config()).unwrap())]
+#[case(RepoObject::new(encoding_config()).unwrap())]
+#[case(RepoObject::new(zpaq_config()).unwrap())]
+#[case(RepoObject::new(fixed_packing_small_config()).unwrap())]
+#[case(RepoObject::new(fixed_packing_large_config()).unwrap())]
+#[case(RepoObject::new(zpaq_packing_config()).unwrap())]
 pub fn object_config(#[case] repo_object: RepoObject) {}
+
+/// A parameterized test template which provides several differently-configured `RepoStore` values.
+#[template]
+#[rstest]
+#[case(RepoStore::new(fixed_config()))]
+#[case(RepoStore::new(encoding_config()))]
+#[case(RepoStore::new(zpaq_config()))]
+#[case(RepoStore::new(fixed_packing_small_config()))]
+#[case(RepoStore::new(fixed_packing_large_config()))]
+#[case(RepoStore::new(zpaq_packing_config()))]
+pub fn store_config(#[case] repo_store: RepoStore) {}

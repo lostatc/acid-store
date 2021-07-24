@@ -29,7 +29,7 @@ pub use config::{
     zpaq_config, zpaq_packing_config,
 };
 pub use data::{buffer, fixed_buffer, larger_buffer, smaller_buffer, temp_dir};
-pub use repository::{open_repo, repo, repo_object, RepoObject};
+pub use repository::{create_repo, repo, repo_object, repo_store, RepoObject, RepoStore};
 pub use rstest::*;
 pub use serial_test::serial;
 pub use spectral::prelude::*;
