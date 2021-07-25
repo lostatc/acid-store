@@ -544,10 +544,12 @@ fn reading_seeking_with_uncommitted_changes_errs(repo_object: RepoObject) -> any
     object.write_all(b"test data")?;
     let mut content = Vec::new();
 
-    assert_that!(&object.read(&mut content))
+    assert_that!(&object.read(&mut content).map_err(acid_store::Error::from))
         .is_err_variant(acid_store::Error::TransactionInProgress);
-    assert_that!(&object.seek(SeekFrom::Start(0)))
-        .is_err_variant(acid_store::Error::TransactionInProgress);
+    assert_that!(&object
+        .seek(SeekFrom::Start(0))
+        .map_err(acid_store::Error::from))
+    .is_err_variant(acid_store::Error::TransactionInProgress);
 
     Ok(())
 }
@@ -586,8 +588,10 @@ fn writing_from_another_instance_with_uncommitted_changes_errs(
 
     let mut object2 = repo.object("test").unwrap();
 
-    assert_that!(object2.write_all(b"test data"))
-        .is_err_variant(acid_store::Error::TransactionInProgress);
+    assert_that!(object2
+        .write_all(b"test data")
+        .map_err(acid_store::Error::from))
+    .is_err_variant(acid_store::Error::TransactionInProgress);
 
     object1.commit()?;
 
@@ -705,9 +709,14 @@ fn accessing_once_repo_is_dropped_errs(repo_object: RepoObject) -> anyhow::Resul
     assert_that!(object.stats()).is_err_variant(acid_store::Error::InvalidObject);
     assert_that!(object.verify()).is_err_variant(acid_store::Error::InvalidObject);
     assert_that!(object.set_len(0)).is_err_variant(acid_store::Error::InvalidObject);
-    assert_that!(object.seek(SeekFrom::Start(0))).is_err_variant(acid_store::Error::InvalidObject);
-    assert_that!(object.read(&mut content)).is_err_variant(acid_store::Error::InvalidObject);
-    assert_that!(object.write(b"test data")).is_err_variant(acid_store::Error::InvalidObject);
+    assert_that!(object
+        .seek(SeekFrom::Start(0))
+        .map_err(acid_store::Error::from))
+    .is_err_variant(acid_store::Error::InvalidObject);
+    assert_that!(object.read(&mut content).map_err(acid_store::Error::from))
+        .is_err_variant(acid_store::Error::InvalidObject);
+    assert_that!(object.write(b"test data").map_err(acid_store::Error::from))
+        .is_err_variant(acid_store::Error::InvalidObject);
 
     Ok(())
 }
@@ -728,9 +737,14 @@ fn accessing_once_object_is_removed_errs(repo_object: RepoObject) -> anyhow::Res
     assert_that!(object.stats()).is_err_variant(acid_store::Error::InvalidObject);
     assert_that!(object.verify()).is_err_variant(acid_store::Error::InvalidObject);
     assert_that!(object.set_len(0)).is_err_variant(acid_store::Error::InvalidObject);
-    assert_that!(object.seek(SeekFrom::Start(0))).is_err_variant(acid_store::Error::InvalidObject);
-    assert_that!(object.read(&mut content)).is_err_variant(acid_store::Error::InvalidObject);
-    assert_that!(object.write(b"test data")).is_err_variant(acid_store::Error::InvalidObject);
+    assert_that!(object
+        .seek(SeekFrom::Start(0))
+        .map_err(acid_store::Error::from))
+    .is_err_variant(acid_store::Error::InvalidObject);
+    assert_that!(object.read(&mut content).map_err(acid_store::Error::from))
+        .is_err_variant(acid_store::Error::InvalidObject);
+    assert_that!(object.write(b"test data").map_err(acid_store::Error::from))
+        .is_err_variant(acid_store::Error::InvalidObject);
 
     Ok(())
 }

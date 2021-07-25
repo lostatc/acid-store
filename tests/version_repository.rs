@@ -20,8 +20,7 @@ use std::io::{Read, Write};
 use std::iter::FromIterator;
 
 use acid_store::repo::version::VersionRepo;
-use acid_store::repo::{Commit, OpenOptions, SwitchInstance, DEFAULT_INSTANCE};
-use acid_store::store::MemoryConfig;
+use acid_store::repo::{Commit, SwitchInstance, DEFAULT_INSTANCE};
 use acid_store::uuid::Uuid;
 use common::*;
 

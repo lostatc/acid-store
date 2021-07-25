@@ -69,6 +69,7 @@ impl RepoStore {
         OpenOptions::new()
             .config(self.config.clone())
             .password(self.password.as_bytes())
+            .instance(self.instance)
             .mode(OpenMode::CreateNew)
             .open(&self.store)
     }
@@ -78,6 +79,7 @@ impl RepoStore {
         OpenOptions::new()
             .config(self.config.clone())
             .password(self.password.as_bytes())
+            .instance(self.instance)
             .open(&self.store)
     }
 }
@@ -86,6 +88,7 @@ pub fn create_repo<R: OpenRepo>(config: RepoConfig) -> anyhow::Result<R> {
     let store_config = MemoryConfig::new();
     Ok(OpenOptions::new()
         .config(config)
+        .password(b"Password")
         .mode(OpenMode::CreateNew)
         .open(&store_config)?)
 }

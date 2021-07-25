@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-#![cfg(feature = "encryption")]
+#![cfg(all(feature = "encryption", feature = "compression"))]
 
 use acid_store::repo::key::KeyRepo;
 use acid_store::repo::value::ValueRepo;
+use acid_store::repo::version::VersionRepo;
 use acid_store::repo::{
-    Chunking, Compression, Encryption, OpenMode, OpenOptions, RepoConfig, ResourceLimit,
+    Chunking, Commit, Compression, Encryption, OpenMode, OpenOptions, RepoConfig, ResourceLimit,
 };
 use acid_store::store::MemoryConfig;
 use common::*;
@@ -162,8 +163,10 @@ fn open_or_create_nonexistent_repo() {
 
 #[rstest]
 fn opening_existing_repo_of_different_type_errs(repo_store: RepoStore) -> anyhow::Result<()> {
-    repo_store.create::<ValueRepo<String>>()?;
-    assert_that!(repo_store.open::<KeyRepo<String>>())
+    let mut repo = repo_store.create::<VersionRepo<String>>()?;
+    repo.commit()?;
+    drop(repo);
+    assert_that!(repo_store.open::<ValueRepo<String>>())
         .is_err_variant(acid_store::Error::UnsupportedRepo);
     Ok(())
 }

@@ -16,18 +16,17 @@
 
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs::{create_dir, File};
 use std::io::{Read, Write};
 use std::iter::FromIterator;
 
 #[cfg(all(target_os = "linux", feature = "file-metadata"))]
 use exacl::{AclEntry, AclEntryKind, AclOption, Flag, Perm};
-use maplit::hashmap;
 use relative_path::RelativePathBuf;
 use tempfile::TempDir;
 
-use acid_store::repo::file::{Entry, FileRepo, NoMetadata, NoSpecialType};
+use acid_store::repo::file::{Entry, FileRepo};
 use acid_store::repo::{Commit, SwitchInstance, DEFAULT_INSTANCE};
 
 use acid_store::uuid::Uuid;
@@ -35,10 +34,13 @@ use common::*;
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
     acid_store::repo::file::{
-        AccessMode, AccessQualifier, Acl, CommonMetadata, EntryType, UnixMetadata, UnixSpecialType,
+        AccessMode, AccessQualifier, Acl, CommonMetadata, EntryType, NoMetadata, NoSpecialType,
+        UnixMetadata, UnixSpecialType,
     },
+    maplit::hashmap,
     nix::sys::stat::{Mode, SFlag},
     nix::unistd::mkfifo,
+    std::collections::HashMap,
     std::fs::read_link,
     std::os::unix::fs::{symlink, MetadataExt},
     std::path::Path,
@@ -654,7 +656,7 @@ fn write_unix_metadata(
         group: 1000,
         attributes: HashMap::new(),
         acl: Acl {
-            access: hashmap! { AccessQualifier::User(65533) => AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE },
+            access: hashmap! { AccessQualifier::User(65533) => AccessMode::READ },
             default: HashMap::new(),
         },
     };
@@ -699,14 +701,14 @@ fn write_unix_metadata(
         let mask_entry = AclEntry {
             kind: AclEntryKind::Mask,
             name: String::new(),
-            perms: Perm::READ | Perm::WRITE | Perm::EXECUTE,
+            perms: Perm::READ,
             flags: Flag::empty(),
             allow: true,
         };
         let new_entry = AclEntry {
             kind: AclEntryKind::User,
             name: "65533".to_string(),
-            perms: Perm::READ | Perm::WRITE | Perm::EXECUTE,
+            perms: Perm::READ,
             flags: Flag::empty(),
             allow: true,
         };

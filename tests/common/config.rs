@@ -18,9 +18,7 @@
 
 use rstest_reuse::{self, *};
 
-use super::repository::RepoObject;
-use crate::common::RepoStore;
-use acid_store::repo::{key::KeyRepo, Chunking, Compression, Encryption, Packing, RepoConfig};
+use acid_store::repo::{Chunking, Compression, Encryption, Packing, RepoConfig};
 
 /// The repository config used for testing fixed-size chunking.
 pub fn fixed_config() -> RepoConfig {
