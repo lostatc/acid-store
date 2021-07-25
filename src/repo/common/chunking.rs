@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+use std::fmt::{Debug, Formatter};
 use std::io::{self, Write};
 
 use cdchunking::{ChunkerImpl, ZPAQ};
@@ -108,6 +109,15 @@ pub struct IncrementalChunker {
     chunker: Box<dyn ChunkerImpl>,
     buffer: Vec<u8>,
     chunks: Vec<Vec<u8>>,
+}
+
+impl Debug for IncrementalChunker {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("IncrementalChunker")
+            .field("buffer", &self.buffer)
+            .field("chunks", &self.chunks)
+            .finish_non_exhaustive()
+    }
 }
 
 impl IncrementalChunker {
