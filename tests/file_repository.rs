@@ -34,8 +34,8 @@ use common::*;
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
     acid_store::repo::file::{
-        AccessMode, AccessQualifier, Acl, CommonMetadata, EntryType, NoMetadata, NoSpecialType,
-        UnixMetadata, UnixSpecialType,
+        AccessMode, AccessQualifier, Acl, CommonMetadata, EntryType, NoMetadata, NoSpecial,
+        UnixMetadata, UnixSpecial,
     },
     maplit::hashmap,
     nix::sys::stat::{Mode, SFlag},
@@ -217,7 +217,7 @@ fn setting_metadata_on_empty_path_errs(mut repo: FileRepo) {
 
 #[rstest]
 #[cfg(feature = "file-metadata")]
-fn set_common_metadata(mut repo: FileRepo<NoSpecialType, CommonMetadata>) -> anyhow::Result<()> {
+fn set_common_metadata(mut repo: FileRepo<NoSpecial, CommonMetadata>) -> anyhow::Result<()> {
     let expected_metadata = CommonMetadata {
         modified: SystemTime::UNIX_EPOCH,
         accessed: SystemTime::UNIX_EPOCH,
@@ -450,7 +450,7 @@ fn archive_file(mut repo: FileRepo, temp_dir: TempDir, buffer: Vec<u8>) -> anyho
 #[rstest]
 #[cfg(all(unix, feature = "file-metadata"))]
 fn archive_unix_special_files(
-    mut repo: FileRepo<UnixSpecialType, NoMetadata>,
+    mut repo: FileRepo<UnixSpecial, NoMetadata>,
     temp_dir: TempDir,
 ) -> anyhow::Result<()> {
     let fifo_path = temp_dir.as_ref().join("fifo");
@@ -469,15 +469,14 @@ fn archive_unix_special_files(
     let symlink_entry = repo.entry("dest/symlink")?;
     let device_entry = repo.entry("dest/device")?;
 
-    assert_that!(fifo_entry.kind).is_equal_to(EntryType::Special(UnixSpecialType::NamedPipe));
-    assert_that!(symlink_entry.kind).is_equal_to(EntryType::Special(
-        UnixSpecialType::SymbolicLink {
-            target: "/dev/null".into(),
-        },
-    ));
-    assert_that!(device_entry.kind).is_equal_to(EntryType::Special(
-        UnixSpecialType::CharacterDevice { major: 1, minor: 3 },
-    ));
+    assert_that!(fifo_entry.kind).is_equal_to(EntryType::Special(UnixSpecial::NamedPipe));
+    assert_that!(symlink_entry.kind).is_equal_to(EntryType::Special(UnixSpecial::Symlink {
+        target: "/dev/null".into(),
+    }));
+    assert_that!(device_entry.kind).is_equal_to(EntryType::Special(UnixSpecial::CharDevice {
+        major: 1,
+        minor: 3,
+    }));
 
     Ok(())
 }
@@ -556,23 +555,23 @@ fn extract_file(mut repo: FileRepo, buffer: Vec<u8>, temp_dir: TempDir) -> anyho
 #[rstest]
 #[cfg(all(unix, feature = "file-metadata"))]
 fn extract_unix_special_files(
-    mut repo: FileRepo<UnixSpecialType, NoMetadata>,
+    mut repo: FileRepo<UnixSpecial, NoMetadata>,
     temp_dir: TempDir,
 ) -> anyhow::Result<()> {
     let fifo_path = temp_dir.as_ref().join("fifo");
     let symlink_path = temp_dir.as_ref().join("symlink");
     let device_path = temp_dir.as_ref().join("device");
 
-    repo.create("fifo", &Entry::special(UnixSpecialType::NamedPipe))?;
+    repo.create("fifo", &Entry::special(UnixSpecial::NamedPipe))?;
     repo.create(
         "symlink",
-        &Entry::special(UnixSpecialType::SymbolicLink {
+        &Entry::special(UnixSpecial::Symlink {
             target: "/dev/null".into(),
         }),
     )?;
     repo.create(
         "device",
-        &Entry::special(UnixSpecialType::CharacterDevice { major: 1, minor: 3 }),
+        &Entry::special(UnixSpecial::CharDevice { major: 1, minor: 3 }),
     )?;
 
     // The device won't be extracted unless the user has sufficient permissions. In this case, the
@@ -639,7 +638,7 @@ fn extracting_from_empty_path_errs(repo: FileRepo, temp_dir: TempDir) -> anyhow:
 #[rstest]
 #[cfg(all(unix, feature = "file-metadata"))]
 fn write_unix_metadata(
-    mut repo: FileRepo<NoSpecialType, UnixMetadata>,
+    mut repo: FileRepo<NoSpecial, UnixMetadata>,
     temp_dir: TempDir,
 ) -> anyhow::Result<()> {
     let dest_path = temp_dir.as_ref().join("dest");
@@ -729,7 +728,7 @@ fn write_unix_metadata(
 #[rstest]
 #[cfg(all(unix, feature = "file-metadata"))]
 fn read_unix_metadata(
-    mut repo: FileRepo<NoSpecialType, UnixMetadata>,
+    mut repo: FileRepo<NoSpecial, UnixMetadata>,
     temp_dir: TempDir,
 ) -> anyhow::Result<()> {
     let source_path = temp_dir.as_ref().join("source");
@@ -777,7 +776,7 @@ fn read_unix_metadata(
 #[rstest]
 #[cfg(all(unix, feature = "file-metadata"))]
 fn write_common_metadata(
-    mut repo: FileRepo<NoSpecialType, CommonMetadata>,
+    mut repo: FileRepo<NoSpecial, CommonMetadata>,
     temp_dir: TempDir,
 ) -> anyhow::Result<()> {
     let dest_path = temp_dir.as_ref().join("dest");
@@ -804,7 +803,7 @@ fn write_common_metadata(
 #[rstest]
 #[cfg(all(unix, feature = "file-metadata"))]
 fn read_common_metadata(
-    mut repo: FileRepo<NoSpecialType, CommonMetadata>,
+    mut repo: FileRepo<NoSpecial, CommonMetadata>,
     temp_dir: TempDir,
 ) -> anyhow::Result<()> {
     let source_path = temp_dir.as_ref().join("source");

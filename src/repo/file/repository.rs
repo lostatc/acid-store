@@ -36,10 +36,10 @@ use super::entry::{Entry, EntryHandle, EntryType, HandleType};
 use super::file::{archive_file, extract_file};
 use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
-use super::special::{NoSpecialType, SpecialType};
+use super::special::{NoSpecial, SpecialType};
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
 use {
-    super::fuse::FuseAdapter, super::metadata::UnixMetadata, super::special::UnixSpecialType,
+    super::fuse::FuseAdapter, super::metadata::UnixMetadata, super::special::UnixSpecial,
     std::ffi::OsStr,
 };
 
@@ -52,7 +52,7 @@ type RepoState = PathTree<EntryHandle>;
 ///
 /// See [`crate::repo::file`] for more information.
 #[derive(Debug)]
-pub struct FileRepo<S = NoSpecialType, M = NoMetadata>(
+pub struct FileRepo<S = NoSpecial, M = NoMetadata>(
     pub(super) StateRepo<RepoState>,
     PhantomData<(S, M)>,
 )
@@ -174,16 +174,16 @@ where
     /// # #[cfg(feature = "file-metadata")] {
     /// # use std::path::Path;
     /// # use acid_store::repo::{OpenOptions, OpenMode};
-    /// # use acid_store::repo::file::{FileRepo, Entry, RelativePath, UnixSpecialType};
+    /// # use acid_store::repo::file::{FileRepo, Entry, RelativePath, UnixSpecial};
     /// # use acid_store::store::{MemoryStore, MemoryConfig};
     /// #
-    /// # let mut repo: FileRepo<UnixSpecialType> = OpenOptions::new()
+    /// # let mut repo: FileRepo<UnixSpecial> = OpenOptions::new()
     /// #    .mode(OpenMode::CreateNew)
     /// #    .open(&MemoryConfig::new())
     /// #    .unwrap();
     /// #
     /// let entry_path = RelativePath::new("link");
-    /// let symbolic_link = UnixSpecialType::SymbolicLink {
+    /// let symbolic_link = UnixSpecial::Symlink {
     ///     target: Path::new("target").to_owned()
     /// };
     /// repo.create(entry_path, &Entry::special(symbolic_link)).unwrap();
@@ -912,7 +912,7 @@ const DEFAULT_FUSE_MOUNT_OPTS: &[&str] = &["-o", "default_permissions"];
 
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "fuse-mount"))))]
-impl FileRepo<UnixSpecialType, UnixMetadata> {
+impl FileRepo<UnixSpecial, UnixMetadata> {
     /// Mount the `FileRepo` as a FUSE file system.
     ///
     /// This accepts the path of the `root` entry in the repository which will be mounted in the

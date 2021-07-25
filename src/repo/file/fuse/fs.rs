@@ -40,8 +40,7 @@ use super::object::ObjectTable;
 
 use crate::repo::file::fuse::metadata::to_system_time;
 use crate::repo::file::{
-    repository::EMPTY_PATH, AccessQualifier, Entry, EntryType, FileRepo, UnixMetadata,
-    UnixSpecialType,
+    repository::EMPTY_PATH, AccessQualifier, Entry, EntryType, FileRepo, UnixMetadata, UnixSpecial,
 };
 use crate::repo::{Commit, RestoreSavepoint};
 
@@ -108,7 +107,7 @@ macro_rules! try_option {
 #[derive(Debug)]
 pub struct FuseAdapter<'a> {
     /// The repository which contains the virtual file system.
-    repo: &'a mut FileRepo<UnixSpecialType, UnixMetadata>,
+    repo: &'a mut FileRepo<UnixSpecial, UnixMetadata>,
 
     /// A table for allocating inodes.
     inodes: InodeTable,
@@ -123,7 +122,7 @@ pub struct FuseAdapter<'a> {
 impl<'a> FuseAdapter<'a> {
     /// Create a new `FuseAdapter` from the given `repo`.
     pub fn new(
-        repo: &'a mut FileRepo<UnixSpecialType, UnixMetadata>,
+        repo: &'a mut FileRepo<UnixSpecial, UnixMetadata>,
         root: &RelativePath,
     ) -> crate::Result<Self> {
         if root == *EMPTY_PATH {
@@ -147,7 +146,7 @@ impl<'a> FuseAdapter<'a> {
     /// Get the `FileAttr` for the `entry` with the given `inode`.
     fn entry_attr(
         &mut self,
-        entry: &Entry<UnixSpecialType, UnixMetadata>,
+        entry: &Entry<UnixSpecial, UnixMetadata>,
         inode: u64,
         req: &Request,
     ) -> crate::Result<FileAttr> {
@@ -164,7 +163,7 @@ impl<'a> FuseAdapter<'a> {
             EntryType::Directory => 0,
             EntryType::Special(special) => match special {
                 // The `st_size` of a symlink should be the length of the pathname it contains.
-                UnixSpecialType::SymbolicLink { target } => target.as_os_str().len() as u64,
+                UnixSpecial::Symlink { target } => target.as_os_str().len() as u64,
                 _ => 0,
             },
         };
@@ -188,10 +187,10 @@ impl<'a> FuseAdapter<'a> {
                 EntryType::File => fuse::FileType::RegularFile,
                 EntryType::Directory => fuse::FileType::Directory,
                 EntryType::Special(special) => match special {
-                    UnixSpecialType::SymbolicLink { .. } => fuse::FileType::Symlink,
-                    UnixSpecialType::NamedPipe => fuse::FileType::NamedPipe,
-                    UnixSpecialType::BlockDevice { .. } => fuse::FileType::BlockDevice,
-                    UnixSpecialType::CharacterDevice { .. } => fuse::FileType::CharDevice,
+                    UnixSpecial::Symlink { .. } => fuse::FileType::Symlink,
+                    UnixSpecial::NamedPipe => fuse::FileType::NamedPipe,
+                    UnixSpecial::BlockDevice { .. } => fuse::FileType::BlockDevice,
+                    UnixSpecial::CharDevice { .. } => fuse::FileType::CharDevice,
                 },
             },
             perm: mode as u16,
@@ -200,10 +199,10 @@ impl<'a> FuseAdapter<'a> {
             gid: metadata.group,
             rdev: match &entry.kind {
                 EntryType::Special(special) => match special {
-                    UnixSpecialType::BlockDevice { major, minor } => {
+                    UnixSpecial::BlockDevice { major, minor } => {
                         stat::makedev(*major, *minor) as u32
                     }
-                    UnixSpecialType::CharacterDevice { major, minor } => {
+                    UnixSpecial::CharDevice { major, minor } => {
                         stat::makedev(*major, *minor) as u32
                     }
                     _ => NON_SPECIAL_RDEV,
@@ -221,7 +220,7 @@ impl<'a> FuseAdapter<'a> {
     pub fn create_attr(
         &mut self,
         path: RelativePathBuf,
-        entry: &Entry<UnixSpecialType, UnixMetadata>,
+        entry: &Entry<UnixSpecial, UnixMetadata>,
         req: &Request,
     ) -> crate::Result<FileAttr> {
         let entry_inode = self.inodes.insert(path);
@@ -390,7 +389,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
         let entry = try_result!(self.repo.entry(&entry_path), reply);
         match &entry.kind {
-            EntryType::Special(UnixSpecialType::SymbolicLink { target }) => {
+            EntryType::Special(UnixSpecial::Symlink { target }) => {
                 reply.data(target.as_os_str().as_bytes());
             }
             _ => {
@@ -418,13 +417,13 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         } else if flags.contains(SFlag::S_IFCHR) {
             let major = stat::major(rdev as u64);
             let minor = stat::minor(rdev as u64);
-            EntryType::Special(UnixSpecialType::CharacterDevice { major, minor })
+            EntryType::Special(UnixSpecial::CharDevice { major, minor })
         } else if flags.contains(SFlag::S_IFBLK) {
             let major = stat::major(rdev as u64);
             let minor = stat::minor(rdev as u64);
-            EntryType::Special(UnixSpecialType::BlockDevice { major, minor })
+            EntryType::Special(UnixSpecial::BlockDevice { major, minor })
         } else if flags.contains(SFlag::S_IFIFO) {
-            EntryType::Special(UnixSpecialType::NamedPipe)
+            EntryType::Special(UnixSpecial::NamedPipe)
         } else if flags.contains(SFlag::S_IFSOCK) {
             // Sockets aren't supported by `FileRepo`. `mknod(2)` specifies that `EPERM`
             // should be returned if the file system doesn't support the type of node being
@@ -554,7 +553,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let entry_path = parent_path.join(file_name);
 
         let parent_entry = try_result!(self.repo.entry(&parent_path), reply);
-        let entry = Entry::special(UnixSpecialType::SymbolicLink {
+        let entry = Entry::special(UnixSpecial::Symlink {
             target: link.to_owned(),
         })
         .with_metadata(req)
