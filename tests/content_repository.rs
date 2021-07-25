@@ -20,189 +20,159 @@ use std::collections::HashSet;
 use std::io::Read;
 
 use acid_store::repo::content::{ContentRepo, HashAlgorithm};
-use acid_store::repo::{Commit, OpenMode, OpenOptions, SwitchInstance, DEFAULT_INSTANCE};
-use acid_store::store::MemoryConfig;
+use acid_store::repo::{Commit, SwitchInstance, DEFAULT_INSTANCE};
 use acid_store::uuid::Uuid;
-use common::random_buffer;
+use common::*;
 
 mod common;
 
-fn create_repo(config: &MemoryConfig) -> acid_store::Result<ContentRepo> {
-    OpenOptions::new().mode(OpenMode::CreateNew).open(config)
-}
-
-#[test]
-fn open_repository() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
-    repository.commit()?;
-    drop(repository);
-    OpenOptions::new().open::<ContentRepo, _>(&config)?;
-    Ok(())
-}
-
-#[test]
-fn switching_instance_does_not_roll_back() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo = create_repo(&config)?;
-
-    let hash = repo.put(random_buffer().as_slice())?;
+#[rstest]
+fn switching_instance_does_not_roll_back(
+    mut repo: ContentRepo,
+    buffer: Vec<u8>,
+) -> anyhow::Result<()> {
+    let hash = repo.put(buffer.as_slice())?;
 
     let repo: ContentRepo = repo.switch_instance(Uuid::new_v4().into())?;
     let repo: ContentRepo = repo.switch_instance(DEFAULT_INSTANCE)?;
 
-    assert!(repo.contains(&hash));
-    assert!(repo.object(&hash).is_some());
+    assert_that!(repo.contains(&hash)).is_true();
+    assert_that!(repo.object(&hash)).is_some();
 
     Ok(())
 }
 
-#[test]
-fn switching_instance_does_not_commit() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo = create_repo(&config)?;
-
-    let hash = repo.put(random_buffer().as_slice())?;
+#[rstest]
+fn switching_instance_does_not_commit(
+    mut repo: ContentRepo,
+    buffer: Vec<u8>,
+) -> anyhow::Result<()> {
+    let hash = repo.put(buffer.as_slice())?;
 
     let repo: ContentRepo = repo.switch_instance(Uuid::new_v4().into())?;
     let mut repo: ContentRepo = repo.switch_instance(DEFAULT_INSTANCE)?;
     repo.rollback()?;
 
-    assert!(!repo.contains(&hash));
-    assert!(repo.object(&hash).is_none());
+    assert_that!(repo.contains(&hash)).is_false();
+    assert_that!(repo.object(&hash)).is_none();
 
     Ok(())
 }
 
-#[test]
-fn put_object() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
-    let data = random_buffer();
-    let hash = repository.put(data.as_slice())?;
-
-    assert!(repository.contains(hash.as_slice()));
+#[rstest]
+fn put_object(mut repo: ContentRepo, buffer: Vec<u8>) -> anyhow::Result<()> {
+    let hash = repo.put(buffer.as_slice())?;
+    assert_that!(repo.contains(hash.as_slice())).is_true();
     Ok(())
 }
 
-#[test]
-fn remove_object() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
-    let data = random_buffer();
-    let hash = repository.put(data.as_slice())?;
-    repository.remove(&hash);
+#[rstest]
+fn remove_object(mut repo: ContentRepo, buffer: Vec<u8>) -> anyhow::Result<()> {
+    let hash = repo.put(buffer.as_slice())?;
 
-    assert!(!repository.contains(hash.as_slice()));
+    assert_that!(repo.remove(&hash)).is_true();
+    assert_that!(repo.contains(&hash)).is_false();
+    assert_that!(repo.remove(&hash)).is_false();
+
     Ok(())
 }
 
-#[test]
-fn get_object() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
-    let expected_data = random_buffer();
-    let hash = repository.put(expected_data.as_slice())?;
+#[rstest]
+fn get_object(mut repo: ContentRepo, buffer: Vec<u8>) -> anyhow::Result<()> {
+    let hash = repo.put(buffer.as_slice())?;
 
-    let mut object = repository.object(&hash).unwrap();
+    let mut object = repo.object(&hash).unwrap();
     let mut actual_data = Vec::new();
     object.read_to_end(&mut actual_data)?;
     drop(object);
 
-    assert_eq!(actual_data, expected_data);
+    assert_that!(actual_data).is_equal_to(&buffer);
+
     Ok(())
 }
 
-#[test]
-fn list_objects() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
-    let hash1 = repository.put(random_buffer().as_slice())?;
-    let hash2 = repository.put(random_buffer().as_slice())?;
-    let expected_hashes = vec![hash1, hash2].into_iter().collect::<HashSet<_>>();
-    let actual_hashes = repository
-        .list()
-        .map(|hash| hash.to_vec())
-        .collect::<HashSet<_>>();
+#[rstest]
+fn list_objects(
+    mut repo: ContentRepo,
+    #[from(buffer)] first_buffer: Vec<u8>,
+    #[from(buffer)] second_buffer: Vec<u8>,
+) -> anyhow::Result<()> {
+    let hash1 = repo.put(first_buffer.as_slice())?;
+    let hash2 = repo.put(second_buffer.as_slice())?;
 
-    assert_eq!(actual_hashes, expected_hashes);
+    assert_that!(repo.list().map(Vec::from).collect::<Vec<_>>())
+        .contains_all_of(&[&hash1.to_vec(), &hash2.to_vec()]);
+
     Ok(())
 }
 
-#[test]
-fn change_algorithm() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
+#[rstest]
+fn change_algorithm(mut repo: ContentRepo) -> anyhow::Result<()> {
     let expected_data = b"Data";
-    repository.put(&expected_data[..])?;
+    repo.put(&expected_data[..])?;
 
-    repository.change_algorithm(HashAlgorithm::Blake2b(4))?;
+    repo.change_algorithm(HashAlgorithm::Blake2b(4))?;
     let expected_hash: &[u8] = &[228, 220, 4, 124];
 
-    let mut object = repository.object(&expected_hash).unwrap();
+    assert_that!(repo.contains(expected_hash)).is_true();
+    assert_that!(repo.object(expected_hash)).is_some();
+
+    let mut object = repo.object(expected_hash).unwrap();
     let mut actual_data = Vec::new();
     object.read_to_end(&mut actual_data)?;
     drop(object);
 
-    assert_eq!(actual_data.as_slice(), expected_data);
-    Ok(())
-}
-
-#[test]
-fn objects_removed_on_rollback() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
-    let hash = repository.put(random_buffer().as_slice())?;
-
-    repository.rollback()?;
-
-    assert!(!repository.contains(&hash));
-    assert!(repository.object(&hash).is_none());
-    assert!(repository.list().next().is_none());
+    assert_that!(actual_data.as_slice()).is_equal_to(&expected_data[..]);
 
     Ok(())
 }
 
-#[test]
-fn clear_instance_removes_keys() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo = create_repo(&config)?;
+#[rstest]
+fn objects_removed_on_rollback(mut repo: ContentRepo, buffer: Vec<u8>) -> anyhow::Result<()> {
+    let hash = repo.put(buffer.as_slice())?;
 
-    let hash = repo.put(random_buffer().as_slice())?;
+    repo.rollback()?;
+
+    assert_that!(repo.contains(&hash)).is_false();
+    assert_that!(repo.object(&hash)).is_none();
+    assert_that!(repo.list().next()).is_none();
+
+    Ok(())
+}
+
+#[rstest]
+fn clear_instance_removes_keys(mut repo: ContentRepo, buffer: Vec<u8>) -> anyhow::Result<()> {
+    let hash = repo.put(buffer.as_slice())?;
 
     repo.clear_instance();
 
-    assert!(!repo.contains(&hash));
-    assert!(repo.list().next().is_none());
-    assert!(repo.object(&hash).is_none());
+    assert_that!(repo.contains(&hash)).is_false();
+    assert_that!(repo.list().next()).is_none();
+    assert_that!(repo.object(&hash)).is_none();
 
     Ok(())
 }
 
-#[test]
-fn rollback_after_clear_instance() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo = create_repo(&config)?;
-
-    let hash = repo.put(random_buffer().as_slice())?;
+#[rstest]
+fn rollback_after_clear_instance(mut repo: ContentRepo, buffer: Vec<u8>) -> anyhow::Result<()> {
+    let hash = repo.put(buffer.as_slice())?;
 
     repo.commit()?;
     repo.clear_instance();
     repo.rollback()?;
 
-    assert!(repo.contains(&hash));
-    assert!(repo.list().next().is_some());
-    assert!(repo.object(&hash).is_some());
+    assert_that!(repo.contains(&hash)).is_true();
+    assert_that!(repo.list().next()).is_some();
+    assert_that!(repo.object(&hash)).is_some();
 
     Ok(())
 }
 
-#[test]
-fn verify_valid_repository_is_valid() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
-    repository.put(random_buffer().as_slice())?;
+#[rstest]
+fn verify_valid_repository_is_valid(mut repo: ContentRepo, buffer: Vec<u8>) -> anyhow::Result<()> {
+    repo.put(buffer.as_slice())?;
 
-    assert!(repository.verify()?.is_empty());
+    assert_that!(repo.verify()).is_ok_containing(HashSet::new());
+
     Ok(())
 }
