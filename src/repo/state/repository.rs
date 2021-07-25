@@ -22,6 +22,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use super::info::{KeyId, KeyIdTable, ObjectKey, RepoKey, RepoState, StateRestore};
+use super::iter::Keys;
 use crate::repo::{
     key::KeyRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint,
     VersionId,
@@ -188,11 +189,12 @@ where
     }
 
     /// Return an iterator over all the keys of objects in this repository.
-    pub fn keys(&self) -> impl Iterator<Item = ObjectKey> + '_ {
-        self.repo.keys().filter_map(move |key| match key {
-            RepoKey::Object(object_id) => Some(self.new_id(*object_id)),
-            _ => None,
-        })
+    pub fn keys(&self) -> Keys {
+        Keys {
+            repo_id: self.repo.info().id(),
+            instance_id: self.repo.instance(),
+            inner: self.repo.keys(),
+        }
     }
 
     /// Create a copy of the object at `source` and return its `ObjectKey`.

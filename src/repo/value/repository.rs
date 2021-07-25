@@ -24,6 +24,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use uuid::Uuid;
 
+use super::iter::Keys;
 use crate::repo::{
     key::{Key, KeyRepo},
     state::{ObjectKey, StateRepo},
@@ -142,8 +143,8 @@ impl<K: Key> ValueRepo<K> {
     }
 
     /// Return an iterator of all the keys in this repository.
-    pub fn keys(&self) -> impl Iterator<Item = &K> {
-        self.0.state().keys()
+    pub fn keys(&self) -> Keys<K> {
+        Keys(self.0.state().keys())
     }
 
     /// Copy the value at `source` to `dest`.

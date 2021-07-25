@@ -15,36 +15,24 @@
  */
 
 use std::collections::hash_map;
-use std::hash::Hash;
 use std::iter::{ExactSizeIterator, FusedIterator};
-use std::sync::{Arc, RwLock};
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use crate::repo::state::ObjectKey;
 
-use super::handle::ObjectHandle;
-
-/// A type which can be used as a key in a [`KeyRepo`].
+/// An iterator over the hashes of objects in a [`ContentRepo`].
 ///
-/// [`KeyRepo`]: crate::repo::key::KeyRepo
-pub trait Key: Eq + Hash + Clone + Serialize + DeserializeOwned {}
-
-impl<T> Key for T where T: Eq + Hash + Clone + Serialize + DeserializeOwned {}
-
-/// An iterator over the keys in a [`KeyRepo`].
+/// This value is created by [`ContentRepo::list`].
 ///
-/// This value is created by [`KeyRepo::keys`].
-///
-/// [`KeyRepo`]: crate::repo::key::KeyRepo
-/// [`KeyRepo::keys`]: crate::repo::key::KeyRepo::keys
+/// [`ContentRepo`]: crate::repo::content::ContentRepo
+/// [`ContentRepo::list`]: crate::repo::content::ContentRepo::list
 #[derive(Debug, Clone)]
-pub struct Keys<'a, K>(pub(super) hash_map::Keys<'a, K, Arc<RwLock<ObjectHandle>>>);
+pub struct List<'a>(pub(super) hash_map::Keys<'a, Vec<u8>, ObjectKey>);
 
-impl<'a, K> Iterator for Keys<'a, K> {
-    type Item = &'a K;
+impl<'a> Iterator for List<'a> {
+    type Item = &'a [u8];
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next()
+        self.0.next().map(|hash| hash.as_slice())
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -52,6 +40,6 @@ impl<'a, K> Iterator for Keys<'a, K> {
     }
 }
 
-impl<'a, K> FusedIterator for Keys<'a, K> {}
+impl<'a> FusedIterator for List<'a> {}
 
-impl<'a, K> ExactSizeIterator for Keys<'a, K> {}
+impl<'a> ExactSizeIterator for List<'a> {}

@@ -42,7 +42,9 @@
 //! [`ObjectKey`]: crate::repo::state::ObjectKey
 
 pub use self::info::ObjectKey;
+pub use self::iter::Keys;
 pub use self::repository::StateRepo;
 
 mod info;
+mod iter;
 mod repository;

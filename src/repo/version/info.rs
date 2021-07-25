@@ -61,7 +61,7 @@ impl Version {
 }
 
 /// Information with a version.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct VersionInfo {
     /// The time the version was created.
     pub(super) created: SystemTime,

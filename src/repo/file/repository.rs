@@ -34,6 +34,7 @@ use crate::repo::{
 
 use super::entry::{Entry, EntryHandle, EntryType, HandleType};
 use super::file::{archive_file, extract_file};
+use super::iter::{List, Walk};
 use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
 use super::special::{NoSpecial, SpecialType};
@@ -554,10 +555,7 @@ where
     /// # Errors
     /// - `Error::NotFound`: The given `parent` does not exist.
     /// - `Error::NotDirectory`: The given `parent` is not a directory.
-    pub fn list<'a>(
-        &'a self,
-        parent: impl AsRef<RelativePath> + 'a,
-    ) -> crate::Result<impl Iterator<Item = RelativePathBuf> + 'a> {
+    pub fn list<'a>(&'a self, parent: impl AsRef<RelativePath> + 'a) -> crate::Result<List<'a>> {
         if parent.as_ref() != *EMPTY_PATH {
             let entry_handle = self
                 .0
@@ -569,7 +567,7 @@ where
             }
         }
 
-        Ok(self.0.state().list(parent).unwrap().map(|(path, _)| path))
+        Ok(List(self.0.state().list(parent).unwrap()))
     }
 
     /// Return an iterator of paths which are descendants of `parent`.
@@ -583,10 +581,7 @@ where
     /// # Errors
     /// - `Error::NotFound`: The given `parent` does not exist.
     /// - `Error::NotDirectory`: The given `parent` is not a directory.
-    pub fn walk<'a>(
-        &'a self,
-        parent: impl AsRef<RelativePath> + 'a,
-    ) -> crate::Result<impl Iterator<Item = RelativePathBuf> + 'a> {
+    pub fn walk<'a>(&'a self, parent: impl AsRef<RelativePath> + 'a) -> crate::Result<Walk<'a>> {
         if parent.as_ref() != *EMPTY_PATH {
             let entry_handle = self
                 .0
@@ -598,7 +593,7 @@ where
             }
         }
 
-        Ok(self.0.state().walk(parent).unwrap().map(|(path, _)| path))
+        Ok(Walk(self.0.state().walk(parent).unwrap()))
     }
 
     /// Copy a file from the file system into the repository.

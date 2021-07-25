@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
-use std::iter;
+use std::collections::{hash_map, HashMap};
+use std::fmt::{Debug, Formatter};
+use std::iter::{self, ExactSizeIterator, FusedIterator};
 
 use relative_path::{RelativePath, RelativePathBuf};
 use serde::{Deserialize, Serialize};
@@ -41,6 +42,57 @@ fn drain_nodes<'a, V: 'a>(
         iter::once((parent.as_ref().join(&name), value))
             .chain(drain_nodes(parent.as_ref().join(&name), children))
     }))
+}
+
+/// An iterator over the children of a path in a `PathTree`.
+#[derive(Debug, Clone)]
+pub struct List<'a, V> {
+    parent: RelativePathBuf,
+    children: hash_map::Iter<'a, String, PathNode<V>>,
+}
+
+impl<'a, V> Iterator for List<'a, V> {
+    type Item = (RelativePathBuf, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.children
+            .next()
+            .map(|(name, node)| (self.parent.join(name), &node.value))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.children.size_hint()
+    }
+}
+
+impl<'a, V> FusedIterator for List<'a, V> {}
+
+impl<'a, V> ExactSizeIterator for List<'a, V> {}
+
+/// An iterator over the children of a path in a `PathTree`.
+pub struct Walk<'a, V> {
+    parent: RelativePathBuf,
+    inner: Box<dyn Iterator<Item = (RelativePathBuf, &'a V)> + 'a>,
+}
+
+impl<'a, V> Iterator for Walk<'a, V> {
+    type Item = (RelativePathBuf, &'a V);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<'a, V> Debug for Walk<'a, V> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Walk")
+            .field("parent", &self.parent)
+            .finish()
+    }
 }
 
 /// A node in a `PathTree`.
@@ -172,21 +224,17 @@ impl<V> PathTree<V> {
     /// If the path is not in the tree, this returns `None`.
     ///
     /// The returned iterator does not include the parent `path`.
-    pub fn list<'a>(
-        &'a self,
-        path: impl AsRef<RelativePath> + 'a,
-    ) -> Option<impl Iterator<Item = (RelativePathBuf, &'a V)> + 'a> {
+    pub fn list<'a>(&'a self, path: impl AsRef<RelativePath> + 'a) -> Option<List<'a, V>> {
         let mut current_nodes = &self.nodes;
 
         for segment in path.as_ref().iter() {
             current_nodes = &current_nodes.get(segment)?.children;
         }
 
-        Some(
-            current_nodes
-                .iter()
-                .map(move |(name, node)| (path.as_ref().join(name), &node.value)),
-        )
+        Some(List {
+            parent: path.as_ref().to_owned(),
+            children: current_nodes.iter(),
+        })
     }
 
     /// Return an iterator of the descendants of `path` and their values.
@@ -195,17 +243,17 @@ impl<V> PathTree<V> {
     ///
     /// The returned iterator does not include the parent `path`. Descendants are returned in
     /// depth-first order.
-    pub fn walk<'a>(
-        &'a self,
-        path: impl AsRef<RelativePath> + 'a,
-    ) -> Option<Box<dyn Iterator<Item = (RelativePathBuf, &'a V)> + 'a>> {
+    pub fn walk<'a>(&'a self, path: impl AsRef<RelativePath> + 'a) -> Option<Walk<'a, V>> {
         let mut current_nodes = &self.nodes;
 
         for segment in path.as_ref().iter() {
             current_nodes = &current_nodes.get(segment)?.children;
         }
 
-        Some(walk_nodes(path, current_nodes))
+        Some(Walk {
+            parent: path.as_ref().to_owned(),
+            inner: walk_nodes(path, current_nodes),
+        })
     }
 
     /// Drain the tree of the descendants of `path` and their values.

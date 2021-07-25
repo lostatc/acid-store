@@ -139,7 +139,7 @@ pub use self::common::{
 /// [`Key`]: crate::repo::key::Key
 /// [`Commit::commit`]: crate::repo::Commit::commit
 pub mod key {
-    pub use super::common::{Key, KeyRepo};
+    pub use super::common::{Key, KeyRepo, Keys};
 }
 
 mod common;

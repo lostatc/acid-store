@@ -89,6 +89,7 @@ pub use {
 };
 
 pub use self::entry::{Entry, EntryType};
+pub use self::iter::{List, Walk};
 #[cfg(feature = "file-metadata")]
 pub use self::metadata::CommonMetadata;
 pub use self::metadata::{FileMetadata, NoMetadata};
@@ -98,6 +99,7 @@ pub use self::special::{NoSpecial, SpecialType};
 mod entry;
 mod file;
 mod fuse;
+mod iter;
 mod metadata;
 mod path_tree;
 mod repository;
