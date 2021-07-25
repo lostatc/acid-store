@@ -19,96 +19,70 @@
 use uuid::Uuid;
 
 use acid_store::repo::state::StateRepo;
-use acid_store::repo::{Commit, OpenMode, OpenOptions, RestoreSavepoint, SwitchInstance};
-use acid_store::store::MemoryConfig;
+use acid_store::repo::{Commit, RestoreSavepoint, SwitchInstance};
+use common::*;
 
-fn create_repo(config: &MemoryConfig) -> acid_store::Result<StateRepo<String>> {
-    OpenOptions::new().mode(OpenMode::CreateNew).open(config)
-}
+mod common;
 
-#[test]
-fn open_repository() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repository = create_repo(&config)?;
-    repository.commit()?;
-    drop(repository);
-    OpenOptions::new().open::<StateRepo<String>, _>(&config)?;
-    Ok(())
-}
-
-#[test]
-fn state_is_persisted_on_commit() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo = create_repo(&config)?;
-
+#[rstest]
+fn state_is_persisted_on_commit(repo_store: RepoStore) -> anyhow::Result<()> {
+    let mut repo: StateRepo<String> = repo_store.create()?;
     *repo.state_mut() = String::from("New state");
     repo.commit()?;
     drop(repo);
-    let repo: StateRepo<String> = OpenOptions::new().open(&config)?;
+    let repo: StateRepo<String> = repo_store.open()?;
 
-    assert_eq!(repo.state(), "New state");
+    assert_that!(repo.state()).is_equal_to(&String::from("New state"));
 
     Ok(())
 }
 
-#[test]
-fn state_is_rolled_back() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo = create_repo(&config)?;
-
+#[rstest]
+fn state_is_rolled_back(mut repo: StateRepo<String>) -> anyhow::Result<()> {
     *repo.state_mut() = String::from("Initial state");
     repo.commit()?;
     *repo.state_mut() = String::from("New state");
     repo.rollback()?;
 
-    assert_eq!(repo.state(), "Initial state");
+    assert_that!(repo.state()).is_equal_to(&String::from("Initial state"));
 
     Ok(())
 }
 
-#[test]
-fn state_is_restored_by_savepoint() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo = create_repo(&config)?;
-
+#[rstest]
+fn state_is_restored_by_savepoint(mut repo: StateRepo<String>) -> anyhow::Result<()> {
     *repo.state_mut() = String::from("Initial state");
     let savepoint = repo.savepoint()?;
     *repo.state_mut() = String::from("New state");
     repo.restore(&savepoint)?;
 
-    assert_eq!(repo.state(), "Initial state");
+    assert_that!(repo.state()).is_equal_to(&String::from("Initial state"));
 
     Ok(())
 }
 
-#[test]
-fn state_is_defaulted_on_clear_instance() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo = create_repo(&config)?;
-
+#[rstest]
+fn state_is_defaulted_on_clear_instance(mut repo: StateRepo<String>) -> anyhow::Result<()> {
     *repo.state_mut() = String::from("Initial state");
     repo.commit()?;
 
     repo.clear_instance();
 
-    assert_eq!(repo.state(), &String::default());
+    assert_that!(repo.state()).is_equal_to(&String::default());
 
     Ok(())
 }
 
-#[test]
-fn ids_from_different_instances_are_not_valid() -> anyhow::Result<()> {
-    let config = MemoryConfig::new();
-    let mut repo = create_repo(&config)?;
-
+#[rstest]
+fn ids_from_different_instances_are_not_valid(mut repo: StateRepo<String>) -> anyhow::Result<()> {
     let id = repo.create();
 
     let mut repo: StateRepo<String> = repo.switch_instance(Uuid::new_v4().into())?;
 
-    assert!(!repo.contains(id));
-    assert!(!repo.remove(id));
-    assert!(repo.object(id).is_none());
-    assert!(repo.copy(id).is_none());
+    assert_that!(repo.contains(id)).is_false();
+    assert_that!(repo.object(id)).is_none();
+    assert_that!(repo.copy(id)).is_none();
+    assert_that!(repo.remove(id)).is_false();
 
     Ok(())
 }
