@@ -316,6 +316,8 @@ impl DataStore for SftpStore {
 
 impl Debug for SftpStore {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "SftpStore {{ path: {:?} }}", self.path)
+        f.debug_struct("SftpStore")
+            .field("path", &self.path)
+            .finish_non_exhaustive()
     }
 }

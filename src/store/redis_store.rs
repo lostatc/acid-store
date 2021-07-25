@@ -112,7 +112,7 @@ pub struct RedisStore {
 
 impl Debug for RedisStore {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "RedisStore")
+        f.debug_struct("RedisStore").finish_non_exhaustive()
     }
 }
 

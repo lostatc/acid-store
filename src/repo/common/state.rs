@@ -15,7 +15,6 @@
  */
 
 use std::collections::{HashMap, HashSet};
-use std::fmt::{self, Debug, Formatter};
 use std::sync::Mutex;
 
 use cdchunking::ChunkerImpl;
@@ -134,6 +133,7 @@ pub struct RepoState {
 }
 
 /// A seek position in an object.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SeekPosition {
     /// The object is empty.
     Empty,
@@ -169,6 +169,7 @@ impl ExtentLocation {
 }
 
 /// The state associated with an `Object`.
+#[derive(Debug)]
 pub struct ObjectState {
     /// An object responsible for buffering and chunking data which has been written.
     pub chunker: IncrementalChunker,
@@ -214,11 +215,5 @@ impl ObjectState {
             transaction_lock: None,
             store_state: StoreState::new(),
         }
-    }
-}
-
-impl Debug for ObjectState {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "ObjectState")
     }
 }

@@ -80,6 +80,6 @@ impl DataStore for Box<dyn DataStore> {
 
 impl Debug for dyn DataStore {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "DataStore")
+        f.write_str("DataStore")
     }
 }
