@@ -15,30 +15,18 @@
  */
 
 use std::collections::hash_map;
-use std::hash::Hash;
 use std::iter::{ExactSizeIterator, FusedIterator};
-use std::sync::{Arc, RwLock};
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use crate::repo::state::ObjectKey;
 
-use super::handle::ObjectHandle;
-
-/// A type which can be used as a key in a [`KeyRepo`].
+/// An iterator over the keys in a [`ValueRepo`].
 ///
-/// [`KeyRepo`]: crate::repo::key::KeyRepo
-pub trait Key: Eq + Hash + Clone + Serialize + DeserializeOwned {}
-
-impl<T> Key for T where T: Eq + Hash + Clone + Serialize + DeserializeOwned {}
-
-/// An iterator over the keys in a [`KeyRepo`].
+/// This value is created by [`ValueRepo::keys`].
 ///
-/// This value is created by [`KeyRepo::keys`].
-///
-/// [`KeyRepo`]: crate::repo::key::KeyRepo
-/// [`KeyRepo::keys`]: crate::repo::key::KeyRepo::keys
+/// [`ValueRepo`]: crate::repo::value::ValueRepo
+/// [`ValueRepo::keys`]: crate::repo::value::ValueRepo::keys
 #[derive(Debug, Clone)]
-pub struct Keys<'a, K>(pub(super) hash_map::Keys<'a, K, Arc<RwLock<ObjectHandle>>>);
+pub struct Keys<'a, K>(pub(super) hash_map::Keys<'a, K, ObjectKey>);
 
 impl<'a, K> Iterator for Keys<'a, K> {
     type Item = &'a K;

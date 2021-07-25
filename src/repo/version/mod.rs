@@ -72,7 +72,9 @@
 //! [`KeyRepo`]: crate::repo::key::KeyRepo
 
 pub use self::info::Version;
+pub use self::iter::{Keys, Versions};
 pub use self::repository::VersionRepo;
 
 mod info;
+mod iter;
 mod repository;

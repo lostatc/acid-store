@@ -33,7 +33,7 @@ use super::chunk_store::{
 use super::commit::Commit;
 use super::encryption::{EncryptionKey, KeySalt};
 use super::handle::{chunk_hash, HandleId, HandleIdTable, ObjectHandle, ObjectId};
-use super::key::Key;
+use super::key::{Key, Keys};
 use super::metadata::{Header, RepoInfo};
 use super::object::Object;
 use super::object_store::{ObjectReader, ObjectWriter};
@@ -215,8 +215,8 @@ impl<K: Key> KeyRepo<K> {
     }
 
     /// Return an iterator over all the keys of objects in this repository.
-    pub fn keys(&self) -> impl Iterator<Item = &K> {
-        self.objects.keys()
+    pub fn keys(&self) -> Keys<K> {
+        Keys(self.objects.keys())
     }
 
     /// Copy the object at `source` to `dest`.

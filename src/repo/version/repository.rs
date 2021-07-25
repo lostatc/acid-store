@@ -33,9 +33,10 @@ use crate::repo::{
 };
 
 use super::info::{KeyInfo, Version, VersionInfo};
+use super::iter::{Keys, Versions};
 
 /// The state for a `VersionRepo`.
-type RepoState<K> = HashMap<K, KeyInfo>;
+pub type RepoState<K> = HashMap<K, KeyInfo>;
 
 /// The ID of the first version of an object.
 const INITIAL_VERSION_ID: u32 = 1;
@@ -141,8 +142,8 @@ impl<K: Key> VersionRepo<K> {
     }
 
     /// Return an iterator of all the keys in this repository.
-    pub fn keys(&self) -> impl Iterator<Item = &K> {
-        self.0.state().keys()
+    pub fn keys(&self) -> Keys<K> {
+        Keys(self.0.state().keys())
     }
 
     /// Create a new version of the given `key` and return it.
@@ -258,17 +259,18 @@ impl<K: Key> VersionRepo<K> {
     ///
     /// The versions are sorted by their version ID, which corresponds to the order they were
     /// created in.
-    pub fn versions<'a, Q>(&'a self, key: &Q) -> Option<impl Iterator<Item = Version> + 'a>
+    pub fn versions<Q>(&self, key: &Q) -> Option<Versions>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        let versions = &self.0.state().get(key)?.versions;
-        Some(versions.iter().map(move |(id, info)| Version {
-            id: *id,
-            created: info.created,
-            content_id: self.0.object(info.id).unwrap().content_id().unwrap(),
-        }))
+        let versions = self.0.state().get(key)?.versions.clone().into_iter();
+        Some(Versions {
+            versions,
+            id_factory: Box::new(move |object_key| {
+                self.0.object(object_key).unwrap().content_id().unwrap()
+            }),
+        })
     }
 
     /// Replace the current version of `key` with the version with the given `version_id`.

@@ -28,6 +28,8 @@
 //! [`ValueRepo`]: crate::repo::value::ValueRepo
 //! [`Commit::commit`]: crate::repo::Commit::commit
 
+pub use self::iter::Keys;
 pub use self::repository::ValueRepo;
 
+mod iter;
 mod repository;
