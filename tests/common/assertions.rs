@@ -22,21 +22,20 @@ pub trait ErrorVariantAssertions {
     fn is_err_variant(&self, expected_value: acid_store::Error);
 }
 
-impl<'a, T, E> ErrorVariantAssertions for Spec<'a, Result<T, E>>
+impl<'a, T> ErrorVariantAssertions for Spec<'a, acid_store::Result<T>>
 where
     T: Debug,
-    acid_store::Error: From<E>,
 {
     fn is_err_variant(&self, expected_value: acid_store::Error) {
-        match self.subject.map_err(acid_store::Error::from) {
-            Ok(ref value) => {
+        match &self.subject {
+            Ok(value) => {
                 AssertionFailure::from_spec(self)
                     .with_expected(format!("Err({:?})", expected_value))
                     .with_actual(format!("Ok({:?})", value))
                     .fail();
             }
 
-            Err(ref error) => {
+            Err(error) => {
                 if std::mem::discriminant(error) != std::mem::discriminant(&expected_value) {
                     AssertionFailure::from_spec(self)
                         .with_expected(format!("Err({:?})", &expected_value))

@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#![cfg(all(feature = "encryption", feature = "compression"))]
+
 use std::io::Write;
 
 use acid_store::repo::key::KeyRepo;

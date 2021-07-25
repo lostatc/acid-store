@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#![cfg(feature = "encryption")]
+#![cfg(all(feature = "encryption", feature = "compression"))]
 
 use std::io::{Read, Write};
 
@@ -432,7 +432,7 @@ fn committing_repo_invalidates_savepoint(mut repo: KeyRepo<String>) -> anyhow::R
 
     let after_savepoint = repo.savepoint()?;
 
-    assert_that!(before_savepoint.is_valid()).is_true();
+    assert_that!(after_savepoint.is_valid()).is_true();
     assert_that!(repo.start_restore(&after_savepoint)).is_ok();
 
     Ok(())
@@ -518,7 +518,7 @@ fn clean_before_commit_does_not_prevent_rollback(
     assert_that!(repo.rollback()).is_ok();
 
     // Check if the object still exists.
-    assert_that!(repo.contains("test")).is_true();
+    assert_that!(repo.contains(&key)).is_true();
 
     // Check if the object's data was cleaned up.
     let mut actual_data = Vec::new();

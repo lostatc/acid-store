@@ -19,7 +19,9 @@
 use std::collections::HashSet;
 use std::io::Read;
 
-use acid_store::repo::content::{ContentRepo, HashAlgorithm};
+use acid_store::repo::content::ContentRepo;
+#[cfg(feature = "hash-algorithms")]
+use acid_store::repo::content::HashAlgorithm;
 use acid_store::repo::{Commit, SwitchInstance, DEFAULT_INSTANCE};
 use acid_store::uuid::Uuid;
 use common::*;
@@ -106,6 +108,7 @@ fn list_objects(
     Ok(())
 }
 
+#[cfg(feature = "hash-algorithms")]
 #[rstest]
 fn change_algorithm(mut repo: ContentRepo) -> anyhow::Result<()> {
     let expected_data = b"Data";
