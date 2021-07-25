@@ -49,9 +49,9 @@ pub trait SpecialType: Serialize + DeserializeOwned {
 
 /// A `SpecialType` which doesn't support any special file types.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
-pub struct NoSpecialType;
+pub struct NoSpecial;
 
-impl SpecialType for NoSpecialType {
+impl SpecialType for NoSpecial {
     fn from_file(_path: &Path) -> io::Result<Option<Self>> {
         Ok(None)
     }
@@ -70,9 +70,9 @@ impl SpecialType for NoSpecialType {
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
-pub enum UnixSpecialType {
+pub enum UnixSpecial {
     /// A symbolic link which points to `target`.
-    SymbolicLink { target: PathBuf },
+    Symlink { target: PathBuf },
 
     /// A named pipe (FIFO).
     NamedPipe,
@@ -81,27 +81,27 @@ pub enum UnixSpecialType {
     BlockDevice { major: u64, minor: u64 },
 
     /// A character device identified by a `major` and `minor` device number.
-    CharacterDevice { major: u64, minor: u64 },
+    CharDevice { major: u64, minor: u64 },
 }
 
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
-impl SpecialType for UnixSpecialType {
+impl SpecialType for UnixSpecial {
     fn from_file(path: &Path) -> io::Result<Option<Self>> {
         let metadata = path.symlink_metadata()?;
         let file_type = SFlag::from_bits(metadata.mode() & SFlag::S_IFMT.bits()).unwrap();
         let special_file = if file_type.contains(SFlag::S_IFLNK) {
-            Some(UnixSpecialType::SymbolicLink {
+            Some(UnixSpecial::Symlink {
                 target: read_link(path)?,
             })
         } else if file_type.contains(SFlag::S_IFIFO) {
-            Some(UnixSpecialType::NamedPipe)
+            Some(UnixSpecial::NamedPipe)
         } else if file_type.contains(SFlag::S_IFBLK) {
-            Some(UnixSpecialType::BlockDevice {
+            Some(UnixSpecial::BlockDevice {
                 major: major(metadata.rdev()),
                 minor: minor(metadata.rdev()),
             })
         } else if file_type.contains(SFlag::S_IFCHR) {
-            Some(UnixSpecialType::CharacterDevice {
+            Some(UnixSpecial::CharDevice {
                 major: major(metadata.rdev()),
                 minor: minor(metadata.rdev()),
             })
@@ -114,17 +114,17 @@ impl SpecialType for UnixSpecialType {
 
     fn create_file(&self, path: &Path) -> io::Result<()> {
         match self {
-            UnixSpecialType::SymbolicLink { target } => symlink(target, path)?,
-            UnixSpecialType::NamedPipe => mkfifo(path, Mode::S_IRWXU)
+            UnixSpecial::Symlink { target } => symlink(target, path)?,
+            UnixSpecial::NamedPipe => mkfifo(path, Mode::S_IRWXU)
                 .map_err(|error| io::Error::new(io::ErrorKind::Other, error))?,
-            UnixSpecialType::CharacterDevice { major, minor } => {
+            UnixSpecial::CharDevice { major, minor } => {
                 match mknod(path, SFlag::S_IFCHR, Mode::S_IRWXU, makedev(*major, *minor)) {
                     Err(nix::Error::Sys(nix::errno::Errno::EPERM)) => (),
                     Err(error) => return Err(io::Error::new(io::ErrorKind::Other, error)),
                     _ => (),
                 }
             }
-            UnixSpecialType::BlockDevice { major, minor } => {
+            UnixSpecial::BlockDevice { major, minor } => {
                 match mknod(path, SFlag::S_IFBLK, Mode::S_IRWXU, makedev(*major, *minor)) {
                     Err(nix::Error::Sys(nix::errno::Errno::EPERM)) => (),
                     Err(error) => return Err(io::Error::new(io::ErrorKind::Other, error)),

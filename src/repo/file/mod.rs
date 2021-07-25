@@ -60,7 +60,7 @@
 //! # Special Files
 //!
 //! A [`FileRepo`] accepts a [`SpecialType`] type parameter which determines how it handles
-//! special file types. The default value is [`NoSpecialType`], which means that it does not attempt
+//! special file types. The default value is [`NoSpecial`], which means that it does not attempt
 //! to handle file types beyond regular files and directories. Other implementations are provided
 //! through the `file-metadata` cargo feature. If you attempt to read an entry using a different
 //! [`SpecialType`] implementation than it was stored with, it will fail to deserialize and return
@@ -78,14 +78,14 @@
 //! [`FileRepo::mount`]: crate::repo::file::FileRepo::mount
 //! [`Commit::commit`]: crate::repo::Commit::commit
 //! [`NoMetadata`]: crate::repo::file::NoMetadata
-//! [`NoSpecialType`]: crate::repo::file::NoSpecialType
+//! [`NoSpecial`]: crate::repo::file::NoSpecial
 
 pub use relative_path::{RelativePath, RelativePathBuf};
 
 #[cfg(all(unix, feature = "file-metadata"))]
 pub use {
     self::metadata::{AccessMode, AccessQualifier, Acl, AclType, UnixMetadata},
-    self::special::UnixSpecialType,
+    self::special::UnixSpecial,
 };
 
 pub use self::entry::{Entry, EntryType};
@@ -93,7 +93,7 @@ pub use self::entry::{Entry, EntryType};
 pub use self::metadata::CommonMetadata;
 pub use self::metadata::{FileMetadata, NoMetadata};
 pub use self::repository::FileRepo;
-pub use self::special::{NoSpecialType, SpecialType};
+pub use self::special::{NoSpecial, SpecialType};
 
 mod entry;
 mod file;

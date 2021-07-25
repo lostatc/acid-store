@@ -26,7 +26,7 @@ use time::Timespec;
 
 use crate::repo::file::{
     AccessMode, AccessQualifier, Acl, AclType, Entry, EntryType, FileRepo, UnixMetadata,
-    UnixSpecialType,
+    UnixSpecial,
 };
 
 /// The default permissions bits for a directory.
@@ -186,7 +186,7 @@ impl UnixMetadata {
     }
 }
 
-impl Entry<UnixSpecialType, UnixMetadata> {
+impl Entry<UnixSpecial, UnixMetadata> {
     /// Set the metadata of this entry to the default metadata for a new entry.
     pub(super) fn with_metadata(mut self, req: &Request) -> Self {
         self.metadata = Some(self.default_metadata(req));
@@ -201,7 +201,7 @@ impl Entry<UnixSpecialType, UnixMetadata> {
     /// If this entry has no metadata, this does nothing.
     pub(super) fn with_permissions(
         mut self,
-        parent: &Entry<UnixSpecialType, UnixMetadata>,
+        parent: &Entry<UnixSpecial, UnixMetadata>,
         mode: Option<u32>,
     ) -> Self {
         let is_directory = self.is_directory();
@@ -248,21 +248,21 @@ impl Entry<UnixSpecialType, UnixMetadata> {
     }
 }
 
-impl EntryType<UnixSpecialType> {
+impl EntryType<UnixSpecial> {
     /// Convert this `FileType` to a `fuse`-compatible file type.
     pub(super) fn to_file_type(&self) -> FuseFileType {
         match self {
             EntryType::File => FuseFileType::RegularFile,
             EntryType::Directory => FuseFileType::Directory,
-            EntryType::Special(UnixSpecialType::BlockDevice { .. }) => FuseFileType::BlockDevice,
-            EntryType::Special(UnixSpecialType::CharacterDevice { .. }) => FuseFileType::CharDevice,
-            EntryType::Special(UnixSpecialType::SymbolicLink { .. }) => FuseFileType::Symlink,
-            EntryType::Special(UnixSpecialType::NamedPipe { .. }) => FuseFileType::NamedPipe,
+            EntryType::Special(UnixSpecial::BlockDevice { .. }) => FuseFileType::BlockDevice,
+            EntryType::Special(UnixSpecial::CharDevice { .. }) => FuseFileType::CharDevice,
+            EntryType::Special(UnixSpecial::Symlink { .. }) => FuseFileType::Symlink,
+            EntryType::Special(UnixSpecial::NamedPipe { .. }) => FuseFileType::NamedPipe,
         }
     }
 }
 
-impl FileRepo<UnixSpecialType, UnixMetadata> {
+impl FileRepo<UnixSpecial, UnixMetadata> {
     /// Update an entry's `mtime`, `atime`, and `ctime`.
     pub(super) fn touch_modified(
         &mut self,
