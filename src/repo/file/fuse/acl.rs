@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use crate::repo::file::{Acl, FileMetadata, UnixMetadata};
+use crate::repo::file::{Acl, FileMetadata, FileMode, UnixMetadata};
 
 /// The name of the xattr which stores the ACL access entries.
 pub const ACCESS_ACL_XATTR: &str = "system.posix_acl_access";
@@ -50,7 +50,7 @@ impl Permissions {
         let temp_file = tempfile::tempdir()?;
 
         let mut metadata = UnixMetadata::from_file(temp_file.path())?.unwrap();
-        metadata.mode = self.mode;
+        metadata.mode = FileMode::from_bits_truncate(self.mode);
         metadata.acl = Acl::new();
         metadata.attributes.insert(name.to_owned(), value.to_vec());
 
@@ -58,7 +58,7 @@ impl Permissions {
         let UnixMetadata { mode, acl, .. } = UnixMetadata::from_file(temp_file.path())?.unwrap();
 
         // We want to replace the rwx bits and keep the rest of the bits unchanged.
-        self.mode = (self.mode & !0o777) | (mode & 0o777);
+        self.mode = (self.mode & !0o777) | (mode.bits() & 0o777);
         self.acl = acl;
 
         Ok(())
@@ -72,7 +72,7 @@ impl Permissions {
         let temp_file = tempfile::tempdir()?;
 
         let mut metadata = UnixMetadata::from_file(temp_file.path())?.unwrap();
-        metadata.mode = self.mode & 0o777;
+        metadata.mode = FileMode::from_bits_truncate(self.mode & 0o777);
         metadata.acl = self.acl.clone();
         metadata.write_metadata(temp_file.path())?;
         let mut metadata = UnixMetadata::from_file(temp_file.path())?.unwrap();
@@ -84,7 +84,7 @@ impl Permissions {
 impl From<UnixMetadata> for Permissions {
     fn from(metadata: UnixMetadata) -> Self {
         Permissions {
-            mode: metadata.mode,
+            mode: metadata.mode.bits(),
             acl: metadata.acl,
         }
     }

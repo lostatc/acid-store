@@ -26,7 +26,7 @@ use exacl::{AclEntry, AclEntryKind, AclOption, Flag, Perm};
 use relative_path::RelativePathBuf;
 use tempfile::TempDir;
 
-use acid_store::repo::file::{Entry, FileRepo};
+use acid_store::repo::file::{Entry, FileMode, FileRepo};
 use acid_store::repo::{Commit, SwitchInstance, DEFAULT_INSTANCE};
 
 use acid_store::uuid::Uuid;
@@ -34,8 +34,8 @@ use common::*;
 #[cfg(all(unix, feature = "file-metadata"))]
 use {
     acid_store::repo::file::{
-        AccessMode, AccessQualifier, Acl, CommonMetadata, EntryType, NoMetadata, NoSpecial,
-        UnixMetadata, UnixSpecial,
+        Acl, AclMode, AclQualifier, CommonMetadata, EntryType, NoMetadata, NoSpecial, UnixMetadata,
+        UnixSpecial,
     },
     maplit::hashmap,
     nix::sys::stat::{Mode, SFlag},
@@ -647,7 +647,7 @@ fn write_unix_metadata(
     // on tmpfs, which is most likely where the temporary directory will be created.
 
     let entry_metadata = UnixMetadata {
-        mode: 0o246,
+        mode: FileMode::S_IWUSR | FileMode::S_IRGRP | FileMode::S_IROTH | FileMode::S_IWOTH,
         modified: SystemTime::UNIX_EPOCH,
         accessed: SystemTime::UNIX_EPOCH,
         changed: SystemTime::UNIX_EPOCH,
@@ -655,7 +655,7 @@ fn write_unix_metadata(
         group: 1000,
         attributes: HashMap::new(),
         acl: Acl {
-            access: hashmap! { AccessQualifier::User(65533) => AccessMode::READ },
+            access: hashmap! { AclQualifier::User(65533) => AclMode::R },
             default: HashMap::new(),
         },
     };
@@ -669,7 +669,8 @@ fn write_unix_metadata(
 
     let dest_metadata = dest_path.metadata()?;
 
-    assert_that!(dest_metadata.mode() & 0o777).is_equal_to(entry_metadata.mode);
+    assert_that!(FileMode::from_bits_truncate(dest_metadata.mode() & 0o777))
+        .is_equal_to(entry_metadata.mode);
     assert_that!(dest_metadata.modified()).is_ok_containing(entry_metadata.modified);
     assert_that!(dest_metadata.accessed()).is_ok_containing(entry_metadata.accessed);
 
@@ -755,7 +756,8 @@ fn read_unix_metadata(
     // This does not test extended attributes because user extended attributes are not supported
     // on tmpfs, which is most likely where the temporary directory will be created.
 
-    assert_that!(entry_metadata.mode).is_equal_to(source_metadata.mode());
+    assert_that!(entry_metadata.mode)
+        .is_equal_to(FileMode::from_bits_truncate(source_metadata.mode()));
     assert_that!(entry_metadata.modified).is_equal_to(source_metadata.modified()?);
     assert_that!(entry_metadata.user).is_equal_to(source_metadata.uid());
     assert_that!(entry_metadata.group).is_equal_to(source_metadata.gid());
@@ -765,9 +767,9 @@ fn read_unix_metadata(
         assert_that!(entry_metadata
             .acl
             .access
-            .get(&AccessQualifier::User(65533))
+            .get(&AclQualifier::User(65533))
             .copied())
-        .contains_value(AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE);
+        .contains_value(AclMode::RWX);
     }
 
     Ok(())
