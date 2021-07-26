@@ -1,5 +1,5 @@
 use acid_store::repo::{
-    file::{Entry, FileRepo, UnixMetadata, UnixSpecialType},
+    file::{Entry, FileRepo, UnixMetadata, UnixSpecial},
     OpenMode, OpenOptions,
 };
 use acid_store::store::MemoryConfig;
@@ -14,7 +14,7 @@ fn main() {
     );
 
     let config = MemoryConfig::new();
-    let mut repo: FileRepo<UnixSpecialType, UnixMetadata> = OpenOptions::new()
+    let mut repo: FileRepo<UnixSpecial, UnixMetadata> = OpenOptions::new()
         .mode(OpenMode::CreateNew)
         .open(&config)
         .unwrap();
