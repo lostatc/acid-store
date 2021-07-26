@@ -89,7 +89,7 @@ pub use {
 };
 
 pub use self::entry::{Entry, EntryType};
-pub use self::iter::{Children, Descendants};
+pub use self::iter::{Children, Descendants, WalkEntry, WalkPredicate};
 #[cfg(feature = "file-metadata")]
 pub use self::metadata::CommonMetadata;
 pub use self::metadata::{FileMetadata, NoMetadata};

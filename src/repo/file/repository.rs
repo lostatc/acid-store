@@ -34,10 +34,11 @@ use crate::repo::{
 
 use super::entry::{Entry, EntryHandle, EntryType, HandleType};
 use super::file::{archive_file, extract_file};
-use super::iter::{Children, Descendants};
+use super::iter::{Children, Descendants, WalkEntry};
 use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
 use super::special::{NoSpecial, SpecialType};
+use crate::repo::file::iter::WalkPredicate;
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
 use {
     super::fuse::FuseAdapter, super::metadata::UnixMetadata, super::special::UnixSpecial,
@@ -600,6 +601,15 @@ where
         }
 
         Ok(Descendants(self.0.state().descendants(parent).unwrap()))
+    }
+
+    // TODO: Document
+    pub fn walk<R>(
+        &self,
+        parent: impl AsRef<RelativePath>,
+        predicate: impl Fn(WalkEntry<S, M>) -> WalkPredicate<R>,
+    ) -> Option<R> {
+        todo!()
     }
 
     /// Copy a file from the file system into the repository.
