@@ -34,7 +34,7 @@ use crate::repo::{
 
 use super::entry::{Entry, EntryHandle, EntryType, HandleType};
 use super::file::{archive_file, extract_file};
-use super::iter::{List, Walk};
+use super::iter::{Children, Descendants};
 use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
 use super::special::{NoSpecial, SpecialType};
@@ -288,7 +288,7 @@ where
             return Err(crate::Error::InvalidPath);
         }
 
-        match self.0.state().list(&path) {
+        match self.0.state().children(&path) {
             Some(mut children) => {
                 if children.next().is_some() {
                     return Err(crate::Error::NotEmpty);
@@ -530,7 +530,7 @@ where
 
         // Get the destination paths for each path in the path table and insert them into the
         // destination tree.
-        for (path, source_handle) in self.0.state().walk(source.as_ref()).unwrap() {
+        for (path, source_handle) in self.0.state().descendants(source.as_ref()).unwrap() {
             let relative_path = path.strip_prefix(&source).unwrap();
             let dest_tree_path = dest_tree_root.join(relative_path);
             dest_tree.insert(dest_tree_path, *source_handle);
@@ -555,7 +555,10 @@ where
     /// # Errors
     /// - `Error::NotFound`: The given `parent` does not exist.
     /// - `Error::NotDirectory`: The given `parent` is not a directory.
-    pub fn list<'a>(&'a self, parent: impl AsRef<RelativePath> + 'a) -> crate::Result<List<'a>> {
+    pub fn children<'a>(
+        &'a self,
+        parent: impl AsRef<RelativePath> + 'a,
+    ) -> crate::Result<Children<'a>> {
         if parent.as_ref() != *EMPTY_PATH {
             let entry_handle = self
                 .0
@@ -567,7 +570,7 @@ where
             }
         }
 
-        Ok(List(self.0.state().list(parent).unwrap()))
+        Ok(Children(self.0.state().children(parent).unwrap()))
     }
 
     /// Return an iterator of paths which are descendants of `parent`.
@@ -581,7 +584,10 @@ where
     /// # Errors
     /// - `Error::NotFound`: The given `parent` does not exist.
     /// - `Error::NotDirectory`: The given `parent` is not a directory.
-    pub fn walk<'a>(&'a self, parent: impl AsRef<RelativePath> + 'a) -> crate::Result<Walk<'a>> {
+    pub fn descendants<'a>(
+        &'a self,
+        parent: impl AsRef<RelativePath> + 'a,
+    ) -> crate::Result<Descendants<'a>> {
         if parent.as_ref() != *EMPTY_PATH {
             let entry_handle = self
                 .0
@@ -593,7 +599,7 @@ where
             }
         }
 
-        Ok(Walk(self.0.state().walk(parent).unwrap()))
+        Ok(Descendants(self.0.state().descendants(parent).unwrap()))
     }
 
     /// Copy a file from the file system into the repository.
@@ -785,7 +791,7 @@ where
         let relative_descendants = self
             .0
             .state()
-            .walk(&source)
+            .descendants(&source)
             .ok_or(crate::Error::NotFound)?
             .map(|(path, _)| path.strip_prefix(&source).unwrap().to_owned());
 
@@ -822,7 +828,7 @@ where
         Ok(self
             .0
             .state()
-            .walk(&*EMPTY_PATH)
+            .descendants(&*EMPTY_PATH)
             .unwrap()
             .filter(|(_, entry_handle)| {
                 let entry_corrupt = corrupt_keys.contains(&entry_handle.entry);
