@@ -640,7 +640,7 @@ where
 
         let entry = Entry {
             kind: file_type,
-            metadata: Some(M::from_file(source.as_ref())?),
+            metadata: M::from_file(source.as_ref())?,
         };
 
         self.create(&dest, &entry)?;

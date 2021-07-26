@@ -41,23 +41,25 @@ use {filetime::set_file_times, std::time::SystemTime};
 /// [`FileRepo`]: crate::repo::file::FileRepo
 pub trait FileMetadata: Serialize + DeserializeOwned {
     /// Read the metadata from the file at `path` and create a new instance.
-    fn from_file(path: &Path) -> io::Result<Self>;
+    ///
+    /// This returns `Ok(None)` if this implementation does not support reading file metadata.
+    fn from_file(path: &Path) -> io::Result<Option<Self>>;
 
     /// Write this metadata to the file at `path`.
     fn write_metadata(&self, path: &Path) -> io::Result<()>;
 }
 
 /// A `FileMetadata` which stores no metadata.
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Default, Serialize, Deserialize)]
-pub struct NoMetadata;
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
+pub enum NoMetadata {}
 
 impl FileMetadata for NoMetadata {
-    fn from_file(_path: &Path) -> io::Result<Self> {
-        Ok(NoMetadata)
+    fn from_file(_path: &Path) -> io::Result<Option<Self>> {
+        Ok(None)
     }
 
     fn write_metadata(&self, _path: &Path) -> io::Result<()> {
-        Ok(())
+        unreachable!("It is not possible to instantiate a `NoMetadata`.")
     }
 }
 
@@ -360,7 +362,7 @@ impl UnixMetadata {
 
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
 impl FileMetadata for UnixMetadata {
-    fn from_file(path: &Path) -> io::Result<Self> {
+    fn from_file(path: &Path) -> io::Result<Option<Self>> {
         let metadata = path.metadata()?;
 
         let mut attributes = HashMap::new();
@@ -427,7 +429,7 @@ impl FileMetadata for UnixMetadata {
             acl
         };
 
-        Ok(Self {
+        Ok(Some(Self {
             mode,
             modified: unix_file_time(metadata.mtime(), metadata.mtime_nsec()),
             accessed: unix_file_time(metadata.atime(), metadata.atime_nsec()),
@@ -436,7 +438,7 @@ impl FileMetadata for UnixMetadata {
             group: metadata.gid(),
             attributes,
             acl,
-        })
+        }))
     }
 
     fn write_metadata(&self, path: &Path) -> io::Result<()> {
@@ -523,12 +525,12 @@ pub struct CommonMetadata {
 
 #[cfg(feature = "file-metadata")]
 impl FileMetadata for CommonMetadata {
-    fn from_file(path: &Path) -> io::Result<Self> {
+    fn from_file(path: &Path) -> io::Result<Option<Self>> {
         let metadata = path.metadata()?;
-        Ok(Self {
+        Ok(Some(Self {
             modified: metadata.modified()?,
             accessed: metadata.accessed()?,
-        })
+        }))
     }
 
     fn write_metadata(&self, path: &Path) -> io::Result<()> {

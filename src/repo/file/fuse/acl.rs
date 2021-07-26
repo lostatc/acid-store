@@ -49,13 +49,13 @@ impl Permissions {
         // We use a directory because default ACLs can only be set on a directory.
         let temp_file = tempfile::tempdir()?;
 
-        let mut metadata = UnixMetadata::from_file(temp_file.path())?;
+        let mut metadata = UnixMetadata::from_file(temp_file.path())?.unwrap();
         metadata.mode = self.mode;
         metadata.acl = Acl::new();
         metadata.attributes.insert(name.to_owned(), value.to_vec());
 
         metadata.write_metadata(temp_file.path())?;
-        let UnixMetadata { mode, acl, .. } = UnixMetadata::from_file(temp_file.path())?;
+        let UnixMetadata { mode, acl, .. } = UnixMetadata::from_file(temp_file.path())?.unwrap();
 
         // We want to replace the rwx bits and keep the rest of the bits unchanged.
         self.mode = (self.mode & !0o777) | (mode & 0o777);
@@ -71,11 +71,11 @@ impl Permissions {
         // We use a directory because default ACLs can only be set on a directory.
         let temp_file = tempfile::tempdir()?;
 
-        let mut metadata = UnixMetadata::from_file(temp_file.path())?;
+        let mut metadata = UnixMetadata::from_file(temp_file.path())?.unwrap();
         metadata.mode = self.mode & 0o777;
         metadata.acl = self.acl.clone();
         metadata.write_metadata(temp_file.path())?;
-        let mut metadata = UnixMetadata::from_file(temp_file.path())?;
+        let mut metadata = UnixMetadata::from_file(temp_file.path())?.unwrap();
 
         Ok(metadata.attributes.remove(name).unwrap_or_else(Vec::new))
     }
