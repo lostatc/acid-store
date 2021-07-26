@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use {
     bitflags::bitflags,
     exacl::{AclEntry, AclEntryKind},
+    nix::sys::stat,
     nix::unistd::{chown, Gid, Uid},
     std::collections::HashMap,
     std::fs::set_permissions,
@@ -63,11 +64,11 @@ impl FileMetadata for NoMetadata {
     }
 }
 
-/// A qualifier which determines who is granted a set of permissions in an access control list.
+/// A qualifier which determines who is granted a set of permissions in an ACL.
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
-pub enum AccessQualifier {
+pub enum AclQualifier {
     /// The user with a given UID.
     User(u32),
 
@@ -92,10 +93,18 @@ bitflags! {
     /// The permission mode for an access control list.
     #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
     #[derive(Serialize, Deserialize)]
-    pub struct AccessMode: u32 {
-        const READ = exacl::Perm::READ.bits();
-        const WRITE = exacl::Perm::WRITE.bits();
-        const EXECUTE = exacl::Perm::EXECUTE.bits();
+    pub struct AclMode: u32 {
+        /// Read permissions.
+        const R = exacl::Perm::READ.bits();
+
+        /// Write permissions.
+        const W = exacl::Perm::WRITE.bits();
+
+        /// Execute permissions.
+        const X = exacl::Perm::EXECUTE.bits();
+
+        /// Read, write, and execute permissions.
+        const RWX = Self::R.bits | Self::W.bits | Self::X.bits;
     }
 
 }
@@ -124,13 +133,13 @@ pub struct Acl {
     /// The access ACL.
     ///
     /// This ACL defines the current access permissions.
-    pub access: HashMap<AccessQualifier, AccessMode>,
+    pub access: HashMap<AclQualifier, AclMode>,
 
     /// The default ACL.
     ///
     /// This ACL defines the access permissions inherited by descendants. Setting this value only
     /// makes sense for directories.
-    pub default: HashMap<AccessQualifier, AccessMode>,
+    pub default: HashMap<AclQualifier, AclMode>,
 }
 
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
@@ -171,64 +180,57 @@ fn other_perm(mode: u32) -> u32 {
     mode & 0o007
 }
 
-/// Calculate the `AccessMode` for the ACL mask entry.
+/// Calculate the `AclMode` for the ACL mask entry.
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
-fn calculate_mask(acl: &HashMap<AccessQualifier, AccessMode>, mode: u32) -> AccessMode {
+fn calculate_mask(acl: &HashMap<AclQualifier, AclMode>, mode: u32) -> AclMode {
     let mut mask_perm = acl
         .iter()
         .filter(|(qualifier, _)| {
-            matches!(
-                qualifier,
-                AccessQualifier::User(_) | AccessQualifier::Group(_)
-            )
+            matches!(qualifier, AclQualifier::User(_) | AclQualifier::Group(_))
         })
         .map(|(_, access_mode)| access_mode)
         .fold(0u32, |accumulator, perm| accumulator | perm.bits());
 
     mask_perm |= acl
-        .get(&AccessQualifier::GroupObj)
+        .get(&AclQualifier::GroupObj)
         .map(|perm| perm.bits())
         .unwrap_or_else(|| group_perm(mode));
 
-    AccessMode::from_bits(mask_perm).unwrap()
+    AclMode::from_bits(mask_perm).unwrap()
 }
 
-/// Convert the given `entry` into an `AccessQualifier`.
+/// Convert the given `entry` into an `AclQualifier`.
 ///
 /// This returns `None` if it could not be converted.
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
-fn entry_to_qualifier(entry: &AclEntry) -> Option<AccessQualifier> {
+fn entry_to_qualifier(entry: &AclEntry) -> Option<AclQualifier> {
     match entry.kind {
-        AclEntryKind::User if entry.name.is_empty() => Some(AccessQualifier::UserObj),
+        AclEntryKind::User if entry.name.is_empty() => Some(AclQualifier::UserObj),
         AclEntryKind::User => match entry.name.parse().ok() {
-            Some(uid) => Some(AccessQualifier::User(uid)),
-            None => get_user_by_name(&entry.name).map(|name| AccessQualifier::User(name.uid())),
+            Some(uid) => Some(AclQualifier::User(uid)),
+            None => get_user_by_name(&entry.name).map(|name| AclQualifier::User(name.uid())),
         },
-        AclEntryKind::Group if entry.name.is_empty() => Some(AccessQualifier::GroupObj),
+        AclEntryKind::Group if entry.name.is_empty() => Some(AclQualifier::GroupObj),
         AclEntryKind::Group => match entry.name.parse().ok() {
-            Some(gid) => Some(AccessQualifier::Group(gid)),
-            None => get_group_by_name(&entry.name).map(|group| AccessQualifier::Group(group.gid())),
+            Some(gid) => Some(AclQualifier::Group(gid)),
+            None => get_group_by_name(&entry.name).map(|group| AclQualifier::Group(group.gid())),
         },
-        AclEntryKind::Other => Some(AccessQualifier::Other),
-        AclEntryKind::Mask => Some(AccessQualifier::Mask),
+        AclEntryKind::Other => Some(AclQualifier::Other),
+        AclEntryKind::Mask => Some(AclQualifier::Mask),
         _ => None,
     }
 }
 
 /// Convert the given `qualifier`, `mode`, and `flags` into an `AclEntry`.
 #[cfg(all(any(unix, doc), feature = "file-metadata"))]
-fn qualifier_to_entry(
-    qualifier: AccessQualifier,
-    mode: AccessMode,
-    flags: exacl::Flag,
-) -> AclEntry {
+fn qualifier_to_entry(qualifier: AclQualifier, mode: AclMode, flags: exacl::Flag) -> AclEntry {
     let (kind, name) = match qualifier {
-        AccessQualifier::UserObj => (AclEntryKind::User, String::new()),
-        AccessQualifier::User(uid) => (AclEntryKind::User, uid.to_string()),
-        AccessQualifier::GroupObj => (AclEntryKind::Group, String::new()),
-        AccessQualifier::Group(gid) => (AclEntryKind::Group, gid.to_string()),
-        AccessQualifier::Other => (AclEntryKind::Other, String::new()),
-        AccessQualifier::Mask => (AclEntryKind::Mask, String::new()),
+        AclQualifier::UserObj => (AclEntryKind::User, String::new()),
+        AclQualifier::User(uid) => (AclEntryKind::User, uid.to_string()),
+        AclQualifier::GroupObj => (AclEntryKind::Group, String::new()),
+        AclQualifier::Group(gid) => (AclEntryKind::Group, gid.to_string()),
+        AclQualifier::Other => (AclEntryKind::Other, String::new()),
+        AclQualifier::Mask => (AclEntryKind::Mask, String::new()),
     };
 
     AclEntry {
@@ -238,6 +240,60 @@ fn qualifier_to_entry(
         flags,
         allow: true,
     }
+}
+
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
+bitflags! {
+    /// The permission mode for a file.
+    #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
+    #[derive(Serialize, Deserialize)]
+    pub struct FileMode: u32 {
+        /// Read permissions for the owning user (`0o400`).
+        const S_IRUSR = stat::Mode::S_IRUSR.bits();
+
+        /// Write permissions for the owning user (`0o200`).
+        const S_IWUSR = stat::Mode::S_IWUSR.bits();
+
+        /// Execute permissions for the owning user (`0o100`).
+        const S_IXUSR = stat::Mode::S_IXUSR.bits();
+
+        /// Read, write, and execute permissions for the owning user (`0o700`).
+        const S_IRWXU = stat::Mode::S_IRWXU.bits();
+
+        /// Read permissions for the owning group (`0o40`).
+        const S_IRGRP = stat::Mode::S_IRGRP.bits();
+
+        /// Write permissions for the owning group (`0o20`).
+        const S_IWGRP = stat::Mode::S_IWGRP.bits();
+
+        /// Execute permissions for the owning group (`0o10`).
+        const S_IXGRP = stat::Mode::S_IXGRP.bits();
+
+        /// Read, write, and execute permissions for the owning group (`0o70`).
+        const S_IRWXG = stat::Mode::S_IRWXG.bits();
+
+        /// Read permissions for everyone else (`0o4`).
+        const S_IROTH = stat::Mode::S_IROTH.bits();
+
+        /// Write permissions for everyone else (`0o2`).
+        const S_IWOTH = stat::Mode::S_IWOTH.bits();
+
+        /// Execute permissions for everyone else (`0o1`).
+        const S_IXOTH = stat::Mode::S_IXOTH.bits();
+
+        /// Read, write, and execute permissions for everyone else (`0o7`).
+        const S_IRWXO = stat::Mode::S_IRWXO.bits();
+
+        /// The set-user-ID on execute bit (`0o4000`).
+        const S_ISUID = stat::Mode::S_ISUID.bits();
+
+        /// The set-group-ID on execute bit (`0o2000`).
+        const S_ISGID = stat::Mode::S_ISGID.bits();
+
+        /// The sticky bit (`0o1000`).
+        const S_ISVTX = stat::Mode::S_ISVTX.bits();
+    }
+
 }
 
 /// A `FileMetadata` for unix-like operating systems.
@@ -256,7 +312,7 @@ fn qualifier_to_entry(
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct UnixMetadata {
     /// The file mode (st_mode).
-    pub mode: u32,
+    pub mode: FileMode,
 
     /// The time the file was last modified (st_mtime).
     pub modified: SystemTime,
@@ -290,71 +346,71 @@ pub struct UnixMetadata {
 impl UnixMetadata {
     /// Add any missing mandatory ACL entries to [`acl`].
     ///
-    /// If [`AccessQualifier::UserObj`], [`AccessQualifier::GroupObj`], or
-    /// [`AccessQualifier::Other`] are missing from [`acl`], this method calculates them from the
+    /// If [`AclQualifier::UserObj`], [`AclQualifier::GroupObj`], or
+    /// [`AclQualifier::Other`] are missing from [`acl`], this method calculates them from the
     /// [`mode`] and inserts them into the map. A `kind` can be passed which determines whether
     /// this affects the access ACL, the default ACL, or both.
     ///
-    /// [`AccessQualifier::UserObj`]: crate::repo::file::AccessQualifier::UserObj
-    /// [`AccessQualifier::GroupObj`]: crate::repo::file::AccessQualifier::GroupObj
-    /// [`AccessQualifier::Other`]: crate::repo::file::AccessQualifier::Other
+    /// [`AclQualifier::UserObj`]: crate::repo::file::AclQualifier::UserObj
+    /// [`AclQualifier::GroupObj`]: crate::repo::file::AclQualifier::GroupObj
+    /// [`AclQualifier::Other`]: crate::repo::file::AclQualifier::Other
     /// [`acl`]: crate::repo::file::UnixMetadata::acl
     /// [`mode`]: crate::repo::file::UnixMetadata::mode
     pub fn update_acl(&mut self, kind: AclType) {
-        let user_perm = user_perm(self.mode);
-        let group_perm = group_perm(self.mode);
-        let other_perm = other_perm(self.mode);
+        let user_perm = user_perm(self.mode.bits());
+        let group_perm = group_perm(self.mode.bits());
+        let other_perm = other_perm(self.mode.bits());
 
         if kind.contains(AclType::ACCESS) {
             self.acl
                 .access
-                .entry(AccessQualifier::UserObj)
-                .or_insert_with(|| AccessMode::from_bits(user_perm).unwrap());
+                .entry(AclQualifier::UserObj)
+                .or_insert_with(|| AclMode::from_bits(user_perm).unwrap());
             self.acl
                 .access
-                .entry(AccessQualifier::GroupObj)
-                .or_insert_with(|| AccessMode::from_bits(group_perm).unwrap());
+                .entry(AclQualifier::GroupObj)
+                .or_insert_with(|| AclMode::from_bits(group_perm).unwrap());
             self.acl
                 .access
-                .entry(AccessQualifier::Other)
-                .or_insert_with(|| AccessMode::from_bits(other_perm).unwrap());
+                .entry(AclQualifier::Other)
+                .or_insert_with(|| AclMode::from_bits(other_perm).unwrap());
         }
 
         if kind.contains(AclType::DEFAULT) {
             self.acl
                 .default
-                .entry(AccessQualifier::UserObj)
-                .or_insert_with(|| AccessMode::from_bits(user_perm).unwrap());
+                .entry(AclQualifier::UserObj)
+                .or_insert_with(|| AclMode::from_bits(user_perm).unwrap());
             self.acl
                 .default
-                .entry(AccessQualifier::GroupObj)
-                .or_insert_with(|| AccessMode::from_bits(group_perm).unwrap());
+                .entry(AclQualifier::GroupObj)
+                .or_insert_with(|| AclMode::from_bits(group_perm).unwrap());
             self.acl
                 .default
-                .entry(AccessQualifier::Other)
-                .or_insert_with(|| AccessMode::from_bits(other_perm).unwrap());
+                .entry(AclQualifier::Other)
+                .or_insert_with(|| AclMode::from_bits(other_perm).unwrap());
         }
     }
 
     /// Recalculate the ACL mask entry.
     ///
-    /// This method calculates and adds an [`AccessQualifier::Mask`] entry, replacing the existing
+    /// This method calculates and adds an [`AclQualifier::Mask`] entry, replacing the existing
     /// one if one already exists. A `kind` can be passed which determines whether this affects the
     /// access ACL, the default ACL, or both.
     ///
-    /// [`AccessQualifier::Mask`]: crate::repo::file::AccessQualifier::Mask
+    /// [`AclQualifier::Mask`]: crate::repo::file::AclQualifier::Mask
     pub fn update_mask(&mut self, kind: AclType) {
         if kind.contains(AclType::ACCESS) {
             self.acl.access.insert(
-                AccessQualifier::Mask,
-                calculate_mask(&self.acl.access, self.mode),
+                AclQualifier::Mask,
+                calculate_mask(&self.acl.access, self.mode.bits()),
             );
         }
 
         if kind.contains(AclType::DEFAULT) {
             self.acl.default.insert(
-                AccessQualifier::Mask,
-                calculate_mask(&self.acl.default, self.mode),
+                AclQualifier::Mask,
+                calculate_mask(&self.acl.default, self.mode.bits()),
             );
         }
     }
@@ -417,7 +473,7 @@ impl FileMetadata for UnixMetadata {
                     Some(qualifier) => qualifier,
                     None => continue,
                 };
-                let mode = AccessMode::from_bits(entry.perms.bits()).unwrap();
+                let mode = AclMode::from_bits(entry.perms.bits()).unwrap();
 
                 if entry.flags.contains(exacl::Flag::DEFAULT) {
                     acl.default.insert(qualifier, mode);
@@ -430,7 +486,7 @@ impl FileMetadata for UnixMetadata {
         };
 
         Ok(Some(Self {
-            mode,
+            mode: FileMode::from_bits_truncate(mode),
             modified: unix_file_time(metadata.mtime(), metadata.mtime_nsec()),
             accessed: unix_file_time(metadata.atime(), metadata.atime_nsec()),
             changed: unix_file_time(metadata.ctime(), metadata.ctime_nsec()),
@@ -449,7 +505,7 @@ impl FileMetadata for UnixMetadata {
         // the ACLs after setting the xattrs so that ACL entries supplied in `UnixMetadata.acl`
         // overwrites any information in the xattrs.
 
-        set_permissions(path, PermissionsExt::from_mode(self.mode))?;
+        set_permissions(path, PermissionsExt::from_mode(self.mode.bits()))?;
 
         if xattr::SUPPORTED_PLATFORM {
             for (attr_name, attr_value) in self.attributes.iter() {

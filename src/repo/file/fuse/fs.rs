@@ -40,7 +40,8 @@ use super::object::ObjectTable;
 
 use crate::repo::file::fuse::metadata::to_system_time;
 use crate::repo::file::{
-    repository::EMPTY_PATH, AccessQualifier, Entry, EntryType, FileRepo, UnixMetadata, UnixSpecial,
+    repository::EMPTY_PATH, AclQualifier, Entry, EntryType, FileMode, FileRepo, UnixMetadata,
+    UnixSpecial,
 };
 use crate::repo::{Commit, RestoreSavepoint};
 
@@ -170,9 +171,9 @@ impl<'a> FuseAdapter<'a> {
 
         // The mode returned needs to take into account the ACL mask if it is set, because it
         // affects the group permissions.
-        let mode = match metadata.acl.access.get(&AccessQualifier::Mask) {
-            None => metadata.mode,
-            Some(mask_mode) => (metadata.mode & 0o707) | (mask_mode.bits() << 3),
+        let mode = match metadata.acl.access.get(&AclQualifier::Mask) {
+            None => metadata.mode.bits(),
+            Some(mask_mode) => (metadata.mode.bits() & 0o707) | (mask_mode.bits() << 3),
         };
 
         Ok(FileAttr {
@@ -1001,13 +1002,13 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             ACCESS_ACL_XATTR => {
                 let mut permissions = Permissions::from(metadata.clone());
                 try_result!(permissions.update_attr(&attr_name, value), reply);
-                metadata.mode = permissions.mode;
+                metadata.mode = FileMode::from_bits_truncate(permissions.mode);
                 metadata.acl.access = permissions.acl.access;
             }
             DEFAULT_ACL_XATTR => {
                 let mut permissions = Permissions::from(metadata.clone());
                 try_result!(permissions.update_attr(&attr_name, value), reply);
-                metadata.mode = permissions.mode;
+                metadata.mode = FileMode::from_bits_truncate(permissions.mode);
                 metadata.acl.default = permissions.acl.default;
             }
             _ => {}

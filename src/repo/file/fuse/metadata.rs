@@ -25,7 +25,7 @@ use relative_path::RelativePath;
 use time::Timespec;
 
 use crate::repo::file::{
-    AccessMode, AccessQualifier, Acl, AclType, Entry, EntryType, FileRepo, UnixMetadata,
+    Acl, AclMode, AclQualifier, AclType, Entry, EntryType, FileMode, FileRepo, UnixMetadata,
     UnixSpecial,
 };
 
@@ -116,45 +116,45 @@ pub fn to_timespec(time: SystemTime) -> Timespec {
 ///
 /// This modifies the entries in `acl` which correspond to permissions in the file mode so that they
 /// do not exceed the permissions granted by the given `mode`.
-fn constrain_acl(acl: &mut HashMap<AccessQualifier, AccessMode>, mode: u32) {
-    if let Some(acl_mode) = acl.get_mut(&AccessQualifier::UserObj) {
-        *acl_mode = AccessMode::from_bits(acl_mode.bits() & user_perm(mode)).unwrap();
+fn constrain_acl(acl: &mut HashMap<AclQualifier, AclMode>, mode: u32) {
+    if let Some(acl_mode) = acl.get_mut(&AclQualifier::UserObj) {
+        *acl_mode = AclMode::from_bits(acl_mode.bits() & user_perm(mode)).unwrap();
     }
-    if let Some(acl_mode) = match acl.get_mut(&AccessQualifier::Mask) {
+    if let Some(acl_mode) = match acl.get_mut(&AclQualifier::Mask) {
         Some(acl_mode) => Some(acl_mode),
-        None => acl.get_mut(&AccessQualifier::GroupObj),
+        None => acl.get_mut(&AclQualifier::GroupObj),
     } {
-        *acl_mode = AccessMode::from_bits(acl_mode.bits() & group_perm(mode)).unwrap();
+        *acl_mode = AclMode::from_bits(acl_mode.bits() & group_perm(mode)).unwrap();
     }
-    if let Some(acl_mode) = acl.get_mut(&AccessQualifier::Other) {
-        *acl_mode = AccessMode::from_bits(acl_mode.bits() & other_perm(mode)).unwrap();
+    if let Some(acl_mode) = acl.get_mut(&AclQualifier::Other) {
+        *acl_mode = AclMode::from_bits(acl_mode.bits() & other_perm(mode)).unwrap();
     }
 }
 
 /// Return a new `mode` which does not exceed the permissions of the given `acl`.
-fn constrain_mode(acl: &HashMap<AccessQualifier, AccessMode>, mode: u32) -> u32 {
+fn constrain_mode(acl: &HashMap<AclQualifier, AclMode>, mode: u32) -> u32 {
     let mut acl_mode = 0u32;
 
     let user_mode = acl
-        .get(&AccessQualifier::UserObj)
+        .get(&AclQualifier::UserObj)
         .copied()
-        .unwrap_or(AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE)
+        .unwrap_or(AclMode::RWX)
         .bits();
     acl_mode |= user_mode << 6;
 
-    let group_mode = acl.get(&AccessQualifier::GroupObj).copied();
+    let group_mode = acl.get(&AclQualifier::GroupObj).copied();
     let mask_or_group_mode = acl
-        .get(&AccessQualifier::Mask)
+        .get(&AclQualifier::Mask)
         .copied()
         .or(group_mode)
-        .unwrap_or(AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE)
+        .unwrap_or(AclMode::RWX)
         .bits();
     acl_mode |= mask_or_group_mode << 3;
 
     let other_mode = acl
-        .get(&AccessQualifier::Other)
+        .get(&AclQualifier::Other)
         .copied()
-        .unwrap_or(AccessMode::READ | AccessMode::WRITE | AccessMode::EXECUTE)
+        .unwrap_or(AclMode::RWX)
         .bits();
     acl_mode |= other_mode;
 
@@ -164,23 +164,22 @@ fn constrain_mode(acl: &HashMap<AccessQualifier, AccessMode>, mode: u32) -> u32 
 impl UnixMetadata {
     /// Change the file mode and update the access ACLs accordingly.
     pub(super) fn change_permissions(&mut self, mode: u32) {
-        self.mode = mode;
+        self.mode = FileMode::from_bits_truncate(mode);
 
         // If we change the mode, we need to update the mandatory ACL entries to match.
-        self.acl.access.remove(&AccessQualifier::UserObj);
-        self.acl.access.remove(&AccessQualifier::Other);
-        if !self.acl.access.contains_key(&AccessQualifier::Mask) {
+        self.acl.access.remove(&AclQualifier::UserObj);
+        self.acl.access.remove(&AclQualifier::Other);
+        if !self.acl.access.contains_key(&AclQualifier::Mask) {
             // We only update the group permissions if there is no mask. Otherwise, we update
             // the mask permissions instead.
-            self.acl.access.remove(&AccessQualifier::GroupObj);
+            self.acl.access.remove(&AclQualifier::GroupObj);
         }
         self.update_acl(AclType::ACCESS);
 
         // If we change the mode, and there is a mask entry in the ACL, we should use the group
         // permissions to set the mask.
-        if let HashMapEntry::Occupied(mut mode_entry) = self.acl.access.entry(AccessQualifier::Mask)
-        {
-            let group_mode = AccessMode::from_bits(group_perm(self.mode)).unwrap();
+        if let HashMapEntry::Occupied(mut mode_entry) = self.acl.access.entry(AclQualifier::Mask) {
+            let group_mode = AclMode::from_bits(group_perm(self.mode.bits())).unwrap();
             mode_entry.insert(group_mode);
         }
     }
@@ -213,7 +212,8 @@ impl Entry<UnixSpecial, UnixMetadata> {
 
             if let Some(mode) = mode {
                 constrain_acl(&mut metadata.acl.access, mode);
-                metadata.mode = constrain_mode(&metadata.acl.access, mode);
+                metadata.mode =
+                    FileMode::from_bits_truncate(constrain_mode(&metadata.acl.access, mode));
             }
         }
 
@@ -225,9 +225,9 @@ impl Entry<UnixSpecial, UnixMetadata> {
         let now = SystemTime::now();
         UnixMetadata {
             mode: if self.is_directory() {
-                DEFAULT_DIR_MODE
+                FileMode::from_bits_truncate(DEFAULT_DIR_MODE)
             } else {
-                DEFAULT_FILE_MODE
+                FileMode::from_bits_truncate(DEFAULT_FILE_MODE)
             },
             modified: now,
             accessed: now,
