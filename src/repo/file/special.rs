@@ -40,7 +40,7 @@ use {
 pub trait SpecialType: Serialize + DeserializeOwned {
     /// Create a new instance from the file in the file system at `path`.
     ///
-    /// This returns `None` if the file type at `path` is not supported.
+    /// This returns `Ok(None)` if the special file type at `path` is not supported.
     fn from_file(path: &Path) -> io::Result<Option<Self>>;
 
     /// Create a new file of this type in the file system at `path`.
@@ -49,7 +49,7 @@ pub trait SpecialType: Serialize + DeserializeOwned {
 
 /// A `SpecialType` which doesn't support any special file types.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
-pub struct NoSpecial;
+pub enum NoSpecial {}
 
 impl SpecialType for NoSpecial {
     fn from_file(_path: &Path) -> io::Result<Option<Self>> {
@@ -57,7 +57,7 @@ impl SpecialType for NoSpecial {
     }
 
     fn create_file(&self, _path: &Path) -> io::Result<()> {
-        Ok(())
+        unreachable!("It is not possible to instantiate a `NoSpecial`.")
     }
 }
 
