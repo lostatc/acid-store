@@ -82,18 +82,17 @@
 //! ```
 //!
 //! # Features
-//! Some functionality is gated behind cargo features.
 //!
-//! If a feature has native dependencies, this table shows those dependencies as their package names
-//! on Ubuntu.
+//! Some functionality is gated behind cargo features. To use a feature which is not enabled by
+//! default, you must enable it in your `Cargo.toml`.
 //!
-//! Feature | Description | Default | Build Dependencies | Runtime Dependencies
-//! --- | --- | --- | --- | ---
+//! Feature | Description | Default
+//! --- | --- | ---
 //! `encryption` | Encrypt repositories | No
 //! `compression` | Compress repositories | No
-//! `file-metadata` | Store file metadata and special file types in [`FileRepo`] | No | `libacl1-dev` | `acl`
+//! `file-metadata` | Store file metadata and special file types in [`FileRepo`] | No
 //! `hash-algorithms` | Use hash algorithms other than BLAKE3 in [`ContentRepo`] | No
-//! `fuse-mount` | Mount a [`FileRepo`] as a FUSE file system | No | `libfuse-dev`, `pkg-config` | `fuse`
+//! `fuse-mount` | Mount a [`FileRepo`] as a FUSE file system | No
 //! `store-directory` | Store data in a directory in the local file system | No
 //! `store-sqlite` | Store data in a SQLite database | No
 //! `store-redis` | Store data on a Redis server | No
@@ -101,7 +100,13 @@
 //! `store-sftp` | Store data on an SFTP server | No
 //! `store-rclone` | Store data in cloud storage via [rclone] | No
 //!
-//! To use a feature which is not enabled by default, you must enable it in your `Cargo.toml`.
+//! If a feature has native dependencies, this table shows those dependencies as their package names
+//! on Ubuntu.
+//!
+//! Feature | Build Dependencies | Runtime Dependencies
+//! --- | --- | ---
+//! `file-metadata` | `libacl1-dev` | `acl`
+//! `fuse-mount` | `libfuse-dev`, `pkg-config` | `fuse`
 //!
 //! [rclone]: https://rclone.org/
 //!
