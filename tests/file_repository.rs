@@ -352,7 +352,7 @@ fn list_children(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create_parents("root/child1", &Entry::file())?;
     repo.create_parents("root/child2/descendant", &Entry::file())?;
 
-    assert_that!(repo.list("root")?.collect::<Vec<_>>()).contains_all_of(&[
+    assert_that!(repo.children("root")?.collect::<Vec<_>>()).contains_all_of(&[
         &RelativePathBuf::from("root/child1"),
         &RelativePathBuf::from("root/child2"),
     ]);
@@ -362,14 +362,14 @@ fn list_children(mut repo: FileRepo) -> anyhow::Result<()> {
 
 #[rstest]
 fn list_children_of_nonexistent_directory(repo: FileRepo) {
-    assert_that!(repo.list("nonexistent").map(Vec::from_iter))
+    assert_that!(repo.children("nonexistent").map(Vec::from_iter))
         .is_err_variant(acid_store::Error::NotFound);
 }
 
 #[rstest]
 fn list_children_of_a_file(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create("file", &Entry::file())?;
-    assert_that!(repo.list("file").map(Vec::from_iter))
+    assert_that!(repo.children("file").map(Vec::from_iter))
         .is_err_variant(acid_store::Error::NotDirectory);
     Ok(())
 }
@@ -379,7 +379,7 @@ fn list_children_of_empty_path(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create("file1", &Entry::file())?;
     repo.create("file2", &Entry::file())?;
 
-    assert_that!(repo.list("")?.collect::<Vec<_>>()).contains_all_of(&[
+    assert_that!(repo.children("")?.collect::<Vec<_>>()).contains_all_of(&[
         &RelativePathBuf::from("file1"),
         &RelativePathBuf::from("file2"),
     ]);
@@ -392,7 +392,7 @@ fn walk_descendants(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create_parents("root/child1", &Entry::file())?;
     repo.create_parents("root/child2/descendant", &Entry::file())?;
 
-    assert_that!(repo.walk("root")?.collect::<Vec<_>>()).contains_all_of(&[
+    assert_that!(repo.descendants("root")?.collect::<Vec<_>>()).contains_all_of(&[
         &RelativePathBuf::from("root/child1"),
         &RelativePathBuf::from("root/child2"),
         &RelativePathBuf::from("root/child2/descendant"),
@@ -403,7 +403,7 @@ fn walk_descendants(mut repo: FileRepo) -> anyhow::Result<()> {
 
 #[rstest]
 fn walk_descendants_of_nonexistent_directory(repo: FileRepo) {
-    assert_that!(repo.walk("nonexistent").map(Vec::from_iter))
+    assert_that!(repo.descendants("nonexistent").map(Vec::from_iter))
         .is_err_variant(acid_store::Error::NotFound);
 }
 
@@ -411,7 +411,7 @@ fn walk_descendants_of_nonexistent_directory(repo: FileRepo) {
 fn walk_descendants_of_a_file(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create("file", &Entry::file())?;
 
-    assert_that!(repo.walk("file").map(Vec::from_iter))
+    assert_that!(repo.descendants("file").map(Vec::from_iter))
         .is_err_variant(acid_store::Error::NotDirectory);
 
     Ok(())
@@ -421,7 +421,7 @@ fn walk_descendants_of_a_file(mut repo: FileRepo) -> anyhow::Result<()> {
 fn walk_descendants_of_empty_path(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create_parents("directory/file", &Entry::file())?;
 
-    assert_that!(repo.walk("")?.collect::<Vec<_>>()).contains_all_of(&[
+    assert_that!(repo.descendants("")?.collect::<Vec<_>>()).contains_all_of(&[
         &RelativePathBuf::from("directory"),
         &RelativePathBuf::from("directory/file"),
     ]);

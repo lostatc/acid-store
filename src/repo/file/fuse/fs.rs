@@ -132,7 +132,7 @@ impl<'a> FuseAdapter<'a> {
 
         let mut inodes = InodeTable::new(root);
 
-        for path in repo.walk(root)? {
+        for path in repo.descendants(root)? {
             inodes.insert(path);
         }
 
@@ -614,7 +614,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let source_inode = self.inodes.inode(&source_path).unwrap();
         try_result!(self.objects.commit(source_inode), reply);
         self.objects.close(source_inode);
-        if let Ok(descendants) = self.repo.walk(&source_path) {
+        if let Ok(descendants) = self.repo.descendants(&source_path) {
             for source_descendant in descendants {
                 let descendant_inode = self.inodes.inode(&source_descendant).unwrap();
                 try_result!(self.objects.commit(descendant_inode), reply);
@@ -640,7 +640,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         // Update the mappings from paths to inodes in the inode table.
         self.inodes.rename(&source_path, dest_path.clone());
-        if let Ok(descendants) = self.repo.walk(&dest_path) {
+        if let Ok(descendants) = self.repo.descendants(&dest_path) {
             for dest_descendant in descendants {
                 let relative_descendant = dest_descendant.strip_prefix(&dest_path).unwrap();
                 let source_descendant = source_path.join(relative_descendant);
@@ -875,7 +875,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         }
 
         let mut entries = Vec::new();
-        for child_path in try_result!(self.repo.list(entry_path), reply) {
+        for child_path in try_result!(self.repo.children(entry_path), reply) {
             let file_name = child_path.file_name().unwrap().to_string();
             let inode = self.inodes.inode(&child_path).unwrap();
             let file_type = try_result!(self.repo.entry(&child_path), reply)

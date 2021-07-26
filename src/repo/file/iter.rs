@@ -23,14 +23,14 @@ use super::path_tree;
 
 /// An iterator over the children of an entry in a [`FileRepo`].
 ///
-/// This value is created by [`FileRepo::list`].
+/// This value is created by [`FileRepo::children`].
 ///
 /// [`FileRepo`]: crate::repo::file::FileRepo
-/// [`FileRepo::list`]: crate::repo::file::FileRepo::list
+/// [`FileRepo::children`]: crate::repo::file::FileRepo::children
 #[derive(Debug, Clone)]
-pub struct List<'a>(pub(super) path_tree::List<'a, EntryHandle>);
+pub struct Children<'a>(pub(super) path_tree::Children<'a, EntryHandle>);
 
-impl<'a> Iterator for List<'a> {
+impl<'a> Iterator for Children<'a> {
     type Item = RelativePathBuf;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -42,20 +42,20 @@ impl<'a> Iterator for List<'a> {
     }
 }
 
-impl<'a> FusedIterator for List<'a> {}
+impl<'a> FusedIterator for Children<'a> {}
 
-impl<'a> ExactSizeIterator for List<'a> {}
+impl<'a> ExactSizeIterator for Children<'a> {}
 
 /// An iterator over the descendants of an entry in a [`FileRepo`].
 ///
-/// This value is created by [`FileRepo::walk`].
+/// This value is created by [`FileRepo::descendants`].
 ///
 /// [`FileRepo`]: crate::repo::file::FileRepo
-/// [`FileRepo::walk`]: crate::repo::file::FileRepo::walk
+/// [`FileRepo::descendants`]: crate::repo::file::FileRepo::descendants
 #[derive(Debug)]
-pub struct Walk<'a>(pub(super) path_tree::Walk<'a, EntryHandle>);
+pub struct Descendants<'a>(pub(super) path_tree::Descendants<'a, EntryHandle>);
 
-impl<'a> Iterator for Walk<'a> {
+impl<'a> Iterator for Descendants<'a> {
     type Item = RelativePathBuf;
 
     fn next(&mut self) -> Option<Self::Item> {

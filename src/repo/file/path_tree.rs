@@ -46,12 +46,12 @@ fn drain_nodes<'a, V: 'a>(
 
 /// An iterator over the children of a path in a `PathTree`.
 #[derive(Debug, Clone)]
-pub struct List<'a, V> {
+pub struct Children<'a, V> {
     parent: RelativePathBuf,
     children: hash_map::Iter<'a, String, PathNode<V>>,
 }
 
-impl<'a, V> Iterator for List<'a, V> {
+impl<'a, V> Iterator for Children<'a, V> {
     type Item = (RelativePathBuf, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -65,17 +65,17 @@ impl<'a, V> Iterator for List<'a, V> {
     }
 }
 
-impl<'a, V> FusedIterator for List<'a, V> {}
+impl<'a, V> FusedIterator for Children<'a, V> {}
 
-impl<'a, V> ExactSizeIterator for List<'a, V> {}
+impl<'a, V> ExactSizeIterator for Children<'a, V> {}
 
 /// An iterator over the children of a path in a `PathTree`.
-pub struct Walk<'a, V> {
+pub struct Descendants<'a, V> {
     parent: RelativePathBuf,
     inner: Box<dyn Iterator<Item = (RelativePathBuf, &'a V)> + 'a>,
 }
 
-impl<'a, V> Iterator for Walk<'a, V> {
+impl<'a, V> Iterator for Descendants<'a, V> {
     type Item = (RelativePathBuf, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -87,7 +87,7 @@ impl<'a, V> Iterator for Walk<'a, V> {
     }
 }
 
-impl<'a, V> Debug for Walk<'a, V> {
+impl<'a, V> Debug for Descendants<'a, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Walk")
             .field("parent", &self.parent)
@@ -224,14 +224,14 @@ impl<V> PathTree<V> {
     /// If the path is not in the tree, this returns `None`.
     ///
     /// The returned iterator does not include the parent `path`.
-    pub fn list<'a>(&'a self, path: impl AsRef<RelativePath> + 'a) -> Option<List<'a, V>> {
+    pub fn children<'a>(&'a self, path: impl AsRef<RelativePath> + 'a) -> Option<Children<'a, V>> {
         let mut current_nodes = &self.nodes;
 
         for segment in path.as_ref().iter() {
             current_nodes = &current_nodes.get(segment)?.children;
         }
 
-        Some(List {
+        Some(Children {
             parent: path.as_ref().to_owned(),
             children: current_nodes.iter(),
         })
@@ -243,14 +243,17 @@ impl<V> PathTree<V> {
     ///
     /// The returned iterator does not include the parent `path`. Descendants are returned in
     /// depth-first order.
-    pub fn walk<'a>(&'a self, path: impl AsRef<RelativePath> + 'a) -> Option<Walk<'a, V>> {
+    pub fn descendants<'a>(
+        &'a self,
+        path: impl AsRef<RelativePath> + 'a,
+    ) -> Option<Descendants<'a, V>> {
         let mut current_nodes = &self.nodes;
 
         for segment in path.as_ref().iter() {
             current_nodes = &current_nodes.get(segment)?.children;
         }
 
-        Some(Walk {
+        Some(Descendants {
             parent: path.as_ref().to_owned(),
             inner: walk_nodes(path, current_nodes),
         })
@@ -366,7 +369,7 @@ mod tests {
             (RelativePathBuf::from("a/b"), &2),
             (RelativePathBuf::from("a/c"), &3),
         ];
-        let actual = tree.list("a").unwrap().collect::<HashSet<_>>();
+        let actual = tree.children("a").unwrap().collect::<HashSet<_>>();
 
         assert_eq!(actual, expected);
     }
@@ -382,7 +385,7 @@ mod tests {
             (RelativePathBuf::from("a"), &1),
             (RelativePathBuf::from("b"), &2),
         ];
-        let actual = tree.list("").unwrap().collect::<HashSet<_>>();
+        let actual = tree.children("").unwrap().collect::<HashSet<_>>();
 
         assert_eq!(actual, expected);
     }
@@ -393,7 +396,7 @@ mod tests {
         tree.insert("a", 1);
         tree.insert("a/b", 2);
 
-        assert!(matches!(tree.list("a/c"), None));
+        assert!(matches!(tree.children("a/c"), None));
     }
 
     #[test]
@@ -409,7 +412,7 @@ mod tests {
             (RelativePathBuf::from("a/b/c"), &3),
             (RelativePathBuf::from("a/b/d"), &4),
         ];
-        let actual = tree.walk("a").unwrap().collect::<HashSet<_>>();
+        let actual = tree.descendants("a").unwrap().collect::<HashSet<_>>();
 
         assert_eq!(actual, expected);
     }
@@ -426,7 +429,7 @@ mod tests {
             (RelativePathBuf::from("b"), &2),
             (RelativePathBuf::from("b/c"), &3),
         ];
-        let actual = tree.walk("").unwrap().collect::<HashSet<_>>();
+        let actual = tree.descendants("").unwrap().collect::<HashSet<_>>();
 
         assert_eq!(actual, expected);
     }
@@ -437,7 +440,7 @@ mod tests {
         tree.insert("a", 1);
         tree.insert("a/b", 2);
 
-        assert!(matches!(tree.walk("a/c"), None));
+        assert!(matches!(tree.descendants("a/c"), None));
     }
 
     #[test]
@@ -447,7 +450,7 @@ mod tests {
         tree.insert("a/b", 2u32);
         tree.clear();
 
-        let actual = tree.walk("").unwrap().collect::<Vec<_>>();
+        let actual = tree.descendants("").unwrap().collect::<Vec<_>>();
         let expected = Vec::<(RelativePathBuf, &u32)>::new();
 
         assert_eq!(expected, actual);
