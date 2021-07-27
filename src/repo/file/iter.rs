@@ -23,6 +23,7 @@ use super::metadata::FileMetadata;
 use super::path_tree;
 use super::repository::FileRepo;
 use super::special::SpecialType;
+use crate::repo::Object;
 
 /// An iterator over the children of an entry in a [`FileRepo`].
 ///
@@ -162,5 +163,12 @@ where
     /// - `Error::Io`: An I/O error occurred.
     pub fn entry(&self) -> crate::Result<Entry<S, M>> {
         self.repo.entry(&self.path)
+    }
+
+    /// Return an `Object` for reading and writing the contents of this entry.
+    ///
+    /// This returns `None` if this entry is not a regular file.
+    pub fn open(&self) -> Option<Object> {
+        self.repo.open(&self.path).ok()
     }
 }
