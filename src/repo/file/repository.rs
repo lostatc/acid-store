@@ -34,11 +34,10 @@ use crate::repo::{
 
 use super::entry::{Entry, EntryHandle, EntryType, HandleType};
 use super::file::{archive_file, extract_file};
-use super::iter::{Children, Descendants, WalkEntry};
+use super::iter::{Children, Descendants, WalkEntry, WalkPredicate};
 use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
 use super::special::{NoSpecial, SpecialType};
-use crate::repo::file::iter::WalkPredicate;
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
 use {
     super::fuse::FuseAdapter, super::metadata::UnixMetadata, super::special::UnixSpecial,
@@ -548,10 +547,31 @@ where
         Ok(())
     }
 
-    /// Return an iterator of paths which are children of `parent`.
+    /// Verify that `path` has descendants.
+    fn verify_has_descendants(&self, parent: &RelativePath) -> crate::Result<()> {
+        if parent == *EMPTY_PATH {
+            return Ok(());
+        }
+
+        let entry_handle = self
+            .0
+            .state()
+            .get(parent.as_ref())
+            .ok_or(crate::Error::NotFound)?;
+
+        if !matches!(entry_handle.kind, HandleType::Directory) {
+            return Err(crate::Error::NotDirectory);
+        }
+
+        Ok(())
+    }
+
+    /// Return an iterator of paths which are immediate children of `parent`.
     ///
     /// The given `parent` may be an empty path, in which case the paths of top-level entries are
     /// returned.
+    ///
+    /// The `parent` path is not included in the returned iterator.
     ///
     /// # Errors
     /// - `Error::NotFound`: The given `parent` does not exist.
@@ -560,17 +580,7 @@ where
         &'a self,
         parent: impl AsRef<RelativePath> + 'a,
     ) -> crate::Result<Children<'a>> {
-        if parent.as_ref() != *EMPTY_PATH {
-            let entry_handle = self
-                .0
-                .state()
-                .get(parent.as_ref())
-                .ok_or(crate::Error::NotFound)?;
-            if !matches!(entry_handle.kind, HandleType::Directory) {
-                return Err(crate::Error::NotDirectory);
-            }
-        }
-
+        self.verify_has_descendants(parent.as_ref())?;
         Ok(Children(self.0.state().children(parent).unwrap()))
     }
 
@@ -578,6 +588,8 @@ where
     ///
     /// The given `parent` may be an empty path, in which case the paths of all entries in the
     /// repository are returned.
+    ///
+    /// The `parent` path is not included in the returned iterator.
     ///
     /// The returned iterator yields paths in depth-first order, meaning that a path will always
     /// come before its children.
@@ -589,27 +601,47 @@ where
         &'a self,
         parent: impl AsRef<RelativePath> + 'a,
     ) -> crate::Result<Descendants<'a>> {
-        if parent.as_ref() != *EMPTY_PATH {
-            let entry_handle = self
-                .0
-                .state()
-                .get(parent.as_ref())
-                .ok_or(crate::Error::NotFound)?;
-            if !matches!(entry_handle.kind, HandleType::Directory) {
-                return Err(crate::Error::NotDirectory);
-            }
-        }
-
+        self.verify_has_descendants(parent.as_ref())?;
         Ok(Descendants(self.0.state().descendants(parent).unwrap()))
     }
 
-    // TODO: Document
+    /// Walk through the tree of descendants of `parent`.
+    ///
+    /// This method accepts a `visitor` which is passed a `WalkEntry` for each entry in the tree and
+    /// returns a `WalkPredicate`. If the `visitor` returns `WalkPredicate::Stop`, this method
+    /// returns the wrapped value. If all entries in the tree are visited, this methods returns
+    /// `Ok(None)`.
+    ///
+    /// The given `parent` may be an empty path, in which case all entries in the repository are
+    /// visited
+    ///
+    /// The `parent` path is not visited.
+    ///
+    /// This method visits entries in depth-first order, meaning that an entry will always be
+    /// visited before its children.
+    ///
+    /// # Errors
+    /// - `Error::NotFound`: The given `parent` does not exist.
+    /// - `Error::NotDirectory`: The given `parent` is not a directory.
     pub fn walk<R>(
         &self,
         parent: impl AsRef<RelativePath>,
-        predicate: impl Fn(WalkEntry<S, M>) -> WalkPredicate<R>,
-    ) -> Option<R> {
-        todo!()
+        visitor: impl Fn(WalkEntry<S, M>) -> WalkPredicate<R>,
+    ) -> crate::Result<Option<R>> {
+        self.verify_has_descendants(parent.as_ref())?;
+
+        Ok(self
+            .0
+            .state()
+            .walk(parent, |walk_entry| {
+                visitor(WalkEntry {
+                    path: walk_entry.path,
+                    handle: *walk_entry.value,
+                    depth: walk_entry.depth,
+                    repo: &self,
+                })
+            })
+            .unwrap())
     }
 
     /// Copy a file from the file system into the repository.

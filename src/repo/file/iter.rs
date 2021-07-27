@@ -70,25 +70,39 @@ impl<'a> Iterator for Descendants<'a> {
     }
 }
 
-// TODO: Document
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// A value that controls which entries are visited by [`FileRepo::walk`].
+///
+/// [`FileRepo::walk`]: crate::repo::file::FileRepo::walk
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WalkPredicate<R> {
+    /// Continue visiting entries in the tree.
     Continue,
+
+    /// Skip the remaining siblings of this entry.
     SkipSiblings,
+
+    /// Do not visit the descendants of this entry.
     SkipDescendants,
+
+    /// Stop visiting entries and return with the given value.
     Stop(R),
 }
 
-// TODO: Document
+/// An entry when walking through a tree of entries in a [`FileRepo`].
+///
+/// This value represent an entry when walking through tree of entries using [`FileRepo::walk`].
+///
+/// [`FileRepo`]: crate::repo::file::FileRepo
+/// [`FileRepo::walk`]: crate::repo::file::FileRepo::walk
 pub struct WalkEntry<'a, S, M>
 where
     S: SpecialType,
     M: FileMetadata,
 {
-    path: RelativePathBuf,
-    handle: EntryHandle,
-    depth: usize,
-    repo: &'a FileRepo<S, M>,
+    pub(super) path: RelativePathBuf,
+    pub(super) handle: EntryHandle,
+    pub(super) depth: usize,
+    pub(super) repo: &'a FileRepo<S, M>,
 }
 
 impl<'a, S, M> AsRef<RelativePath> for WalkEntry<'a, S, M>
@@ -106,37 +120,46 @@ where
     S: SpecialType,
     M: FileMetadata,
 {
-    // TODO: Document
+    /// Return the path of this entry.
     pub fn path(&self) -> &RelativePath {
         self.path.as_relative_path()
     }
 
-    // TODO: Document
+    /// Consume this entry, returning its path.
     pub fn into_path(self) -> RelativePathBuf {
         self.path
     }
 
-    // TODO: Document
+    /// Return whether this entry is a regular file.
     pub fn is_file(&self) -> bool {
         matches!(self.handle.kind, HandleType::File(_))
     }
 
-    // TODO: Document
+    /// Return whether this entry is a directory.
     pub fn is_directory(&self) -> bool {
         matches!(self.handle.kind, HandleType::Directory)
     }
 
-    // TODO: Document
+    /// Return whether this entry is a special file.
     pub fn is_special(&self) -> bool {
         matches!(self.handle.kind, HandleType::Special)
     }
 
-    // TODO: Document
+    /// Return the depth of this entry relative to the starting path.
+    ///
+    /// This immediate children of the starting path have a depth of `1`, their descendants have a
+    /// depth of `2`, and so on.
     pub fn depth(&self) -> usize {
         self.depth
     }
 
-    // TODO: Document
+    /// Return the `Entry` value for this entry.
+    ///
+    /// # Errors
+    /// - `Error::Deserialize`: The file metadata could not be deserialized.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
     pub fn entry(&self) -> crate::Result<Entry<S, M>> {
         self.repo.entry(&self.path)
     }

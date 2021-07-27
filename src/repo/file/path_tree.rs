@@ -21,14 +21,16 @@ use std::iter::{self, ExactSizeIterator, FusedIterator};
 use relative_path::{RelativePath, RelativePathBuf};
 use serde::{Deserialize, Serialize};
 
+use super::iter::WalkPredicate;
+
 /// Recursively iterate through the tree of nodes.
-fn walk_nodes<'a, V>(
+fn descendants<'a, V>(
     parent: impl AsRef<RelativePath> + 'a,
     children: &'a HashMap<String, PathNode<V>>,
 ) -> Box<dyn Iterator<Item = (RelativePathBuf, &'a V)> + 'a> {
     Box::new(children.iter().flat_map(move |(name, node)| {
         iter::once((parent.as_ref().join(name), &node.value))
-            .chain(walk_nodes(parent.as_ref().join(name), &node.children))
+            .chain(descendants(parent.as_ref().join(name), &node.children))
     }))
 }
 
@@ -85,6 +87,40 @@ impl<'a, V> Iterator for Descendants<'a, V> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.inner.size_hint()
     }
+}
+
+pub struct WalkEntry<'a, V> {
+    pub path: RelativePathBuf,
+    pub value: &'a V,
+    pub depth: usize,
+}
+
+/// Recursively walk through the tree of descendants of `parent`.
+fn walk<V, R>(
+    parent: RelativePathBuf,
+    node: &PathNode<V>,
+    depth: usize,
+    visitor: &impl Fn(WalkEntry<V>) -> WalkPredicate<R>,
+) -> WalkPredicate<R> {
+    let walk_entry = WalkEntry {
+        path: parent.clone(),
+        value: &node.value,
+        depth,
+    };
+
+    let predicate: WalkPredicate<R> = visitor(walk_entry);
+
+    if let WalkPredicate::Continue | WalkPredicate::SkipSiblings = predicate {
+        for (child_name, child_node) in &node.children {
+            match walk(parent.join(child_name), child_node, depth + 1, visitor) {
+                WalkPredicate::SkipSiblings => return predicate,
+                WalkPredicate::Stop(value) => return WalkPredicate::Stop(value),
+                _ => {}
+            }
+        }
+    }
+
+    predicate
 }
 
 impl<'a, V> Debug for Descendants<'a, V> {
@@ -255,8 +291,36 @@ impl<V> PathTree<V> {
 
         Some(Descendants {
             parent: path.as_ref().to_owned(),
-            inner: walk_nodes(path, current_nodes),
+            inner: descendants(path, current_nodes),
         })
+    }
+
+    /// Walk through the descendants of `parent`.
+    ///
+    /// If the `parent` is not in this tree, this returns `None`. If the visitor exits early via
+    /// `WalkPredicate::Stop`, this returns the wrapped value. Otherwise, this returns `Some(None)`.
+    ///
+    /// Paths are iterated over in depth-first order, so a path always comes before its children.
+    pub fn walk<R>(
+        &self,
+        parent: impl AsRef<RelativePath>,
+        visitor: impl Fn(WalkEntry<V>) -> WalkPredicate<R>,
+    ) -> Option<Option<R>> {
+        let mut current_nodes = &self.nodes;
+
+        for segment in parent.as_ref().iter() {
+            current_nodes = &current_nodes.get(segment)?.children;
+        }
+
+        for (child_name, child_node) in current_nodes {
+            match walk(parent.as_ref().join(child_name), child_node, 1, &visitor) {
+                WalkPredicate::Stop(value) => return Some(Some(value)),
+                WalkPredicate::SkipSiblings => return Some(None),
+                _ => continue,
+            }
+        }
+
+        Some(None)
     }
 
     /// Drain the tree of the descendants of `path` and their values.
