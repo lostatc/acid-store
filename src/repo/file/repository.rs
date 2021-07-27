@@ -609,8 +609,7 @@ where
     ///
     /// This method accepts a `visitor` which is passed a `WalkEntry` for each entry in the tree and
     /// returns a `WalkPredicate`. If the `visitor` returns `WalkPredicate::Stop`, this method
-    /// returns the wrapped value. If all entries in the tree are visited, this methods returns
-    /// `Ok(None)`.
+    /// returns `Ok(true)`. If all entries in the tree are visited, this method returns `Ok(false)`.
     ///
     /// The given `parent` may be an empty path, in which case all entries in the repository are
     /// visited
@@ -623,11 +622,11 @@ where
     /// # Errors
     /// - `Error::NotFound`: The given `parent` does not exist.
     /// - `Error::NotDirectory`: The given `parent` is not a directory.
-    pub fn walk<R>(
+    pub fn walk(
         &self,
         parent: impl AsRef<RelativePath>,
-        visitor: impl Fn(WalkEntry<S, M>) -> WalkPredicate<R>,
-    ) -> crate::Result<Option<R>> {
+        visitor: impl FnMut(WalkEntry<S, M>) -> WalkPredicate,
+    ) -> crate::Result<bool> {
         self.verify_has_descendants(parent.as_ref())?;
 
         Ok(self
