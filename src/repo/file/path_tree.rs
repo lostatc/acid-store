@@ -96,25 +96,28 @@ pub struct WalkEntry<'a, V> {
 }
 
 /// Recursively walk through the tree of descendants of `parent`.
-fn walk<V>(
+fn walk<R, F, V>(
     parent: RelativePathBuf,
     node: &PathNode<V>,
     depth: usize,
-    visitor: &mut impl FnMut(WalkEntry<V>) -> WalkPredicate,
-) -> WalkPredicate {
+    visitor: &mut F,
+) -> WalkPredicate<R>
+where
+    F: FnMut(WalkEntry<V>) -> WalkPredicate<R>,
+{
     let walk_entry = WalkEntry {
         path: parent.clone(),
         value: &node.value,
         depth,
     };
 
-    let predicate: WalkPredicate = visitor(walk_entry);
+    let predicate: WalkPredicate<R> = visitor(walk_entry);
 
     if let WalkPredicate::Continue | WalkPredicate::SkipSiblings = predicate {
         for (child_name, child_node) in &node.children {
             match walk(parent.join(child_name), child_node, depth + 1, visitor) {
                 WalkPredicate::SkipSiblings => return predicate,
-                WalkPredicate::Stop => return WalkPredicate::Stop,
+                WalkPredicate::Stop(value) => return WalkPredicate::Stop(value),
                 _ => {}
             }
         }
@@ -297,15 +300,16 @@ impl<V> PathTree<V> {
 
     /// Walk through the descendants of `parent`.
     ///
-    /// If the `parent` is not in this tree, this returns `None`. If the visitor exits early via
-    /// `WalkPredicate::Stop`, this returns `Some(true)`. Otherwise, this returns `Some(false)`.
+    /// If the `parent` is not in this tree, this returns `None`. If the `visitor` returns
+    /// `WalkPredicate::Stop` at any point, this returns the wrapped value. Otherwise, this returns
+    /// `Some(None)`.
     ///
     /// Paths are iterated over in depth-first order, so a path always comes before its children.
-    pub fn walk(
-        &self,
-        parent: impl AsRef<RelativePath>,
-        mut visitor: impl FnMut(WalkEntry<V>) -> WalkPredicate,
-    ) -> Option<bool> {
+    pub fn walk<R, P, F>(&self, parent: P, mut visitor: F) -> Option<Option<R>>
+    where
+        P: AsRef<RelativePath>,
+        F: FnMut(WalkEntry<V>) -> WalkPredicate<R>,
+    {
         let mut current_nodes = &self.nodes;
 
         for segment in parent.as_ref().iter() {
@@ -322,13 +326,13 @@ impl<V> PathTree<V> {
                 1,
                 &mut visitor,
             ) {
-                WalkPredicate::Stop => return Some(true),
-                WalkPredicate::SkipSiblings => return Some(false),
+                WalkPredicate::Stop(value) => return Some(Some(value)),
+                WalkPredicate::SkipSiblings => return Some(None),
                 _ => continue,
             }
         }
 
-        Some(false)
+        Some(None)
     }
 
     /// Drain the tree of the descendants of `path` and their values.
@@ -532,12 +536,12 @@ mod tests {
         ];
 
         let mut actual = HashSet::new();
-        let result = tree.walk("", |entry| {
+        let result = tree.walk::<(), _, _>("", |entry| {
             actual.insert((entry.path, *entry.value));
             WalkPredicate::Continue
         });
 
-        assert!(matches!(result, Some(false)));
+        assert!(matches!(result, Some(None)));
         assert_eq!(actual, expected);
     }
 
@@ -557,7 +561,7 @@ mod tests {
         ];
 
         let mut actual = HashSet::new();
-        let result = tree.walk("", |entry| {
+        let result = tree.walk::<(), _, _>("", |entry| {
             actual.insert((entry.path.clone(), *entry.value));
             if &entry.path == "a/b" {
                 WalkPredicate::SkipDescendants
@@ -566,7 +570,7 @@ mod tests {
             }
         });
 
-        assert!(matches!(result, Some(false)));
+        assert!(matches!(result, Some(None)));
         assert_eq!(actual, expected);
     }
 
@@ -586,7 +590,7 @@ mod tests {
         ];
 
         let mut actual = HashSet::new();
-        let result = tree.walk("", |entry| {
+        let result = tree.walk::<(), _, _>("", |entry| {
             actual.insert((entry.path.clone(), *entry.value));
             if siblings.contains(&(entry.path, *entry.value)) {
                 WalkPredicate::SkipSiblings
@@ -595,7 +599,7 @@ mod tests {
             }
         });
 
-        assert!(matches!(result, Some(false)));
+        assert!(matches!(result, Some(None)));
         assert_eq!(actual.len(), 3);
         assert!(actual.contains(&(RelativePathBuf::from("a"), 1)));
         assert!(actual.contains(&(RelativePathBuf::from("e"), 5)));
@@ -614,13 +618,13 @@ mod tests {
         let mut actual = HashSet::new();
         let result = tree.walk("", |entry| {
             if actual.len() == 2 {
-                return WalkPredicate::Stop;
+                return WalkPredicate::Stop(42);
             }
             actual.insert((entry.path, *entry.value));
             WalkPredicate::Continue
         });
 
-        assert!(matches!(result, Some(true)));
+        assert!(matches!(result, Some(Some(42))));
         assert_eq!(actual.len(), 2);
     }
 
