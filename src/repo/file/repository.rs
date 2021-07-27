@@ -608,8 +608,9 @@ where
     /// Walk through the tree of descendants of `parent`.
     ///
     /// This method accepts a `visitor` which is passed a `WalkEntry` for each entry in the tree and
-    /// returns a `WalkPredicate`. If the `visitor` returns `WalkPredicate::Stop`, this method
-    /// returns `Ok(true)`. If all entries in the tree are visited, this method returns `Ok(false)`.
+    /// returns a `WalkPredicate`. If the `visitor` returns `WalkPredicate::Stop` at any point, this
+    /// method returns `Ok(true)`. If all entries in the tree are visited, this method returns
+    /// `Ok(false)`.
     ///
     /// The given `parent` may be an empty path, in which case all entries in the repository are
     /// visited
@@ -625,7 +626,7 @@ where
     pub fn walk(
         &self,
         parent: impl AsRef<RelativePath>,
-        visitor: impl FnMut(WalkEntry<S, M>) -> WalkPredicate,
+        mut visitor: impl FnMut(WalkEntry<S, M>) -> WalkPredicate,
     ) -> crate::Result<bool> {
         self.verify_has_descendants(parent.as_ref())?;
 

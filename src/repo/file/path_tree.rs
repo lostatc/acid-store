@@ -532,12 +532,96 @@ mod tests {
         ];
 
         let mut actual = HashSet::new();
-        tree.walk("", |entry| {
+        let result = tree.walk("", |entry| {
             actual.insert((entry.path, *entry.value));
             WalkPredicate::Continue
         });
 
+        assert!(matches!(result, Some(false)));
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn walk_tree_skip_descendants() {
+        let mut tree = PathTree::new();
+        tree.insert("a", 1);
+        tree.insert("a/b", 2);
+        tree.insert("a/b/c", 3);
+        tree.insert("a/b/c/d", 4);
+        tree.insert("e", 5);
+
+        let expected = hashset![
+            (RelativePathBuf::from("a"), 1),
+            (RelativePathBuf::from("a/b"), 2),
+            (RelativePathBuf::from("e"), 5),
+        ];
+
+        let mut actual = HashSet::new();
+        let result = tree.walk("", |entry| {
+            actual.insert((entry.path.clone(), *entry.value));
+            if &entry.path == "a/b" {
+                WalkPredicate::SkipDescendants
+            } else {
+                WalkPredicate::Continue
+            }
+        });
+
+        assert!(matches!(result, Some(false)));
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn walk_tree_skip_siblings() {
+        let mut tree = PathTree::new();
+        tree.insert("a", 1);
+        tree.insert("a/b", 2);
+        tree.insert("a/c", 3);
+        tree.insert("a/d", 4);
+        tree.insert("e", 5);
+
+        let siblings = hashset![
+            (RelativePathBuf::from("a/b"), 2),
+            (RelativePathBuf::from("a/c"), 3),
+            (RelativePathBuf::from("a/d"), 4),
+        ];
+
+        let mut actual = HashSet::new();
+        let result = tree.walk("", |entry| {
+            actual.insert((entry.path.clone(), *entry.value));
+            if siblings.contains(&(entry.path, *entry.value)) {
+                WalkPredicate::SkipSiblings
+            } else {
+                WalkPredicate::Continue
+            }
+        });
+
+        assert!(matches!(result, Some(false)));
+        assert_eq!(actual.len(), 3);
+        assert!(actual.contains(&(RelativePathBuf::from("a"), 1)));
+        assert!(actual.contains(&(RelativePathBuf::from("e"), 5)));
+        assert_eq!(actual.intersection(&siblings).count(), 1)
+    }
+
+    #[test]
+    fn walk_tree_stop() {
+        let mut tree = PathTree::new();
+        tree.insert("a", 1);
+        tree.insert("a/b", 2);
+        tree.insert("a/b/c", 3);
+        tree.insert("a/b/c/d", 4);
+        tree.insert("e", 5);
+
+        let mut actual = HashSet::new();
+        let result = tree.walk("", |entry| {
+            if actual.len() == 2 {
+                return WalkPredicate::Stop;
+            }
+            actual.insert((entry.path, *entry.value));
+            WalkPredicate::Continue
+        });
+
+        assert!(matches!(result, Some(true)));
+        assert_eq!(actual.len(), 2);
     }
 
     #[test]
