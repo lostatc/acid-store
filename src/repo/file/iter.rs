@@ -15,6 +15,7 @@
  */
 
 use std::iter::{ExactSizeIterator, FusedIterator};
+use std::path::Path;
 
 use relative_path::{RelativePath, RelativePathBuf};
 
@@ -148,7 +149,7 @@ where
 
     /// Return the depth of this entry relative to the starting path.
     ///
-    /// This immediate children of the starting path have a depth of `1`, their descendants have a
+    /// This immediate children of the starting path have a depth of `1`, their children have a
     /// depth of `2`, and so on.
     pub fn depth(&self) -> usize {
         self.depth
@@ -169,6 +170,34 @@ where
     ///
     /// This returns `None` if this entry is not a regular file.
     pub fn open(&self) -> Option<Object> {
-        self.repo.open(&self.path).ok()
+        match self.repo.open(&self.path) {
+            Ok(object) => Some(object),
+            Err(crate::Error::NotFile) => None,
+            Err(error) => panic!("{:?}", error),
+        }
+    }
+
+    /// Copy this entry from the repository into the file system.
+    ///
+    /// If this entry is a directory, its descendants are not copied.
+    ///
+    /// This entry’s metadata will be copied to the `dest` file according to the selected
+    /// [`FileMetadata`] implementation.
+    ///
+    /// # Errors
+    /// - `Error::AlreadyExists`: The `dest` file already exists.
+    /// - `Error::Deserialize`: The file metadata could not be deserialized.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`FileMetadata`]: crate::repo::file::FileMetadata
+    pub fn extract(&self, dest: impl AsRef<Path>) -> crate::Result<()> {
+        match self.repo.extract(&self.path, dest) {
+            Err(error @ crate::Error::InvalidPath | error @ crate::Error::NotFound) => {
+                panic!("{:?}", error)
+            }
+            result => result,
+        }
     }
 }
