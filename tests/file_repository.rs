@@ -388,7 +388,7 @@ fn list_children_of_empty_path(mut repo: FileRepo) -> anyhow::Result<()> {
 }
 
 #[rstest]
-fn walk_descendants(mut repo: FileRepo) -> anyhow::Result<()> {
+fn list_descendants(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create_parents("root/child1", &Entry::file())?;
     repo.create_parents("root/child2/descendant", &Entry::file())?;
 
@@ -402,13 +402,13 @@ fn walk_descendants(mut repo: FileRepo) -> anyhow::Result<()> {
 }
 
 #[rstest]
-fn walk_descendants_of_nonexistent_directory(repo: FileRepo) {
+fn list_descendants_of_nonexistent_directory(repo: FileRepo) {
     assert_that!(repo.descendants("nonexistent").map(Vec::from_iter))
         .is_err_variant(acid_store::Error::NotFound);
 }
 
 #[rstest]
-fn walk_descendants_of_a_file(mut repo: FileRepo) -> anyhow::Result<()> {
+fn list_descendants_of_a_file(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create("file", &Entry::file())?;
 
     assert_that!(repo.descendants("file").map(Vec::from_iter))
@@ -418,7 +418,7 @@ fn walk_descendants_of_a_file(mut repo: FileRepo) -> anyhow::Result<()> {
 }
 
 #[rstest]
-fn walk_descendants_of_empty_path(mut repo: FileRepo) -> anyhow::Result<()> {
+fn list_descendants_of_empty_path(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create_parents("directory/file", &Entry::file())?;
 
     assert_that!(repo.descendants("")?.collect::<Vec<_>>()).contains_all_of(&[

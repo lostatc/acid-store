@@ -96,25 +96,25 @@ pub struct WalkEntry<'a, V> {
 }
 
 /// Recursively walk through the tree of descendants of `parent`.
-fn walk<V, R>(
+fn walk<V>(
     parent: RelativePathBuf,
     node: &PathNode<V>,
     depth: usize,
-    visitor: &impl Fn(WalkEntry<V>) -> WalkPredicate<R>,
-) -> WalkPredicate<R> {
+    visitor: &mut impl FnMut(WalkEntry<V>) -> WalkPredicate,
+) -> WalkPredicate {
     let walk_entry = WalkEntry {
         path: parent.clone(),
         value: &node.value,
         depth,
     };
 
-    let predicate: WalkPredicate<R> = visitor(walk_entry);
+    let predicate: WalkPredicate = visitor(walk_entry);
 
     if let WalkPredicate::Continue | WalkPredicate::SkipSiblings = predicate {
         for (child_name, child_node) in &node.children {
             match walk(parent.join(child_name), child_node, depth + 1, visitor) {
                 WalkPredicate::SkipSiblings => return predicate,
-                WalkPredicate::Stop(value) => return WalkPredicate::Stop(value),
+                WalkPredicate::Stop => return WalkPredicate::Stop,
                 _ => {}
             }
         }
@@ -298,29 +298,37 @@ impl<V> PathTree<V> {
     /// Walk through the descendants of `parent`.
     ///
     /// If the `parent` is not in this tree, this returns `None`. If the visitor exits early via
-    /// `WalkPredicate::Stop`, this returns the wrapped value. Otherwise, this returns `Some(None)`.
+    /// `WalkPredicate::Stop`, this returns `Some(true)`. Otherwise, this returns `Some(false)`.
     ///
     /// Paths are iterated over in depth-first order, so a path always comes before its children.
-    pub fn walk<R>(
+    pub fn walk(
         &self,
         parent: impl AsRef<RelativePath>,
-        visitor: impl Fn(WalkEntry<V>) -> WalkPredicate<R>,
-    ) -> Option<Option<R>> {
+        mut visitor: impl FnMut(WalkEntry<V>) -> WalkPredicate,
+    ) -> Option<bool> {
         let mut current_nodes = &self.nodes;
 
         for segment in parent.as_ref().iter() {
-            current_nodes = &current_nodes.get(segment)?.children;
+            current_nodes = match current_nodes.get(segment) {
+                Some(node) => &node.children,
+                None => return None,
+            };
         }
 
         for (child_name, child_node) in current_nodes {
-            match walk(parent.as_ref().join(child_name), child_node, 1, &visitor) {
-                WalkPredicate::Stop(value) => return Some(Some(value)),
-                WalkPredicate::SkipSiblings => return Some(None),
+            match walk(
+                parent.as_ref().join(child_name),
+                child_node,
+                1,
+                &mut visitor,
+            ) {
+                WalkPredicate::Stop => return Some(true),
+                WalkPredicate::SkipSiblings => return Some(false),
                 _ => continue,
             }
         }
 
-        Some(None)
+        Some(false)
     }
 
     /// Drain the tree of the descendants of `path` and their values.
@@ -363,6 +371,7 @@ mod tests {
     use relative_path::RelativePathBuf;
 
     use crate::repo::file::path_tree::PathTree;
+    use crate::repo::file::WalkPredicate;
 
     #[test]
     fn tree_contains_path() {
@@ -505,6 +514,30 @@ mod tests {
         tree.insert("a/b", 2);
 
         assert!(matches!(tree.descendants("a/c"), None));
+    }
+
+    #[test]
+    fn walk_tree() {
+        let mut tree = PathTree::new();
+        tree.insert("a", 1);
+        tree.insert("a/b", 2);
+        tree.insert("a/b/c", 3);
+        tree.insert("d", 4);
+
+        let expected = hashset![
+            (RelativePathBuf::from("a"), 1),
+            (RelativePathBuf::from("a/b"), 2),
+            (RelativePathBuf::from("a/b/c"), 3),
+            (RelativePathBuf::from("d"), 4),
+        ];
+
+        let mut actual = HashSet::new();
+        tree.walk("", |entry| {
+            actual.insert((entry.path, *entry.value));
+            WalkPredicate::Continue
+        });
+
+        assert_eq!(actual, expected);
     }
 
     #[test]
