@@ -373,6 +373,7 @@ mod tests {
 
     use maplit::hashset;
     use relative_path::RelativePathBuf;
+    use spectral::prelude::*;
 
     use crate::repo::file::path_tree::PathTree;
     use crate::repo::file::WalkPredicate;
@@ -383,9 +384,9 @@ mod tests {
         tree.insert("a", 1);
         tree.insert("a/b", 2);
 
-        assert!(tree.contains("a"));
-        assert!(tree.contains("a/b"));
-        assert!(!tree.contains("a/c"));
+        assert_that!(tree.contains("a")).is_true();
+        assert_that!(tree.contains("a/b")).is_true();
+        assert_that!(tree.contains("a/c")).is_false();
     }
 
     #[test]
@@ -396,10 +397,10 @@ mod tests {
         tree.insert("a/b/c", 3);
         tree.insert("a/b/d", 4);
 
-        assert_eq!(tree.get("a"), Some(&1));
-        assert_eq!(tree.get("a/b"), Some(&2));
-        assert_eq!(tree.get("a/b/c"), Some(&3));
-        assert_eq!(tree.get("a/b/d"), Some(&4));
+        assert_that!(tree.get("a")).contains_value(&1);
+        assert_that!(tree.get("a/b")).contains_value(&2);
+        assert_that!(tree.get("a/b/c")).contains_value(&3);
+        assert_that!(tree.get("a/b/d")).contains_value(&4);
     }
 
     #[test]
@@ -418,9 +419,9 @@ mod tests {
         tree.insert("a/c", 3);
         tree.remove("a/b");
 
-        assert_eq!(tree.get("a"), Some(&1));
-        assert_eq!(tree.get("a/b"), None);
-        assert_eq!(tree.get("a/c"), Some(&3));
+        assert_that!(tree.get("a")).contains_value(&1);
+        assert_that!(tree.get("a/b")).is_none();
+        assert_that!(tree.get("a/c")).contains_value(&3);
     }
 
     #[test]
@@ -430,8 +431,8 @@ mod tests {
         tree.insert("a/b", 2);
         tree.remove("a");
 
-        assert_eq!(tree.get("a"), None);
-        assert_eq!(tree.get("a/b"), None);
+        assert_that!(tree.get("a")).is_none();
+        assert_that!(tree.get("a/b")).is_none();
     }
 
     #[test]
@@ -448,7 +449,7 @@ mod tests {
         ];
         let actual = tree.children("a").unwrap().collect::<HashSet<_>>();
 
-        assert_eq!(actual, expected);
+        assert_that!(actual).is_equal_to(expected);
     }
 
     #[test]
@@ -464,7 +465,7 @@ mod tests {
         ];
         let actual = tree.children("").unwrap().collect::<HashSet<_>>();
 
-        assert_eq!(actual, expected);
+        assert_that!(actual).is_equal_to(expected);
     }
 
     #[test]
@@ -473,7 +474,7 @@ mod tests {
         tree.insert("a", 1);
         tree.insert("a/b", 2);
 
-        assert!(matches!(tree.children("a/c"), None));
+        assert_that!(tree.children("a/c")).is_none();
     }
 
     #[test]
@@ -491,7 +492,7 @@ mod tests {
         ];
         let actual = tree.descendants("a").unwrap().collect::<HashSet<_>>();
 
-        assert_eq!(actual, expected);
+        assert_that!(actual).is_equal_to(expected);
     }
 
     #[test]
@@ -508,7 +509,7 @@ mod tests {
         ];
         let actual = tree.descendants("").unwrap().collect::<HashSet<_>>();
 
-        assert_eq!(actual, expected);
+        assert_that!(actual).is_equal_to(expected);
     }
 
     #[test]
@@ -517,7 +518,7 @@ mod tests {
         tree.insert("a", 1);
         tree.insert("a/b", 2);
 
-        assert!(matches!(tree.descendants("a/c"), None));
+        assert_that!(tree.descendants("a/c")).is_none();
     }
 
     #[test]
@@ -541,8 +542,8 @@ mod tests {
             WalkPredicate::Continue
         });
 
-        assert!(matches!(result, Some(None)));
-        assert_eq!(actual, expected);
+        assert_that!(result).is_some().is_none();
+        assert_that!(actual).is_equal_to(expected);
     }
 
     #[test]
@@ -570,8 +571,8 @@ mod tests {
             }
         });
 
-        assert!(matches!(result, Some(None)));
-        assert_eq!(actual, expected);
+        assert_that!(result).is_some().is_none();
+        assert_that!(actual).is_equal_to(expected);
     }
 
     #[test]
@@ -599,11 +600,11 @@ mod tests {
             }
         });
 
-        assert!(matches!(result, Some(None)));
-        assert_eq!(actual.len(), 3);
-        assert!(actual.contains(&(RelativePathBuf::from("a"), 1)));
-        assert!(actual.contains(&(RelativePathBuf::from("e"), 5)));
-        assert_eq!(actual.intersection(&siblings).count(), 1)
+        assert_that!(result).is_some().is_none();
+        assert_that!(actual.len()).is_equal_to(3);
+        assert_that!(actual.contains(&(RelativePathBuf::from("a"), 1))).is_true();
+        assert_that!(actual.contains(&(RelativePathBuf::from("e"), 5))).is_true();
+        assert_that!(actual.intersection(&siblings).count()).is_equal_to(1)
     }
 
     #[test]
@@ -624,8 +625,35 @@ mod tests {
             WalkPredicate::Continue
         });
 
-        assert!(matches!(result, Some(Some(42))));
-        assert_eq!(actual.len(), 2);
+        assert_that!(result).is_some().contains_value(42);
+        assert_that!(actual.len()).is_equal_to(2);
+    }
+
+    #[test]
+    fn walk_tree_depth() {
+        let mut tree = PathTree::new();
+        tree.insert("a", 1);
+        tree.insert("a/b", 2);
+        tree.insert("a/b/c", 3);
+        tree.insert("a/b/c/d", 4);
+        tree.insert("e", 5);
+
+        let expected = hashset![
+            (RelativePathBuf::from("a"), 1),
+            (RelativePathBuf::from("a/b"), 2),
+            (RelativePathBuf::from("a/b/c"), 3),
+            (RelativePathBuf::from("a/b/c/d"), 4),
+            (RelativePathBuf::from("e"), 1),
+        ];
+
+        let mut actual = HashSet::new();
+        let result = tree.walk::<(), _, _>("", |entry| {
+            actual.insert((entry.path, entry.depth));
+            WalkPredicate::Continue
+        });
+
+        assert_that!(result).is_some().is_none();
+        assert_that!(actual).is_equal_to(expected);
     }
 
     #[test]
@@ -638,6 +666,6 @@ mod tests {
         let actual = tree.descendants("").unwrap().collect::<Vec<_>>();
         let expected = Vec::<(RelativePathBuf, &u32)>::new();
 
-        assert_eq!(expected, actual);
+        assert_that!(actual).is_equal_to(expected);
     }
 }
