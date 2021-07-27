@@ -73,8 +73,8 @@ impl<'a> Iterator for Descendants<'a> {
 /// A value that controls which entries are visited by [`FileRepo::walk`].
 ///
 /// [`FileRepo::walk`]: crate::repo::file::FileRepo::walk
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum WalkPredicate {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WalkPredicate<R> {
     /// Continue visiting entries in the tree.
     Continue,
 
@@ -84,8 +84,8 @@ pub enum WalkPredicate {
     /// Do not visit the descendants of this entry.
     SkipDescendants,
 
-    /// Stop visiting entries and return early.
-    Stop,
+    /// Stop visiting entries and return early with the given value.
+    Stop(R),
 }
 
 /// An entry when walking through a tree of entries in a [`FileRepo`].
