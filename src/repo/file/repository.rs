@@ -619,6 +619,54 @@ where
     /// This method visits entries in depth-first order, meaning that an entry will always be
     /// visited before its children.
     ///
+    /// # Examples
+    /// Find all the paths of empty file entries in the repository.
+    /// ```no_run
+    /// # use acid_store::repo::{OpenOptions, OpenMode};
+    /// # use acid_store::repo::file::{WalkPredicate, FileRepo};
+    /// # use acid_store::store::MemoryConfig;
+    /// #
+    /// # let repo: FileRepo = OpenOptions::new()
+    /// #    .mode(OpenMode::CreateNew)
+    /// #    .open(&MemoryConfig::new())
+    /// #    .unwrap();
+    /// #
+    /// let mut empty_files = Vec::new();
+    /// repo.walk::<(), _, _>("", |entry| {
+    ///     if let Some(object) = entry.open() {
+    ///         if object.size().unwrap() == 0 {
+    ///             empty_files.push(entry.into_path());
+    ///         }
+    ///     }
+    ///     WalkPredicate::Continue
+    /// });
+    /// ```
+    ///
+    /// Search two directory trees for the path of a symbolic link with a given target.
+    /// ```no_run
+    /// # use acid_store::repo::{OpenOptions, OpenMode};
+    /// # use acid_store::repo::file::{UnixSpecial, EntryType, WalkPredicate, FileRepo};
+    /// # use acid_store::store::MemoryConfig;
+    /// #
+    /// # let repo: FileRepo = OpenOptions::new()
+    /// #    .mode(OpenMode::CreateNew)
+    /// #    .open(&MemoryConfig::new())
+    /// #    .unwrap();
+    /// #
+    /// let symlink = UnixSpecial::Symlink { target: "/home/lostatc/target".into() };
+    /// let mut result = repo.walk("", |entry| {
+    ///     if !entry.path().starts_with("first") && !entry.path().starts_with("second") {
+    ///         return WalkPredicate::SkipDescendants;
+    ///     }
+    ///
+    ///     match entry.entry().map(|entry| entry.kind) {
+    ///         Ok(EntryType::Special(symlink)) => WalkPredicate::Stop(Ok(entry.into_path())),
+    ///         Err(error) => WalkPredicate::Stop(Err(error)),
+    ///         _ => WalkPredicate::Continue,
+    ///     }
+    /// });
+    /// ```
+    ///
     /// # Errors
     /// - `Error::NotFound`: The given `parent` does not exist.
     /// - `Error::NotDirectory`: The given `parent` is not a directory.

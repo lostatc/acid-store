@@ -149,7 +149,7 @@ where
 
     /// Return the depth of this entry relative to the starting path.
     ///
-    /// This immediate children of the starting path have a depth of `1`, their children have a
+    /// The immediate children of the starting path have a depth of `1`, their children have a
     /// depth of `2`, and so on.
     pub fn depth(&self) -> usize {
         self.depth
