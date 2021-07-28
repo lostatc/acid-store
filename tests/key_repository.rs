@@ -19,7 +19,9 @@
 use std::io::{Read, Write};
 
 use acid_store::repo::key::KeyRepo;
-use acid_store::repo::{peek_info, Commit, Encryption, RestoreSavepoint, SwitchInstance};
+use acid_store::repo::{
+    peek_info, Commit, Encryption, ResourceLimit, RestoreSavepoint, SwitchInstance,
+};
 use acid_store::store::{DataStore, OpenStore};
 use common::*;
 use rstest_reuse::{self, *};
@@ -218,7 +220,11 @@ fn change_password(mut repo_store: RepoStore) -> anyhow::Result<()> {
     repo_store.config.encryption = Encryption::XChaCha20Poly1305;
     let mut repo: KeyRepo<String> = repo_store.create()?;
 
-    repo.change_password(b"New password");
+    repo.change_password(
+        b"New password",
+        ResourceLimit::Interactive,
+        ResourceLimit::Interactive,
+    );
     repo.commit()?;
     drop(repo);
 

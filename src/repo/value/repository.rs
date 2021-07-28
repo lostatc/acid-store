@@ -28,7 +28,7 @@ use super::iter::Keys;
 use crate::repo::{
     key::{Key, KeyRepo},
     state::{ObjectKey, StateRepo},
-    Commit, InstanceId, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint, VersionId,
+    Commit, InstanceId, OpenRepo, RepoInfo, ResourceLimit, RestoreSavepoint, Savepoint, VersionId,
 };
 
 type RepoState<K> = HashMap<K, ObjectKey>;
@@ -201,8 +201,14 @@ impl<K: Key> ValueRepo<K> {
     /// See [`KeyRepo::change_password`] for details.
     ///
     /// [`KeyRepo::change_password`]: crate::repo::key::KeyRepo::change_password
-    pub fn change_password(&mut self, new_password: &[u8]) {
-        self.0.change_password(new_password);
+    pub fn change_password(
+        &mut self,
+        new_password: &[u8],
+        memory_limit: ResourceLimit,
+        operations_limit: ResourceLimit,
+    ) {
+        self.0
+            .change_password(new_password, memory_limit, operations_limit);
     }
 
     /// Return this repository's instance ID.

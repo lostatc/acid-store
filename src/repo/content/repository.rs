@@ -25,7 +25,8 @@ use uuid::Uuid;
 use crate::repo::{
     key::KeyRepo,
     state::{ObjectKey, StateRepo},
-    Commit, InstanceId, OpenRepo, ReadOnlyObject, RepoInfo, RestoreSavepoint, Savepoint, VersionId,
+    Commit, InstanceId, OpenRepo, ReadOnlyObject, RepoInfo, ResourceLimit, RestoreSavepoint,
+    Savepoint, VersionId,
 };
 
 use super::hash::{HashAlgorithm, BUFFER_SIZE, DEFAULT_ALGORITHM};
@@ -242,8 +243,14 @@ impl ContentRepo {
     /// See [`KeyRepo::change_password`] for details.
     ///
     /// [`KeyRepo::change_password`]: crate::repo::key::KeyRepo::change_password
-    pub fn change_password(&mut self, new_password: &[u8]) {
-        self.0.change_password(new_password)
+    pub fn change_password(
+        &mut self,
+        new_password: &[u8],
+        memory_limit: ResourceLimit,
+        operations_limit: ResourceLimit,
+    ) {
+        self.0
+            .change_password(new_password, memory_limit, operations_limit)
     }
 
     /// Return this repository's instance ID.

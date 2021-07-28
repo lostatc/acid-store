@@ -24,8 +24,8 @@ use uuid::Uuid;
 use super::info::{KeyId, KeyIdTable, ObjectKey, RepoKey, RepoState, StateRestore};
 use super::iter::Keys;
 use crate::repo::{
-    key::KeyRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo, RestoreSavepoint, Savepoint,
-    VersionId,
+    key::KeyRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo, ResourceLimit, RestoreSavepoint,
+    Savepoint, VersionId,
 };
 
 /// A low-level repository type which can be used to implement higher-level repository types
@@ -251,8 +251,14 @@ where
     /// See [`KeyRepo::change_password`] for details.
     ///
     /// [`KeyRepo::change_password`]: crate::repo::key::KeyRepo::change_password
-    pub fn change_password(&mut self, new_password: &[u8]) {
-        self.repo.change_password(new_password);
+    pub fn change_password(
+        &mut self,
+        new_password: &[u8],
+        memory_limit: ResourceLimit,
+        operations_limit: ResourceLimit,
+    ) {
+        self.repo
+            .change_password(new_password, memory_limit, operations_limit);
     }
 
     /// Return this repository's instance ID.
