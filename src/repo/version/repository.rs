@@ -28,8 +28,8 @@ use uuid::Uuid;
 use crate::repo::key::KeyRepo;
 use crate::repo::state::StateRepo;
 use crate::repo::{
-    key::Key, Commit, InstanceId, Object, OpenRepo, ReadOnlyObject, RepoInfo, RestoreSavepoint,
-    Savepoint, VersionId,
+    key::Key, Commit, InstanceId, Object, OpenRepo, ReadOnlyObject, RepoInfo, ResourceLimit,
+    RestoreSavepoint, Savepoint, VersionId,
 };
 
 use super::info::{KeyInfo, Version, VersionInfo};
@@ -320,8 +320,14 @@ impl<K: Key> VersionRepo<K> {
     /// See [`KeyRepo::change_password`] for details.
     ///
     /// [`KeyRepo::change_password`]: crate::repo::key::KeyRepo::change_password
-    pub fn change_password(&mut self, new_password: &[u8]) {
-        self.0.change_password(new_password);
+    pub fn change_password(
+        &mut self,
+        new_password: &[u8],
+        memory_limit: ResourceLimit,
+        operations_limit: ResourceLimit,
+    ) {
+        self.0
+            .change_password(new_password, memory_limit, operations_limit);
     }
 
     /// Return this repository's instance ID.

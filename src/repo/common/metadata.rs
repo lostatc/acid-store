@@ -122,14 +122,11 @@ pub struct RepoInfo {
 
 impl RepoInfo {
     /// The unique ID for this repository.
-    ///
-    /// This ID is different from the instance ID; this ID is shared between all instances of a
-    /// repository.
     pub fn id(&self) -> RepoId {
         self.id
     }
 
-    /// The configuration used to create this repository.
+    /// The configuration for this repository.
     pub fn config(&self) -> &RepoConfig {
         &self.config
     }

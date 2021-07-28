@@ -28,7 +28,7 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 use crate::repo::{
-    key::KeyRepo, state::StateRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo,
+    key::KeyRepo, state::StateRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo, ResourceLimit,
     RestoreSavepoint, Savepoint, VersionId,
 };
 
@@ -945,8 +945,14 @@ where
     /// See [`KeyRepo::change_password`] for details.
     ///
     /// [`KeyRepo::change_password`]: crate::repo::key::KeyRepo::change_password
-    pub fn change_password(&mut self, new_password: &[u8]) {
-        self.0.change_password(new_password);
+    pub fn change_password(
+        &mut self,
+        new_password: &[u8],
+        memory_limit: ResourceLimit,
+        operations_limit: ResourceLimit,
+    ) {
+        self.0
+            .change_password(new_password, memory_limit, operations_limit);
     }
 
     /// Return this repository's instance ID.

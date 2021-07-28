@@ -23,9 +23,8 @@ use super::packing::Packing;
 
 /// The configuration for an repository.
 ///
-/// This type is used to configure a repository when it is created. Once a repository is created,
-/// the config values provided cannot be changed. This type implements `Default` to provide a
-/// reasonable default configuration.
+/// This type is used to configure a repository when it is created. This type implements `Default`
+/// to provide a reasonable default configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct RepoConfig {

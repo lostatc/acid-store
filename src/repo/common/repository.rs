@@ -31,7 +31,7 @@ use super::chunk_store::{
     EncodeBlock, ReadBlock, ReadChunk, StoreReader, StoreState, StoreWriter, WriteBlock,
 };
 use super::commit::Commit;
-use super::encryption::{EncryptionKey, KeySalt};
+use super::encryption::{Encryption, EncryptionKey, KeySalt, ResourceLimit};
 use super::handle::{chunk_hash, HandleId, HandleIdTable, ObjectHandle, ObjectId};
 use super::key::{Key, Keys};
 use super::metadata::{Header, RepoInfo};
@@ -555,23 +555,35 @@ impl<K: Key> KeyRepo<K> {
 
     /// Change the password for this repository.
     ///
-    /// This replaces the existing password with `new_password`. Changing the password does not
-    /// require re-encrypting any data. The change does not take effect until [`Commit::commit`] is
-    /// called.
+    /// This replaces the existing password with `new_password`. This also accepts the
+    /// `memory_limit` and the `operations_limit`, which affect the amount of memory and the number
+    /// of computations respectively which will be used by the key derivation function.
+    ///
+    /// Changing the password does not require re-encrypting any data. The change does not take
+    /// effect until [`Commit::commit`] is called.
     ///
     /// If encryption is disabled, this method does nothing.
     ///
     /// [`Commit::commit`]: crate::repo::Commit::commit
-    pub fn change_password(&mut self, new_password: &[u8]) {
+    pub fn change_password(
+        &mut self,
+        new_password: &[u8],
+        memory_limit: ResourceLimit,
+        operations_limit: ResourceLimit,
+    ) {
         let mut state = self.state.write().unwrap();
+
+        if let Encryption::None = state.metadata.config.encryption {
+            return;
+        }
 
         let salt = KeySalt::generate();
         let user_key = EncryptionKey::derive(
             new_password,
             &salt,
             state.metadata.config.encryption.key_size(),
-            state.metadata.config.memory_limit,
-            state.metadata.config.operations_limit,
+            memory_limit,
+            operations_limit,
         );
 
         let encrypted_master_key = state
@@ -582,6 +594,8 @@ impl<K: Key> KeyRepo<K> {
 
         state.metadata.salt = salt;
         state.metadata.master_key = encrypted_master_key;
+        state.metadata.config.memory_limit = memory_limit;
+        state.metadata.config.operations_limit = operations_limit;
     }
 
     /// Return this repository's current instance ID.
