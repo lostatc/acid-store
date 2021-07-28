@@ -53,22 +53,18 @@ pub enum Chunking {
 }
 
 impl Chunking {
+    /// A reasonable default value of `Chunking::Fixed`.
+    pub const FIXED: Self = Self::Fixed { size: 1024 * 1024 };
+
+    /// A reasonable default value of `Chunking::Zpaq`.
+    pub const ZPAQ: Self = Self::Zpaq { bits: 18 };
+
     /// Return a chunker for this chunking method.
     pub(super) fn to_chunker(&self) -> Box<dyn ChunkerImpl> {
         match self {
             Chunking::Fixed { size } => Box::new(FixedChunker::new(*size as usize)),
             Chunking::Zpaq { bits } => Box::new(ZPAQ::new(*bits as usize)),
         }
-    }
-
-    /// Return a reasonable default value of `Chunking::Fixed`.
-    pub const fn fixed() -> Self {
-        Chunking::Fixed { size: 1024 * 1024 }
-    }
-
-    /// Return a reasonable default value of `Chunking::Zpaq`.
-    pub const fn zpaq() -> Self {
-        Chunking::Zpaq { bits: 18 }
     }
 }
 

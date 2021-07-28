@@ -45,8 +45,6 @@ pub enum Packing {
 }
 
 impl Packing {
-    /// Return a reasonable default value of `Packing::Fixed`.
-    pub const fn fixed() -> Self {
-        Packing::Fixed(1024 * 64)
-    }
+    /// A reasonable default value of `Packing::Fixed`.
+    pub const FIXED: Self = Packing::Fixed(1024 * 64);
 }

@@ -30,7 +30,7 @@ use super::packing::Packing;
 pub struct RepoConfig {
     /// The chunking method to use in the repository.
     ///
-    /// The default value is `Chunking::fixed()`.
+    /// The default value is `Chunking::FIXED`.
     pub chunking: Chunking,
 
     /// The packing method to use in the repository.
@@ -62,7 +62,7 @@ pub struct RepoConfig {
 impl Default for RepoConfig {
     fn default() -> Self {
         RepoConfig {
-            chunking: Chunking::fixed(),
+            chunking: Chunking::FIXED,
             packing: Packing::None,
             compression: Compression::None,
             encryption: Encryption::None,
