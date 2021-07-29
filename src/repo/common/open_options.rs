@@ -50,7 +50,7 @@ pub const DEFAULT_INSTANCE: InstanceId = InstanceId::new(Uuid::from_bytes(hex!(
 ///
 /// This must be changed any time a backwards-incompatible change is made to the repository
 /// format.
-const VERSION_ID: Uuid = Uuid::from_bytes(hex!("6f1c893c e6a8 11eb a198 b7fa995cc83b"));
+const VERSION_ID: Uuid = Uuid::from_bytes(hex!("44253e72 f08f 11eb a2a3 a701701f8601"));
 
 /// A table of locks on repositories.
 static REPO_LOCKS: Lazy<Mutex<LockTable<RepoId>>> = Lazy::new(|| Mutex::new(LockTable::new()));
