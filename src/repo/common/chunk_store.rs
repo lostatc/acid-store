@@ -113,7 +113,10 @@ impl<'a> ReadBlock for PackingBlockReader<'a> {
                         .ok_or(crate::Error::InvalidData)?;
                     let pack_buffer = self
                         .repo_state
-                        .decode_data(encoded_pack_buffer.as_slice())?;
+                        .metadata
+                        .config
+                        .encryption
+                        .decrypt(encoded_pack_buffer.as_slice(), &self.repo_state.master_key)?;
                     let pack = Pack {
                         id: pack_index.id,
                         buffer: pack_buffer,
@@ -129,7 +132,11 @@ impl<'a> ReadBlock for PackingBlockReader<'a> {
             block_buffer.extend_from_slice(&pack_buffer[start..end]);
         }
 
-        Ok(block_buffer)
+        self.repo_state
+            .metadata
+            .config
+            .compression
+            .decompress(block_buffer.as_slice())
     }
 }
 
@@ -158,32 +165,39 @@ impl<'a> WriteBlock for PackingBlockWriter<'a> {
             .write_buffer
             .get_or_insert_with(|| Pack::new(pack_size));
 
+        // To avoid metadata leakage, we need to compress the data before we pack into fixed-size
+        // blocks. If we were to pack the data and *then* compress it, the packs would no longer be
+        // a fixed size, as different data may compress with a different compression ratio. The size
+        // of the compressed pack would leak metadata about the contents of the pack, as unlike
+        // with encryption, the size of the compressed pack would be based on its contents.
+        let compressed_data = self.repo_state.metadata.config.compression.compress(data)?;
+
         // The block's offset from the start of the current pack.
         let mut current_offset = current_pack.buffer.len() as u32;
 
         // The size of the block being written in the current pack.
         let mut current_size = 0u32;
 
-        // The number of bytes written in from `data`.
+        // The number of bytes written in from `compressed_data`.
         let mut bytes_written = 0usize;
 
         // The amount of space remaining in the current pack.
         let mut remaining_space;
 
-        // The end index of the bytes to write from `data`.
+        // The end index of the bytes to write from `compressed_data`.
         let mut buffer_end;
 
-        // The slice of `data` to write to the current pack.
+        // The slice of `compressed_data` to write to the current pack.
         let mut next_buffer;
 
         // The list packs which store the current block and where it's located in those packs.
         let mut new_packs_indices = Vec::new();
 
         loop {
-            // Fill the current pack with the provided `data`.
+            // Fill the current pack with the provided `compressed_data`.
             remaining_space = self.pack_size as usize - current_pack.buffer.len();
-            buffer_end = min(bytes_written + remaining_space, data.len());
-            next_buffer = &data[bytes_written..buffer_end];
+            buffer_end = min(bytes_written + remaining_space, compressed_data.len());
+            next_buffer = &compressed_data[bytes_written..buffer_end];
             current_pack.buffer.extend_from_slice(next_buffer);
             bytes_written += next_buffer.len();
             current_size += next_buffer.len() as u32;
@@ -194,7 +208,7 @@ impl<'a> WriteBlock for PackingBlockWriter<'a> {
             );
 
             assert!(
-                bytes_written <= data.len(),
+                bytes_written <= compressed_data.len(),
                 "More bytes were written than are available in the provided buffer."
             );
 
@@ -208,14 +222,26 @@ impl<'a> WriteBlock for PackingBlockWriter<'a> {
 
             // If we've filled the current pack, write it to the data store.
             if current_pack.buffer.len() == self.pack_size as usize {
-                let encoded_pack = self
+                // Rather than encrypt data and then pack it, we always want to encrypt whole packs
+                // right before writing them to the data store. Because encrypted messages are
+                // framed by their IV and MAC, it is possible to determine the size of encrypted
+                // messages even when they are concatenated and split into fixed-size packs. This
+                // would leak the size of the underlying chunks. By encrypting data after it's
+                // packed, we avoid this metadata leakage. A consequence of this is that the size of
+                // the blocks in the data store may not be exactly equal to the pack size. However,
+                // this isn't a problem because the size of the encrypted messages don't vary based
+                // on the contents of the message.
+                let encrypted_pack = self
                     .repo_state
-                    .encode_data(current_pack.buffer.as_slice())?;
+                    .metadata
+                    .config
+                    .encryption
+                    .encrypt(current_pack.buffer.as_slice(), &self.repo_state.master_key);
                 self.repo_state
                     .store
                     .lock()
                     .unwrap()
-                    .write_block(current_pack.id, encoded_pack.as_slice())
+                    .write_block(current_pack.id, encrypted_pack.as_slice())
                     .map_err(crate::Error::Store)?;
 
                 // We're starting a new pack, so these need to be reset.
@@ -225,22 +251,27 @@ impl<'a> WriteBlock for PackingBlockWriter<'a> {
                 *current_pack = Pack::new(self.pack_size);
             }
 
-            // Break once we've written all the `data`.
-            if bytes_written == data.len() {
-                // Once we've exhausted all the bytes in `data`, we need to pad the currently
-                // buffered pack with zeroes and write it to the data store. The contract of this
-                // interface guarantees that all data will be written to the data store once it
-                // returns, and we won't have the opportunity to flush it later. We'll keep a clone
-                // of this pack buffered in memory though, so we can write more data to the pack and
-                // overwrite it in the data store in the future. This way, we don't have a bunch of
-                // half-empty packs in the data store.
+            // Break once we've written all the `compressed_data`.
+            if bytes_written == compressed_data.len() {
+                // Once we've exhausted all the bytes in `compressed_data`, we need to pad the
+                // currently buffered pack with zeroes and write it to the data store. The contract
+                // of this interface guarantees that all data will be written to the data store once
+                // it returns, and we won't have the opportunity to flush it later. We'll keep a
+                // clone of this pack buffered in memory though, so we can write more data to the
+                // pack and overwrite it in the data store in the future. This way, we don't have a
+                // bunch of half-empty packs in the data store.
                 let padded_pack = current_pack.padded(self.pack_size);
-                let encoded_pack = self.repo_state.encode_data(padded_pack.as_slice())?;
+                let encrypted_pack = self
+                    .repo_state
+                    .metadata
+                    .config
+                    .encryption
+                    .encrypt(padded_pack.as_slice(), &self.repo_state.master_key);
                 self.repo_state
                     .store
                     .lock()
                     .unwrap()
-                    .write_block(current_pack.id, encoded_pack.as_slice())
+                    .write_block(current_pack.id, encrypted_pack.as_slice())
                     .map_err(crate::Error::Store)?;
 
                 // We need to update the pack map in the repository state after all data has been
