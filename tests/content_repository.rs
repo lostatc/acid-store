@@ -102,7 +102,7 @@ fn list_objects(
     let hash1 = repo.put(first_buffer.as_slice())?;
     let hash2 = repo.put(second_buffer.as_slice())?;
 
-    assert_that!(repo.list().map(Vec::from).collect::<Vec<_>>())
+    assert_that!(repo.hashes().map(Vec::from).collect::<Vec<_>>())
         .contains_all_of(&[&hash1.to_vec(), &hash2.to_vec()]);
 
     Ok(())
@@ -138,7 +138,7 @@ fn objects_removed_on_rollback(mut repo: ContentRepo, buffer: Vec<u8>) -> anyhow
 
     assert_that!(repo.contains(&hash)).is_false();
     assert_that!(repo.object(&hash)).is_none();
-    assert_that!(repo.list().next()).is_none();
+    assert_that!(repo.hashes().next()).is_none();
 
     Ok(())
 }
@@ -150,7 +150,7 @@ fn clear_instance_removes_keys(mut repo: ContentRepo, buffer: Vec<u8>) -> anyhow
     repo.clear_instance();
 
     assert_that!(repo.contains(&hash)).is_false();
-    assert_that!(repo.list().next()).is_none();
+    assert_that!(repo.hashes().next()).is_none();
     assert_that!(repo.object(&hash)).is_none();
 
     Ok(())
@@ -165,7 +165,7 @@ fn rollback_after_clear_instance(mut repo: ContentRepo, buffer: Vec<u8>) -> anyh
     repo.rollback()?;
 
     assert_that!(repo.contains(&hash)).is_true();
-    assert_that!(repo.list().next()).is_some();
+    assert_that!(repo.hashes().next()).is_some();
     assert_that!(repo.object(&hash)).is_some();
 
     Ok(())
