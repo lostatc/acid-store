@@ -31,7 +31,7 @@
 //! [`ContentRepo::change_algorithm`]: crate::repo::content::ContentRepo::change_algorithm
 //! [`Commit::commit`]: crate::repo::Commit::commit
 pub use hash::HashAlgorithm;
-pub use iter::List;
+pub use iter::Hashes;
 pub use repository::ContentRepo;
 
 mod hash;

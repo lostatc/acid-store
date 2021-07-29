@@ -26,9 +26,9 @@ use crate::repo::state::ObjectKey;
 /// [`ContentRepo`]: crate::repo::content::ContentRepo
 /// [`ContentRepo::list`]: crate::repo::content::ContentRepo::list
 #[derive(Debug, Clone)]
-pub struct List<'a>(pub(super) hash_map::Keys<'a, Vec<u8>, ObjectKey>);
+pub struct Hashes<'a>(pub(super) hash_map::Keys<'a, Vec<u8>, ObjectKey>);
 
-impl<'a> Iterator for List<'a> {
+impl<'a> Iterator for Hashes<'a> {
     type Item = &'a [u8];
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -40,6 +40,6 @@ impl<'a> Iterator for List<'a> {
     }
 }
 
-impl<'a> FusedIterator for List<'a> {}
+impl<'a> FusedIterator for Hashes<'a> {}
 
-impl<'a> ExactSizeIterator for List<'a> {}
+impl<'a> ExactSizeIterator for Hashes<'a> {}

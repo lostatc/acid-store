@@ -30,7 +30,7 @@ use crate::repo::{
 };
 
 use super::hash::{HashAlgorithm, BUFFER_SIZE, DEFAULT_ALGORITHM};
-use super::iter::List;
+use super::iter::Hashes;
 
 /// The state for a `ContentRepo`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,8 +165,8 @@ impl ContentRepo {
     }
 
     /// Return an iterator of hashes of all the objects in this repository.
-    pub fn list(&self) -> List {
-        List(self.0.state().table.keys())
+    pub fn hashes(&self) -> Hashes {
+        Hashes(self.0.state().table.keys())
     }
 
     /// Return the hash algorithm used by this repository.
