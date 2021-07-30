@@ -595,3 +595,25 @@ fn verify_valid_repository_is_valid(
 
     Ok(())
 }
+
+#[rstest]
+fn repo_stats(repo_object: RepoObject, buffer: Vec<u8>) -> anyhow::Result<()> {
+    let RepoObject {
+        mut object,
+        mut repo,
+        key,
+    } = repo_object;
+
+    object.write_all(&buffer)?;
+    object.commit()?;
+    drop(object);
+
+    repo.copy(&key, String::from("copy"));
+
+    let stats = repo.stats();
+
+    assert_that!(stats.apparent_size()).is_equal_to(buffer.len() as u64 * 2);
+    assert_that!(stats.actual_size()).is_less_than(stats.apparent_size());
+
+    Ok(())
+}

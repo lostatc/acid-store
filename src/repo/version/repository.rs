@@ -28,8 +28,8 @@ use uuid::Uuid;
 use crate::repo::key::KeyRepo;
 use crate::repo::state::StateRepo;
 use crate::repo::{
-    key::Key, Commit, InstanceId, Object, OpenRepo, ReadOnlyObject, RepoInfo, ResourceLimit,
-    RestoreSavepoint, Savepoint, VersionId,
+    key::Key, Commit, InstanceId, Object, OpenRepo, ReadOnlyObject, RepoInfo, RepoStats,
+    ResourceLimit, RestoreSavepoint, Savepoint, VersionId,
 };
 
 use super::info::{KeyInfo, Version, VersionInfo};
@@ -333,6 +333,15 @@ impl<K: Key> VersionRepo<K> {
     /// Return this repository's instance ID.
     pub fn instance(&self) -> InstanceId {
         self.0.instance()
+    }
+
+    /// Compute statistics about the repository.
+    ///
+    /// See [`KeyRepo::stats`] for details.
+    ///
+    /// [`KeyRepo::stats`]: crate::repo::key::KeyRepo::stats
+    pub fn stats(&self) -> RepoStats {
+        self.0.stats()
     }
 
     /// Return information about the repository.

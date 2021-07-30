@@ -92,7 +92,7 @@ pub struct ObjectHandle {
 }
 
 impl ObjectHandle {
-    /// The size of the object in bytes.
+    /// The apparent size of the object in bytes.
     pub fn size(&self) -> u64 {
         self.extents.iter().map(|extent| extent.size()).sum()
     }
