@@ -80,42 +80,38 @@ pub enum OpenMode {
 /// [`OpenRepo`].
 ///
 /// # Examples
-/// ```no_run
-/// # #[cfg(feature = "store-directory")] {
+/// ```
 /// use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo, Chunking, Compression, Encryption, Packing};
-/// use acid_store::store::DirectoryConfig;
+/// use acid_store::store::MemoryConfig;
 ///
-/// let store_config = DirectoryConfig { path: "/path/to/store".into() };
+/// let store_config = MemoryConfig::new();
 /// let mut repo: KeyRepo<String> = OpenOptions::new()
-///     .chunking(Chunking::zpaq())
+///     .chunking(Chunking::ZPAQ)
 ///     .compression(Compression::Lz4 { level: 1 })
 ///     .encryption(Encryption::XChaCha20Poly1305)
-///     .packing(Packing::fixed())
+///     .packing(Packing::FIXED)
 ///     .password(b"password")
 ///     .mode(OpenMode::Create)
 ///     .open(&store_config)
 ///     .unwrap();
-/// # }
 /// ```
-/// ```no_run
-/// # #[cfg(feature = "store-directory")] {
+/// ```
 /// use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo, Chunking, Compression, Encryption, Packing, RepoConfig};
-/// use acid_store::store::DirectoryConfig;
+/// use acid_store::store::MemoryConfig;
 ///
 /// let mut repo_config = RepoConfig::default();
-/// repo_config.chunking = Chunking::zpaq();
+/// repo_config.chunking = Chunking::ZPAQ;
 /// repo_config.compression = Compression::Lz4 { level: 1 };
 /// repo_config.encryption = Encryption::XChaCha20Poly1305;
-/// repo_config.packing = Packing::fixed();
+/// repo_config.packing = Packing::FIXED;
 ///
-/// let store_config = DirectoryConfig { path: "/path/to/store".into() };
+/// let store_config = MemoryConfig::new();
 /// let mut repo: KeyRepo<String> = OpenOptions::new()
 ///     .config(repo_config)
 ///     .password(b"password")
 ///     .mode(OpenMode::Create)
 ///     .open(&store_config)
 ///     .unwrap();
-/// # }
 /// ```
 ///
 /// [`new`]: crate::repo::OpenOptions::new

@@ -131,3 +131,33 @@ impl RepoInfo {
         &self.config
     }
 }
+
+/// Statistics about a repository.
+#[derive(Debug, Clone)]
+pub struct RepoStats {
+    pub(super) apparent_size: u64,
+    pub(super) actual_size: u64,
+}
+
+impl RepoStats {
+    /// The repository's apparent size.
+    ///
+    /// This is the sum of the apparent sizes of all the objects in the repository, which includes
+    /// any sparse holes in those objects.
+    pub fn apparent_size(&self) -> u64 {
+        self.apparent_size
+    }
+
+    /// The repository's actual size.
+    ///
+    /// This is the actual number of bytes stored in objects in the repository, which may be smaller
+    /// than the [`apparent_size`] due to sparse holes in objects and deduplication.
+    ///
+    /// This value is not necessarily the same as the number of bytes stored in the backing data
+    /// store, which may be larger or smaller due to compression and encryption.
+    ///
+    /// [`apparent_size`]: crate::repo::RepoStats::apparent_size
+    pub fn actual_size(&self) -> u64 {
+        self.actual_size
+    }
+}
