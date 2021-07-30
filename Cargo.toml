@@ -19,11 +19,11 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 # File system
-relative-path = { version = "1.0.0", features = ["ci"] }
-walkdir = "2.2.9"
+relative-path = { version = "1.0.0", features = ["ci"], optional = true }
+walkdir = { version = "2.2.9", optional = true }
 filetime = { version = "0.2.8", optional = true }
 tempfile = { version = "3.1.0", optional = true }
-hole-punch = "0.0.3"
+hole-punch = { version = "0.0.3", optional = true }
 
 # FUSE
 fuse = { version = "0.3.1", optional = true }
@@ -62,7 +62,7 @@ anyhow = "1.0.26"
 lz4 = { version = "1.23.1", optional = true }
 
 # Encryption
-sodiumoxide = {version = "0.2.5", optional = true }
+sodiumoxide = { version = "0.2.5", optional = true }
 rand = { version = "0.7.2", optional = true }
 secrecy = "0.7.0"
 
@@ -109,7 +109,11 @@ store-redis = ["redis"]
 store-s3 = ["rust-s3", "tokio"]
 store-sftp = ["ssh2"]
 store-rclone = ["store-sftp", "rand"]
-file-metadata = ["nix", "filetime", "xattr", "users", "exacl"]
+repo-file = ["relative-path", "walkdir", "hole-punch"]
+repo-content = []
+repo-value = []
+repo-version = []
+file-metadata = ["repo-file", "nix", "filetime", "xattr", "users", "exacl"]
 hash-algorithms = ["blake2", "sha2", "sha3"]
 compression = ["lz4"]
 encryption = ["sodiumoxide", "rand"]
