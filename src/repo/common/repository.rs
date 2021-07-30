@@ -34,7 +34,7 @@ use super::commit::Commit;
 use super::encryption::{Encryption, EncryptionKey, KeySalt, ResourceLimit};
 use super::handle::{chunk_hash, HandleId, HandleIdTable, ObjectHandle, ObjectId};
 use super::key::{Key, Keys};
-use super::metadata::{Header, RepoInfo};
+use super::metadata::{Header, RepoInfo, RepoStats};
 use super::object::Object;
 use super::object_store::{ObjectReader, ObjectWriter};
 use super::open_repo::OpenRepo;
@@ -601,6 +601,28 @@ impl<K: Key> KeyRepo<K> {
     /// Return this repository's current instance ID.
     pub fn instance(&self) -> InstanceId {
         self.instance_id
+    }
+
+    /// Compute statistics about the repository.
+    ///
+    /// The returned `RepoStats` represents the contents of the repository at the time this method
+    /// was called. It is not updated when the repository is modified.
+    pub fn stats(&self) -> RepoStats {
+        RepoStats {
+            apparent_size: self
+                .objects
+                .values()
+                .map(|handle| handle.read().unwrap().size())
+                .sum(),
+            actual_size: self
+                .state
+                .read()
+                .unwrap()
+                .chunks
+                .keys()
+                .map(|chunk| chunk.size as u64)
+                .sum(),
+        }
     }
 
     /// Return information about the repository.

@@ -24,8 +24,8 @@ use uuid::Uuid;
 use super::info::{KeyId, KeyIdTable, ObjectKey, RepoKey, RepoState, StateRestore};
 use super::iter::Keys;
 use crate::repo::{
-    key::KeyRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo, ResourceLimit, RestoreSavepoint,
-    Savepoint, VersionId,
+    key::KeyRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo, RepoStats, ResourceLimit,
+    RestoreSavepoint, Savepoint, VersionId,
 };
 
 /// A low-level repository type which can be used to implement higher-level repository types
@@ -264,6 +264,15 @@ where
     /// Return this repository's instance ID.
     pub fn instance(&self) -> InstanceId {
         self.repo.instance()
+    }
+
+    /// Compute statistics about the repository.
+    ///
+    /// See [`KeyRepo::stats`] for details.
+    ///
+    /// [`KeyRepo::stats`]: crate::repo::key::KeyRepo::stats
+    pub fn stats(&self) -> RepoStats {
+        self.repo.stats()
     }
 
     /// Return information about the repository.

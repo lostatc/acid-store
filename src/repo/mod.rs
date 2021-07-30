@@ -119,8 +119,8 @@
 pub use self::common::{
     peek_info, Chunking, Commit, Compression, ContentId, Encryption, InstanceId, Object, ObjectId,
     ObjectStats, OpenMode, OpenOptions, OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoId,
-    RepoInfo, ResourceLimit, Restore, RestoreSavepoint, Savepoint, SwitchInstance, VersionId,
-    DEFAULT_INSTANCE,
+    RepoInfo, RepoStats, ResourceLimit, Restore, RestoreSavepoint, Savepoint, SwitchInstance,
+    VersionId, DEFAULT_INSTANCE,
 };
 
 /// An object store which maps keys to seekable binary blobs.
