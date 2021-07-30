@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#![cfg(all(feature = "encryption", feature = "compression"))]
+#![cfg(all(feature = "repo-file", feature = "encryption", feature = "compression"))]
 
 use std::collections::HashSet;
 use std::fs::{create_dir, File};

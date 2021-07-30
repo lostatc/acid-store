@@ -122,6 +122,7 @@ pub trait SwitchInstance {
     ///
     /// # Examples
     /// ```
+    /// # #[cfg(feature = "repo-value")] {
     /// use acid_store::uuid::Uuid;
     /// use acid_store::repo::{SwitchInstance, Commit, OpenMode, OpenOptions, key::KeyRepo, value::ValueRepo};
     /// use acid_store::store::MemoryConfig;
@@ -141,6 +142,7 @@ pub trait SwitchInstance {
     ///
     /// // Commit both instances of the repository.
     /// value_repo.commit().unwrap();
+    /// # }
     /// ```
     ///
     /// # Errors
