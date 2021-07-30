@@ -14,7 +14,12 @@
  * limitations under the License.
  */
 
-#![cfg(all(feature = "encryption", feature = "compression"))]
+#![cfg(all(
+    feature = "repo-value",
+    feature = "repo-version",
+    feature = "encryption",
+    feature = "compression"
+))]
 
 use acid_store::repo::key::KeyRepo;
 use acid_store::repo::value::ValueRepo;

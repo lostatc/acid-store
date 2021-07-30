@@ -14,7 +14,11 @@
  * limitations under the License.
  */
 
-#![cfg(all(feature = "encryption", feature = "compression"))]
+#![cfg(all(
+    feature = "repo-version",
+    feature = "encryption",
+    feature = "compression"
+))]
 
 use std::io::{Read, Write};
 use std::iter::FromIterator;
