@@ -28,8 +28,8 @@ use uuid::Uuid;
 use walkdir::WalkDir;
 
 use crate::repo::{
-    key::KeyRepo, state::StateRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo, ResourceLimit,
-    RestoreSavepoint, Savepoint, VersionId,
+    key::KeyRepo, state::StateRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo, RepoStats,
+    ResourceLimit, RestoreSavepoint, Savepoint, VersionId,
 };
 
 use super::entry::{Entry, EntryHandle, EntryType, HandleType};
@@ -958,6 +958,15 @@ where
     /// Return this repository's instance ID.
     pub fn instance(&self) -> InstanceId {
         self.0.instance()
+    }
+
+    /// Compute statistics about the repository.
+    ///
+    /// See [`KeyRepo::stats`] for details.
+    ///
+    /// [`KeyRepo::stats`]: crate::repo::key::KeyRepo::stats
+    pub fn stats(&self) -> RepoStats {
+        self.0.stats()
     }
 
     /// Return information about the repository.
