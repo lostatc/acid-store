@@ -17,4 +17,4 @@ jobs:
         run: cargo build --all-features
 
       - name: Run tests
-        run: cargo test --verbose --features 'file-metadata hash-algorithms encryption compression'
+        run: cargo test --verbose --features 'file-metadata hash-algorithms encryption compression repo-version repo-value repo-file repo-content'

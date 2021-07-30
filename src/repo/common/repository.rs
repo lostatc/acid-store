@@ -573,7 +573,7 @@ impl<K: Key> KeyRepo<K> {
     ) {
         let mut state = self.state.write().unwrap();
 
-        if let Encryption::None = state.metadata.config.encryption {
+        if state.metadata.config.encryption == Encryption::None {
             return;
         }
 
