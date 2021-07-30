@@ -33,7 +33,7 @@ time = { version = "0.1.38", optional = true }
 cdchunking = "1.0.0"
 
 # Async
-tokio = { version = "0.2", features = ["rt-core"] }
+tokio = { version = "0.2", features = ["rt-core"], optional = true }
 
 # SQL
 rusqlite = { version = "0.22.0", features = ["bundled"], optional = true }
@@ -106,7 +106,7 @@ default = []
 store-directory = []
 store-sqlite = ["rusqlite"]
 store-redis = ["redis"]
-store-s3 = ["rust-s3"]
+store-s3 = ["rust-s3", "tokio"]
 store-sftp = ["ssh2"]
 store-rclone = ["store-sftp", "rand"]
 file-metadata = ["nix", "filetime", "xattr", "users", "exacl"]
