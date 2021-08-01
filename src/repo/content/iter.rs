@@ -21,10 +21,10 @@ use crate::repo::state::ObjectKey;
 
 /// An iterator over the hashes of objects in a [`ContentRepo`].
 ///
-/// This value is created by [`ContentRepo::list`].
+/// This value is created by [`ContentRepo::hashes`].
 ///
 /// [`ContentRepo`]: crate::repo::content::ContentRepo
-/// [`ContentRepo::list`]: crate::repo::content::ContentRepo::list
+/// [`ContentRepo::hashes`]: crate::repo::content::ContentRepo::hashes
 #[derive(Debug, Clone)]
 pub struct Hashes<'a>(pub(super) hash_map::Keys<'a, Vec<u8>, ObjectKey>);
 

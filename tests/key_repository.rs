@@ -597,23 +597,99 @@ fn verify_valid_repository_is_valid(
 }
 
 #[rstest]
-fn repo_stats(repo_object: RepoObject, buffer: Vec<u8>) -> anyhow::Result<()> {
+fn actual_and_apparent_size_are_correct(
+    repo_object: RepoObject,
+    buffer: Vec<u8>,
+) -> anyhow::Result<()> {
     let RepoObject {
         mut object,
         mut repo,
-        key,
+        ..
     } = repo_object;
+
+    let hole_size = 100;
 
     object.write_all(&buffer)?;
     object.commit()?;
     drop(object);
 
-    repo.copy(&key, String::from("copy"));
+    let mut object = repo.insert(String::from("test"));
+    object.write_all(&buffer)?;
+    object.commit()?;
+    object.set_len(buffer.len() as u64 + hole_size)?;
+    drop(object);
 
     let stats = repo.stats();
 
-    assert_that!(stats.apparent_size()).is_equal_to(buffer.len() as u64 * 2);
-    assert_that!(stats.actual_size()).is_less_than(stats.apparent_size());
+    assert_that!(stats.apparent_size()).is_equal_to((buffer.len() as u64 * 2) + hole_size);
+    assert_that!(stats.actual_size()).is_equal_to(buffer.len() as u64);
+
+    Ok(())
+}
+
+#[rstest]
+fn actual_and_apparent_size_are_for_current_instance(
+    repo_object: RepoObject,
+    #[from(buffer)] current_buffer: Vec<u8>,
+    #[from(buffer)] other_buffer: Vec<u8>,
+) -> anyhow::Result<()> {
+    let RepoObject {
+        mut object, repo, ..
+    } = repo_object;
+
+    let instance_id = Uuid::new_v4().into();
+
+    object.write_all(&other_buffer)?;
+    object.commit()?;
+    drop(object);
+
+    let mut repo: KeyRepo<String> = repo.switch_instance(instance_id)?;
+
+    let mut object = repo.insert(String::from("test"));
+    object.write_all(&current_buffer)?;
+    object.commit()?;
+    drop(object);
+
+    let stats = repo.stats();
+
+    assert_that!(stats.apparent_size()).is_equal_to(current_buffer.len() as u64);
+    assert_that!(stats.actual_size()).is_equal_to(current_buffer.len() as u64);
+
+    Ok(())
+}
+
+#[rstest]
+fn repo_size_is_correct(
+    repo_object: RepoObject,
+    #[from(buffer)] first_buffer: Vec<u8>,
+    #[from(buffer)] second_buffer: Vec<u8>,
+) -> anyhow::Result<()> {
+    let RepoObject {
+        mut object, repo, ..
+    } = repo_object;
+
+    let instance_id = Uuid::new_v4().into();
+
+    object.write_all(&first_buffer)?;
+    object.commit()?;
+    drop(object);
+
+    let mut repo: KeyRepo<String> = repo.switch_instance(instance_id)?;
+
+    let mut object = repo.insert(String::from("test1"));
+    object.write_all(&first_buffer)?;
+    object.commit()?;
+    drop(object);
+
+    let mut object = repo.insert(String::from("test2"));
+    object.write_all(&second_buffer)?;
+    object.commit()?;
+    drop(object);
+
+    let stats = repo.stats();
+
+    assert_that!(stats.repo_size())
+        .is_equal_to(first_buffer.len() as u64 + second_buffer.len() as u64);
 
     Ok(())
 }
