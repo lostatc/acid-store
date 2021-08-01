@@ -698,6 +698,9 @@ where
     /// The `source` file's metadata will be copied to the `dest` entry according to the selected
     /// [`FileMetadata`] implementation.
     ///
+    /// If `source` is a sparse file, this method will attempt to efficiently copy any sparse holes
+    /// in the file to the [`Object`] in the repository, creating a sparse object.
+    ///
     /// # Errors
     /// - `Error::NotFound`: The parent of `dest` does not exist.
     /// - `Error::NotDirectory`: The parent of `dest` is not a directory entry.
@@ -710,6 +713,7 @@ where
     /// - `Error::Io`: An I/O error occurred.
     ///
     /// [`FileMetadata`]: crate::repo::file::FileMetadata
+    /// [`Object`]: crate::repo::Object
     pub fn archive(
         &mut self,
         source: impl AsRef<Path>,
@@ -756,8 +760,12 @@ where
     /// directory, this is the same as calling [`archive`]. If one of the files in the tree is not a
     /// regular file, directory, or supported special file, it is skipped.
     ///
-    /// The `source` file's metadata will be copied to the `dest` entry according to the selected
-    /// [`FileMetadata`] implementation.
+    /// The metadata of the files in the `source` tree will be copied to the `dest` entries
+    /// according to the selected [`FileMetadata`] implementation.
+    ///
+    /// If a file in the `source` tree is a sparse file, this method will attempt to efficiently
+    /// copy any sparse holes in the file to the [`Object`] in the repository, creating a sparse
+    /// object.
     ///
     /// # Errors
     /// - `Error::NotFound`: The parent of `dest` does not exist.
@@ -801,6 +809,9 @@ where
     /// The `source` entry's metadata will be copied to the `dest` file according to the selected
     /// [`FileMetadata`] implementation.
     ///
+    /// If `source` is a sparse object, this method will attempt to efficiently copy any sparse
+    /// holes in the [`Object`] to the file in the file system, creating a sparse file.
+    ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `source` path is empty.
     /// - `Error::NotFound`: The `source` entry does not exist.
@@ -811,6 +822,7 @@ where
     /// - `Error::Io`: An I/O error occurred.
     ///
     /// [`FileMetadata`]: crate::repo::file::FileMetadata
+    /// [`Object`]: crate::repo::Object
     pub fn extract(
         &self,
         source: impl AsRef<RelativePath>,
@@ -858,8 +870,12 @@ where
     /// If `source` is a directory, this also copies its descendants. If `source` is not a
     /// directory, this is the same as calling [`extract`].
     ///
-    /// The `source` entry's metadata will be copied to the `dest` file according to the selected
-    /// [`FileMetadata`] implementation.
+    /// The metadata of the entries in the `source` tree will be copied to the `dest` files
+    /// according to the selected [`FileMetadata`] implementation.
+    ///
+    /// If an entry in the `source` tree is a sparse object, this method will attempt to efficiently
+    /// copy any sparse holes in the [`Object`] to the file in the file system, creating a sparse
+    /// file.
     ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `source` path is empty.
@@ -872,6 +888,7 @@ where
     ///
     /// [`extract`]: crate::repo::file::FileRepo::extract
     /// [`FileMetadata`]: crate::repo::file::FileMetadata
+    /// [`Object`]: crate::repo::Object
     pub fn extract_tree(
         &self,
         source: impl AsRef<RelativePath>,

@@ -31,6 +31,8 @@ use super::state::{ObjectState, RepoState};
 /// An `Object` is a view of data in a repository. It implements `Read`, `Write`, and `Seek` for
 /// reading data from the repository and writing data to the repository.
 ///
+/// # Transactions
+///
 /// Writing to an `Object` is transactional—writing to an object via `Write` automatically begins a
 /// transaction, and calling [`commit`] completes the transaction and commits changes to the
 /// repository. No data is persisted to the repository until the transaction is committed. When an
@@ -45,6 +47,8 @@ use super::state::{ObjectState, RepoState};
 /// committed. You can use [`object_id`] to determine if two `Object` or [`ReadOnlyObject`]
 /// instances refer to the same underlying object.
 ///
+/// # Invalidation
+///
 /// An object can be invalidated, in which case methods of `Object` and [`ReadOnlyObject`] will
 /// return [`Error::InvalidObject`]. An object is invalidated when:
 ///
@@ -55,13 +59,30 @@ use super::state::{ObjectState, RepoState};
 ///
 /// You can use [`is_valid`] to determine whether an object has been invalidated.
 ///
-/// Because `Object` internally buffers data when reading, there's no need to use a buffered reader
-/// like `BufReader`.
+/// # Sparse Objects
+///
+/// An object can be sparse, meaning that it can have "holes" in it which contain no data and return
+/// null bytes when read from. Sparse holes are cheap to create and don't consume space in the
+/// backing data store. You can use [`set_len`] to create sparse holes in an object. You can use
+/// [`stats`] to query the locations of sparse holes in an object.
+///
+/// On some platforms, sparse files can be created by seeking past the end of the file and writing
+/// to it. However, objects don't support seeking beyond their size. To create a sparse hole in an
+/// object, you must first extend its size with [`set_len`].
+///
+/// # Data Integrity
 ///
 /// If encryption is enabled for the repository, data integrity is automatically verified as it is
 /// read and methods will return an [`Error::InvalidData`] if corrupt data is found. The [`verify`]
 /// method can be used to check the integrity of all the data in the object whether encryption is
 /// enabled or not.
+///
+/// # Buffering
+///
+/// Because `Object` internally buffers data when reading, there's no need to use a buffered reader
+/// like `BufReader`.
+///
+/// # Errors
 ///
 /// The methods of `Read`, `Write`, and `Seek` return `io::Result`, but the returned `io::Error` can
 /// be converted `Into` a [`crate::Error`] to be consistent with the rest of the library.
@@ -73,6 +94,8 @@ use super::state::{ObjectState, RepoState};
 /// [`object_id`]: crate::repo::Object::object_id
 /// [`Error::InvalidObject`]: crate::Error::InvalidObject
 /// [`is_valid`]: crate::repo::Object::is_valid
+/// [`set_len`]: crate::repo::Object::set_len
+/// [`stats`]: crate::repo::Object::stats
 /// [`Error::InvalidData`]: crate::Error::InvalidData
 /// [`verify`]: crate::repo::Object::verify
 #[derive(Debug)]
@@ -179,7 +202,7 @@ impl Object {
     ///
     /// If the given `size` is greater than the current size of the object, the object will be
     /// extended to `size` and the intermediate space will be filled with null bytes. This creates a
-    /// sparse object, so no additional space is used in the backing data store.
+    /// sparse hole in the object, so no additional space is used in the backing data store.
     ///
     /// If `size` is less than the current size of the object and the seek position is past the
     /// point which the object is truncated to, it is moved to the new end of the object.
