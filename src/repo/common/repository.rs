@@ -608,20 +608,43 @@ impl<K: Key> KeyRepo<K> {
     /// The returned `RepoStats` represents the contents of the repository at the time this method
     /// was called. It is not updated when the repository is modified.
     pub fn stats(&self) -> RepoStats {
+        let mut apparent_size = 0u64;
+        let mut actual_size = 0u64;
+        let mut repo_size = 0u64;
+
+        // The set of object handle IDs of objects in the current instance.
+        let mut current_instance_handles = HashSet::new();
+
+        // The set of object handle IDs of objects which store metadata and shouldn't count towards
+        // the `repo_size`.
+        let metadata_handles = self
+            .instances
+            .values()
+            .map(|info| info.objects.id)
+            .collect::<HashSet<_>>();
+
+        for handle_lock in self.objects.values() {
+            let handle = handle_lock.read().unwrap();
+            apparent_size += handle.size();
+            current_instance_handles.insert(handle.id);
+        }
+
+        let state = self.state.read().unwrap();
+        for (chunk, info) in state.chunks.iter() {
+            // Only count object inserted by the user in the `repo_size`.
+            if !info.references.is_subset(&metadata_handles) {
+                repo_size += chunk.size as u64;
+            }
+
+            if !info.references.is_disjoint(&current_instance_handles) {
+                actual_size += chunk.size as u64;
+            }
+        }
+
         RepoStats {
-            apparent_size: self
-                .objects
-                .values()
-                .map(|handle| handle.read().unwrap().size())
-                .sum(),
-            actual_size: self
-                .state
-                .read()
-                .unwrap()
-                .chunks
-                .keys()
-                .map(|chunk| chunk.size as u64)
-                .sum(),
+            apparent_size,
+            actual_size,
+            repo_size,
         }
     }
 

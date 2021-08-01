@@ -137,27 +137,40 @@ impl RepoInfo {
 pub struct RepoStats {
     pub(super) apparent_size: u64,
     pub(super) actual_size: u64,
+    pub(super) repo_size: u64,
 }
 
 impl RepoStats {
-    /// The repository's apparent size.
+    /// The apparent size of the current instance.
     ///
-    /// This is the sum of the apparent sizes of all the objects in the repository, which includes
-    /// any sparse holes in those objects.
+    /// This is the sum of the apparent sizes of all the objects in the current instance of the
+    /// repository, which includes any sparse holes in those objects.
     pub fn apparent_size(&self) -> u64 {
         self.apparent_size
     }
 
-    /// The repository's actual size.
+    /// The actual size of the current instance.
     ///
-    /// This is the actual number of bytes stored in objects in the repository, which may be smaller
-    /// than the [`apparent_size`] due to sparse holes in objects and deduplication.
-    ///
-    /// This value is not necessarily the same as the number of bytes stored in the backing data
-    /// store, which may be larger or smaller due to compression and encryption.
+    /// This is the actual number of bytes stored in objects in the current instance of the
+    /// repository, which may be smaller than the [`apparent_size`] due to sparse holes in objects
+    /// and deduplication between objects in the current instance.
     ///
     /// [`apparent_size`]: crate::repo::RepoStats::apparent_size
     pub fn actual_size(&self) -> u64 {
         self.actual_size
+    }
+
+    /// The actual size of the repository.
+    ///
+    /// This is the actual number of bytes stored in objects in all instances of the repository,
+    /// which may be smaller than the sum of the [`actual_size`] of each instance due to
+    /// deduplication between objects in different instances.
+    ///
+    /// This value is not necessarily the same as the number of bytes stored in the backing data
+    /// store, which may be larger or smaller due to compression, encryption, and packing.
+    ///
+    /// [`actual_size`]: crate::repo::RepoStats::actual_size
+    pub fn repo_size(&self) -> u64 {
+        self.repo_size
     }
 }
