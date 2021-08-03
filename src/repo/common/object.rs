@@ -108,19 +108,12 @@ pub struct Object {
 
     /// The state for the object itself.
     object_state: ObjectState,
-
-    /// The `ObjectId` which uniquely identifies this object.
-    ///
-    /// This value is passed in separately so that `object_id` can return a value even if there is a
-    /// transaction in progress or the object has been invalidated.
-    object_id: ObjectId,
 }
 
 impl Object {
     pub(super) fn new(
         repo_state: &Arc<RwLock<RepoState>>,
         handle: &Arc<RwLock<ObjectHandle>>,
-        object_id: ObjectId,
     ) -> Self {
         let metadata = &repo_state.read().unwrap().metadata;
         let object_state = ObjectState::new(metadata.config.chunking.to_chunker());
@@ -128,7 +121,6 @@ impl Object {
             repo_state: Arc::downgrade(repo_state),
             handle: Arc::downgrade(handle),
             object_state,
-            object_id,
         }
     }
 
@@ -145,8 +137,14 @@ impl Object {
     }
 
     /// Return an `ObjectId` representing the identity of the object.
-    pub fn object_id(&self) -> ObjectId {
-        self.object_id
+    ///
+    /// # Errors
+    /// - `Error::InvalidObject`: The object has been invalidated.
+    pub fn object_id(&self) -> crate::Result<ObjectId> {
+        Ok(ObjectStore::new(&self.repo_state, &self.handle)?
+            .info_guard(&self.object_state)
+            .info()
+            .object_id())
     }
 
     /// Return a `ContentId` representing the contents of the object.
@@ -353,7 +351,7 @@ impl ReadOnlyObject {
     }
 
     /// Return an `ObjectId` representing the identity of the object.
-    pub fn object_id(&self) -> ObjectId {
+    pub fn object_id(&self) -> crate::Result<ObjectId> {
         self.0.object_id()
     }
 

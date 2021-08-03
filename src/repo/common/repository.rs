@@ -32,7 +32,7 @@ use super::chunk_store::{
 };
 use super::commit::Commit;
 use super::encryption::{Encryption, EncryptionKey, KeySalt, ResourceLimit};
-use super::handle::{chunk_hash, HandleId, HandleIdTable, ObjectHandle, ObjectId};
+use super::handle::{chunk_hash, HandleIdTable, ObjectHandle};
 use super::key::{Key, Keys};
 use super::metadata::{Header, RepoInfo, RepoStats};
 use super::object::Object;
@@ -128,13 +128,6 @@ impl<K: Key> OpenRepo for KeyRepo<K> {
 }
 
 impl<K: Key> KeyRepo<K> {
-    /// Return the `object_id` for the object with the given `handle_id`.
-    fn object_id(&self, handle_id: HandleId) -> ObjectId {
-        let state = self.state.read().unwrap();
-        let repo_id = state.metadata.id;
-        ObjectId::new(repo_id, self.instance_id, handle_id)
-    }
-
     /// Return whether there is an object with the given `key` in this repository.
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
@@ -150,7 +143,6 @@ impl<K: Key> KeyRepo<K> {
     pub fn insert(&mut self, key: K) -> Object {
         self.remove(&key);
         let handle_id = self.handle_table.next();
-        let object_id = self.object_id(handle_id);
         let handle = ObjectHandle {
             id: handle_id,
             extents: Vec::new(),
@@ -160,7 +152,7 @@ impl<K: Key> KeyRepo<K> {
             .objects
             .entry(key)
             .or_insert_with(|| Arc::new(RwLock::new(handle)));
-        Object::new(&self.state, handle, object_id)
+        Object::new(&self.state, handle)
     }
 
     /// Remove the given object `handle` from the repository.
@@ -210,8 +202,7 @@ impl<K: Key> KeyRepo<K> {
         Q: Eq + Hash + ?Sized,
     {
         let handle = self.objects.get(key)?;
-        let handle_id = handle.read().unwrap().id;
-        Some(Object::new(&self.state, handle, self.object_id(handle_id)))
+        Some(Object::new(&self.state, handle))
     }
 
     /// Return an iterator over all the keys of objects in this repository.

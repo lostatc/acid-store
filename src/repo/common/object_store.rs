@@ -25,6 +25,7 @@ use serde::Serialize;
 use super::chunk_store::{ReadChunk, StoreReader, StoreWriter, WriteChunk};
 use super::handle::{chunk_hash, ContentId, Extent, ObjectHandle, ObjectStats};
 use super::state::{ExtentLocation, ObjectState, RepoState, SeekPosition};
+use crate::repo::ObjectId;
 
 pub struct ObjectStore {
     repo_state: Arc<RwLock<RepoState>>,
@@ -145,6 +146,11 @@ impl<'a> ObjectInfo<'a> {
             return Err(crate::Error::TransactionInProgress);
         }
         Ok(self.handle.size())
+    }
+
+    /// Return an `ObjectId` representing the identity of the object.
+    pub fn object_id(&self) -> ObjectId {
+        ObjectId::new(self.repo_state.metadata.id, self.handle.id)
     }
 
     /// Return a `ContentId` representing the contents of the object.
