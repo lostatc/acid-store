@@ -125,9 +125,9 @@ impl ObjectHandle {
 /// let apple2 = repo.object("Apple").unwrap();
 /// let orange = repo.insert(String::from("Orange"));
 ///
-/// assert_eq!(apple1.object_id(), apple2.object_id());
-/// assert_ne!(apple1.object_id(), orange.object_id());
-/// assert_ne!(apple2.object_id(), orange.object_id());
+/// assert_eq!(apple1.object_id().unwrap(), apple2.object_id().unwrap());
+/// assert_ne!(apple1.object_id().unwrap(), orange.object_id().unwrap());
+/// assert_ne!(apple2.object_id().unwrap(), orange.object_id().unwrap());
 /// ```
 ///
 /// [`Object`]: crate::repo::Object
@@ -156,10 +156,16 @@ impl ObjectId {
 /// content IDs from different repositories are never equal. To compare data between repositories,
 /// you should use [`compare_contents`].
 ///
+/// For the purpose of calculating a content ID, a sparse hole in an object is not equal to a range
+/// of null bytes. Writing null bytes to an object with `Write` will produce an object with a
+/// different content ID than creating a sparse hole with [`Object::set_len`]. To compare the
+/// contents of objects without making this distinction, use [`compare_contents`].
+///
 /// `ContentId` is opaque, but it can be serialized and deserialized. The value of a `ContentId` is
 /// stable, meaning that they can be compared across invocations of the library.
 ///
 /// [`compare_contents`]: crate::repo::ContentId::compare_contents
+/// [`Object::set_len`]: crate::repo::Object::set_len
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Serialize, Deserialize)]
 pub struct ContentId {
     // We can't compare content IDs from different repositories because those repositories may have
@@ -187,9 +193,8 @@ impl ContentId {
     /// data store. This is much faster than calculating a checksum of the object, especially if
     /// reading from the data store would be prohibitively slow.
     ///
-    /// This method compares this content ID with `other` in chunks, and will fail early if any
-    /// chunk does not match. This means that it may not be necessary to read `other` in its
-    /// entirety to determine that the contents are different.
+    /// This method may not need to read `other` in its entirety to determine that the contents are
+    /// different.
     ///
     /// Because `other` only implements `Read`, this cannot compare the contents by size. If you
     /// need to compare this content ID with a file or some other source of data with a known size,
@@ -228,13 +233,19 @@ impl ContentId {
                 }
                 Extent::Hole { size } => {
                     let mut bytes_remaining = *size;
+                    let mut max_read_size;
+                    let mut bytes_read;
 
                     while bytes_remaining > 0 {
                         // We put an upper bound on the number of bytes we can read because holes
                         // can be quite large.
-                        let max_read_size = min(bytes_remaining as usize, HOLE_BUFFER);
+                        max_read_size = min(bytes_remaining as usize, HOLE_BUFFER);
 
-                        let bytes_read = other.read(&mut buffer[..max_read_size])?;
+                        bytes_read = other.read(&mut buffer[..max_read_size])?;
+
+                        if bytes_read == 0 {
+                            return Ok(false);
+                        }
 
                         if buffer[..bytes_read].iter().any(|&byte| byte != 0) {
                             return Ok(false);

@@ -429,6 +429,40 @@ fn compare_content_ids(
     Ok(())
 }
 
+#[rstest]
+fn content_ids_treat_holes_specially(
+    repo_object: RepoObject,
+    buffer: Vec<u8>,
+) -> anyhow::Result<()> {
+    let mut repo = repo_object.repo;
+    let mut hole_object = repo_object.object;
+
+    let hole_size = 200usize;
+
+    hole_object.write_all(&buffer)?;
+    hole_object.commit()?;
+    hole_object.set_len((buffer.len() + hole_size) as u64)?;
+    let hole_content_id = hole_object.content_id()?;
+    hole_object.seek(SeekFrom::Start(0))?;
+
+    let mut null_bytes_object = repo.insert(String::from("test"));
+    null_bytes_object.write_all(&buffer)?;
+    null_bytes_object.write_all(&vec![0u8; hole_size])?;
+    null_bytes_object.commit()?;
+    let null_bytes_content_id = null_bytes_object.content_id()?;
+    null_bytes_object.seek(SeekFrom::Start(0))?;
+
+    assert_that!(hole_content_id).is_not_equal_to(&null_bytes_content_id);
+    assert_that!(null_bytes_content_id.compare_contents(hole_object))
+        .is_ok()
+        .is_true();
+    assert_that!(hole_content_id.compare_contents(null_bytes_object))
+        .is_ok()
+        .is_true();
+
+    Ok(())
+}
+
 #[apply(object_config)]
 fn compare_contents_with_are_equal(
     #[case] repo_object: RepoObject,
