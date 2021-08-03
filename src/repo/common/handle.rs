@@ -21,7 +21,6 @@ use std::ops::Range;
 use serde::{Deserialize, Serialize};
 
 use super::metadata::RepoId;
-use super::state::InstanceId;
 
 id_table! {
     /// An ID which uniquely identifies an object in a repository instance.
@@ -136,18 +135,16 @@ impl ObjectHandle {
 /// [`ContentId`]: crate::repo::ContentId
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ObjectId {
+    // We need to store the repository ID because object handle IDs are only unique within the same
+    // repository. However, they are unique among all instances of a repository, so we do not need
+    // to store the instance ID.
     repo_id: RepoId,
-    instance_id: InstanceId,
     handle_id: HandleId,
 }
 
 impl ObjectId {
-    pub(super) fn new(repo_id: RepoId, instance_id: InstanceId, handle_id: HandleId) -> Self {
-        Self {
-            repo_id,
-            instance_id,
-            handle_id,
-        }
+    pub(super) fn new(repo_id: RepoId, handle_id: HandleId) -> Self {
+        Self { repo_id, handle_id }
     }
 }
 
