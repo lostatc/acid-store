@@ -27,7 +27,7 @@ uuid_type! {
 ///
 /// A `DataStore` persistently stores blocks of data uniquely identified by UUIDs. Data stores are
 /// used as the storage backend for repositories in the [`crate::repo`] module.
-pub trait DataStore {
+pub trait DataStore: Send {
     /// Write the given `data` as a new block with the given `id`.
     ///
     /// If this method returns `Ok`, the block is stored persistently until it is removed with

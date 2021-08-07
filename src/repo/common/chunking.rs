@@ -102,7 +102,7 @@ impl ChunkerImpl for FixedChunker {
 
 /// A chunker which partitions data written to it into chunks.
 pub struct IncrementalChunker {
-    chunker: Box<dyn ChunkerImpl>,
+    chunker: Box<dyn ChunkerImpl + Send + Sync>,
     buffer: Vec<u8>,
     chunks: Vec<Vec<u8>>,
 }
