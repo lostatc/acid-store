@@ -21,7 +21,7 @@ use super::compression::Compression;
 use super::encryption::{Encryption, ResourceLimit};
 use super::packing::Packing;
 
-/// The configuration for an repository.
+/// The configuration for a repository.
 ///
 /// This type is used to configure a repository when it is created. This type implements `Default`
 /// to provide a reasonable default configuration.

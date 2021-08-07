@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+use static_assertions::assert_obj_safe;
+
 /// A repository which supports committing and rolling back changes.
 pub trait Commit {
     /// Commit changes which have been made to the repository.
@@ -76,3 +78,5 @@ pub trait Commit {
     /// - `Error::Io`: An I/O error occurred.
     fn clean(&mut self) -> crate::Result<()>;
 }
+
+assert_obj_safe!(Commit);

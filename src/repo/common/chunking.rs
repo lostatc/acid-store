@@ -60,7 +60,7 @@ impl Chunking {
     pub const ZPAQ: Self = Self::Zpaq { bits: 18 };
 
     /// Return a chunker for this chunking method.
-    pub(super) fn to_chunker(&self) -> Box<dyn ChunkerImpl> {
+    pub(super) fn to_chunker(&self) -> Box<dyn ChunkerImpl + Send + Sync> {
         match self {
             Chunking::Fixed { size } => Box::new(FixedChunker::new(*size as usize)),
             Chunking::Zpaq { bits } => Box::new(ZPAQ::new(*bits as usize)),
@@ -118,7 +118,7 @@ impl Debug for IncrementalChunker {
 
 impl IncrementalChunker {
     /// Return a new instance which uses the given `chunker` to determine chunk boundaries.
-    pub fn new(chunker: Box<dyn ChunkerImpl>) -> Self {
+    pub fn new(chunker: Box<dyn ChunkerImpl + Send + Sync>) -> Self {
         Self {
             chunker,
             buffer: Vec::new(),

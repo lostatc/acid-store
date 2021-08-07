@@ -17,6 +17,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock, Weak};
 
+use static_assertions::assert_impl_all;
 use uuid::Uuid;
 
 use super::handle::ObjectHandle;
@@ -43,6 +44,8 @@ pub struct Savepoint {
     /// dropped, that means the savepoint has been invalidated.
     pub(super) transaction_id: Weak<Uuid>,
 }
+
+assert_impl_all!(Savepoint: Send, Sync);
 
 impl Savepoint {
     /// Return whether this savepoint is valid.
