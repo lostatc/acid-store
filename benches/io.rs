@@ -68,7 +68,7 @@ static TEST_SPECS: Lazy<Vec<TestSpec>> = Lazy::new(|| {
         TestSpec {
             config: {
                 let mut config = RepoConfig::default();
-                config.chunking = Chunking::fixed();
+                config.chunking = Chunking::FIXED;
                 config.packing = Packing::None;
                 config.encryption = Encryption::None;
                 config
@@ -78,7 +78,7 @@ static TEST_SPECS: Lazy<Vec<TestSpec>> = Lazy::new(|| {
         TestSpec {
             config: {
                 let mut config = RepoConfig::default();
-                config.chunking = Chunking::zpaq();
+                config.chunking = Chunking::ZPAQ;
                 config.packing = Packing::None;
                 config.encryption = Encryption::None;
                 config
@@ -88,8 +88,8 @@ static TEST_SPECS: Lazy<Vec<TestSpec>> = Lazy::new(|| {
         TestSpec {
             config: {
                 let mut config = RepoConfig::default();
-                config.chunking = Chunking::fixed();
-                config.packing = Packing::fixed();
+                config.chunking = Chunking::FIXED;
+                config.packing = Packing::FIXED;
                 config.encryption = Encryption::XChaCha20Poly1305;
                 config
             },
@@ -100,8 +100,8 @@ static TEST_SPECS: Lazy<Vec<TestSpec>> = Lazy::new(|| {
         TestSpec {
             config: {
                 let mut config = RepoConfig::default();
-                config.chunking = Chunking::zpaq();
-                config.packing = Packing::fixed();
+                config.chunking = Chunking::ZPAQ;
+                config.packing = Packing::FIXED;
                 config.encryption = Encryption::XChaCha20Poly1305;
                 config
             },
