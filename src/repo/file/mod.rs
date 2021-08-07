@@ -80,6 +80,8 @@
 //! [`NoMetadata`]: crate::repo::file::NoMetadata
 //! [`NoSpecial`]: crate::repo::file::NoSpecial
 
+pub use relative_path;
+
 pub use relative_path::{RelativePath, RelativePathBuf};
 
 #[cfg(all(unix, feature = "file-metadata"))]
