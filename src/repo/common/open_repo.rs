@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+use static_assertions::assert_obj_safe;
+
 use super::key::Key;
 use super::repository::KeyRepo;
 use super::state::InstanceId;
@@ -161,6 +163,8 @@ pub trait SwitchInstance {
         R: OpenRepo,
         Self: Sized;
 }
+
+assert_obj_safe!(SwitchInstance);
 
 impl<T: OpenRepo> SwitchInstance for T {
     fn switch_instance<R>(self, id: InstanceId) -> crate::Result<R>

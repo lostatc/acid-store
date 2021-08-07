@@ -23,6 +23,7 @@ use std::sync::{Arc, RwLock};
 use hex_literal::hex;
 use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
+use static_assertions::assert_impl_all;
 use uuid::Uuid;
 
 use crate::store::{BlockId, DataStore};
@@ -100,6 +101,8 @@ pub struct KeyRepo<K: Key> {
     /// savepoints.
     pub(super) transaction_id: Arc<Uuid>,
 }
+
+assert_impl_all!(KeyRepo<()>: Send, Sync);
 
 impl<K: Key> OpenRepo for KeyRepo<K> {
     type Key = K;

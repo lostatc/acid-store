@@ -21,6 +21,7 @@ use std::sync::{Arc, RwLock, Weak};
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use static_assertions::assert_impl_all;
 
 use super::handle::{ContentId, ObjectHandle, ObjectId, ObjectStats};
 use super::object_store::ObjectStore;
@@ -109,6 +110,8 @@ pub struct Object {
     /// The state for the object itself.
     object_state: ObjectState,
 }
+
+assert_impl_all!(Object: Send, Sync);
 
 impl Object {
     pub(super) fn new(
@@ -339,6 +342,8 @@ impl Write for Object {
 /// [`Object`]: crate::repo::Object
 #[derive(Debug)]
 pub struct ReadOnlyObject(Object);
+
+assert_impl_all!(ReadOnlyObject: Send, Sync);
 
 impl ReadOnlyObject {
     /// Return the size of the object in bytes.

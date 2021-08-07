@@ -19,6 +19,7 @@ use std::collections::HashSet;
 use hex_literal::hex;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use static_assertions::assert_impl_all;
 use uuid::Uuid;
 
 use super::info::{KeyId, KeyIdTable, ObjectKey, RepoKey, RepoState, StateRestore};
@@ -40,6 +41,8 @@ where
     id_table: KeyIdTable,
     state: State,
 }
+
+assert_impl_all!(StateRepo<()>: Send, Sync);
 
 impl<State> OpenRepo for StateRepo<State>
 where

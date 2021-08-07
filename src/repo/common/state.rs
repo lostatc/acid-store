@@ -203,7 +203,7 @@ pub struct ObjectState {
 
 impl ObjectState {
     /// Create a new empty state for a repository with a given chunk size.
-    pub fn new(chunker: Box<dyn ChunkerImpl>) -> Self {
+    pub fn new(chunker: Box<dyn ChunkerImpl + Send + Sync>) -> Self {
         Self {
             chunker: IncrementalChunker::new(chunker),
             new_chunks: Vec::new(),

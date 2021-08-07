@@ -16,6 +16,8 @@
 
 use std::fmt::{self, Debug, Formatter};
 
+use static_assertions::assert_obj_safe;
+
 uuid_type! {
     /// A UUID which uniquely identifies a block of data in a [`DataStore`].
     ///
@@ -59,6 +61,8 @@ pub trait DataStore: Send {
     /// Return a list of IDs of blocks in the store.
     fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>>;
 }
+
+assert_obj_safe!(DataStore);
 
 impl DataStore for Box<dyn DataStore> {
     fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
