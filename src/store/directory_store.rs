@@ -20,18 +20,48 @@ use std::fs::{create_dir_all, read_dir, remove_file, rename, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
+use anyhow::anyhow;
 use uuid::Uuid;
 
-use super::data_store::{BlockId, DataStore};
+use super::data_store::{BlockId, BlockKey, BlockType, DataStore};
 use super::open_store::OpenStore;
 
 /// A UUID which acts as the version ID of the directory store format.
-const CURRENT_VERSION: &str = "2891c3da-297e-11ea-a7c9-1b8f8be4fc9b";
+const CURRENT_VERSION: &str = "9ab66f8a-f883-11eb-b994-734187b3c515";
 
-/// The names of files in the data store.
-const BLOCKS_DIRECTORY: &str = "blocks";
+// The names of top-level files in the data store.
+const STORE_DIRECTORY: &str = "store";
 const STAGING_DIRECTORY: &str = "stage";
 const VERSION_FILE: &str = "version";
+
+fn type_path(kind: BlockType) -> PathBuf {
+    match kind {
+        BlockType::Data => [STORE_DIRECTORY, "data"].iter().collect(),
+        BlockType::Lock => [STORE_DIRECTORY, "locks"].iter().collect(),
+        BlockType::Header => [STORE_DIRECTORY, "headers"].iter().collect(),
+    }
+}
+
+fn block_path(key: BlockKey) -> PathBuf {
+    match key {
+        BlockKey::Data(id) => {
+            let uuid_str = id.as_ref().to_hyphenated().to_string();
+            type_path(BlockType::Data)
+                .join(&uuid_str[..2])
+                .join(&uuid_str)
+        }
+        BlockKey::Lock(id) => {
+            let uuid_str = id.as_ref().to_hyphenated().to_string();
+            type_path(BlockType::Lock).join(&uuid_str)
+        }
+        BlockKey::Header(id) => {
+            let uuid_str = id.as_ref().to_hyphenated().to_string();
+            type_path(BlockType::Header).join(&uuid_str)
+        }
+        BlockKey::Super => [STORE_DIRECTORY, "super"].iter().collect(),
+        BlockKey::Version => [STORE_DIRECTORY, "version"].iter().collect(),
+    }
+}
 
 /// The configuration for opening a [`DirectoryStore`].
 ///
@@ -50,7 +80,7 @@ impl OpenStore for DirectoryConfig {
         // Create the blocks directory in the data store.
         create_dir_all(&self.path)
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        create_dir_all(self.path.join(BLOCKS_DIRECTORY))
+        create_dir_all(self.path.join(STORE_DIRECTORY))
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
         create_dir_all(self.path.join(STAGING_DIRECTORY))
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
@@ -94,25 +124,22 @@ pub struct DirectoryStore {
 }
 
 impl DirectoryStore {
-    /// Return the path where a block with the given `id` will be stored.
-    fn block_path(&self, id: BlockId) -> PathBuf {
-        let mut buffer = Uuid::encode_buffer();
-        let hex = id.as_ref().to_simple().encode_lower(&mut buffer);
-        self.path.join(BLOCKS_DIRECTORY).join(&hex[..2]).join(hex)
+    /// Return the path where a block with the given `key` will be stored.
+    fn block_path(&self, key: BlockKey) -> PathBuf {
+        self.path.join(block_path(key))
     }
 
-    /// Return the path where a block with the given `id` will be staged.
-    fn staging_path(&self, id: BlockId) -> PathBuf {
-        let mut buffer = Uuid::encode_buffer();
-        let hex = id.as_ref().to_simple().encode_lower(&mut buffer);
-        self.path.join(STAGING_DIRECTORY).join(hex)
+    /// Return a new staging path.
+    fn staging_path(&self) -> PathBuf {
+        let uuid_str = Uuid::new_v4().to_hyphenated().to_string();
+        self.path.join(STAGING_DIRECTORY).join(&uuid_str)
     }
 }
 
 impl DataStore for DirectoryStore {
-    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
-        let staging_path = self.staging_path(id);
-        let block_path = self.block_path(id);
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+        let staging_path = self.staging_path();
+        let block_path = self.block_path(key);
 
         // If this is the first block its sub-directory, the directory needs to be created.
         create_dir_all(&block_path.parent().unwrap())?;
@@ -130,8 +157,8 @@ impl DataStore for DirectoryStore {
         Ok(())
     }
 
-    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
-        let block_path = self.block_path(id);
+    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
+        let block_path = self.block_path(key);
 
         if block_path.exists() {
             let mut file = File::open(block_path)?;
@@ -143,26 +170,47 @@ impl DataStore for DirectoryStore {
         }
     }
 
-    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
-        let block_path = self.block_path(id);
+    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+        let block_path = self.block_path(key);
 
         if block_path.exists() {
-            remove_file(self.block_path(id))?;
+            remove_file(self.block_path(key))?;
         }
 
         Ok(())
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
+    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
         let mut block_ids = Vec::new();
 
-        for directory_entry in read_dir(self.path.join(BLOCKS_DIRECTORY))? {
-            for block_entry in read_dir(directory_entry?.path())? {
-                let file_name = block_entry?.file_name();
-                let id = Uuid::parse_str(file_name.to_str().expect("Block file name is invalid."))
-                    .expect("Block file name is invalid.")
+        match kind {
+            BlockType::Data => {
+                for directory_entry in read_dir(self.path.join(type_path(kind)))? {
+                    for block_entry in read_dir(directory_entry?.path())? {
+                        let file_name = block_entry?.file_name();
+                        let id = Uuid::parse_str(
+                            file_name
+                                .to_str()
+                                .ok_or_else(|| anyhow!("Block file name is invalid."))?,
+                        )
+                        .map_err(|_| anyhow!("Block file name is invalid."))?
+                        .into();
+                        block_ids.push(id);
+                    }
+                }
+            }
+            BlockType::Lock | BlockType::Header => {
+                for block_entry in read_dir(self.path.join(type_path(kind)))? {
+                    let file_name = block_entry?.file_name();
+                    let id = Uuid::parse_str(
+                        file_name
+                            .to_str()
+                            .ok_or_else(|| anyhow!("Block file name is invalid."))?,
+                    )
+                    .map_err(|_| anyhow!("Block file name is invalid."))?
                     .into();
-                block_ids.push(id);
+                    block_ids.push(id);
+                }
             }
         }
 
