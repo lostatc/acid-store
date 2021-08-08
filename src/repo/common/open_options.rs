@@ -36,6 +36,7 @@ use super::open_repo::OpenRepo;
 use super::packing::Packing;
 use super::repository::{KeyRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
 use super::state::{InstanceId, RepoState};
+use std::fmt::{Debug, Formatter};
 
 /// The default repository instance ID.
 ///
@@ -118,12 +119,13 @@ pub enum OpenMode {
 /// [`open`]: crate::repo::OpenOptions::open
 /// [`OpenStore`]: crate::store::OpenStore
 /// [`OpenRepo`]: crate::repo::OpenRepo
-#[derive(Debug)]
 pub struct OpenOptions {
     config: RepoConfig,
     mode: OpenMode,
     password: Option<Vec<u8>>,
     instance: InstanceId,
+    lock_id: Vec<u8>,
+    lock_handler: Box<dyn FnOnce(&[u8]) -> bool>,
 }
 
 impl Default for OpenOptions {
@@ -140,6 +142,8 @@ impl OpenOptions {
             mode: OpenMode::Open,
             password: None,
             instance: DEFAULT_INSTANCE,
+            lock_id: Vec::new(),
+            lock_handler: Box::new(|_| false),
         }
     }
 
@@ -231,6 +235,76 @@ impl OpenOptions {
     /// This is required when encryption is enabled for the repository.
     pub fn password(&mut self, password: &[u8]) -> &mut Self {
         self.password = Some(password.to_vec());
+        self
+    }
+
+    /// Configure the behavior of repository locking.
+    ///
+    /// This method accepts a lock `id` which is associated with the lock on the repository once a
+    /// lock is acquired. If a lock ID is not specified, the ID of the acquired lock will be empty.
+    /// If encryption is enabled for the repository, the lock ID is encrypted.
+    ///
+    /// This method also accepts a `handler` which is invoked if a lock is already held on the
+    /// repository. This lock handler is passed the ID of the existing lock. If `handler`
+    /// returns `true`, the existing lock will be removed and the repository will be opened. If
+    /// `handler` returns `false`, the existing lock will be respected and opening the repository
+    /// will fail. If a lock handler is not specified, an existing lock will always be respected.
+    ///
+    /// Opening a repository can still fail due to existing locks even if `handler` returns `true`
+    /// or is never called.
+    ///
+    /// **Removing an existing lock is potentially dangerous, as concurrent access to a repository
+    /// from multiple processes or machines can cause data loss.**
+    ///
+    /// # Examples
+    ///
+    /// Always ignore any existing locks on the repository.
+    ///
+    /// ```
+    /// # use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo};
+    /// # use acid_store::store::MemoryConfig;
+    /// let mut repo: KeyRepo<String> = OpenOptions::new()
+    ///     .mode(OpenMode::Create)
+    ///     .lock(&[], |_| true)
+    ///     .open(&MemoryConfig::new())
+    ///     .unwrap();
+    /// ```
+    ///
+    /// Respect an existing lock if it was acquired less than 30 minutes ago and remove it if it was
+    /// acquired more than 30 minutes ago.
+    ///
+    /// ```
+    /// # use std::convert::TryInto;
+    /// # use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    /// # use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo};
+    /// # use acid_store::store::MemoryConfig;
+    /// // The amount of time from when a lock is acquired before it expires.
+    /// const LOCK_TTL: Duration = Duration::from_secs(60 * 30);
+    ///
+    /// // Set the lock ID to the time the repository was opened.
+    /// let lock_id = SystemTime::now()
+    ///     .duration_since(UNIX_EPOCH)
+    ///     .unwrap()
+    ///     .as_secs()
+    ///     .to_le_bytes()
+    ///     .to_vec();
+    ///
+    /// // Set a lock handler which checks if the existing lock is expired.
+    /// let mut repo: KeyRepo<String> = OpenOptions::new()
+    ///     .mode(OpenMode::Create)
+    ///     .lock(&lock_id, |held_id| {
+    ///         let time_acquired = UNIX_EPOCH
+    ///             + Duration::from_secs(u64::from_le_bytes(held_id.try_into().unwrap()));
+    ///         let time_expired = time_acquired + LOCK_TTL;
+    ///         SystemTime::now() > time_expired
+    ///     })
+    ///     .open(&MemoryConfig::new())
+    ///     .unwrap();
+    ///
+    /// ```
+    pub fn lock(&mut self, id: &[u8], handler: impl FnOnce(&[u8]) -> bool + 'static) -> &mut Self {
+        self.lock_id = id.to_vec();
+        self.lock_handler = Box::new(handler);
         self
     }
 
@@ -525,5 +599,16 @@ impl OpenOptions {
             }
             OpenMode::CreateNew => self.create_repo(store),
         }
+    }
+}
+
+impl Debug for OpenOptions {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenOptions")
+            .field("config", &self.config)
+            .field("mode", &self.mode)
+            .field("password", &self.password)
+            .field("instance", &self.instance)
+            .finish_non_exhaustive()
     }
 }
