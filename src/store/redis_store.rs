@@ -22,11 +22,32 @@ use std::path::PathBuf;
 use redis::{Client, Commands, Connection, ConnectionAddr, ConnectionInfo, IntoConnectionInfo};
 use uuid::Uuid;
 
-use super::data_store::{BlockId, DataStore};
+use super::data_store::{BlockId, BlockKey, BlockType, DataStore};
 use super::open_store::OpenStore;
 
 /// A UUID which acts as the version ID of the store format.
-const CURRENT_VERSION: &str = "b733bd82-4206-11ea-a3dc-7354076bdaf9";
+const CURRENT_VERSION: &str = "e64b73f0-f90f-11eb-bb25-7348383f5353";
+
+const DATA_KEY: &str = "store:data";
+const LOCKS_KEY: &str = "store:lock";
+const HEADERS_KEY: &str = "store:header";
+const SUPER_KEY: &str = "store:super";
+const REPO_VERSION_KEY: &str = "store:version";
+const STORE_VERSION_KEY: &str = "version";
+
+fn block_key(key: BlockKey) -> String {
+    match key {
+        BlockKey::Data(id) => format!("{}:{}", DATA_KEY, id.as_ref().to_hyphenated().to_string()),
+        BlockKey::Lock(id) => format!("{}:{}", LOCKS_KEY, id.as_ref().to_hyphenated().to_string()),
+        BlockKey::Header(id) => format!(
+            "{}:{}",
+            HEADERS_KEY,
+            id.as_ref().to_hyphenated().to_string()
+        ),
+        BlockKey::Super => SUPER_KEY.to_string(),
+        BlockKey::Version => REPO_VERSION_KEY.to_string(),
+    }
+}
 
 /// The address for a Redis connection.
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -124,7 +145,7 @@ impl RedisStore {
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         let version_response: Option<String> = connection
-            .get("version")
+            .get(STORE_VERSION_KEY)
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         match version_response {
@@ -134,7 +155,7 @@ impl RedisStore {
                 }
             }
             None => connection
-                .set("version", CURRENT_VERSION)
+                .set(STORE_VERSION_KEY, CURRENT_VERSION)
                 .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?,
         }
 
@@ -143,33 +164,38 @@ impl RedisStore {
 }
 
 impl DataStore for RedisStore {
-    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
-        let key_id = id.as_ref().to_hyphenated().to_string();
-        self.connection.set(format!("block:{}", key_id), data)?;
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+        self.connection.set(block_key(key), data)?;
         Ok(())
     }
 
-    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
-        let key_id = id.as_ref().to_hyphenated().to_string();
-        Ok(self.connection.get(format!("block:{}", key_id))?)
+    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
+        Ok(self.connection.get(block_key(key))?)
     }
 
-    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
-        let key_id = id.as_ref().to_hyphenated().to_string();
-        self.connection.del(format!("block:{}", key_id))?;
+    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+        self.connection.del(block_key(key))?;
         Ok(())
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
+    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
+        let key_prefix = match kind {
+            BlockType::Data => format!("{}:", DATA_KEY),
+            BlockType::Lock => format!("{}:", LOCKS_KEY),
+            BlockType::Header => format!("{}:", HEADERS_KEY),
+        };
+        let search_key = format!("{}*", key_prefix);
+
         let blocks = self
             .connection
-            .keys::<_, Vec<String>>("block:*")?
+            .keys::<_, Vec<String>>(search_key)?
             .iter()
             .map(|key| {
-                let uuid = key.trim_start_matches("block:");
-                Uuid::parse_str(uuid).expect("Could not parse UUID.").into()
+                let uuid = key.trim_start_matches(&key_prefix);
+                Uuid::parse_str(uuid).map(|id| id.into())
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
+
         Ok(blocks)
     }
 }

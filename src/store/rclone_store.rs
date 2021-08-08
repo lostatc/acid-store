@@ -26,7 +26,7 @@ use std::time::Duration;
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 
-use super::data_store::{BlockId, DataStore};
+use super::data_store::{BlockId, BlockKey, BlockType, DataStore};
 use super::open_store::OpenStore;
 use super::sftp_store::{SftpAuth, SftpConfig, SftpStore};
 
@@ -154,20 +154,20 @@ pub struct RcloneStore {
 }
 
 impl DataStore for RcloneStore {
-    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
-        self.sftp_store.write_block(id, data)
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+        self.sftp_store.write_block(key, data)
     }
 
-    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
-        self.sftp_store.read_block(id)
+    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
+        self.sftp_store.read_block(key)
     }
 
-    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
-        self.sftp_store.remove_block(id)
+    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+        self.sftp_store.remove_block(key)
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
-        self.sftp_store.list_blocks()
+    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
+        self.sftp_store.list_blocks(kind)
     }
 }
 

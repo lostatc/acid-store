@@ -19,15 +19,14 @@
 use std::path::PathBuf;
 
 use hex_literal::hex;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, NO_PARAMS};
 use uuid::Uuid;
 
-use super::data_store::DataStore;
+use super::data_store::{BlockId, BlockKey, BlockType, DataStore};
 use super::open_store::OpenStore;
-use crate::store::BlockId;
 
 /// A UUID which acts as the version ID of the store format.
-const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("08d14eb8 4156 11ea 8ec7 a31cc3dfe2e4"));
+const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("42efde7c f927 11eb bb01 d70e242b02af"));
 
 /// The configuration for opening a [`SqliteStore`].
 ///
@@ -49,8 +48,23 @@ impl OpenStore for SqliteConfig {
         connection
             .execute_batch(
                 r#"
-                    CREATE TABLE IF NOT EXISTS Blocks (
+                    CREATE TABLE IF NOT EXISTS Data (
                         uuid BLOB PRIMARY KEY,
+                        data BLOB NOT NULL
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS Locks (
+                        uuid BLOB PRIMARY KEY,
+                        data BLOB NOT NULL
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS Headers (
+                        uuid BLOB PRIMARY KEY,
+                        data BLOB NOT NULL
+                    );
+                    
+                    CREATE TABLE IF NOT EXISTS Blocks (
+                        key TEXT PRIMARY KEY,
                         data BLOB NOT NULL
                     );
 
@@ -112,55 +126,182 @@ pub struct SqliteStore {
 }
 
 impl DataStore for SqliteStore {
-    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
-        self.connection.execute(
-            r#"
-                REPLACE INTO Blocks (uuid, data)
-                VALUES (?1, ?2);
-            "#,
-            params![&id.as_ref().as_bytes()[..], data],
-        )?;
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+        match key {
+            BlockKey::Data(id) => {
+                self.connection.execute(
+                    r#"
+                        REPLACE INTO Data (uuid, data)
+                        VALUES (?1, ?2);
+                    "#,
+                    params![&id.as_ref().as_bytes()[..], data],
+                )?;
+            }
+            BlockKey::Lock(id) => {
+                self.connection.execute(
+                    r#"
+                        REPLACE INTO Locks (uuid, data)
+                        VALUES (?1, ?2);
+                    "#,
+                    params![&id.as_ref().as_bytes()[..], data],
+                )?;
+            }
+            BlockKey::Header(id) => {
+                self.connection.execute(
+                    r#"
+                        REPLACE INTO Headers (uuid, data)
+                        VALUES (?1, ?2);
+                    "#,
+                    params![&id.as_ref().as_bytes()[..], data],
+                )?;
+            }
+            BlockKey::Super => {
+                self.connection.execute(
+                    r#"
+                        REPLACE INTO Blocks (key, data)
+                        VALUES ('super', ?1);
+                    "#,
+                    params![data],
+                )?;
+            }
+            BlockKey::Version => {
+                self.connection.execute(
+                    r#"
+                        REPLACE INTO Blocks (key, data)
+                        VALUES ('version', ?1);
+                    "#,
+                    params![data],
+                )?;
+            }
+        }
 
         Ok(())
     }
 
-    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
-        Ok(self
-            .connection
-            .query_row(
-                r#"
-                    SELECT data FROM Blocks
-                    WHERE uuid = ?1;
-                "#,
-                params![&id.as_ref().as_bytes()[..]],
-                |row| row.get(0),
-            )
-            .optional()?)
+    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
+        match key {
+            BlockKey::Data(id) => Ok(self
+                .connection
+                .query_row(
+                    r#"
+                        SELECT data FROM Data
+                        WHERE uuid = ?1;
+                    "#,
+                    params![&id.as_ref().as_bytes()[..]],
+                    |row| row.get(0),
+                )
+                .optional()?),
+            BlockKey::Lock(id) => Ok(self
+                .connection
+                .query_row(
+                    r#"
+                        SELECT data FROM Locks
+                        WHERE uuid = ?1;
+                    "#,
+                    params![&id.as_ref().as_bytes()[..]],
+                    |row| row.get(0),
+                )
+                .optional()?),
+            BlockKey::Header(id) => Ok(self
+                .connection
+                .query_row(
+                    r#"
+                        SELECT data FROM Headers
+                        WHERE uuid = ?1;
+                    "#,
+                    params![&id.as_ref().as_bytes()[..]],
+                    |row| row.get(0),
+                )
+                .optional()?),
+            BlockKey::Super => Ok(self
+                .connection
+                .query_row(
+                    r#"
+                        SELECT data FROM Blocks
+                        WHERE key = 'super';
+                    "#,
+                    NO_PARAMS,
+                    |row| row.get(0),
+                )
+                .optional()?),
+            BlockKey::Version => Ok(self
+                .connection
+                .query_row(
+                    r#"
+                        SELECT data FROM Blocks
+                        WHERE key = 'version';
+                    "#,
+                    NO_PARAMS,
+                    |row| row.get(0),
+                )
+                .optional()?),
+        }
     }
 
-    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
-        self.connection.execute(
-            r#"
-                DELETE FROM Blocks
-                WHERE uuid = ?1;
-            "#,
-            params![&id.as_ref().as_bytes()[..]],
-        )?;
+    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+        match key {
+            BlockKey::Data(id) => {
+                self.connection.execute(
+                    r#"
+                        DELETE FROM Data
+                        WHERE uuid = ?1;
+                    "#,
+                    params![&id.as_ref().as_bytes()[..]],
+                )?;
+            }
+            BlockKey::Lock(id) => {
+                self.connection.execute(
+                    r#"
+                        DELETE FROM Locks
+                        WHERE uuid = ?1;
+                    "#,
+                    params![&id.as_ref().as_bytes()[..]],
+                )?;
+            }
+            BlockKey::Header(id) => {
+                self.connection.execute(
+                    r#"
+                        DELETE FROM Headers
+                        WHERE uuid = ?1;
+                    "#,
+                    params![&id.as_ref().as_bytes()[..]],
+                )?;
+            }
+            BlockKey::Super => {
+                self.connection.execute(
+                    r#"
+                        DELETE FROM Blocks
+                        WHERE key = 'super';
+                    "#,
+                    NO_PARAMS,
+                )?;
+            }
+            BlockKey::Version => {
+                self.connection.execute(
+                    r#"
+                        DELETE FROM Blocks
+                        WHERE key = 'version';
+                    "#,
+                    NO_PARAMS,
+                )?;
+            }
+        }
 
         Ok(())
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
-        let mut statement = self.connection.prepare(r#"SELECT uuid FROM Blocks;"#)?;
+    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
+        let mut statement = match kind {
+            BlockType::Data => self.connection.prepare(r#"SELECT uuid FROM Data;"#)?,
+            BlockType::Lock => self.connection.prepare(r#"SELECT uuid FROM Locks;"#)?,
+            BlockType::Header => self.connection.prepare(r#"SELECT uuid FROM Headers;"#)?,
+        };
 
         let result = statement
-            .query_map(params![], |row| {
-                row.get(0).map(|bytes: Vec<u8>| {
-                    Uuid::from_slice(bytes.as_slice())
-                        .expect("Could not parse UUID.")
-                        .into()
-                })
-            })?
+            .query_map(params![], |row| row.get::<_, Vec<u8>>(0))?
+            .collect::<Result<Vec<Vec<u8>>, _>>()?
+            .into_iter()
+            .map(|id_bytes| Uuid::from_slice(id_bytes.as_slice()).map(|id| id.into()))
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(result)

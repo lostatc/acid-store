@@ -25,16 +25,45 @@ use anyhow::anyhow;
 use ssh2::{self, RenameFlags, Session, Sftp};
 use uuid::Uuid;
 
-use super::data_store::{BlockId, DataStore};
+use super::data_store::{BlockId, BlockKey, BlockType, DataStore};
 use super::open_store::OpenStore;
 
 // A UUID which acts as the version ID of the directory store format.
-const CURRENT_VERSION: &str = "fc299876-c5ff-11ea-ada1-8b0ec1509cde";
+const CURRENT_VERSION: &str = "dcfb91ae-f8ab-11eb-964b-5b439fc44271";
 
-// The names of files in the data store.
-const BLOCKS_DIRECTORY: &str = "blocks";
+// The names of top-level files in the data store.
+const STORE_DIRECTORY: &str = "store";
 const STAGING_DIRECTORY: &str = "stage";
 const VERSION_FILE: &str = "version";
+
+fn type_path(kind: BlockType) -> PathBuf {
+    match kind {
+        BlockType::Data => [STORE_DIRECTORY, "data"].iter().collect(),
+        BlockType::Lock => [STORE_DIRECTORY, "locks"].iter().collect(),
+        BlockType::Header => [STORE_DIRECTORY, "headers"].iter().collect(),
+    }
+}
+
+fn block_path(key: BlockKey) -> PathBuf {
+    match key {
+        BlockKey::Data(id) => {
+            let uuid_str = id.as_ref().to_hyphenated().to_string();
+            type_path(BlockType::Data)
+                .join(&uuid_str[..2])
+                .join(&uuid_str)
+        }
+        BlockKey::Lock(id) => {
+            let uuid_str = id.as_ref().to_hyphenated().to_string();
+            type_path(BlockType::Lock).join(&uuid_str)
+        }
+        BlockKey::Header(id) => {
+            let uuid_str = id.as_ref().to_hyphenated().to_string();
+            type_path(BlockType::Header).join(&uuid_str)
+        }
+        BlockKey::Super => [STORE_DIRECTORY, "super"].iter().collect(),
+        BlockKey::Version => [STORE_DIRECTORY, "version"].iter().collect(),
+    }
+}
 
 /// The authentication for an SSH connection.
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -167,8 +196,11 @@ impl OpenStore for SftpConfig {
         // Create the directories if they don't exist.
         let directories = &[
             self.path.to_owned(),
-            self.path.join(BLOCKS_DIRECTORY),
             self.path.join(STAGING_DIRECTORY),
+            self.path.join(STORE_DIRECTORY),
+            type_path(BlockType::Data),
+            type_path(BlockType::Lock),
+            type_path(BlockType::Header),
         ];
         for directory in directories {
             if sftp.stat(&directory).is_err() {
@@ -219,17 +251,14 @@ pub struct SftpStore {
 
 impl SftpStore {
     /// Return the path where a block with the given `id` will be stored.
-    fn block_path(&self, id: BlockId) -> PathBuf {
-        let mut buffer = Uuid::encode_buffer();
-        let hex = id.as_ref().to_simple().encode_lower(&mut buffer);
-        self.path.join(BLOCKS_DIRECTORY).join(&hex[..2]).join(hex)
+    fn block_path(&self, key: BlockKey) -> PathBuf {
+        self.path.join(block_path(key))
     }
 
     /// Return the path where a block with the given `id` will be staged.
-    fn staging_path(&self, id: BlockId) -> PathBuf {
-        let mut buffer = Uuid::encode_buffer();
-        let hex = id.as_ref().to_simple().encode_lower(&mut buffer);
-        self.path.join(STAGING_DIRECTORY).join(hex)
+    fn staging_path(&self) -> PathBuf {
+        let uuid_str = Uuid::new_v4().to_hyphenated().to_string();
+        self.path.join(STAGING_DIRECTORY).join(&uuid_str)
     }
 
     /// Return whether the given remote `path` exists.
@@ -239,9 +268,9 @@ impl SftpStore {
 }
 
 impl DataStore for SftpStore {
-    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
-        let staging_path = self.staging_path(id);
-        let block_path = self.block_path(id);
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+        let staging_path = self.staging_path();
+        let block_path = self.block_path(key);
 
         // If this is the first block its sub-directory, the directory needs to be created.
         let parent = block_path.parent().unwrap();
@@ -252,6 +281,7 @@ impl DataStore for SftpStore {
         // Write to a staging file and then atomically move it to its final destination.
         let mut staging_file = self.sftp.create(&staging_path)?;
         staging_file.write_all(data)?;
+        staging_file.flush()?;
         self.sftp.rename(
             &staging_path,
             &block_path,
@@ -266,8 +296,8 @@ impl DataStore for SftpStore {
         Ok(())
     }
 
-    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
-        let block_path = self.block_path(id);
+    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
+        let block_path = self.block_path(key);
 
         if !self.exists(&block_path) {
             return Ok(None);
@@ -280,8 +310,8 @@ impl DataStore for SftpStore {
         Ok(Some(buffer))
     }
 
-    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
-        let block_path = self.block_path(id);
+    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+        let block_path = self.block_path(key);
 
         if !self.exists(&block_path) {
             return Ok(());
@@ -292,21 +322,38 @@ impl DataStore for SftpStore {
         Ok(())
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
-        let block_directories = self.sftp.readdir(&self.path.join(BLOCKS_DIRECTORY))?;
+    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
         let mut block_ids = Vec::new();
 
-        for (block_directory, _) in block_directories {
-            for (block_path, _) in self.sftp.readdir(&block_directory)? {
-                let file_name = block_path
-                    .file_name()
-                    .unwrap()
-                    .to_str()
-                    .expect("Block file name is invalid.");
-                let id = Uuid::parse_str(file_name)
-                    .expect("Block file name is invalid.")
-                    .into();
-                block_ids.push(id);
+        match kind {
+            BlockType::Data => {
+                let block_directories = self.sftp.readdir(&self.path.join(type_path(kind)))?;
+                for (block_directory, _) in block_directories {
+                    for (block_path, _) in self.sftp.readdir(&block_directory)? {
+                        let file_name = block_path
+                            .file_name()
+                            .unwrap()
+                            .to_str()
+                            .ok_or_else(|| anyhow!("Block file name is invalid."))?;
+                        let id = Uuid::parse_str(file_name)
+                            .map_err(|_| anyhow!("Block file name is invalid."))?
+                            .into();
+                        block_ids.push(id);
+                    }
+                }
+            }
+            BlockType::Lock | BlockType::Header => {
+                for (block_path, _) in self.sftp.readdir(&self.path.join(type_path(kind)))? {
+                    let file_name = block_path
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .ok_or_else(|| anyhow!("Block file name is invalid."))?;
+                    let id = Uuid::parse_str(file_name)
+                        .map_err(|_| anyhow!("Block file name is invalid."))?
+                        .into();
+                    block_ids.push(id);
+                }
             }
         }
 

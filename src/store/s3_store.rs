@@ -25,35 +25,11 @@ use s3::region::Region;
 use tokio::runtime::Runtime;
 use uuid::Uuid;
 
-use super::data_store::{BlockId, DataStore};
+use super::data_store::{BlockId, BlockKey, BlockType, DataStore};
 use super::open_store::OpenStore;
 
 /// The separator to use in S3 object keys.
 const SEPARATOR: &str = "/";
-
-/// The key of the object which stores the repository version.
-const VERSION_KEY: &str = "version";
-
-/// The key prefix for block objects.
-const BLOCK_PREFIX: &str = "block";
-
-/// A UUID which acts as the version ID of the store format.
-const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("a2b7bda8 45ea 11ea ad75 afa592f123ef"));
-
-/// The MIME content type to use for binary data.
-const BINARY_CONTENT_TYPE: &str = "application/octet-stream";
-
-/// The HTTP status code for an object which does not exist.
-const NOT_FOUND_CODE: u16 = 404;
-
-/// The environment variable for the AWS access key.
-const ACCESS_KEY_ENV: &str = "AWS_ACCESS_KEY_ID";
-
-/// The environment variable for the AWS secrete key.
-const SECRET_KEY_ENV: &str = "AWS_SECRET_ACCESS_KEY";
-
-/// The environment variable for the AWS session token.
-const SESSION_TOKEN_ENV: &str = "AWS_SESSION_TOKEN";
 
 /// Join the given segments into an S3 object key.
 macro_rules! join_key {
@@ -69,6 +45,33 @@ macro_rules! join_key {
         }
     }
 }
+
+// The keys of objects in the data store.
+const STORE_KEY: &str = "store";
+const DATA_KEY: &str = "data";
+const LOCKS_KEY: &str = "lock";
+const HEADERS_KEY: &str = "header";
+const SUPER_KEY: &str = "super";
+const REPO_VERSION_KEY: &str = "version";
+const STORE_VERSION_KEY: &str = "version";
+
+/// A UUID which acts as the version ID of the store format.
+const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("f0511da2 f90d 11eb be71 13f36b8156e4"));
+
+/// The MIME content type to use for binary data.
+const BINARY_CONTENT_TYPE: &str = "application/octet-stream";
+
+/// The HTTP status code for an object which does not exist.
+const NOT_FOUND_CODE: u16 = 404;
+
+/// The environment variable for the AWS access key.
+const ACCESS_KEY_ENV: &str = "AWS_ACCESS_KEY_ID";
+
+/// The environment variable for the AWS secrete key.
+const SECRET_KEY_ENV: &str = "AWS_SECRET_ACCESS_KEY";
+
+/// The environment variable for the AWS session token.
+const SESSION_TOKEN_ENV: &str = "AWS_SESSION_TOKEN";
 
 /// An AWS region.
 #[non_exhaustive]
@@ -372,8 +375,8 @@ impl OpenStore for S3Config {
 
     fn open(&self) -> crate::Result<Self::Store> {
         let bucket = self.clone().into_bucket();
-        let prefix = self.prefix.trim_end_matches('/').to_owned();
-        let version_key = join_key!(prefix, VERSION_KEY);
+        let prefix = self.prefix.trim_end_matches(SEPARATOR).to_owned();
+        let version_key = join_key!(prefix, STORE_VERSION_KEY);
         let mut runtime = Runtime::new().unwrap();
 
         match runtime.block_on(bucket.get_object(&version_key)) {
@@ -410,28 +413,47 @@ pub struct S3Store {
 
 impl S3Store {
     /// Return the key of the block with the given `id`.
-    fn block_path(&self, id: BlockId) -> String {
-        join_key!(
-            self.prefix,
-            BLOCK_PREFIX,
-            id.as_ref().to_hyphenated().to_string()
-        )
+    fn block_path(&self, key: BlockKey) -> String {
+        match key {
+            BlockKey::Data(id) => {
+                join_key!(
+                    self.prefix,
+                    STORE_KEY,
+                    DATA_KEY,
+                    id.as_ref().to_hyphenated().to_string()
+                )
+            }
+            BlockKey::Lock(id) => join_key!(
+                self.prefix,
+                STORE_KEY,
+                LOCKS_KEY,
+                id.as_ref().to_hyphenated().to_string()
+            ),
+            BlockKey::Header(id) => join_key!(
+                self.prefix,
+                STORE_KEY,
+                HEADERS_KEY,
+                id.as_ref().to_hyphenated().to_string()
+            ),
+            BlockKey::Super => join_key!(self.prefix, STORE_KEY, SUPER_KEY),
+            BlockKey::Version => join_key!(self.prefix, STORE_KEY, REPO_VERSION_KEY),
+        }
     }
 }
 
 impl DataStore for S3Store {
-    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
         let mut runtime = Runtime::new().unwrap();
 
-        let block_path = self.block_path(id);
+        let block_path = self.block_path(key);
         runtime.block_on(self.bucket.put_object(&block_path, data))?;
         Ok(())
     }
 
-    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
         let mut runtime = Runtime::new().unwrap();
 
-        let block_path = self.block_path(id);
+        let block_path = self.block_path(key);
         let (bytes, code) = runtime.block_on(self.bucket.get_object(&block_path))?;
         if code == NOT_FOUND_CODE {
             Ok(None)
@@ -440,28 +462,31 @@ impl DataStore for S3Store {
         }
     }
 
-    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
+    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
         let mut runtime = Runtime::new().unwrap();
 
-        let block_path = self.block_path(id);
+        let block_path = self.block_path(key);
         runtime.block_on(self.bucket.delete_object(&block_path))?;
         Ok(())
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
+    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
         let mut runtime = Runtime::new().unwrap();
 
-        let blocks_path = join_key!(self.prefix, BLOCK_PREFIX) + SEPARATOR;
+        let blocks_key = match kind {
+            BlockType::Data => join_key!(self.prefix, STORE_KEY, DATA_KEY) + SEPARATOR,
+            BlockType::Lock => join_key!(self.prefix, STORE_KEY, LOCKS_KEY) + SEPARATOR,
+            BlockType::Header => join_key!(self.prefix, STORE_KEY, HEADERS_KEY) + SEPARATOR,
+        };
+
         let block_ids = runtime
-            .block_on(self.bucket.list(blocks_path.clone(), None))?
+            .block_on(self.bucket.list(blocks_key.clone(), None))?
             .into_iter()
             .flat_map(|list| list.contents)
             .map(|object| {
-                Uuid::parse_str(object.key.trim_start_matches(&blocks_path))
-                    .expect("Could not parse UUID.")
-                    .into()
+                Uuid::parse_str(object.key.trim_start_matches(&blocks_key)).map(|id| id.into())
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<BlockId>, _>>()?;
         Ok(block_ids)
     }
 }
