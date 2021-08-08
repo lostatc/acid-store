@@ -36,10 +36,19 @@
 //!
 //! # Locking
 //! A repository cannot be open more than once simultaneously. Once a repository is opened, it is
-//! locked from further open attempts within the same process until the repository is dropped.
-//! However, **repositories can not protect against concurrent access from multiple processes or
-//! machines**. Opening a repository from multiple processes or machines simultaneously may cause
-//! data loss.
+//! locked exclusively until the repository is dropped. Repository locks are stored in the data
+//! store and are respected by other processes and machines trying to open the repository. When a
+//! repository is dropped, it will attempt to release its lock on the data store. However, releasing
+//! a lock can fail for a number of reasons, such as an I/O error or the thread panicking. In this
+//! case, the repository will remain locked.
+//!
+//! The behavior of repository locking can be configured when you open or create a repository using
+//! [`OpenOptions`]. You can register a lock handler that is invoked when an existing lock on the
+//! repository is detected which decides whether to respect the existing lock or remove it. This
+//! can be used to remove stale locks. See [`OpenOptions::lock`] for details.
+//!
+//! **Removing an existing lock is potentially dangerous, as concurrent access to a repository
+//! from multiple processes or machines can cause data loss.**
 //!
 //! # Atomicity
 //! Changes made to a repository are not persisted to the data store until those changes are
@@ -105,6 +114,7 @@
 //! [`KeyRepo`]: crate::repo::key::KeyRepo
 //! [`OpenOptions`]: crate::repo::OpenOptions
 //! [`Chunking`]: crate::repo::Chunking
+//! [`OpenOptions::lock`]: crate::repo::OpenOptions::lock
 //! [`Commit::commit`]: crate::repo::Commit::commit
 //! [`Commit::clean`]: crate::repo::Commit::clean
 //! [`RestoreSavepoint`]: crate::repo::RestoreSavepoint
