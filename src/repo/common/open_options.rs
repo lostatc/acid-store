@@ -15,6 +15,7 @@
  */
 
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 use std::sync::{Arc, Mutex, RwLock};
 
 use hex_literal::hex;
@@ -23,7 +24,7 @@ use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
 use uuid::Uuid;
 
-use crate::store::{DataStore, OpenStore};
+use crate::store::{BlockKey, DataStore, OpenStore};
 
 use super::chunking::Chunking;
 use super::compression::Compression;
@@ -34,9 +35,8 @@ use super::lock::LockTable;
 use super::metadata::{peek_info_store, Header, RepoId, RepoMetadata};
 use super::open_repo::OpenRepo;
 use super::packing::Packing;
-use super::repository::{KeyRepo, METADATA_BLOCK_ID, VERSION_BLOCK_ID};
+use super::repository::KeyRepo;
 use super::state::{InstanceId, RepoState};
-use std::fmt::{Debug, Formatter};
 
 /// The default repository instance ID.
 ///
@@ -334,7 +334,7 @@ impl OpenOptions {
 
         // Read the repository version to see if this is a compatible repository.
         let serialized_version = store
-            .read_block(VERSION_BLOCK_ID)
+            .read_block(BlockKey::Version)
             .map_err(crate::Error::Store)?
             .ok_or(crate::Error::NotFound)?;
         let version =
@@ -346,7 +346,7 @@ impl OpenOptions {
         // We read the metadata again after reading the UUID to prevent a race condition when
         // acquiring the lock.
         let serialized_metadata = store
-            .read_block(METADATA_BLOCK_ID)
+            .read_block(BlockKey::Super)
             .map_err(crate::Error::Store)?
             .ok_or(crate::Error::Corrupt)?;
         let metadata: RepoMetadata =
@@ -384,7 +384,7 @@ impl OpenOptions {
 
         // Read, decrypt, decompress, and deserialize the repository header.
         let encrypted_header = store
-            .read_block(metadata.header_id)
+            .read_block(BlockKey::Header(metadata.header_id))
             .map_err(crate::Error::Store)?
             .ok_or(crate::Error::Corrupt)?;
         let compressed_header = metadata
@@ -449,7 +449,7 @@ impl OpenOptions {
 
         // Check if the repository already exists.
         if store
-            .read_block(VERSION_BLOCK_ID)
+            .read_block(BlockKey::Version)
             .map_err(crate::Error::Store)?
             .is_some()
         {
@@ -502,7 +502,7 @@ impl OpenOptions {
             .encrypt(&compressed_header, &master_key);
         let header_id = Uuid::new_v4().into();
         store
-            .write_block(header_id, &encrypted_header)
+            .write_block(BlockKey::Header(header_id), &encrypted_header)
             .map_err(crate::Error::Store)?;
 
         // Create the repository metadata with the header block references.
@@ -518,13 +518,13 @@ impl OpenOptions {
         // Write the repository metadata.
         let serialized_metadata = to_vec(&metadata).expect("Could not serialize metadata.");
         store
-            .write_block(METADATA_BLOCK_ID, &serialized_metadata)
+            .write_block(BlockKey::Super, &serialized_metadata)
             .map_err(crate::Error::Store)?;
 
         // Write the repository version. We do this last because this signifies that the repository
         // is done being created.
         store
-            .write_block(VERSION_BLOCK_ID, VERSION_ID.as_bytes())
+            .write_block(BlockKey::Version, VERSION_ID.as_bytes())
             .map_err(crate::Error::Store)?;
 
         let Header {
@@ -588,7 +588,7 @@ impl OpenOptions {
             OpenMode::Open => self.open_repo(store),
             OpenMode::Create => {
                 if store
-                    .read_block(VERSION_BLOCK_ID)
+                    .read_block(BlockKey::Version)
                     .map_err(crate::Error::Store)?
                     .is_some()
                 {
