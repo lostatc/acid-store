@@ -28,7 +28,7 @@ use super::chunking::IncrementalChunker;
 use super::encryption::EncryptionKey;
 use super::handle::{Chunk, Extent, HandleId, ObjectHandle};
 use super::lock::{unlock_store, Lock, LockTable};
-use super::metadata::{RepoId, RepoMetadata};
+use super::metadata::RepoMetadata;
 use super::open_repo::VersionId;
 
 /// Information about a chunk in a repository.
@@ -126,12 +126,6 @@ pub struct RepoState {
 
     /// The master encryption key for the repository.
     pub master_key: EncryptionKey,
-
-    /// The lock on the repository for this process.
-    ///
-    /// This avoid the need to access the data store to check if the repository is already open
-    /// within this process.
-    pub lock: Lock<RepoId>,
 
     /// The `BlockId` of the key which stores the lock on the repository.
     ///
