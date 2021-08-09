@@ -23,7 +23,7 @@ use super::handle::HandleId;
 use super::handle::{chunk_hash, Chunk};
 use super::packing::Packing;
 use super::state::{ChunkInfo, Pack, PackIndex, RepoState};
-use crate::store::BlockId;
+use crate::store::{BlockId, BlockKey};
 
 /// Encode and decode blocks of data.
 pub trait EncodeBlock {
@@ -108,7 +108,7 @@ impl<'a> ReadBlock for PackingBlockReader<'a> {
                         .store
                         .lock()
                         .unwrap()
-                        .read_block(pack_index.id)
+                        .read_block(BlockKey::Data(pack_index.id))
                         .map_err(crate::Error::Store)?
                         .ok_or(crate::Error::InvalidData)?;
                     let pack_buffer = self
@@ -241,7 +241,7 @@ impl<'a> WriteBlock for PackingBlockWriter<'a> {
                     .store
                     .lock()
                     .unwrap()
-                    .write_block(current_pack.id, encrypted_pack.as_slice())
+                    .write_block(BlockKey::Data(current_pack.id), encrypted_pack.as_slice())
                     .map_err(crate::Error::Store)?;
 
                 // We're starting a new pack, so these need to be reset.
@@ -271,7 +271,7 @@ impl<'a> WriteBlock for PackingBlockWriter<'a> {
                     .store
                     .lock()
                     .unwrap()
-                    .write_block(current_pack.id, encrypted_pack.as_slice())
+                    .write_block(BlockKey::Data(current_pack.id), encrypted_pack.as_slice())
                     .map_err(crate::Error::Store)?;
 
                 // We need to update the pack map in the repository state after all data has been
@@ -309,7 +309,7 @@ impl<'a> ReadBlock for DirectBlockWriter<'a> {
             .store
             .lock()
             .unwrap()
-            .read_block(id)
+            .read_block(BlockKey::Data(id))
             .map_err(crate::Error::Store)?
             .ok_or(crate::Error::InvalidData)?;
         self.state.decode_data(encoded_block.as_slice())
@@ -323,7 +323,7 @@ impl<'a> WriteBlock for DirectBlockWriter<'a> {
             .store
             .lock()
             .unwrap()
-            .write_block(id, encoded_block.as_slice())
+            .write_block(BlockKey::Data(id), encoded_block.as_slice())
             .map_err(crate::Error::Store)
     }
 }

@@ -26,7 +26,7 @@ use secrecy::ExposeSecret;
 use static_assertions::assert_impl_all;
 use uuid::Uuid;
 
-use crate::store::{BlockId, DataStore};
+use crate::store::{BlockKey, BlockType, DataStore};
 
 use super::chunk_store::{
     EncodeBlock, ReadBlock, ReadChunk, StoreReader, StoreState, StoreWriter, WriteBlock,
@@ -43,34 +43,6 @@ use super::open_repo::VersionId;
 use super::packing::Packing;
 use super::savepoint::{KeyRestore, RestoreSavepoint, Savepoint};
 use super::state::{InstanceId, InstanceInfo, ObjectState, RepoState};
-
-/// The block ID of the block which stores the repository metadata.
-pub(super) const METADATA_BLOCK_ID: BlockId = BlockId::new(Uuid::from_bytes(hex!(
-    "8691d360 29c6 11ea 8bc1 2fc8cfe66f33"
-)));
-
-/// The block ID of the block which stores the repository format version.
-pub(super) const VERSION_BLOCK_ID: BlockId = BlockId::new(Uuid::from_bytes(hex!(
-    "cbf28b1c 3550 11ea 8cb0 87d7a14efe10"
-)));
-
-/// Return a list of blocks in the data store excluding those used to store metadata.
-fn list_data_blocks(state: &RepoState) -> crate::Result<Vec<BlockId>> {
-    let all_blocks = state
-        .store
-        .lock()
-        .unwrap()
-        .list_blocks()
-        .map_err(crate::Error::Store)?;
-
-    Ok(all_blocks
-        .iter()
-        .copied()
-        .filter(|id| {
-            *id != METADATA_BLOCK_ID && *id != VERSION_BLOCK_ID && *id != state.metadata.header_id
-        })
-        .collect())
-}
 
 /// An object store which maps keys to seekable binary blobs.
 ///
@@ -370,7 +342,7 @@ impl<K: Key> KeyRepo<K> {
             .store
             .lock()
             .unwrap()
-            .write_block(header_id, encoded_header.as_slice())
+            .write_block(BlockKey::Header(header_id), encoded_header.as_slice())
             .map_err(crate::Error::Store)?;
         state.metadata.header_id = header_id;
 
@@ -381,7 +353,7 @@ impl<K: Key> KeyRepo<K> {
             .store
             .lock()
             .unwrap()
-            .write_block(METADATA_BLOCK_ID, &serialized_metadata)
+            .write_block(BlockKey::Super, &serialized_metadata)
             .map_err(crate::Error::Store)?;
         Ok(())
     }
@@ -729,7 +701,7 @@ impl<K: Key> Commit for KeyRepo<K> {
             .store
             .lock()
             .unwrap()
-            .read_block(state.metadata.header_id)
+            .read_block(BlockKey::Header(state.metadata.header_id))
             .map_err(crate::Error::Store)?
             .ok_or(crate::Error::Corrupt)?;
         let serialized_header = state.decode_data(encoded_header.as_slice())?;
@@ -749,7 +721,7 @@ impl<K: Key> Commit for KeyRepo<K> {
             .store
             .lock()
             .unwrap()
-            .read_block(state.metadata.header_id)
+            .read_block(BlockKey::Header(state.metadata.header_id))
             .map_err(crate::Error::Store)?
             .ok_or(crate::Error::Corrupt)?;
         let serialized_header = state.decode_data(encoded_header.as_slice())?;
@@ -772,14 +744,21 @@ impl<K: Key> Commit for KeyRepo<K> {
         // Remove all blocks from the data store which are unreferenced.
         match &state.metadata.config.packing {
             Packing::None => {
-                // When packing is disabled, we can just remove the unreferenced blocks from the
-                // data store directly.
-                let block_ids = list_data_blocks(&state)?;
+                // When packing is disabled, we can just remove the unreferenced data blocks from
+                // the data store directly.
+                let block_ids = state
+                    .store
+                    .lock()
+                    .unwrap()
+                    .list_blocks(BlockType::Data)
+                    .map_err(crate::Error::Store)?;
 
                 let mut store = state.store.lock().unwrap();
                 for block_id in block_ids {
                     if !referenced_blocks.contains(&block_id) {
-                        store.remove_block(block_id).map_err(crate::Error::Store)?;
+                        store
+                            .remove_block(BlockKey::Data(block_id))
+                            .map_err(crate::Error::Store)?;
                     }
                 }
             }
@@ -809,7 +788,13 @@ impl<K: Key> Commit for KeyRepo<K> {
                 let mut blocks_to_repack = Vec::new();
 
                 // Iterate over the IDs of packs which are contained in the data store.
-                for pack_id in list_data_blocks(&state)? {
+                let data_blocks = state
+                    .store
+                    .lock()
+                    .unwrap()
+                    .list_blocks(BlockType::Data)
+                    .map_err(crate::Error::Store)?;
+                for pack_id in data_blocks {
                     match packs_to_blocks.get(&pack_id) {
                         Some(contained_blocks) => {
                             let contains_unreferenced_blocks = contained_blocks
@@ -844,7 +829,9 @@ impl<K: Key> Commit for KeyRepo<K> {
                 {
                     let mut store = state.store.lock().unwrap();
                     for pack_id in packs_to_remove {
-                        store.remove_block(pack_id).map_err(crate::Error::Store)?;
+                        store
+                            .remove_block(BlockKey::Data(pack_id))
+                            .map_err(crate::Error::Store)?;
                     }
                 }
 
@@ -881,6 +868,22 @@ impl<K: Key> Commit for KeyRepo<K> {
                     drop(state);
                     self.write_serialized_header(encoded_header.as_slice())?;
                 }
+            }
+        }
+
+        // Remove old unreferenced headers from the data store.
+        {
+            let state = self.state.read().unwrap();
+            let mut store = state.store.lock().unwrap();
+            let unreferenced_headers = store
+                .list_blocks(BlockType::Header)
+                .map_err(crate::Error::Store)?
+                .into_iter()
+                .filter(|&block_id| block_id != state.metadata.header_id);
+            for block_id in unreferenced_headers {
+                store
+                    .remove_block(BlockKey::Header(block_id))
+                    .map_err(crate::Error::Store)?;
             }
         }
 

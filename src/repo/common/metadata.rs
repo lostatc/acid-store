@@ -22,9 +22,8 @@ use serde::{Deserialize, Serialize};
 use super::config::RepoConfig;
 use super::encryption::KeySalt;
 use super::handle::{Chunk, HandleIdTable};
-use super::repository::METADATA_BLOCK_ID;
 use super::state::{ChunkInfo, InstanceId, InstanceInfo, PackIndex};
-use crate::store::{BlockId, DataStore, OpenStore};
+use crate::store::{BlockId, BlockKey, DataStore, OpenStore};
 
 /// The repository state which is persisted to the data store on each commit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,7 +74,7 @@ impl RepoMetadata {
 pub fn peek_info_store(store: &mut impl DataStore) -> crate::Result<RepoInfo> {
     // Read and deserialize the metadata.
     let serialized_metadata = match store
-        .read_block(METADATA_BLOCK_ID)
+        .read_block(BlockKey::Super)
         .map_err(crate::Error::Store)?
     {
         Some(data) => data,
