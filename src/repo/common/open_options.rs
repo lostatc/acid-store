@@ -324,21 +324,6 @@ impl OpenOptions {
 
     /// Open the repository, failing if it doesn't exist.
     fn open_repo<R: OpenRepo>(self, mut store: impl DataStore + 'static) -> crate::Result<R> {
-        // Read the repository metadata from the super block.
-        let serialized_metadata = store
-            .read_block(BlockKey::Super)
-            .map_err(crate::Error::Store)?
-            .ok_or(crate::Error::Corrupt)?;
-        let metadata: RepoMetadata =
-            from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
-
-        // Acquire a lock on the repository for this process.
-        let lock = REPO_LOCKS
-            .lock()
-            .unwrap()
-            .acquire_lock(metadata.id)
-            .ok_or(crate::Error::Locked)?;
-
         // Read the repository version to see if this is a compatible repository.
         let serialized_version = store
             .read_block(BlockKey::Version)
@@ -349,6 +334,14 @@ impl OpenOptions {
         if version != VERSION_ID {
             return Err(crate::Error::UnsupportedRepo);
         }
+
+        // Read the repository metadata from the super block.
+        let serialized_metadata = store
+            .read_block(BlockKey::Super)
+            .map_err(crate::Error::Store)?
+            .ok_or(crate::Error::Corrupt)?;
+        let metadata: RepoMetadata =
+            from_read(serialized_metadata.as_slice()).map_err(|_| crate::Error::Corrupt)?;
 
         let password = match self.password {
             Some(password) if metadata.config.encryption != Encryption::None => Some(password),
@@ -376,7 +369,7 @@ impl OpenOptions {
 
         // We read the metadata again after acquiring a lock but before getting the header ID to
         // avoid a race condition. We don't have to worry about decrypting the master encryption key
-        // again because changing the password does not change the master encryption key.
+        // again because the master encryption key should never change.
         let serialized_metadata = store
             .read_block(BlockKey::Super)
             .map_err(crate::Error::Store)?
@@ -415,7 +408,6 @@ impl OpenOptions {
             packs,
             transactions: LockTable::new(),
             master_key,
-            lock,
             lock_id,
         }));
 
@@ -441,14 +433,6 @@ impl OpenOptions {
             }
             _ => None,
         };
-
-        // Acquire a lock on the repository for this process.
-        let id = Uuid::new_v4().into();
-        let lock = REPO_LOCKS
-            .lock()
-            .unwrap()
-            .acquire_lock(id)
-            .ok_or(crate::Error::AlreadyExists)?;
 
         // Check if the repository already exists.
         if store
@@ -519,7 +503,7 @@ impl OpenOptions {
 
         // Create the repository metadata with the header block references.
         let metadata = RepoMetadata {
-            id,
+            id: Uuid::new_v4().into(),
             config: self.config,
             master_key: encrypted_master_key,
             salt,
@@ -552,7 +536,6 @@ impl OpenOptions {
             packs,
             transactions: LockTable::new(),
             master_key,
-            lock,
             lock_id,
         }));
 
