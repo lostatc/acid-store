@@ -17,7 +17,11 @@
 use std::hash::Hash;
 use std::sync::{Arc, Weak};
 
+use uuid::Uuid;
 use weak_table::WeakHashSet;
+
+use super::encryption::{Encryption, EncryptionKey};
+use crate::store::{BlockId, BlockKey, BlockType, DataStore};
 
 /// A lock acquired on a resource.
 ///
@@ -49,4 +53,101 @@ impl<T: Eq + Hash> LockTable<T> {
             Some(Lock(id_arc))
         }
     }
+}
+
+/// Attempt to acquire a lock on the given `store`.
+///
+/// This uses a two-phase locking algorithm to avoid race conditions.
+///
+/// This returns the `BlockId` of the block containing the lock or `None` if a lock could not be
+/// acquired.
+///
+/// # Errors
+/// - `Error::Locked`: The repository is locked.
+/// - `Error::InvalidData`: Ciphertext verification failed.
+/// - `Error::Store`: An error occurred with the data store.
+/// - `Error::Io`: An I/O error occurred.
+pub fn lock_store(
+    store: &mut impl DataStore,
+    encryption: &Encryption,
+    key: &EncryptionKey,
+    id: &[u8],
+    handler: impl FnOnce(&[u8]) -> bool,
+) -> crate::Result<BlockId> {
+    let current_lock_block_id = Uuid::new_v4().into();
+
+    // Check for any existing locks on the repository.
+    let existing_locks = store
+        .list_blocks(BlockType::Lock)
+        .map_err(crate::Error::Store)?;
+
+    match *existing_locks.as_slice() {
+        // There are no exising locks.
+        [] => {}
+
+        // There is exactly one existing lock.
+        [existing_lock_block_id] => {
+            let encrypted_existing_lock_id = store
+                .read_block(BlockKey::Lock(existing_lock_block_id))
+                .map_err(crate::Error::Store)?
+                .ok_or(crate::Error::Locked)?;
+            let existing_lock_id = encryption.decrypt(&encrypted_existing_lock_id, key)?;
+
+            // Invoke the lock handler with the existing lock's lock ID to see if it should be
+            // removed.
+            if handler(existing_lock_id.as_slice()) {
+                store
+                    .remove_block(BlockKey::Lock(existing_lock_block_id))
+                    .map_err(crate::Error::Store)?;
+            } else {
+                return Err(crate::Error::Locked);
+            }
+        }
+
+        // There is more than one existing lock. We do not try to resolve this situation.
+        _ => {
+            return Err(crate::Error::Locked);
+        }
+    }
+
+    // Acquire a lock on the repository.
+    let encrypted_current_lock_id = encryption.encrypt(id, key);
+    store
+        .write_block(
+            BlockKey::Lock(current_lock_block_id),
+            &encrypted_current_lock_id,
+        )
+        .map_err(crate::Error::Store)?;
+
+    // Check if any new locks have been acquired since we last checked.
+    let existing_locks = store
+        .list_blocks(BlockType::Lock)
+        .map_err(crate::Error::Store)?;
+
+    if existing_locks == [current_lock_block_id] {
+        // No new locks have been acquired, which means our lock is valid.
+        Ok(current_lock_block_id)
+    } else {
+        // At least one new lock as been acquired. We must remove our lock and return an error to
+        // avoid a race condition. It is possible for two clients to compete for a lock and for
+        // neither to acquire one. This locking algorithm does not guarantee that a lock will be
+        // granted.
+        store
+            .remove_block(BlockKey::Lock(current_lock_block_id))
+            .map_err(crate::Error::Store)?;
+        Err(crate::Error::Locked)
+    }
+}
+
+/// Attempt to release a lock on the given `store`.
+///
+/// This attempts to release the lock with the given `lock_id`.
+///
+/// # Errors
+/// - `Error::Store`: An error occurred with the data store.
+pub fn unlock_store(store: &mut impl DataStore, lock_id: BlockId) -> crate::Result<()> {
+    store
+        .remove_block(BlockKey::Lock(lock_id))
+        .map_err(crate::Error::Store)?;
+    Ok(())
 }

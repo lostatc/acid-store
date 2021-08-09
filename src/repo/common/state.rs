@@ -27,8 +27,7 @@ use super::chunk_store::StoreState;
 use super::chunking::IncrementalChunker;
 use super::encryption::EncryptionKey;
 use super::handle::{Chunk, Extent, HandleId, ObjectHandle};
-use super::lock::Lock;
-use super::lock::LockTable;
+use super::lock::{unlock_store, Lock, LockTable};
 use super::metadata::{RepoId, RepoMetadata};
 use super::open_repo::VersionId;
 
@@ -128,8 +127,24 @@ pub struct RepoState {
     /// The master encryption key for the repository.
     pub master_key: EncryptionKey,
 
-    /// The lock on the repository.
+    /// The lock on the repository for this process.
+    ///
+    /// This avoid the need to access the data store to check if the repository is already open
+    /// within this process.
     pub lock: Lock<RepoId>,
+
+    /// The `BlockId` of the key which stores the lock on the repository.
+    ///
+    /// This is used to release the lock when the repository is dropped.
+    pub lock_id: BlockId,
+}
+
+impl Drop for RepoState {
+    fn drop(&mut self) {
+        // Attempt to release the lock on the repository. This may fail.
+        let mut store = self.store.lock().unwrap();
+        unlock_store(&mut *store, self.lock_id).ok();
+    }
 }
 
 /// A seek position in an object.

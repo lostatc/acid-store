@@ -20,7 +20,7 @@ use rmp_serde::from_read;
 use serde::{Deserialize, Serialize};
 
 use super::config::RepoConfig;
-use super::encryption::KeySalt;
+use super::encryption::{EncryptionKey, KeySalt};
 use super::handle::{Chunk, HandleIdTable};
 use super::state::{ChunkInfo, InstanceId, InstanceInfo, PackIndex};
 use crate::store::{BlockId, BlockKey, DataStore, OpenStore};
@@ -58,6 +58,28 @@ pub struct RepoMetadata {
 
     /// The ID of the chunk which stores the repository header.
     pub header_id: BlockId,
+}
+
+impl RepoMetadata {
+    /// Decrypt and return the master encryption key.
+    ///
+    /// # Errors
+    /// - `Error::Password`: The password provided is invalid.
+    pub fn decrypt_master_key(&self, password: &[u8]) -> crate::Result<EncryptionKey> {
+        let user_key = EncryptionKey::derive(
+            password,
+            &self.salt,
+            self.config.encryption.key_size(),
+            self.config.memory_limit,
+            self.config.operations_limit,
+        );
+        Ok(EncryptionKey::new(
+            self.config
+                .encryption
+                .decrypt(&self.master_key, &user_key)
+                .map_err(|_| crate::Error::Password)?,
+        ))
+    }
 }
 
 impl RepoMetadata {
