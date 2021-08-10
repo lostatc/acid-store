@@ -21,13 +21,13 @@ use tempfile::TempDir;
 
 #[cfg(feature = "store-directory")]
 use acid_store::store::DirectoryConfig;
-#[cfg(feature = "store-sftp")]
+#[cfg(feature = "store-rclone")]
 use acid_store::store::RcloneConfig;
 #[cfg(feature = "store-redis")]
 use acid_store::store::RedisConfig;
 #[cfg(feature = "store-sqlite")]
 use acid_store::store::SqliteConfig;
-use acid_store::store::{BlockId, DataStore, MemoryConfig, OpenStore};
+use acid_store::store::{BlockId, BlockKey, BlockType, DataStore, MemoryConfig, OpenStore};
 #[cfg(feature = "store-s3")]
 use acid_store::store::{S3Config, S3Credentials, S3Region};
 #[cfg(feature = "store-sftp")]
@@ -38,9 +38,18 @@ use {
 
 /// Remove all blocks in the given `store`.
 fn truncate_store(store: &mut impl DataStore) -> anyhow::Result<()> {
-    for block_id in store.list_blocks()? {
-        store.remove_block(block_id)?;
+    for block_id in store.list_blocks(BlockType::Data)? {
+        store.remove_block(BlockKey::Data(block_id))?;
     }
+    for block_id in store.list_blocks(BlockType::Lock)? {
+        store.remove_block(BlockKey::Lock(block_id))?;
+    }
+    for block_id in store.list_blocks(BlockType::Header)? {
+        store.remove_block(BlockKey::Header(block_id))?;
+    }
+    store.remove_block(BlockKey::Super)?;
+    store.remove_block(BlockKey::Version)?;
+
     Ok(())
 }
 
@@ -51,20 +60,20 @@ struct WithTempDir<T> {
 }
 
 impl<T: DataStore> DataStore for WithTempDir<T> {
-    fn write_block(&mut self, id: BlockId, data: &[u8]) -> anyhow::Result<()> {
-        self.value.write_block(id, data)
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+        self.value.write_block(key, data)
     }
 
-    fn read_block(&mut self, id: BlockId) -> anyhow::Result<Option<Vec<u8>>> {
-        self.value.read_block(id)
+    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
+        self.value.read_block(key)
     }
 
-    fn remove_block(&mut self, id: BlockId) -> anyhow::Result<()> {
-        self.value.remove_block(id)
+    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+        self.value.remove_block(key)
     }
 
-    fn list_blocks(&mut self) -> anyhow::Result<Vec<BlockId>> {
-        self.value.list_blocks()
+    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
+        self.value.list_blocks(kind)
     }
 }
 
@@ -162,7 +171,6 @@ pub fn rclone_store() -> Box<dyn DataStore> {
 /// resources.
 #[template]
 #[rstest]
-#[serial]
 #[case::store_memory(memory_store())]
 #[cfg_attr(feature = "store-directory", case::store_directory(directory_store()))]
 #[cfg_attr(feature = "store-sqlite", case::store_sqlilte(sqlite_store()))]
