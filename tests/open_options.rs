@@ -141,13 +141,6 @@ fn opening_without_password_errs(mut repo_store: RepoStore) -> anyhow::Result<()
 }
 
 #[rstest]
-fn opening_locked_repo_errs(repo_store: RepoStore) -> anyhow::Result<()> {
-    let _repo: KeyRepo<String> = repo_store.create()?;
-    assert_that!(repo_store.open::<KeyRepo<String>>()).is_err_variant(acid_store::Error::Locked);
-    Ok(())
-}
-
-#[rstest]
 fn open_or_create_existing_repo(repo_store: RepoStore) -> anyhow::Result<()> {
     repo_store.create::<KeyRepo<String>>()?;
     assert_that!(OpenOptions::new()
@@ -173,5 +166,34 @@ fn opening_existing_repo_of_different_type_errs(repo_store: RepoStore) -> anyhow
     drop(repo);
     assert_that!(repo_store.open::<ValueRepo<String>>())
         .is_err_variant(acid_store::Error::UnsupportedRepo);
+    Ok(())
+}
+
+#[rstest]
+fn existing_locks_are_respected(repo_store: RepoStore) -> anyhow::Result<()> {
+    let _repo: KeyRepo<String> = repo_store.create()?;
+    assert_that!(repo_store.open::<KeyRepo<String>>()).is_err_variant(acid_store::Error::Locked);
+    Ok(())
+}
+
+#[rstest]
+fn existing_locks_are_removed(mut repo_store: RepoStore) -> anyhow::Result<()> {
+    let _repo: KeyRepo<String> = repo_store.create()?;
+    repo_store.handler = Box::new(|_| true);
+    assert_that!(repo_store.open::<KeyRepo<String>>()).is_ok();
+    Ok(())
+}
+
+#[rstest]
+fn lock_handler_is_passed_context_of_existing_lock(
+    mut repo_store: RepoStore,
+) -> anyhow::Result<()> {
+    repo_store.context = b"context value".to_vec();
+    let _repo: KeyRepo<String> = repo_store.create()?;
+    repo_store.handler = Box::new(|context| {
+        assert_that!(context).is_equal_to(&b"context value"[..]);
+        true
+    });
+    assert_that!(repo_store.open::<KeyRepo<String>>()).is_ok();
     Ok(())
 }
