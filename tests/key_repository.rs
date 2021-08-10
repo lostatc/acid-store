@@ -20,9 +20,9 @@ use std::io::{Read, Write};
 
 use acid_store::repo::key::KeyRepo;
 use acid_store::repo::{
-    peek_info, Commit, Encryption, ResourceLimit, RestoreSavepoint, SwitchInstance,
+    peek_info, Commit, Encryption, ResourceLimit, RestoreSavepoint, SwitchInstance, Unlock,
 };
-use acid_store::store::{DataStore, OpenStore};
+use acid_store::store::{BlockType, DataStore, OpenStore};
 use common::*;
 use rstest_reuse::{self, *};
 use std::collections::HashSet;
@@ -483,7 +483,7 @@ fn unused_data_is_reclaimed_on_clean(
     drop(repo);
 
     let mut store = repo_store.store.open()?;
-    let original_blocks = store.list_blocks()?.len();
+    let original_blocks = store.list_blocks(BlockType::Data)?.len();
     drop(store);
 
     let mut repo: KeyRepo<String> = repo_store.open()?;
@@ -493,7 +493,7 @@ fn unused_data_is_reclaimed_on_clean(
     drop(repo);
 
     let mut store = repo_store.store.open()?;
-    let new_blocks = store.list_blocks()?.len();
+    let new_blocks = store.list_blocks(BlockType::Data)?.len();
 
     assert_that!(new_blocks).is_less_than(original_blocks);
 
@@ -691,5 +691,26 @@ fn repo_size_is_correct(
     assert_that!(stats.repo_size())
         .is_equal_to(first_buffer.len() as u64 + second_buffer.len() as u64);
 
+    Ok(())
+}
+
+#[rstest]
+fn unlock_repo(repo_store: RepoStore) -> anyhow::Result<()> {
+    let mut repo: KeyRepo<String> = repo_store.create()?;
+    repo.unlock()?;
+    assert_that!(repo_store.open::<KeyRepo<String>>()).is_ok();
+    Ok(())
+}
+
+#[rstest]
+fn update_lock_context(mut repo_store: RepoStore) -> anyhow::Result<()> {
+    repo_store.context = b"initial context".to_vec();
+    let mut repo: KeyRepo<String> = repo_store.create()?;
+    repo.update_lock(b"updated context")?;
+    repo_store.handler = Box::new(|context| {
+        assert_that!(context).is_equal_to(&b"updated context"[..]);
+        true
+    });
+    assert_that!(repo_store.open::<KeyRepo<String>>()).is_ok();
     Ok(())
 }

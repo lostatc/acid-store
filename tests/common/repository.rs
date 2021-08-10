@@ -50,6 +50,8 @@ pub struct RepoStore {
     pub config: RepoConfig,
     pub password: String,
     pub instance: InstanceId,
+    pub context: Vec<u8>,
+    pub handler: Box<dyn Fn(&[u8]) -> bool>,
 }
 
 impl RepoStore {
@@ -61,6 +63,8 @@ impl RepoStore {
             config,
             password,
             instance: DEFAULT_INSTANCE,
+            context: Vec::new(),
+            handler: Box::new(|_| false),
         }
     }
 
@@ -70,6 +74,7 @@ impl RepoStore {
             .config(self.config.clone())
             .password(self.password.as_bytes())
             .instance(self.instance)
+            .locking(&self.context, |context| (self.handler)(context))
             .mode(OpenMode::CreateNew)
             .open(&self.store)
     }
@@ -80,6 +85,8 @@ impl RepoStore {
             .config(self.config.clone())
             .password(self.password.as_bytes())
             .instance(self.instance)
+            .locking(&self.context, |context| (self.handler)(context))
+            .mode(OpenMode::Open)
             .open(&self.store)
     }
 }
