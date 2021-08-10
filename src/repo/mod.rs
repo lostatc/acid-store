@@ -37,18 +37,20 @@
 //! # Locking
 //! A repository cannot be open more than once simultaneously. Once a repository is opened, it is
 //! locked exclusively until the repository is dropped. Repository locks are stored in the data
-//! store and are respected by other processes and machines trying to open the repository. When a
-//! repository is dropped, it will attempt to release its lock on the data store. However, releasing
-//! a lock can fail for a number of reasons, such as an I/O error or the thread panicking. In this
-//! case, the repository will remain locked.
+//! store and are respected by other processes and machines trying to open the repository.
 //!
-//! The behavior of repository locking can be configured when you open or create a repository using
-//! [`OpenOptions`]. You can register a lock handler that is invoked when an existing lock on the
-//! repository is detected which decides whether to respect the existing lock or remove it. This
-//! can be used to remove stale locks. See [`OpenOptions::lock`] for details.
+//! When a repository is dropped, it will attempt to release its lock on the data store. However,
+//! releasing a lock can fail for a number of reasons, such as an I/O error or the thread panicking.
+//! In this case, the repository will remain locked. You can use [`Unlock::unlock`] to manually
+//! release a repository's lock on the data store while handling errors.
 //!
-//! **Removing an existing lock is potentially dangerous, as concurrent access to a repository
-//! from multiple processes or machines can cause data loss.**
+//! Because releasing a repository lock can fail, it may be necessary to implement logic for
+//! removing stale locks. When you open a repository with [`OpenOptions`], you can register a lock
+//! handler that is invoked when an existing lock on the repository is detected and decides
+//! whether to respect the existing lock or remove it. See [`OpenOptions::locking`] for details.
+//!
+//! **Removing an existing lock is potentially dangerous, as concurrent access to a repository can
+//! cause data loss.**
 //!
 //! # Atomicity
 //! Changes made to a repository are not persisted to the data store until those changes are
@@ -114,7 +116,8 @@
 //! [`KeyRepo`]: crate::repo::key::KeyRepo
 //! [`OpenOptions`]: crate::repo::OpenOptions
 //! [`Chunking`]: crate::repo::Chunking
-//! [`OpenOptions::lock`]: crate::repo::OpenOptions::lock
+//! [`Unlock::unlock`]: crate::repo::Unlock::unlock
+//! [`OpenOptions::locking`]: crate::repo::OpenOptions::locking
 //! [`Commit::commit`]: crate::repo::Commit::commit
 //! [`Commit::clean`]: crate::repo::Commit::clean
 //! [`RestoreSavepoint`]: crate::repo::RestoreSavepoint
@@ -130,7 +133,7 @@ pub use self::common::{
     peek_info, Chunking, Commit, Compression, ContentId, Encryption, InstanceId, Object, ObjectId,
     ObjectStats, OpenMode, OpenOptions, OpenRepo, Packing, ReadOnlyObject, RepoConfig, RepoId,
     RepoInfo, RepoStats, ResourceLimit, Restore, RestoreSavepoint, Savepoint, SwitchInstance,
-    VersionId, DEFAULT_INSTANCE,
+    Unlock, VersionId, DEFAULT_INSTANCE,
 };
 
 /// An object store which maps keys to seekable binary blobs.

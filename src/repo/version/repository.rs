@@ -29,7 +29,7 @@ use crate::repo::key::KeyRepo;
 use crate::repo::state::StateRepo;
 use crate::repo::{
     key::Key, Commit, InstanceId, Object, OpenRepo, ReadOnlyObject, RepoInfo, RepoStats,
-    ResourceLimit, RestoreSavepoint, Savepoint, VersionId,
+    ResourceLimit, RestoreSavepoint, Savepoint, Unlock, VersionId,
 };
 
 use super::info::{KeyInfo, Version, VersionInfo};
@@ -377,5 +377,15 @@ impl<K: Key> RestoreSavepoint for VersionRepo<K> {
 
     fn finish_restore(&mut self, restore: Self::Restore) -> bool {
         self.0.finish_restore(restore)
+    }
+}
+
+impl<K: Key> Unlock for VersionRepo<K> {
+    fn unlock(&mut self) -> crate::Result<()> {
+        self.0.unlock()
+    }
+
+    fn update_lock(&mut self, context: &[u8]) -> crate::Result<()> {
+        self.0.update_lock(context)
     }
 }

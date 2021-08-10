@@ -29,7 +29,7 @@ use walkdir::WalkDir;
 
 use crate::repo::{
     key::KeyRepo, state::StateRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo, RepoStats,
-    ResourceLimit, RestoreSavepoint, Savepoint, VersionId,
+    ResourceLimit, RestoreSavepoint, Savepoint, Unlock, VersionId,
 };
 
 use super::entry::{Entry, EntryHandle, EntryType, HandleType};
@@ -1061,5 +1061,19 @@ impl FileRepo<UnixSpecial, UnixMetadata> {
             .map(|opt| opt.as_ref())
             .collect::<Vec<&OsStr>>();
         Ok(fuse::mount(adapter, &mountpoint, &all_opts)?)
+    }
+}
+
+impl<S, M> Unlock for FileRepo<S, M>
+where
+    S: SpecialType,
+    M: FileMetadata,
+{
+    fn unlock(&mut self) -> crate::Result<()> {
+        self.0.unlock()
+    }
+
+    fn update_lock(&mut self, context: &[u8]) -> crate::Result<()> {
+        self.0.update_lock(context)
     }
 }
