@@ -747,21 +747,25 @@ impl<K: Key> Commit for KeyRepo<K> {
             Packing::None => {
                 // When packing is disabled, we can just remove the unreferenced data blocks from
                 // the data store directly.
-                let block_ids = state
-                    .store
-                    .lock()
-                    .unwrap()
-                    .list_blocks(BlockType::Data)
-                    .map_err(crate::Error::Store)?;
+                {
+                    let block_ids = state
+                        .store
+                        .lock()
+                        .unwrap()
+                        .list_blocks(BlockType::Data)
+                        .map_err(crate::Error::Store)?;
 
-                let mut store = state.store.lock().unwrap();
-                for block_id in block_ids {
-                    if !referenced_blocks.contains(&block_id) {
-                        store
-                            .remove_block(BlockKey::Data(block_id))
-                            .map_err(crate::Error::Store)?;
+                    let mut store = state.store.lock().unwrap();
+                    for block_id in block_ids {
+                        if !referenced_blocks.contains(&block_id) {
+                            store
+                                .remove_block(BlockKey::Data(block_id))
+                                .map_err(crate::Error::Store)?;
+                        }
                     }
                 }
+
+                drop(state);
             }
             Packing::Fixed(_) => {
                 // When packing is enabled, we need to repack the packs which contain unreferenced
