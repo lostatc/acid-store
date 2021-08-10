@@ -31,7 +31,6 @@ pub use config::{
 pub use data::{buffer, fixed_buffer, larger_buffer, smaller_buffer, temp_dir};
 pub use repository::{create_repo, repo, repo_object, repo_store, RepoObject, RepoStore};
 pub use rstest::*;
-pub use serial_test::serial;
 pub use spectral::prelude::*;
 #[cfg(feature = "store-directory")]
 pub use store::directory_store;
