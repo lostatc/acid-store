@@ -56,6 +56,33 @@ impl<T: Eq + Hash> LockTable<T> {
     }
 }
 
+/// A repository which can be unlocked.
+pub trait Unlock {
+    /// Release this repository's lock.
+    ///
+    /// This releases this repository's lock on the data store. Typically, the lock is automatically
+    /// released when the repository is dropped. However, this method can be used to handle any
+    /// errors that occur when releasing the lock and potentially implement retry logic.
+    ///
+    /// Once this method returns `Ok`, you **must** drop the repository, as as concurrent access to
+    /// a repository can cause data loss.
+    ///
+    /// # Errors
+    /// - `Error::Store`: An error occurred with the data store.
+    fn unlock(&mut self) -> crate::Result<()>;
+
+    /// Update the context of this repository's lock.
+    ///
+    /// This method changes the context of this repository's lock on the data store. This is the
+    /// same context value which is supplied to [`OpenOptions::locking`].
+    ///
+    /// # Errors
+    /// - `Error::Store`: An error occurred with the data store.
+    ///
+    /// [`OpenOptions::locking`]: crate::repo::OpenOptions::locking
+    fn update_lock(&mut self, context: &[u8]) -> crate::Result<()>;
+}
+
 /// Attempt to acquire a lock on the given `store`.
 ///
 /// This uses a two-phase locking algorithm to avoid race conditions.

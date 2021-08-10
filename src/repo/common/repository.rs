@@ -35,6 +35,7 @@ use super::commit::Commit;
 use super::encryption::{Encryption, EncryptionKey, KeySalt, ResourceLimit};
 use super::handle::{chunk_hash, HandleIdTable, ObjectHandle};
 use super::key::{Key, Keys};
+use super::lock::{unlock_store, Unlock};
 use super::metadata::{Header, RepoInfo, RepoStats};
 use super::object::Object;
 use super::object_store::{ObjectReader, ObjectWriter};
@@ -888,5 +889,21 @@ impl<K: Key> Commit for KeyRepo<K> {
         }
 
         Ok(())
+    }
+}
+
+impl<K: Key> Unlock for KeyRepo<K> {
+    fn unlock(&mut self) -> crate::Result<()> {
+        let state = self.state.read().unwrap();
+        let mut store = state.store.lock().unwrap();
+        unlock_store(&mut *store, state.lock_id)
+    }
+
+    fn update_lock(&mut self, context: &[u8]) -> crate::Result<()> {
+        let state = self.state.read().unwrap();
+        let mut store = state.store.lock().unwrap();
+        store
+            .write_block(BlockKey::Lock(state.lock_id), context)
+            .map_err(crate::Error::Store)
     }
 }

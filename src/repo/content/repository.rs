@@ -26,7 +26,7 @@ use crate::repo::{
     key::KeyRepo,
     state::{ObjectKey, StateRepo},
     Commit, InstanceId, OpenRepo, ReadOnlyObject, RepoInfo, RepoStats, ResourceLimit,
-    RestoreSavepoint, Savepoint, VersionId,
+    RestoreSavepoint, Savepoint, Unlock, VersionId,
 };
 
 use super::hash::{HashAlgorithm, BUFFER_SIZE, DEFAULT_ALGORITHM};
@@ -300,5 +300,15 @@ impl RestoreSavepoint for ContentRepo {
 
     fn finish_restore(&mut self, restore: Self::Restore) -> bool {
         self.0.finish_restore(restore)
+    }
+}
+
+impl Unlock for ContentRepo {
+    fn unlock(&mut self) -> crate::Result<()> {
+        self.0.unlock()
+    }
+
+    fn update_lock(&mut self, context: &[u8]) -> crate::Result<()> {
+        self.0.update_lock(context)
     }
 }

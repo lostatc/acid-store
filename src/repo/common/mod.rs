@@ -21,6 +21,7 @@ pub use self::config::RepoConfig;
 pub use self::encryption::{Encryption, ResourceLimit};
 pub use self::handle::{ContentId, ObjectId, ObjectStats};
 pub use self::key::{Key, Keys};
+pub use self::lock::Unlock;
 pub use self::metadata::{peek_info, RepoId, RepoInfo, RepoStats};
 pub use self::object::{Object, ReadOnlyObject};
 pub use self::open_options::{OpenMode, OpenOptions, DEFAULT_INSTANCE};

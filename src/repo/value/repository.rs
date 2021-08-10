@@ -29,7 +29,7 @@ use crate::repo::{
     key::{Key, KeyRepo},
     state::{ObjectKey, StateRepo},
     Commit, InstanceId, OpenRepo, RepoInfo, RepoStats, ResourceLimit, RestoreSavepoint, Savepoint,
-    VersionId,
+    Unlock, VersionId,
 };
 
 type RepoState<K> = HashMap<K, ObjectKey>;
@@ -259,5 +259,15 @@ impl<K: Key> RestoreSavepoint for ValueRepo<K> {
 
     fn finish_restore(&mut self, restore: Self::Restore) -> bool {
         self.0.finish_restore(restore)
+    }
+}
+
+impl<K: Key> Unlock for ValueRepo<K> {
+    fn unlock(&mut self) -> crate::Result<()> {
+        self.0.unlock()
+    }
+
+    fn update_lock(&mut self, context: &[u8]) -> crate::Result<()> {
+        self.0.update_lock(context)
     }
 }

@@ -242,7 +242,9 @@ impl OpenOptions {
     ///
     /// This method accepts a `context` which is associated with the lock on the repository once a
     /// lock is acquired. If a lock context is not specified, the context of the acquired lock will
-    /// be empty. If encryption is enabled for the repository, the lock context is encrypted.
+    /// be empty. If encryption is enabled for the repository, the lock context is encrypted. You
+    /// can change the context of the held lock once the repository is open using
+    /// [`Unlock::update_lock`].
     ///
     /// This method also accepts a `handler` which is invoked if a lock is already held on the
     /// repository. This lock handler is passed the context of the existing lock. If `handler`
@@ -254,7 +256,7 @@ impl OpenOptions {
     /// or is never called.
     ///
     /// **Removing an existing lock is potentially dangerous, as concurrent access to a repository
-    /// from multiple processes or machines can cause data loss.**
+    /// can cause data loss.**
     ///
     /// # Examples
     ///
@@ -265,11 +267,13 @@ impl OpenOptions {
     /// # use acid_store::store::MemoryConfig;
     /// let mut repo: KeyRepo<String> = OpenOptions::new()
     ///     .mode(OpenMode::Create)
-    ///     .lock(&[], |_| true)
+    ///     .locking(&[], |_| true)
     ///     .open(&MemoryConfig::new())
     ///     .unwrap();
     /// ```
-    pub fn lock(
+    ///
+    /// [`Unlock::update_lock`]: crate::repo::Unlock::update_lock
+    pub fn locking(
         &mut self,
         context: &[u8],
         handler: impl FnOnce(&[u8]) -> bool + 'static,

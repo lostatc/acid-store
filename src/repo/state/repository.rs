@@ -26,7 +26,7 @@ use super::info::{KeyId, KeyIdTable, ObjectKey, RepoKey, RepoState, StateRestore
 use super::iter::Keys;
 use crate::repo::{
     key::KeyRepo, Commit, InstanceId, Object, OpenRepo, RepoInfo, RepoStats, ResourceLimit,
-    RestoreSavepoint, Savepoint, VersionId,
+    RestoreSavepoint, Savepoint, Unlock, VersionId,
 };
 
 /// A low-level repository type which can be used to implement higher-level repository types
@@ -376,5 +376,18 @@ where
         self.state = state;
         self.id_table = id_table;
         true
+    }
+}
+
+impl<State> Unlock for StateRepo<State>
+where
+    State: Serialize + DeserializeOwned + Default,
+{
+    fn unlock(&mut self) -> crate::Result<()> {
+        self.repo.unlock()
+    }
+
+    fn update_lock(&mut self, context: &[u8]) -> crate::Result<()> {
+        self.repo.update_lock(context)
     }
 }
