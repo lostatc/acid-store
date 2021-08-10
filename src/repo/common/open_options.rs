@@ -119,22 +119,22 @@ pub enum OpenMode {
 /// [`open`]: crate::repo::OpenOptions::open
 /// [`OpenStore`]: crate::store::OpenStore
 /// [`OpenRepo`]: crate::repo::OpenRepo
-pub struct OpenOptions {
+pub struct OpenOptions<'a> {
     config: RepoConfig,
     mode: OpenMode,
-    password: Option<Vec<u8>>,
+    password: Option<&'a [u8]>,
     instance: InstanceId,
-    lock_context: Vec<u8>,
-    lock_handler: Box<dyn FnOnce(&[u8]) -> bool>,
+    lock_context: &'a [u8],
+    lock_handler: Box<dyn FnMut(&[u8]) -> bool + 'a>,
 }
 
-impl Default for OpenOptions {
+impl<'a> Default for OpenOptions<'a> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl OpenOptions {
+impl<'a> OpenOptions<'a> {
     /// Create a new `OpenOptions`.
     pub fn new() -> Self {
         Self {
@@ -142,7 +142,7 @@ impl OpenOptions {
             mode: OpenMode::Open,
             password: None,
             instance: DEFAULT_INSTANCE,
-            lock_context: Vec::new(),
+            lock_context: &[],
             lock_handler: Box::new(|_| false),
         }
     }
@@ -233,8 +233,8 @@ impl OpenOptions {
     /// Use the given `password`.
     ///
     /// This is required when encryption is enabled for the repository.
-    pub fn password(&mut self, password: &[u8]) -> &mut Self {
-        self.password = Some(password.to_vec());
+    pub fn password(&mut self, password: &'a [u8]) -> &mut Self {
+        self.password = Some(password);
         self
     }
 
@@ -275,10 +275,10 @@ impl OpenOptions {
     /// [`Unlock::update_lock`]: crate::repo::Unlock::update_lock
     pub fn locking(
         &mut self,
-        context: &[u8],
-        handler: impl FnOnce(&[u8]) -> bool + 'static,
+        context: &'a [u8],
+        handler: impl FnMut(&[u8]) -> bool + 'a,
     ) -> &mut Self {
-        self.lock_context = context.to_vec();
+        self.lock_context = context;
         self.lock_handler = Box::new(handler);
         self
     }
@@ -298,7 +298,7 @@ impl OpenOptions {
     }
 
     /// Open the repository, failing if it doesn't exist.
-    fn open_repo<R: OpenRepo>(self, mut store: impl DataStore + 'static) -> crate::Result<R> {
+    fn open_repo<R: OpenRepo>(&mut self, mut store: impl DataStore + 'static) -> crate::Result<R> {
         // Read the repository version to see if this is a compatible repository.
         let serialized_version = store
             .read_block(BlockKey::Version)
@@ -338,8 +338,8 @@ impl OpenOptions {
             &mut store,
             &metadata.config.encryption,
             &master_key,
-            &self.lock_context,
-            self.lock_handler,
+            self.lock_context,
+            &mut self.lock_handler,
         )?;
 
         // We read the metadata again after acquiring a lock but before getting the header ID to
@@ -399,7 +399,10 @@ impl OpenOptions {
     }
 
     /// Create a new repository, failing if one already exists.
-    fn create_repo<R: OpenRepo>(self, mut store: impl DataStore + 'static) -> crate::Result<R> {
+    fn create_repo<R: OpenRepo>(
+        &mut self,
+        mut store: impl DataStore + 'static,
+    ) -> crate::Result<R> {
         let password = match self.password {
             Some(password) if self.config.encryption != Encryption::None => Some(password),
             // Return an error if a password was required but not provided.
@@ -429,8 +432,8 @@ impl OpenOptions {
             &mut store,
             &self.config.encryption,
             &master_key,
-            &self.lock_context,
-            self.lock_handler,
+            self.lock_context,
+            &mut self.lock_handler,
         )?;
 
         let salt = match password {
@@ -442,7 +445,7 @@ impl OpenOptions {
         let encrypted_master_key = match password {
             Some(password_bytes) => {
                 let user_key = EncryptionKey::derive(
-                    password_bytes.as_slice(),
+                    password_bytes,
                     &salt,
                     self.config.encryption.key_size(),
                     self.config.memory_limit,
@@ -479,7 +482,7 @@ impl OpenOptions {
         // Create the repository metadata with the header block references.
         let metadata = RepoMetadata {
             id: Uuid::new_v4().into(),
-            config: self.config,
+            config: self.config.clone(),
             master_key: encrypted_master_key,
             salt,
             header_id,
@@ -547,7 +550,7 @@ impl OpenOptions {
     /// - `Error::InvalidData`: Ciphertext verification failed.
     /// - `Error::Store`: An error occurred with the data store.
     /// - `Error::Io`: An I/O error occurred.
-    pub fn open<R, C>(self, config: &C) -> crate::Result<R>
+    pub fn open<R, C>(&mut self, config: &C) -> crate::Result<R>
     where
         R: OpenRepo,
         C: OpenStore,
@@ -572,13 +575,14 @@ impl OpenOptions {
     }
 }
 
-impl Debug for OpenOptions {
+impl<'a> Debug for OpenOptions<'a> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpenOptions")
             .field("config", &self.config)
             .field("mode", &self.mode)
             .field("password", &self.password)
             .field("instance", &self.instance)
+            .field("lock_context", &self.lock_context)
             .finish_non_exhaustive()
     }
 }

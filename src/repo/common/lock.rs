@@ -95,12 +95,12 @@ pub trait Unlock {
 /// - `Error::InvalidData`: Ciphertext verification failed.
 /// - `Error::Store`: An error occurred with the data store.
 /// - `Error::Io`: An I/O error occurred.
-pub fn lock_store(
+pub fn lock_store<'a>(
     store: &mut impl DataStore,
     encryption: &Encryption,
     key: &EncryptionKey,
-    context: &[u8],
-    handler: impl FnOnce(&[u8]) -> bool,
+    context: &'a [u8],
+    handler: impl FnOnce(&[u8]) -> bool + 'a,
 ) -> crate::Result<BlockId> {
     let current_lock_id = Uuid::new_v4().into();
 
