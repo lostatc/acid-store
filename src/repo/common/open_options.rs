@@ -124,7 +124,7 @@ pub struct OpenOptions {
     mode: OpenMode,
     password: Option<Vec<u8>>,
     instance: InstanceId,
-    lock_id: Vec<u8>,
+    lock_context: Vec<u8>,
     lock_handler: Box<dyn FnOnce(&[u8]) -> bool>,
 }
 
@@ -142,7 +142,7 @@ impl OpenOptions {
             mode: OpenMode::Open,
             password: None,
             instance: DEFAULT_INSTANCE,
-            lock_id: Vec::new(),
+            lock_context: Vec::new(),
             lock_handler: Box::new(|_| false),
         }
     }
@@ -240,12 +240,12 @@ impl OpenOptions {
 
     /// Configure the behavior of repository locking.
     ///
-    /// This method accepts a lock `id` which is associated with the lock on the repository once a
-    /// lock is acquired. If a lock ID is not specified, the ID of the acquired lock will be empty.
-    /// If encryption is enabled for the repository, the lock ID is encrypted.
+    /// This method accepts a `context` which is associated with the lock on the repository once a
+    /// lock is acquired. If a lock context is not specified, the context of the acquired lock will
+    /// be empty. If encryption is enabled for the repository, the lock context is encrypted.
     ///
     /// This method also accepts a `handler` which is invoked if a lock is already held on the
-    /// repository. This lock handler is passed the ID of the existing lock. If `handler`
+    /// repository. This lock handler is passed the context of the existing lock. If `handler`
     /// returns `true`, the existing lock will be removed and the repository will be opened. If
     /// `handler` returns `false`, the existing lock will be respected and opening the repository
     /// will fail. If a lock handler is not specified, an existing lock will always be respected.
@@ -269,41 +269,12 @@ impl OpenOptions {
     ///     .open(&MemoryConfig::new())
     ///     .unwrap();
     /// ```
-    ///
-    /// Respect an existing lock if it was acquired less than 30 minutes ago and remove it if it was
-    /// acquired more than 30 minutes ago.
-    ///
-    /// ```
-    /// # use std::convert::TryInto;
-    /// # use std::time::{Duration, SystemTime, UNIX_EPOCH};
-    /// # use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo};
-    /// # use acid_store::store::MemoryConfig;
-    /// // The amount of time from when a lock is acquired before it expires.
-    /// const LOCK_TTL: Duration = Duration::from_secs(60 * 30);
-    ///
-    /// // Set the lock ID to the time the repository was opened.
-    /// let lock_id = SystemTime::now()
-    ///     .duration_since(UNIX_EPOCH)
-    ///     .unwrap()
-    ///     .as_secs()
-    ///     .to_le_bytes()
-    ///     .to_vec();
-    ///
-    /// // Set a lock handler which checks if the existing lock is expired.
-    /// let mut repo: KeyRepo<String> = OpenOptions::new()
-    ///     .mode(OpenMode::Create)
-    ///     .lock(&lock_id, |held_id| {
-    ///         let time_acquired = UNIX_EPOCH
-    ///             + Duration::from_secs(u64::from_le_bytes(held_id.try_into().unwrap()));
-    ///         let time_expired = time_acquired + LOCK_TTL;
-    ///         SystemTime::now() > time_expired
-    ///     })
-    ///     .open(&MemoryConfig::new())
-    ///     .unwrap();
-    ///
-    /// ```
-    pub fn lock(&mut self, id: &[u8], handler: impl FnOnce(&[u8]) -> bool + 'static) -> &mut Self {
-        self.lock_id = id.to_vec();
+    pub fn lock(
+        &mut self,
+        context: &[u8],
+        handler: impl FnOnce(&[u8]) -> bool + 'static,
+    ) -> &mut Self {
+        self.lock_context = context.to_vec();
         self.lock_handler = Box::new(handler);
         self
     }
@@ -363,7 +334,7 @@ impl OpenOptions {
             &mut store,
             &metadata.config.encryption,
             &master_key,
-            &self.lock_id,
+            &self.lock_context,
             self.lock_handler,
         )?;
 
@@ -454,7 +425,7 @@ impl OpenOptions {
             &mut store,
             &self.config.encryption,
             &master_key,
-            &self.lock_id,
+            &self.lock_context,
             self.lock_handler,
         )?;
 
