@@ -69,18 +69,44 @@ pub trait Unlock {
     ///
     /// # Errors
     /// - `Error::Store`: An error occurred with the data store.
-    fn unlock(&mut self) -> crate::Result<()>;
+    fn unlock(&self) -> crate::Result<()>;
 
-    /// Update the context of this repository's lock.
+    /// Return whether this repository is currently locked.
     ///
-    /// This method changes the context of this repository's lock on the data store. This is the
-    /// same context value which is supplied to [`OpenOptions::locking`].
+    /// This returns `true` if this repository currently holds a lock on the data store or `false`
+    /// if its lock has been released. A lock can be released via [`unlock`] or via a lock handler
+    /// set with [`OpenOptions::locking`].
+    ///
+    /// # Errors
+    /// - `Error::Store`: An error occurred with the data store.
+    ///
+    /// [`unlock`]: crate::repo::Unlock::unlock
+    /// [`OpenOptions::locking`]: crate::repo::OpenOptions::locking
+    fn is_locked(&self) -> crate::Result<bool>;
+
+    /// Get the current context value of this repository's lock.
+    ///
+    /// This method returns the context value associated with this repository's lock on the data
+    /// store. This is the same context value which is supplied to [`OpenOptions::locking`].
+    ///
+    /// # Errors
+    /// - `Error::NotLocked`: This repository is not locked.
+    /// - `Error::InvalidData`: Ciphertext verification failed.
+    /// - `Error::Store`: An error occurred with the data store.
+    ///
+    /// [`OpenOptions::locking`]: crate::repo::OpenOptions::locking
+    fn context(&self) -> crate::Result<Vec<u8>>;
+
+    /// Update the context value of this repository's lock.
+    ///
+    /// This method changes the context value associated with this repository's lock on the data
+    /// store. This is the same context value which is supplied to [`OpenOptions::locking`].
     ///
     /// # Errors
     /// - `Error::Store`: An error occurred with the data store.
     ///
     /// [`OpenOptions::locking`]: crate::repo::OpenOptions::locking
-    fn update_lock(&mut self, context: &[u8]) -> crate::Result<()>;
+    fn update_context(&self, context: &[u8]) -> crate::Result<()>;
 }
 
 /// Attempt to acquire a lock on the given `store`.
