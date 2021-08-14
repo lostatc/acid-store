@@ -42,6 +42,10 @@ pub enum Error {
     #[error("A resource is locked.")]
     Locked,
 
+    /// A resource is not locked.
+    #[error("A resource is not locked.")]
+    NotLocked,
+
     /// The repository is corrupt.
     #[error("The repository is corrupt.")]
     Corrupt,

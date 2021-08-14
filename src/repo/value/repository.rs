@@ -263,11 +263,19 @@ impl<K: Key> RestoreSavepoint for ValueRepo<K> {
 }
 
 impl<K: Key> Unlock for ValueRepo<K> {
-    fn unlock(&mut self) -> crate::Result<()> {
+    fn unlock(&self) -> crate::Result<()> {
         self.0.unlock()
     }
 
-    fn update_lock(&mut self, context: &[u8]) -> crate::Result<()> {
-        self.0.update_lock(context)
+    fn is_locked(&self) -> crate::Result<bool> {
+        self.0.is_locked()
+    }
+
+    fn context(&self) -> crate::Result<Vec<u8>> {
+        self.0.context()
+    }
+
+    fn update_context(&self, context: &[u8]) -> crate::Result<()> {
+        self.0.update_context(context)
     }
 }

@@ -241,18 +241,18 @@ impl<'a> OpenOptions<'a> {
     /// Configure the behavior of repository locking.
     ///
     /// This method accepts a `context` which is associated with the lock on the repository once a
-    /// lock is acquired. If a lock context is not specified, the context of the acquired lock will
-    /// be empty. If encryption is enabled for the repository, the lock context is encrypted. You
-    /// can change the context of the held lock once the repository is open using
-    /// [`Unlock::update_lock`].
+    /// lock is acquired. If a lock's context is not specified, the context value of the acquired
+    /// lock will be empty. If encryption is enabled for the repository, the lock context is
+    /// encrypted. You can change the context value of the held lock once the repository is open
+    /// using [`Unlock::update_context`].
     ///
     /// This method also accepts a `handler` which is invoked if a lock is already held on the
-    /// repository. This lock handler is passed the context of the existing lock. If `handler`
+    /// repository. This lock handler is passed the context value of the existing lock. If `handler`
     /// returns `true`, the existing lock will be removed and the repository will be opened. If
     /// `handler` returns `false`, the existing lock will be respected and opening the repository
     /// will fail. If a lock handler is not specified, an existing lock will always be respected.
     ///
-    /// Opening a repository can still fail due to existing locks even if `handler` returns `true`
+    /// Opening a repository can still fail due to lock conflicts even if `handler` returns `true`
     /// or is never called.
     ///
     /// **Removing an existing lock is potentially dangerous, as concurrent access to a repository
@@ -272,7 +272,7 @@ impl<'a> OpenOptions<'a> {
     ///     .unwrap();
     /// ```
     ///
-    /// [`Unlock::update_lock`]: crate::repo::Unlock::update_lock
+    /// [`Unlock::update_context`]: crate::repo::Unlock::update_context
     pub fn locking(
         &mut self,
         context: &'a [u8],

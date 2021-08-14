@@ -897,17 +897,45 @@ impl<K: Key> Commit for KeyRepo<K> {
 }
 
 impl<K: Key> Unlock for KeyRepo<K> {
-    fn unlock(&mut self) -> crate::Result<()> {
+    fn unlock(&self) -> crate::Result<()> {
         let state = self.state.read().unwrap();
         let mut store = state.store.lock().unwrap();
         unlock_store(&mut *store, state.lock_id)
     }
 
-    fn update_lock(&mut self, context: &[u8]) -> crate::Result<()> {
+    fn is_locked(&self) -> crate::Result<bool> {
         let state = self.state.read().unwrap();
         let mut store = state.store.lock().unwrap();
         store
-            .write_block(BlockKey::Lock(state.lock_id), context)
+            .read_block(BlockKey::Lock(state.lock_id))
+            .map_err(crate::Error::Store)
+            .map(|result| result.is_some())
+    }
+
+    fn context(&self) -> crate::Result<Vec<u8>> {
+        let state = self.state.read().unwrap();
+        let mut store = state.store.lock().unwrap();
+        let encrypted_context = store
+            .read_block(BlockKey::Lock(state.lock_id))
+            .map_err(crate::Error::Store)?
+            .ok_or(crate::Error::NotLocked)?;
+        state
+            .metadata
+            .config
+            .encryption
+            .decrypt(&encrypted_context, &state.master_key)
+    }
+
+    fn update_context(&self, context: &[u8]) -> crate::Result<()> {
+        let state = self.state.read().unwrap();
+        let mut store = state.store.lock().unwrap();
+        let encrypted_context = state
+            .metadata
+            .config
+            .encryption
+            .encrypt(context, &state.master_key);
+        store
+            .write_block(BlockKey::Lock(state.lock_id), &encrypted_context)
             .map_err(crate::Error::Store)
     }
 }

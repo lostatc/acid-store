@@ -383,11 +383,19 @@ impl<State> Unlock for StateRepo<State>
 where
     State: Serialize + DeserializeOwned + Default,
 {
-    fn unlock(&mut self) -> crate::Result<()> {
+    fn unlock(&self) -> crate::Result<()> {
         self.repo.unlock()
     }
 
-    fn update_lock(&mut self, context: &[u8]) -> crate::Result<()> {
-        self.repo.update_lock(context)
+    fn is_locked(&self) -> crate::Result<bool> {
+        self.repo.is_locked()
+    }
+
+    fn context(&self) -> crate::Result<Vec<u8>> {
+        self.repo.context()
+    }
+
+    fn update_context(&self, context: &[u8]) -> crate::Result<()> {
+        self.repo.update_context(context)
     }
 }

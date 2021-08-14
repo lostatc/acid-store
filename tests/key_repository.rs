@@ -696,17 +696,34 @@ fn repo_size_is_correct(
 
 #[rstest]
 fn unlock_repo(repo_store: RepoStore) -> anyhow::Result<()> {
-    let mut repo: KeyRepo<String> = repo_store.create()?;
+    let repo: KeyRepo<String> = repo_store.create()?;
     repo.unlock()?;
     assert_that!(repo_store.open::<KeyRepo<String>>()).is_ok();
     Ok(())
 }
 
 #[rstest]
+fn check_repo_is_locked(repo_store: RepoStore) -> anyhow::Result<()> {
+    let repo: KeyRepo<String> = repo_store.create()?;
+    assert_that!(repo.is_locked()).is_ok_containing(true);
+    repo.unlock()?;
+    assert_that!(repo.is_locked()).is_ok_containing(false);
+    Ok(())
+}
+
+#[rstest]
+fn get_lock_context(mut repo_store: RepoStore) -> anyhow::Result<()> {
+    repo_store.context = b"lock context value".to_vec();
+    let repo: KeyRepo<String> = repo_store.create()?;
+    assert_that!(repo.context()).is_ok_containing(&repo_store.context);
+    Ok(())
+}
+
+#[rstest]
 fn update_lock_context(mut repo_store: RepoStore) -> anyhow::Result<()> {
     repo_store.context = b"initial context".to_vec();
-    let mut repo: KeyRepo<String> = repo_store.create()?;
-    repo.update_lock(b"updated context")?;
+    let repo: KeyRepo<String> = repo_store.create()?;
+    repo.update_context(b"updated context")?;
     repo_store.handler = Box::new(|context| {
         assert_that!(context).is_equal_to(&b"updated context"[..]);
         true
