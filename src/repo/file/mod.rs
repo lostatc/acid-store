@@ -90,7 +90,7 @@ pub use {
     self::special::UnixSpecial,
 };
 
-pub use self::entry::{Entry, EntryType};
+pub use self::entry::{Entry, EntryId, EntryType};
 pub use self::iter::{Children, Descendants, WalkEntry, WalkPredicate};
 #[cfg(feature = "file-metadata")]
 pub use self::metadata::CommonMetadata;
