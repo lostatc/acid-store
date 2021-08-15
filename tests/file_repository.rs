@@ -44,7 +44,7 @@ use {
     std::fs::read_link,
     std::os::unix::fs::{symlink, MetadataExt},
     std::path::Path,
-    std::time::SystemTime,
+    std::time::{Duration, SystemTime},
 };
 
 mod common;
@@ -345,6 +345,131 @@ fn copying_with_empty_path_as_source_errs(mut repo: FileRepo) {
 fn copying_with_empty_path_as_dest_errs(mut repo: FileRepo) {
     assert_that!(repo.copy("test", "")).is_err_variant(acid_store::Error::InvalidPath);
     assert_that!(repo.copy_tree("test", "")).is_err_variant(acid_store::Error::InvalidPath);
+}
+
+#[rstest]
+fn linking_directory_entry_errs(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("source", &Entry::directory())?;
+    assert_that!(repo.link("source", "dest")).is_err_variant(acid_store::Error::NotFile);
+    Ok(())
+}
+
+#[rstest]
+fn linking_with_empty_path_as_source_errs(mut repo: FileRepo) {
+    assert_that!(repo.link("", "test")).is_err_variant(acid_store::Error::InvalidPath);
+}
+
+#[rstest]
+fn linking_with_empty_path_as_dest_errs(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("test", &Entry::file())?;
+    assert_that!(repo.link("test", "")).is_err_variant(acid_store::Error::InvalidPath);
+    Ok(())
+}
+
+#[rstest]
+fn linking_to_existing_dest_errs(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("source", &Entry::file())?;
+    repo.create("dest", &Entry::file())?;
+    assert_that!(repo.link("source", "dest")).is_err_variant(acid_store::Error::AlreadyExists);
+    Ok(())
+}
+
+#[rstest]
+fn linking_to_dest_with_file_parent_errs(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("source", &Entry::file())?;
+    repo.create("parent", &Entry::file())?;
+    assert_that!(repo.link("source", "parent/dest"))
+        .is_err_variant(acid_store::Error::NotDirectory);
+    Ok(())
+}
+
+#[rstest]
+fn linking_with_nonexistent_source_errs(mut repo: FileRepo) {
+    assert_that!(repo.link("source", "dest")).is_err_variant(acid_store::Error::NotFound);
+}
+
+#[rstest]
+#[cfg(all(unix, feature = "file-metadata"))]
+fn linked_entries_share_metadata(
+    mut repo: FileRepo<NoSpecial, CommonMetadata>,
+) -> anyhow::Result<()> {
+    repo.create("source", &Entry::file())?;
+    repo.link("source", "dest")?;
+
+    let expected_metadata = CommonMetadata {
+        modified: SystemTime::UNIX_EPOCH + Duration::from_secs(50),
+        accessed: SystemTime::UNIX_EPOCH + Duration::from_secs(100),
+    };
+
+    repo.set_metadata("source", Some(expected_metadata.clone()))?;
+
+    let actual_metadata = repo.entry("dest")?.metadata;
+
+    assert_that!(actual_metadata).contains(&expected_metadata);
+
+    Ok(())
+}
+
+#[rstest]
+fn linked_entries_share_contents(mut repo: FileRepo, buffer: Vec<u8>) -> anyhow::Result<()> {
+    repo.create("source", &Entry::file())?;
+    repo.link("source", "dest")?;
+
+    let mut object = repo.open("source")?;
+    object.write_all(&buffer)?;
+    object.commit()?;
+
+    let mut contents = Vec::new();
+    let mut object = repo.open("dest")?;
+    object.read_to_end(&mut contents)?;
+
+    assert_that!(contents).is_equal_to(&buffer);
+
+    Ok(())
+}
+
+#[rstest]
+fn removing_entry_does_not_affect_linked_entry(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("one", &Entry::file())?;
+    repo.link("one", "two")?;
+    repo.remove("one")?;
+
+    assert_that!(repo.entry("two")).is_ok();
+    assert_that!(repo.open("two")).is_ok();
+
+    repo.remove("two")?;
+
+    assert_that!(repo.entry("two")).is_err_variant(acid_store::Error::NotFound);
+    assert_that!(repo.open("two")).is_err_variant(acid_store::Error::NotFound);
+
+    Ok(())
+}
+
+#[rstest]
+fn link_count_returns_number_of_links(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("one", &Entry::file())?;
+    let entry_id = repo.entry_id("one")?;
+
+    assert_that!(repo.link_count(entry_id)).is_equal_to(1);
+
+    repo.link("one", "two")?;
+
+    assert_that!(repo.link_count(entry_id)).is_equal_to(2);
+
+    repo.link("one", "three")?;
+
+    assert_that!(repo.link_count(entry_id)).is_equal_to(3);
+
+    repo.remove("two")?;
+
+    assert_that!(repo.link_count(entry_id)).is_equal_to(2);
+
+    repo.remove("one")?;
+    repo.remove("three")?;
+
+    assert_that!(repo.link_count(entry_id)).is_equal_to(0);
+
+    Ok(())
 }
 
 #[rstest]
