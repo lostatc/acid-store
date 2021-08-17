@@ -289,4 +289,16 @@ impl FileRepo<UnixSpecial, UnixMetadata> {
         metadata.changed = now;
         self.set_metadata(path, Some(metadata))
     }
+
+    /// Update an entry's `ctime`.
+    pub(super) fn touch_changed(
+        &mut self,
+        path: &RelativePath,
+        req: &Request,
+    ) -> crate::Result<()> {
+        let mut metadata = self.entry(path)?.metadata_or_default(req);
+        let now = SystemTime::now();
+        metadata.changed = now;
+        self.set_metadata(path, Some(metadata))
+    }
 }
