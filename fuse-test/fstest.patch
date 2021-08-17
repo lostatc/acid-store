@@ -42,292 +42,20 @@ index 8497d3e..a5fd0fc 100644
 -fs="secfs"
 +# Known file systems: UFS, ZFS, ext3, ext4, ntfs-3g, xfs, btrfs, glusterfs, HFS+, secfs, cgofuse, acid-store
 +fs="acid-store"
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/00.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/00.t
-index 1d022d0..542dbea 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/00.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/00.t
-@@ -6,6 +6,11 @@ desc="link creates hardlinks"
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- echo "1..82"
- 
- n0=`namegen`
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/01.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/01.t
-index be003b9..c8901c5 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/01.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/01.t
-@@ -6,6 +6,11 @@ desc="link returns ENOTDIR if a component of either path prefix is not a directo
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- echo "1..8"
- 
- n0=`namegen`
 diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/02.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/02.t
-index 6c34e8e..738336e 100755
+index 6c34e8e..8a6ab7d 100755
 --- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/02.t
 +++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/02.t
 @@ -6,6 +6,11 @@ desc="link returns ENAMETOOLONG if a component of either pathname exceeded 255 c
  dir=`dirname $0`
  . ${dir}/../misc.sh
  
-+# acid-store does not support hard links.
++# acid-store does not have a maximum file name length.
 +if [ "$fs" = "acid-store" ]; then
 +    quick_exit
 +fi
 +
  echo "1..10"
- 
- n0=`namegen`
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/03.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/03.t
-index bf5b228..5dc6342 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/03.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/03.t
-@@ -6,6 +6,11 @@ desc="link returns ENAMETOOLONG if an entire length of either path name exceeded
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- case "${os}:${fs}" in
- Darwin:*)
-     # This test creates an unremovable file on Darwin:HFS+; so disable it!
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/04.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/04.t
-index a3b8f7f..4a55817 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/04.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/04.t
-@@ -6,6 +6,11 @@ desc="link returns ENOENT if a component of either path prefix does not exist"
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- echo "1..6"
- 
- n0=`namegen`
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/05.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/05.t
-index a95d3d1..dccaec0 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/05.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/05.t
-@@ -6,6 +6,11 @@ desc="link returns EMLINK if the link count of the file named by name1 would exc
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- case "${os}:${fs}" in
- FreeBSD:UFS)
- 	echo "1..5"
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/06.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/06.t
-index b0391dc..dcca5d5 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/06.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/06.t
-@@ -6,6 +6,11 @@ desc="link returns EACCES when a component of either path prefix denies search p
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- echo "1..18"
- 
- n0=`namegen`
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/07.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/07.t
-index 9760e35..1e8557b 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/07.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/07.t
-@@ -6,6 +6,11 @@ desc="link returns EACCES when the requested link requires writing in a director
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- echo "1..17"
- 
- n0=`namegen`
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/08.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/08.t
-index 24b764b..e3997b8 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/08.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/08.t
-@@ -6,6 +6,11 @@ desc="link returns ELOOP if too many symbolic links were encountered in translat
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- echo "1..10"
- 
- n0=`namegen`
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/09.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/09.t
-index 7899fcb..cdea47f 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/09.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/09.t
-@@ -6,6 +6,11 @@ desc="link returns ENOENT if the source file does not exist"
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- echo "1..5"
- 
- n0=`namegen`
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/10.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/10.t
-index 61612e6..0a1b9a3 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/10.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/10.t
-@@ -6,6 +6,11 @@ desc="link returns EEXIST if the destination file does exist"
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- echo "1..14"
- 
- n0=`namegen`
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/11.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/11.t
-index 8a7c571..20efade 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/11.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/11.t
-@@ -6,6 +6,11 @@ desc="link returns EPERM if the source file is a directory"
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- n0=`namegen`
- n1=`namegen`
- n2=`namegen`
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/12.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/12.t
-index a9366a3..0686c0f 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/12.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/12.t
-@@ -6,6 +6,11 @@ desc="link returns EPERM if the source file has its immutable or append-only fla
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- require chflags
- 
- echo "1..32"
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/13.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/13.t
-index 82dca47..7531efc 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/13.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/13.t
-@@ -6,6 +6,11 @@ desc="link returns EPERM if the parent directory of the destination file has its
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- require chflags
- 
- echo "1..32"
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/14.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/14.t
-index 40a91bc..531abf4 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/14.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/14.t
-@@ -6,6 +6,11 @@ desc="link returns EXDEV if the source and the destination files are on differen
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- case "${os}" in
- FreeBSD)
- 	echo "1..8"
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/15.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/15.t
-index 943df52..17db816 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/15.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/15.t
-@@ -6,6 +6,11 @@ desc="link returns ENOSPC if the directory in which the entry for the new link i
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- case "${os}:${fs}" in
- FreeBSD:UFS)
- 	echo "1..4"
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/16.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/16.t
-index fad792e..bfbe274 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/16.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/16.t
-@@ -6,6 +6,11 @@ desc="link returns EROFS if the requested link requires writing in a directory o
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- case "${os}" in
- FreeBSD)
- 	echo "1..9"
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/17.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/17.t
-index 278e27c..1520dd6 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/17.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/link/17.t
-@@ -6,6 +6,11 @@ desc="link returns EFAULT if one of the pathnames specified is outside the proce
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
-+# acid-store does not support hard links.
-+if [ "$fs" = "acid-store" ]; then
-+    quick_exit
-+fi
-+
- echo "1..8"
  
  n0=`namegen`
 diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/mkdir/02.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/mkdir/02.t
@@ -379,96 +107,10 @@ index 6ac818e..364536e 100755
  
  expect 0 open ${name255} O_CREAT 0620
 diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/rename/00.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/rename/00.t
-index 1cee061..bf3c0cb 100755
+index 1cee061..dbbd705 100755
 --- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/rename/00.t
 +++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/rename/00.t
-@@ -6,7 +6,14 @@ desc="rename changes file name"
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
--echo "1..79"
-+case "${os}:${fs}" in
-+*:acid-store)
-+    echo "1..67"
-+    ;;
-+*)
-+    echo "1..79"
-+    ;;
-+esac
- 
- n0=`namegen`
- n1=`namegen`
-@@ -23,15 +30,25 @@ inode=`${fstest} lstat ${n0} inode`
- expect 0 rename ${n0} ${n1}
- expect ENOENT lstat ${n0} type,mode,nlink
- expect regular,${inode},0644,1 lstat ${n1} type,inode,mode,nlink
--expect 0 link ${n1} ${n0}
--expect regular,${inode},0644,2 lstat ${n0} type,inode,mode,nlink
--expect regular,${inode},0644,2 lstat ${n1} type,inode,mode,nlink
--expect 0 rename ${n1} ${n2}
--expect regular,${inode},0644,2 lstat ${n0} type,inode,mode,nlink
--expect ENOENT lstat ${n1} type,mode,nlink
--expect regular,${inode},0644,2 lstat ${n2} type,inode,mode,nlink
--expect 0 unlink ${n0}
--expect 0 unlink ${n2}
-+# acid-store does not support hard links.
-+case "${os}:${fs}" in
-+*:acid-store)
-+    expect 0 rename ${n1} ${n2}
-+    expect ENOENT lstat ${n1} type,mode,nlink
-+    expect 0 unlink ${n2}
-+    ;;
-+*)
-+    expect 0 link ${n1} ${n0}
-+    expect regular,${inode},0644,2 lstat ${n0} type,inode,mode,nlink
-+    expect regular,${inode},0644,2 lstat ${n1} type,inode,mode,nlink
-+    expect 0 rename ${n1} ${n2}
-+    expect regular,${inode},0644,2 lstat ${n0} type,inode,mode,nlink
-+    expect ENOENT lstat ${n1} type,mode,nlink
-+    expect regular,${inode},0644,2 lstat ${n2} type,inode,mode,nlink
-+    expect 0 unlink ${n0}
-+    expect 0 unlink ${n2}
-+    ;;
-+esac
- 
- expect 0 mkdir ${n0} 0755
- expect dir,0755 lstat ${n0} type,mode
-@@ -47,15 +64,25 @@ inode=`${fstest} lstat ${n0} inode`
- expect 0 rename ${n0} ${n1}
- expect ENOENT lstat ${n0} type,mode,nlink
- expect fifo,${inode},0644,1 lstat ${n1} type,inode,mode,nlink
--expect 0 link ${n1} ${n0}
--expect fifo,${inode},0644,2 lstat ${n0} type,inode,mode,nlink
--expect fifo,${inode},0644,2 lstat ${n1} type,inode,mode,nlink
--expect 0 rename ${n1} ${n2}
--expect fifo,${inode},0644,2 lstat ${n0} type,inode,mode,nlink
--expect ENOENT lstat ${n1} type,mode,nlink
--expect fifo,${inode},0644,2 lstat ${n2} type,inode,mode,nlink
--expect 0 unlink ${n0}
--expect 0 unlink ${n2}
-+# acid-store does not support hard links.
-+case "${os}:${fs}" in
-+*:acid-store)
-+    expect 0 rename ${n1} ${n2}
-+    expect fifo,${inode},0644,1 lstat ${n2} type,inode,mode,nlink
-+    expect 0 unlink ${n2}
-+    ;;
-+*)
-+    expect 0 link ${n1} ${n0}
-+    expect fifo,${inode},0644,2 lstat ${n0} type,inode,mode,nlink
-+    expect fifo,${inode},0644,2 lstat ${n1} type,inode,mode,nlink
-+    expect 0 rename ${n1} ${n2}
-+    expect fifo,${inode},0644,2 lstat ${n0} type,inode,mode,nlink
-+    expect ENOENT lstat ${n1} type,mode,nlink
-+    expect fifo,${inode},0644,2 lstat ${n2} type,inode,mode,nlink
-+    expect 0 unlink ${n0}
-+    expect 0 unlink ${n2}
-+    ;;
-+esac
- 
- expect 0 create ${n0} 0644
- rinode=`${fstest} lstat ${n0} inode`
-@@ -78,7 +105,7 @@ sleep 1
+@@ -78,7 +78,7 @@ sleep 1
  expect 0 rename ${n0} ${n1}
  ctime2=`${fstest} stat ${n1} ctime`
  case "${os}:${fs}" in
@@ -477,7 +119,7 @@ index 1cee061..bf3c0cb 100755
      # This test wants ctime of a renamed file to be updated, but POSIX does not require it
      # and Darwin (and secfs) do not update it!
      #
-@@ -104,7 +131,7 @@ sleep 1
+@@ -104,7 +104,7 @@ sleep 1
  expect 0 rename ${n0} ${n1}
  ctime2=`${fstest} stat ${n1} ctime`
  case "${os}:${fs}" in
@@ -486,7 +128,7 @@ index 1cee061..bf3c0cb 100755
      # This test wants ctime of a renamed file to be updated, but POSIX does not require it
      # and Darwin (and secfs) do not update it!
      #
-@@ -123,7 +150,7 @@ sleep 1
+@@ -123,7 +123,7 @@ sleep 1
  expect 0 rename ${n0} ${n1}
  ctime2=`${fstest} stat ${n1} ctime`
  case "${os}:${fs}" in
@@ -495,7 +137,7 @@ index 1cee061..bf3c0cb 100755
      # This test wants ctime of a renamed file to be updated, but POSIX does not require it
      # and Darwin (and secfs) do not update it!
      #
-@@ -142,7 +169,7 @@ sleep 1
+@@ -142,7 +142,7 @@ sleep 1
  expect 0 rename ${n0} ${n1}
  ctime2=`${fstest} lstat ${n1} ctime`
  case "${os}:${fs}" in
@@ -568,96 +210,6 @@ index b104ec6..6b67aae 100755
  echo "1..5"
  
  expect 0 create ${name255} 0644
-diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/unlink/00.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/unlink/00.t
-index e0e8b61..52da9e8 100755
---- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/unlink/00.t
-+++ b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/unlink/00.t
-@@ -6,7 +6,14 @@ desc="unlink removes regular files, symbolic links, fifos and sockets"
- dir=`dirname $0`
- . ${dir}/../misc.sh
- 
--echo "1..55"
-+case "${os}:${fs}" in
-+*:acid-store)
-+    echo "1..40"
-+    ;;
-+*)
-+    echo "1..55"
-+    ;;
-+esac
- 
- n0=`namegen`
- n1=`namegen`
-@@ -34,23 +41,26 @@ expect ENOENT lstat ${n0} type
- # TODO: sockets removal
- 
- # successful unlink(2) updates ctime.
--expect 0 create ${n0} 0644
--expect 0 link ${n0} ${n1}
--ctime1=`${fstest} stat ${n0} ctime`
--sleep 1
--expect 0 unlink ${n1}
--ctime2=`${fstest} stat ${n0} ctime`
--test_check $ctime1 -lt $ctime2
--expect 0 unlink ${n0}
--
--expect 0 mkfifo ${n0} 0644
--expect 0 link ${n0} ${n1}
--ctime1=`${fstest} stat ${n0} ctime`
--sleep 1
--expect 0 unlink ${n1}
--ctime2=`${fstest} stat ${n0} ctime`
--test_check $ctime1 -lt $ctime2
--expect 0 unlink ${n0}
-+# acid-store does not support hard links.
-+if [ "$fs" != "acid-store" ]; then
-+    expect 0 create ${n0} 0644
-+    expect 0 link ${n0} ${n1}
-+    ctime1=`${fstest} stat ${n0} ctime`
-+    sleep 1
-+    expect 0 unlink ${n1}
-+    ctime2=`${fstest} stat ${n0} ctime`
-+    test_check $ctime1 -lt $ctime2
-+    expect 0 unlink ${n0}
-+
-+    expect 0 mkfifo ${n0} 0644
-+    expect 0 link ${n0} ${n1}
-+    ctime1=`${fstest} stat ${n0} ctime`
-+    sleep 1
-+    expect 0 unlink ${n1}
-+    ctime2=`${fstest} stat ${n0} ctime`
-+    test_check $ctime1 -lt $ctime2
-+    expect 0 unlink ${n0}
-+fi
- 
- # unsuccessful unlink(2) does not update ctime.
- expect 0 create ${n0} 0644
-@@ -102,14 +112,17 @@ ctime=`${fstest} stat ${n0} ctime`
- test_check $time -lt $ctime
- expect 0 rmdir ${n0}
- 
--expect 0 create ${n0} 0644
--expect 0 link ${n0} ${n1}
--time=`${fstest} stat ${n0} ctime`
--sleep 1
--expect 0 unlink ${n1}
--ctime=`${fstest} stat ${n0} ctime`
--test_check $time -lt $ctime
--expect 0 unlink ${n0}
-+# acid-store does not support hard links.
-+if [ "$fs" != "acid-store" ]; then
-+    expect 0 create ${n0} 0644
-+    expect 0 link ${n0} ${n1}
-+    time=`${fstest} stat ${n0} ctime`
-+    sleep 1
-+    expect 0 unlink ${n1}
-+    ctime=`${fstest} stat ${n0} ctime`
-+    test_check $time -lt $ctime
-+    expect 0 unlink ${n0}
-+fi
- 
- cd ${cdir}
- expect 0 rmdir ${n2}
 diff --git a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/unlink/02.t b/fstest/ntfs-3g-pjd-fstest-8af5670/tests/unlink/02.t
 index af9a386..df4c379 100755
 --- a/fstest/ntfs-3g-pjd-fstest-8af5670/tests/unlink/02.t
