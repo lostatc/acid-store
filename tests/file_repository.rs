@@ -359,6 +359,18 @@ fn rename_removes_source_tree(mut repo: FileRepo) -> anyhow::Result<()> {
 }
 
 #[rstest]
+fn rename_subdirectory_tree(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create_parents("root/source/file1", &Entry::file())?;
+
+    assert_that!(repo.rename("root/source", "root/dest")).is_ok();
+
+    assert_that!(repo.is_file("root/dest/file1")).is_true();
+    assert_that!(repo.entry("root/dest/file1")?.is_file()).is_true();
+
+    Ok(())
+}
+
+#[rstest]
 fn rename_tree_preserves_links(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create_parents("source/file1", &Entry::file())?;
     repo.create_parents("source/directory/file2", &Entry::file())?;

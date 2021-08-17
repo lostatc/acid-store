@@ -14,13 +14,15 @@
  * limitations under the License.
  */
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bimap::BiMap;
 use fuse::FUSE_ROOT_ID;
 use relative_path::{RelativePath, RelativePathBuf};
 
 use super::id_table::IdTable;
+use crate::repo::file::EntryId;
+use std::collections::hash_map::Entry;
 
 /// A table for allocating inodes in a virtual file system.
 #[derive(Debug, PartialEq, Eq, Clone, Default)]
@@ -28,8 +30,11 @@ pub struct InodeTable {
     /// The table which uniquely allocates integers to act as inodes.
     id_table: IdTable,
 
-    /// A map of inodes to paths of entries in the repository.
-    paths: BiMap<u64, RelativePathBuf>,
+    /// A map of entry IDs to their inodes in the file system.
+    entries: BiMap<EntryId, u64>,
+
+    /// A map of inodes to the set of paths which refer to the entry.
+    paths: HashMap<u64, HashSet<RelativePathBuf>>,
 
     /// A map of inode numbers to their generations.
     ///
@@ -45,66 +50,105 @@ impl InodeTable {
     pub fn new(root: &RelativePath) -> Self {
         let mut table = Self {
             id_table: IdTable::with_reserved(vec![FUSE_ROOT_ID]),
-            paths: BiMap::new(),
+            entries: BiMap::new(),
+            paths: HashMap::new(),
             generations: HashMap::new(),
         };
         // Add the root entry to the table.
-        table.paths.insert(FUSE_ROOT_ID, root.to_owned());
+        let mut root_paths = HashSet::new();
+        root_paths.insert(root.to_owned());
+        table.paths.insert(FUSE_ROOT_ID, root_paths);
+
         table
     }
 
-    /// Return whether the given `inode` is in the table.
+    /// Return whether the entry with the given `inode` is in the table.
     pub fn contains_inode(&self, inode: u64) -> bool {
-        self.paths.contains_left(&inode)
+        self.entries.contains_right(&inode)
     }
 
-    /// Return whether the given `path` is in the table.
-    pub fn contains_path(&self, path: &RelativePath) -> bool {
-        self.paths.contains_right(path)
+    /// Return whether the entry with the given `id` is in the table.
+    pub fn contains_entry(&self, id: EntryId) -> bool {
+        self.entries.contains_left(&id)
     }
 
-    /// Insert the given `path` into the table and return its inode.
-    pub fn insert(&mut self, path: RelativePathBuf) -> u64 {
-        let inode = self.id_table.next();
-        self.paths.insert(inode, path);
+    /// Insert the given `path` and entry `id` into the table and return the entry's inode.
+    pub fn insert(&mut self, path: RelativePathBuf, id: EntryId) -> u64 {
+        if !self.entries.contains_left(&id) {
+            let inode = self.id_table.next();
+            self.entries.insert(id, inode);
+        }
+        let inode = self.entries.get_by_left(&id).copied().unwrap();
+        self.paths
+            .entry(inode)
+            .or_insert_with(HashSet::new)
+            .insert(path);
         inode
     }
 
-    /// Remove the given `inode` from the table.
+    /// Remove the entry with the given `id` and `path` from the table.
     ///
-    /// This returns the path associated with the `inode` or `None` if the given `inode` is not in
-    /// the table.
-    pub fn remove(&mut self, inode: u64) -> Option<RelativePathBuf> {
-        if !self.id_table.recycle(inode) {
-            return None;
-        }
-        let generation = self.generations.entry(inode).or_default();
-        *generation += 1;
-        Some(self.paths.remove_by_left(&inode).unwrap().1)
-    }
-
-    /// Change the path for the inode at `source` to `dest`.
-    ///
-    /// This returns `true` if the inode was renamed or `false` if `source` is not in the table.
-    pub fn rename(&mut self, source: &RelativePath, dest: RelativePathBuf) -> bool {
-        let inode = match self.paths.remove_by_right(source) {
-            Some((inode, _)) => inode,
+    /// This returns `true` if the entry was removed or `false` if it did not exist in the table.
+    pub fn remove(&mut self, id: EntryId, path: &RelativePath) -> bool {
+        let inode = match self.entries.get_by_left(&id) {
+            Some(inode) => *inode,
             None => return false,
         };
-        self.paths.insert(inode, dest);
+
+        match self.paths.entry(inode) {
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().remove(path);
+                if entry.get().is_empty() {
+                    entry.remove();
+                    self.entries.remove_by_right(&inode);
+                    self.id_table.recycle(inode);
+                    let generation = self.generations.entry(inode).or_default();
+                    *generation += 1;
+                }
+            }
+            Entry::Vacant(_) => unreachable!(),
+        }
+
         true
     }
 
-    /// Get the path associated with `inode` or `None` if it is not in the table.
-    pub fn path(&self, inode: u64) -> Option<&RelativePath> {
-        self.paths
-            .get_by_left(&inode)
-            .map(|path| path.as_relative_path())
+    /// Change one of the paths associated with the given `inode`.
+    ///
+    /// This returns `true` if the path was changed or `false` if `inode` is not in the table or
+    /// `old_path` is not associated with `inode`.
+    pub fn remap(
+        &mut self,
+        inode: u64,
+        old_path: &RelativePath,
+        new_path: RelativePathBuf,
+    ) -> bool {
+        match self.paths.get_mut(&inode) {
+            None => false,
+            Some(paths) => {
+                if !paths.remove(old_path) {
+                    return false;
+                }
+                paths.insert(new_path);
+                true
+            }
+        }
     }
 
-    /// Get the inode associated with `path` or `None` if it is not in the table.
-    pub fn inode(&self, path: &RelativePath) -> Option<u64> {
-        self.paths.get_by_right(path).copied()
+    /// Get a path associated with `inode` or `None` if it is not in the table.
+    pub fn path(&self, inode: u64) -> Option<&RelativePath> {
+        self.paths
+            .get(&inode)
+            .map(|path_set| path_set.iter().next().unwrap().as_ref())
+    }
+
+    /// Get the set of paths associated with `inode` or `None` if it is not in the table.
+    pub fn paths(&self, inode: u64) -> Option<&HashSet<RelativePathBuf>> {
+        self.paths.get(&inode)
+    }
+
+    /// Get the inode associated with the given entry `id` or `None` if it is not in the table.
+    pub fn inode(&self, id: EntryId) -> Option<u64> {
+        self.entries.get_by_left(&id).copied()
     }
 
     /// Return the generation number associated with the given `inode`.

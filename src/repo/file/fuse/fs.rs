@@ -41,7 +41,7 @@ use super::object::ObjectTable;
 use crate::repo::file::fuse::metadata::to_system_time;
 use crate::repo::file::{
     repository::EMPTY_PATH, AclQualifier, Entry, EntryType, FileMode, FileRepo, UnixMetadata,
-    UnixSpecial,
+    UnixSpecial, WalkPredicate,
 };
 use crate::repo::{Commit, RestoreSavepoint};
 
@@ -132,9 +132,11 @@ impl<'a> FuseAdapter<'a> {
 
         let mut inodes = InodeTable::new(root);
 
-        for path in repo.descendants(root)? {
-            inodes.insert(path);
-        }
+        repo.walk::<(), _, _>(root, |entry| {
+            let entry_id = entry.entry_id();
+            inodes.insert(entry.into_path(), entry_id);
+            WalkPredicate::Continue
+        })?;
 
         Ok(Self {
             repo,
@@ -152,6 +154,7 @@ impl<'a> FuseAdapter<'a> {
         req: &Request,
     ) -> crate::Result<FileAttr> {
         let entry_path = self.inodes.path(inode).ok_or(crate::Error::NotFound)?;
+        let entry_id = self.repo.entry_id(entry_path)?;
         let default_metadata = entry.default_metadata(req);
         let metadata = entry.metadata.as_ref().unwrap_or(&default_metadata);
 
@@ -195,7 +198,7 @@ impl<'a> FuseAdapter<'a> {
                 },
             },
             perm: mode as u16,
-            nlink: 1,
+            nlink: self.repo.link_count(entry_id),
             uid: metadata.user,
             gid: metadata.group,
             rdev: match &entry.kind {
@@ -224,11 +227,12 @@ impl<'a> FuseAdapter<'a> {
         entry: &Entry<UnixSpecial, UnixMetadata>,
         req: &Request,
     ) -> crate::Result<FileAttr> {
-        let entry_inode = self.inodes.insert(path);
+        let entry_id = self.repo.entry_id(&path)?;
+        let entry_inode = self.inodes.insert(path.clone(), entry_id);
         match self.entry_attr(&entry, entry_inode, req) {
             Ok(attr) => Ok(attr),
             Err(error) => {
-                self.inodes.remove(entry_inode);
+                self.inodes.remove(entry_id, &path);
                 Err(error)
             }
         }
@@ -268,7 +272,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     fn lookup(&mut self, req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
         let file_name = try_option!(name.to_str(), reply, libc::ENOENT);
         let entry_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).join(file_name);
-        let entry_inode = try_option!(self.inodes.inode(&entry_path), reply, libc::ENOENT);
+        let entry_id = try_result!(self.repo.entry_id(&entry_path), reply);
+        let entry_inode = try_option!(self.inodes.inode(entry_id), reply, libc::ENOENT);
         let entry = try_result!(self.repo.entry(&entry_path), reply);
 
         let attr = try_result!(self.entry_attr(&entry, entry_inode, req), reply);
@@ -487,7 +492,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let file_name = try_option!(name.to_str(), reply, libc::ENOENT);
         let parent_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).to_owned();
         let entry_path = parent_path.join(file_name);
-        let entry_inode = try_option!(self.inodes.inode(&entry_path), reply, libc::ENOENT);
+        let entry_id = try_result!(self.repo.entry_id(&entry_path), reply);
+        let entry_inode = try_option!(self.inodes.inode(entry_id), reply, libc::ENOENT);
 
         if self.repo.is_directory(&entry_path) {
             reply.error(libc::EISDIR);
@@ -497,17 +503,26 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         try_result!(
             self.transaction(|fs| {
                 fs.repo.remove(&entry_path)?;
-                fs.repo.touch_modified(&parent_path, req)
+                fs.repo.touch_modified(&parent_path, req)?;
+
+                // Update the `ctime` of paths with the same inode.
+                for linked_path in fs.inodes.paths(entry_inode).unwrap() {
+                    if linked_path != &entry_path {
+                        fs.repo.touch_changed(linked_path, req)?;
+                    }
+                }
+
+                Ok(())
             }),
             reply
         );
 
+        self.objects.close(entry_inode);
+        self.inodes.remove(entry_id, &entry_path);
+
         // Attempt to clean the repository to free unused space. We ignore any errors because this
         // method must return successfully once the transaction is complete.
         self.repo.clean().ok();
-
-        self.inodes.remove(entry_inode);
-        self.objects.close(entry_inode);
 
         reply.ok();
     }
@@ -516,6 +531,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let file_name = try_option!(name.to_str(), reply, libc::ENOENT);
         let parent_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).to_owned();
         let entry_path = parent_path.join(file_name);
+        let entry_id = try_result!(self.repo.entry_id(&entry_path), reply);
 
         if !self.repo.is_directory(&entry_path) {
             reply.error(libc::ENOTDIR);
@@ -531,12 +547,11 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             reply
         );
 
+        self.inodes.remove(entry_id, &entry_path);
+
         // Attempt to clean the repository to free unused space. We ignore any errors because this
         // method must return successfully once the transaction is complete.
         self.repo.clean().ok();
-
-        let entry_inode = self.inodes.inode(&entry_path).unwrap();
-        self.inodes.remove(entry_inode);
 
         reply.ok();
     }
@@ -587,6 +602,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let source_parent_path =
             try_option!(self.inodes.path(parent), reply, libc::ENOENT).to_owned();
         let source_path = source_parent_path.join(source_name);
+        let source_id = try_result!(self.repo.entry_id(&source_path), reply);
+        let source_inode = try_option!(self.inodes.inode(source_id), reply, libc::ENOENT);
 
         let dest_name = try_option!(newname.to_str(), reply, libc::EINVAL);
         let dest_parent_path =
@@ -611,44 +628,107 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         }
 
         // Commit and close any open file objects associated with the entries in the source tree.
-        let source_inode = self.inodes.inode(&source_path).unwrap();
         try_result!(self.objects.commit(source_inode), reply);
         self.objects.close(source_inode);
-        if let Ok(descendants) = self.repo.descendants(&source_path) {
-            for source_descendant in descendants {
-                let descendant_inode = self.inodes.inode(&source_descendant).unwrap();
-                try_result!(self.objects.commit(descendant_inode), reply);
-                self.objects.close(descendant_inode);
-            }
+        let walk_result = {
+            // We need to borrow outside the closure because closures can't capture individual
+            // fields.
+            let inodes = &mut self.inodes;
+            let objects = &mut self.objects;
+            self.repo.walk(&source_path, |entry| {
+                let descendant_inode = inodes.inode(entry.entry_id()).unwrap();
+                if let Err(error) = objects.commit(descendant_inode) {
+                    return WalkPredicate::Stop(error);
+                }
+                objects.close(descendant_inode);
+
+                WalkPredicate::Continue
+            })
+        };
+        if let Ok(Some(error)) = walk_result {
+            try_result!(Err(error), reply);
         }
 
-        try_result!(
+        let existing_dest_id = try_result!(
             self.transaction(|fs| {
+                // Return the entry ID of the existing destination if it exists so we can remove it
+                // from the inode table.
+                let existing_dest_id = fs.repo.entry_id(&dest_path).ok();
+
                 // Remove the destination path unless it is a non-empty directory.
                 if let Err(error @ crate::Error::NotEmpty) = fs.repo.remove(&dest_path) {
                     return Err(error);
                 }
 
-                fs.repo.copy_tree(&source_path, &dest_path)?;
-                fs.repo.remove_tree(&source_path).ok();
+                fs.repo.rename(&source_path, &dest_path)?;
 
                 fs.repo.touch_modified(&source_parent_path, req)?;
-                fs.repo.touch_modified(&dest_parent_path, req)
+                fs.repo.touch_modified(&dest_parent_path, req)?;
+
+                Ok(existing_dest_id)
             }),
             reply
         );
 
-        // Update the mappings from paths to inodes in the inode table.
-        self.inodes.rename(&source_path, dest_path.clone());
-        if let Ok(descendants) = self.repo.descendants(&dest_path) {
-            for dest_descendant in descendants {
-                let relative_descendant = dest_descendant.strip_prefix(&dest_path).unwrap();
-                let source_descendant = source_path.join(relative_descendant);
-                self.inodes.rename(&source_descendant, dest_descendant);
-            }
+        // If the destination entry already existed, we need to remove it from the inode table.
+        if let Some(entry_id) = existing_dest_id {
+            assert!(self.inodes.remove(entry_id, &dest_path));
+        }
+
+        // Update the path of the entry in the node table.
+        assert!(self
+            .inodes
+            .remap(source_inode, &source_path, dest_path.clone()));
+
+        // Update the paths of any descendants of the entry in the node table.
+        {
+            // We need to borrow outside the closure because closures can't capture individual
+            // fields.
+            let inodes = &mut self.inodes;
+            self.repo
+                .walk::<(), _, _>(&dest_path, |entry| {
+                    let descendant_inode = inodes.inode(entry.entry_id()).unwrap();
+                    let relative_path = entry.path().strip_prefix(&dest_path).unwrap();
+                    let original_path = source_path.join(relative_path);
+                    assert!(inodes.remap(descendant_inode, &original_path, entry.into_path()));
+                    WalkPredicate::Continue
+                })
+                .ok();
         }
 
         reply.ok();
+    }
+
+    fn link(
+        &mut self,
+        req: &Request,
+        ino: u64,
+        newparent: u64,
+        newname: &OsStr,
+        reply: ReplyEntry,
+    ) {
+        let dest_name = try_option!(newname.to_str(), reply, libc::EINVAL);
+        let source_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT).to_owned();
+        let dest_parent_path =
+            try_option!(self.inodes.path(newparent), reply, libc::ENOENT).to_owned();
+        let dest_path = dest_parent_path.join(dest_name);
+        let source_id = self.repo.entry_id(&source_path).unwrap();
+
+        let attr = try_result!(
+            self.transaction(|fs| {
+                fs.repo.link(&source_path, &dest_path)?;
+                fs.repo.touch_changed(&source_path, req)?;
+                fs.repo.touch_modified(&dest_parent_path, req)?;
+                let entry = fs.repo.entry(&source_path)?;
+                fs.entry_attr(&entry, ino, req)
+            }),
+            reply
+        );
+
+        self.inodes.insert(dest_path, source_id);
+        let generation = self.inodes.generation(ino);
+
+        reply.entry(&DEFAULT_TTL, &attr, generation);
     }
 
     fn open(&mut self, _req: &Request, ino: u64, flags: u32, reply: ReplyOpen) {
@@ -875,17 +955,26 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         }
 
         let mut entries = Vec::new();
-        for child_path in try_result!(self.repo.children(entry_path), reply) {
-            let file_name = child_path.file_name().unwrap().to_string();
-            let inode = self.inodes.inode(&child_path).unwrap();
-            let file_type = try_result!(self.repo.entry(&child_path), reply)
-                .kind
-                .to_file_type();
+        let walk_result = self.repo.walk(entry_path, |entry| {
+            let file_name = entry.path().file_name().unwrap().to_string();
+            let inode = self.inodes.inode(entry.entry_id()).unwrap();
+            let file_type = match self.repo.entry(entry.path()) {
+                Ok(entry) => entry.kind.to_file_type(),
+                Err(error) => return WalkPredicate::Stop(error),
+            };
             entries.push(DirectoryEntry {
                 file_name,
                 file_type,
                 inode,
-            })
+            });
+            // We only want immediate children.
+            WalkPredicate::SkipDescendants
+        });
+
+        match walk_result {
+            Err(error) => try_result!(Err(error), reply),
+            Ok(Some(error)) => try_result!(Err(error), reply),
+            Ok(None) => {}
         }
 
         let state = HandleState::Directory(DirectoryHandle { entries });
