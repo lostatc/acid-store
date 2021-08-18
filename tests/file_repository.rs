@@ -348,6 +348,79 @@ fn copying_with_empty_path_as_dest_errs(mut repo: FileRepo) {
 }
 
 #[rstest]
+fn rename_removes_source_tree(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create_parents("source/file1", &Entry::file())?;
+    repo.create_parents("source/directory/file2", &Entry::file())?;
+
+    assert_that!(repo.rename("source", "dest")).is_ok();
+    assert_that!(repo.exists("source")).is_false();
+
+    Ok(())
+}
+
+#[rstest]
+fn rename_tree_preserves_links(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create_parents("source/file1", &Entry::file())?;
+    repo.create_parents("source/directory/file2", &Entry::file())?;
+    repo.link("source/file1", "link")?;
+    let link_id = repo.entry_id("link")?;
+
+    assert_that!(repo.rename("source", "dest")).is_ok();
+    assert_that!(repo.entry_id("dest/file1")).is_ok_containing(link_id);
+    assert_that!(repo.link_count(link_id)).is_equal_to(2);
+
+    Ok(())
+}
+
+#[rstest]
+fn rename_file_preserves_links(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("source", &Entry::file())?;
+    repo.link("source", "link")?;
+    let link_id = repo.entry_id("link")?;
+
+    assert_that!(repo.rename("source", "dest")).is_ok();
+    assert_that!(repo.entry_id("dest")).is_ok_containing(link_id);
+    assert_that!(repo.link_count(link_id)).is_equal_to(2);
+
+    Ok(())
+}
+
+#[rstest]
+fn rename_tree_preserves_entry_ids(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create_parents("source/file1", &Entry::file())?;
+    repo.create_parents("source/directory/file2", &Entry::file())?;
+    let file1_id = repo.entry_id("source/file1")?;
+    let file2_id = repo.entry_id("source/directory/file2")?;
+
+    assert_that!(repo.rename("source", "dest")).is_ok();
+    assert_that!(repo.entry_id("dest/file1")).is_ok_containing(file1_id);
+    assert_that!(repo.entry_id("dest/directory/file2")).is_ok_containing(file2_id);
+
+    Ok(())
+}
+
+#[rstest]
+fn rename_file_preserves_entry_id(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("source", &Entry::file())?;
+    let entry_id = repo.entry_id("source")?;
+
+    assert_that!(repo.rename("source", "dest")).is_ok();
+    assert_that!(repo.entry_id("dest")).is_ok_containing(entry_id);
+
+    Ok(())
+}
+
+#[rstest]
+fn renaming_tree_to_subdirectory_errs(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("source", &Entry::directory())?;
+
+    assert_that!(repo.rename("source", "source/descendant"))
+        .is_err_variant(acid_store::Error::InvalidPath);
+
+    Ok(())
+}
+
+#[rstest]
 fn linking_directory_entry_errs(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create("source", &Entry::directory())?;
     assert_that!(repo.link("source", "dest")).is_err_variant(acid_store::Error::NotFile);
