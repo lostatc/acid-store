@@ -637,6 +637,66 @@ where
         Ok(())
     }
 
+    /// Move the tree of entries at `source` to `dest`.
+    ///
+    /// If `source` is a directory entry, this also moves its descendants.
+    ///
+    /// This method is different from calling [`copy_tree`] followed by [`remove_tree`] on the
+    /// `source` tree in how it handles links. While [`copy_tree`] creates a new entry with the same
+    /// metadata and contents, this method moves the original entry, so links created with [`link`]
+    /// are preserved and the entries in the `dest` tree will have the same [`EntryId`] as the
+    /// entries in the `source` tree.
+    ///
+    /// This is a cheap operation which does not require copying the bytes in the files.
+    ///
+    /// # Errors
+    /// - `Error::NotFound`: The parent of `dest` does not exist.
+    /// - `Error::NotFound`: There is no entry at `source`.
+    /// - `Error::NotDirectory`: The parent of `dest` is not a directory entry.
+    /// - `Error::InvalidPath`: The given `source` or `dest` paths are empty.
+    /// - `Error::InvalidPath`: The given `dest` is a descendant of `source`.
+    /// - `Error::AlreadyExists`: There is already an entry at `dest`.
+    ///
+    /// [`copy_tree`]: crate::repo::file::FileRepo::copy_tree
+    /// [`remove_tree`]: crate::repo::file::FileRepo::remove_tree
+    /// [`link`]: crate::repo::file::FileRepo::link
+    /// [`EntryId`]: crate::repo::file::EntryId
+    pub fn rename(
+        &mut self,
+        source: impl AsRef<RelativePath>,
+        dest: impl AsRef<RelativePath>,
+    ) -> crate::Result<()> {
+        if source.as_ref() == *EMPTY_PATH || dest.as_ref() == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
+
+        if dest.as_ref().starts_with(source.as_ref()) {
+            return Err(crate::Error::InvalidPath);
+        }
+
+        self.validate_parent(dest.as_ref())?;
+
+        if self.exists(dest.as_ref()) {
+            return Err(crate::Error::AlreadyExists);
+        }
+
+        let source_tree = self
+            .repo
+            .state_mut()
+            .tree
+            .drain(source.as_ref())
+            .ok_or(crate::Error::NotFound)?
+            .collect::<Vec<_>>();
+
+        for (source_path, handle) in source_tree.into_iter() {
+            let relative_path = source_path.strip_prefix(source.as_ref()).unwrap();
+            let dest_path = dest.as_ref().join(relative_path);
+            self.repo.state_mut().tree.insert(dest_path, handle);
+        }
+
+        Ok(())
+    }
+
     /// Create a link to the `source` entry at `dest`.
     ///
     /// Linked entries share the same metadata and the same contents, so changes to `source` are
