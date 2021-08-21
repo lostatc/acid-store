@@ -502,17 +502,9 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         try_result!(
             self.transaction(|fs| {
+                fs.repo.touch_changed(&entry_path, req)?;
                 fs.repo.remove(&entry_path)?;
-                fs.repo.touch_modified(&parent_path, req)?;
-
-                // Update the `ctime` of paths with the same inode.
-                for linked_path in fs.inodes.paths(entry_inode).unwrap() {
-                    if linked_path != &entry_path {
-                        fs.repo.touch_changed(linked_path, req)?;
-                    }
-                }
-
-                Ok(())
+                fs.repo.touch_modified(&parent_path, req)
             }),
             reply
         );

@@ -141,11 +141,6 @@ impl InodeTable {
             .map(|path_set| path_set.iter().next().unwrap().as_ref())
     }
 
-    /// Get the set of paths associated with `inode` or `None` if it is not in the table.
-    pub fn paths(&self, inode: u64) -> Option<&HashSet<RelativePathBuf>> {
-        self.paths.get(&inode)
-    }
-
     /// Get the inode associated with the given entry `id` or `None` if it is not in the table.
     pub fn inode(&self, id: EntryId) -> Option<u64> {
         self.entries.get_by_left(&id).copied()
