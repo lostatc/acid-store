@@ -14,16 +14,17 @@
  * limitations under the License.
  */
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use std::fs::{create_dir, create_dir_all, metadata};
+use std::fs::{create_dir, create_dir_all, hard_link, metadata};
 use std::io;
 use std::marker::PhantomData;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use hex_literal::hex;
 use once_cell::sync::Lazy;
 use relative_path::{RelativePath, RelativePathBuf};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use walkdir::WalkDir;
 
@@ -38,6 +39,7 @@ use super::iter::{Children, Descendants, WalkEntry, WalkPredicate};
 use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
 use super::special::{NoSpecial, SpecialType};
+use crate::repo::file::entry::EntryId;
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
 use {
     super::fuse::FuseAdapter, super::metadata::UnixMetadata, super::special::UnixSpecial,
@@ -47,19 +49,36 @@ use {
 /// The path of the root entry.
 pub static EMPTY_PATH: Lazy<RelativePathBuf> = Lazy::new(|| RelativePath::new("").to_owned());
 
-type RepoState = PathTree<EntryHandle>;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoState {
+    /// The tree of entry paths and their handles.
+    pub tree: PathTree<EntryHandle>,
+
+    /// A map of entry IDs to their reference counts.
+    pub links: HashMap<EntryId, u32>,
+}
+
+impl Default for RepoState {
+    fn default() -> Self {
+        Self {
+            tree: PathTree::new(),
+            links: HashMap::new(),
+        }
+    }
+}
 
 /// A virtual file system.
 ///
 /// See [`crate::repo::file`] for more information.
 #[derive(Debug)]
-pub struct FileRepo<S = NoSpecial, M = NoMetadata>(
-    pub(super) StateRepo<RepoState>,
-    PhantomData<(S, M)>,
-)
+pub struct FileRepo<S = NoSpecial, M = NoMetadata>
 where
     S: SpecialType,
-    M: FileMetadata;
+    M: FileMetadata,
+{
+    pub(super) repo: StateRepo<RepoState>,
+    marker: PhantomData<(S, M)>,
+}
 
 impl<S, M> OpenRepo for FileRepo<S, M>
 where
@@ -69,25 +88,31 @@ where
     type Key = <StateRepo<RepoState> as OpenRepo>::Key;
 
     const VERSION_ID: VersionId = VersionId::new(Uuid::from_bytes(hex!(
-        "075bc448 d03c 11eb a9e8 43df5f0eb6a0"
+        "57ac9d00 fde6 11eb 82cd 1f2bdd384d98"
     )));
 
     fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized,
     {
-        Ok(Self(StateRepo::open_repo(repo)?, PhantomData))
+        Ok(Self {
+            repo: StateRepo::open_repo(repo)?,
+            marker: PhantomData,
+        })
     }
 
     fn create_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
         Self: Sized,
     {
-        Ok(Self(StateRepo::create_repo(repo)?, PhantomData))
+        Ok(Self {
+            repo: StateRepo::create_repo(repo)?,
+            marker: PhantomData,
+        })
     }
 
     fn into_repo(self) -> crate::Result<KeyRepo<Self::Key>> {
-        self.0.into_repo()
+        self.repo.into_repo()
     }
 }
 
@@ -98,14 +123,14 @@ where
 {
     /// Return whether there is an entry at `path`.
     pub fn exists(&self, path: impl AsRef<RelativePath>) -> bool {
-        self.0.state().contains(path.as_ref())
+        self.repo.state().tree.contains(path.as_ref())
     }
 
     /// Return whether the given `path` is a regular file entry.
     ///
     /// If there is no entry at `path`, this returns `false`.
     pub fn is_file(&self, path: impl AsRef<RelativePath>) -> bool {
-        match self.0.state().get(path.as_ref()) {
+        match self.repo.state().tree.get(path.as_ref()) {
             Some(entry) => matches!(entry.kind, HandleType::File(_)),
             None => false,
         }
@@ -115,7 +140,7 @@ where
     ///
     /// If there is no entry at `path`, this returns `false`.
     pub fn is_directory(&self, path: impl AsRef<RelativePath>) -> bool {
-        match self.0.state().get(path.as_ref()) {
+        match self.repo.state().tree.get(path.as_ref()) {
             Some(entry) => matches!(entry.kind, HandleType::Directory),
             None => false,
         }
@@ -125,7 +150,7 @@ where
     ///
     /// If there is no entry at `path`, this returns `false`.
     pub fn is_special(&self, path: impl AsRef<RelativePath>) -> bool {
-        match self.0.state().get(path.as_ref()) {
+        match self.repo.state().tree.get(path.as_ref()) {
             Some(entry) => matches!(entry.kind, HandleType::Special),
             None => false,
         }
@@ -139,7 +164,7 @@ where
             // This path is a root.
             Some(parent) if parent == *EMPTY_PATH => Ok(()),
             // This path has a parent segment.
-            Some(parent) => match self.0.state().get(parent) {
+            Some(parent) => match self.repo.state().tree.get(parent) {
                 Some(handle) => match handle.kind {
                     HandleType::File(_) | HandleType::Special => Err(crate::Error::NotDirectory),
                     HandleType::Directory => Ok(()),
@@ -212,27 +237,28 @@ where
             return Err(crate::Error::AlreadyExists);
         }
 
-        let entry_id = self.0.create();
-        let mut object = self.0.object(entry_id).unwrap();
+        let entry_key = self.repo.create();
+        let mut object = self.repo.object(entry_key).unwrap();
         let result = object.serialize(entry);
         drop(object);
         if let Err(error) = result {
-            self.0.remove(entry_id);
+            self.repo.remove(entry_key);
             return Err(error);
         }
 
         let entry_type = match entry.kind {
-            EntryType::File => HandleType::File(self.0.create()),
+            EntryType::File => HandleType::File(self.repo.create()),
             EntryType::Directory => HandleType::Directory,
             EntryType::Special(_) => HandleType::Special,
         };
 
         let handle = EntryHandle {
-            entry: entry_id,
+            entry: entry_key,
             kind: entry_type,
         };
 
-        self.0.state_mut().insert(path.as_ref(), handle);
+        self.repo.state_mut().links.insert(handle.id(), 1);
+        self.repo.state_mut().tree.insert(path.as_ref(), handle);
 
         Ok(())
     }
@@ -272,6 +298,23 @@ where
         self.create(path, entry)
     }
 
+    /// Remove the given `handle` from the repository.
+    fn remove_handle(&mut self, handle: EntryHandle) {
+        let num_links = {
+            let num_links = self.repo.state_mut().links.get_mut(&handle.id()).unwrap();
+            *num_links -= 1;
+            *num_links
+        };
+
+        if num_links == 0 {
+            if let HandleType::File(object_id) = handle.kind {
+                self.repo.remove(object_id);
+            }
+            self.repo.remove(handle.entry);
+            self.repo.state_mut().links.remove(&handle.id());
+        }
+    }
+
     /// Remove the entry with the given `path` from the repository.
     ///
     /// The space used by the given entry isn't reclaimed in the backing data store until changes
@@ -288,7 +331,7 @@ where
             return Err(crate::Error::InvalidPath);
         }
 
-        match self.0.state().children(&path) {
+        match self.repo.state().tree.children(&path) {
             Some(mut children) => {
                 if children.next().is_some() {
                     return Err(crate::Error::NotEmpty);
@@ -297,11 +340,9 @@ where
             None => return Err(crate::Error::NotFound),
         }
 
-        let entry_handle = self.0.state_mut().remove(path.as_ref()).unwrap();
-        if let HandleType::File(object_id) = entry_handle.kind {
-            self.0.remove(object_id);
-        }
-        self.0.remove(entry_handle.entry);
+        let entry_handle = self.repo.state_mut().tree.remove(path.as_ref()).unwrap();
+
+        self.remove_handle(entry_handle);
 
         Ok(())
     }
@@ -322,18 +363,16 @@ where
         }
 
         let handles = self
-            .0
+            .repo
             .state_mut()
+            .tree
             .drain(path.as_ref())
             .ok_or(crate::Error::NotFound)?
             .map(|(_, handle)| handle)
             .collect::<Vec<_>>();
 
         for handle in handles {
-            if let HandleType::File(object_id) = &handle.kind {
-                self.0.remove(*object_id);
-            }
-            self.0.remove(handle.entry);
+            self.remove_handle(handle);
         }
 
         Ok(())
@@ -353,12 +392,54 @@ where
             return Err(crate::Error::InvalidPath);
         }
         let entry_handle = &self
-            .0
+            .repo
             .state()
+            .tree
             .get(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
-        let mut object = self.0.object(entry_handle.entry).unwrap();
+        let mut object = self.repo.object(entry_handle.entry).unwrap();
         object.deserialize()
+    }
+
+    /// Return the `EntryId` of the entry at `path`.
+    ///
+    /// An `EntryId` can be used to determine if two paths refer to the same entry, which happens
+    /// when entries are linked using [`link`].
+    ///
+    /// # Examples
+    /// ```
+    /// # use acid_store::repo::{OpenOptions, OpenMode};
+    /// # use acid_store::repo::file::{Entry, FileRepo};
+    /// # use acid_store::store::MemoryConfig;
+    /// #
+    /// # let mut repo: FileRepo = OpenOptions::new()
+    /// #    .mode(OpenMode::CreateNew)
+    /// #    .open(&MemoryConfig::new())
+    /// #    .unwrap();
+    /// repo.create("one", &Entry::file()).unwrap();
+    /// repo.link("one", "two").unwrap();
+    ///
+    /// assert_eq!(repo.entry_id("one").unwrap(), repo.entry_id("two").unwrap());
+    /// ```
+    ///
+    /// # Errors
+    /// - `Error::InvalidPath`: The given `path` is empty.
+    /// - `Error::NotFound`: There is no entry at `path`.
+    ///
+    /// [`link`]: crate::repo::file::FileRepo::link
+    pub fn entry_id(&self, path: impl AsRef<RelativePath>) -> crate::Result<EntryId> {
+        if path.as_ref() == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
+
+        let entry_handle = &self
+            .repo
+            .state()
+            .tree
+            .get(path.as_ref())
+            .ok_or(crate::Error::NotFound)?;
+
+        Ok(entry_handle.id())
     }
 
     /// Set the file `metadata` for the entry at `path`.
@@ -381,11 +462,12 @@ where
         }
 
         let entry_handle = *self
-            .0
+            .repo
             .state()
+            .tree
             .get(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
-        let mut object = self.0.object(entry_handle.entry).unwrap();
+        let mut object = self.repo.object(entry_handle.entry).unwrap();
         let mut entry: Entry<S, M> = object.deserialize()?;
         entry.metadata = metadata;
         object.serialize(&entry)
@@ -403,13 +485,14 @@ where
         }
 
         let entry_handle = *self
-            .0
+            .repo
             .state()
+            .tree
             .get(path.as_ref())
             .ok_or(crate::Error::NotFound)?;
 
         if let HandleType::File(object_id) = entry_handle.kind {
-            Ok(self.0.object(object_id).unwrap())
+            Ok(self.repo.object(object_id).unwrap())
         } else {
             Err(crate::Error::NotFile)
         }
@@ -417,15 +500,17 @@ where
 
     /// Create and return a copy of the given `EntryHandle`.
     fn copy_entry_handle(&mut self, handle: EntryHandle) -> EntryHandle {
-        let new_entry_id = self.0.copy(handle.entry).unwrap();
-        EntryHandle {
-            entry: new_entry_id,
+        let new_entry_key = self.repo.copy(handle.entry).unwrap();
+        let handle = EntryHandle {
+            entry: new_entry_key,
             kind: match handle.kind {
-                HandleType::File(file_id) => HandleType::File(self.0.copy(file_id).unwrap()),
+                HandleType::File(file_id) => HandleType::File(self.repo.copy(file_id).unwrap()),
                 HandleType::Directory => HandleType::Directory,
                 HandleType::Special => HandleType::Special,
             },
-        }
+        };
+        self.repo.state_mut().links.insert(handle.id(), 1);
+        handle
     }
 
     /// Copy the entry at `source` to `dest`.
@@ -463,13 +548,14 @@ where
         }
 
         let entry_handle = *self
-            .0
+            .repo
             .state()
+            .tree
             .get(source.as_ref())
             .ok_or(crate::Error::NotFound)?;
 
         let new_handle = self.copy_entry_handle(entry_handle);
-        self.0.state_mut().insert(dest.as_ref(), new_handle);
+        self.repo.state_mut().tree.insert(dest.as_ref(), new_handle);
 
         Ok(())
     }
@@ -510,12 +596,16 @@ where
 
         // Copy the root path.
         let source_root_handle = *self
-            .0
+            .repo
             .state()
+            .tree
             .get(source.as_ref())
             .ok_or(crate::Error::NotFound)?;
         let dest_root_handle = self.copy_entry_handle(source_root_handle);
-        self.0.state_mut().insert(dest.as_ref(), dest_root_handle);
+        self.repo
+            .state_mut()
+            .tree
+            .insert(dest.as_ref(), dest_root_handle);
 
         // Because we can't walk the path tree and insert into it at the same time, we need to
         // construct a tree of the destination paths before inserting them back into the path table.
@@ -530,7 +620,7 @@ where
 
         // Get the destination paths for each path in the path table and insert them into the
         // destination tree.
-        for (path, source_handle) in self.0.state().descendants(source.as_ref()).unwrap() {
+        for (path, source_handle) in self.repo.state().tree.descendants(source.as_ref()).unwrap() {
             let relative_path = path.strip_prefix(&source).unwrap();
             let dest_tree_path = dest_tree_root.join(relative_path);
             dest_tree.insert(dest_tree_path, *source_handle);
@@ -541,10 +631,168 @@ where
             let dest_handle = self.copy_entry_handle(source_handle);
             let relative_path = dest_tree_path.strip_prefix(dest_tree_root).unwrap();
             let dest_path = dest.as_ref().join(relative_path);
-            self.0.state_mut().insert(&dest_path, dest_handle);
+            self.repo.state_mut().tree.insert(&dest_path, dest_handle);
         }
 
         Ok(())
+    }
+
+    /// Move the tree of entries at `source` to `dest`.
+    ///
+    /// If `source` is a directory entry, this also moves its descendants.
+    ///
+    /// This method is different from calling [`copy_tree`] followed by [`remove_tree`] on the
+    /// `source` tree in how it handles links. While [`copy_tree`] creates a new entry with the same
+    /// metadata and contents, this method moves the original entry, so links created with [`link`]
+    /// are preserved and the entries in the `dest` tree will have the same [`EntryId`] as the
+    /// entries in the `source` tree.
+    ///
+    /// This is a cheap operation which does not require copying the bytes in the files.
+    ///
+    /// # Errors
+    /// - `Error::NotFound`: The parent of `dest` does not exist.
+    /// - `Error::NotFound`: There is no entry at `source`.
+    /// - `Error::NotDirectory`: The parent of `dest` is not a directory entry.
+    /// - `Error::InvalidPath`: The given `source` or `dest` paths are empty.
+    /// - `Error::InvalidPath`: The given `dest` is a descendant of `source`.
+    /// - `Error::AlreadyExists`: There is already an entry at `dest`.
+    ///
+    /// [`copy_tree`]: crate::repo::file::FileRepo::copy_tree
+    /// [`remove_tree`]: crate::repo::file::FileRepo::remove_tree
+    /// [`link`]: crate::repo::file::FileRepo::link
+    /// [`EntryId`]: crate::repo::file::EntryId
+    pub fn rename(
+        &mut self,
+        source: impl AsRef<RelativePath>,
+        dest: impl AsRef<RelativePath>,
+    ) -> crate::Result<()> {
+        if source.as_ref() == *EMPTY_PATH || dest.as_ref() == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
+
+        if dest.as_ref().starts_with(source.as_ref()) {
+            return Err(crate::Error::InvalidPath);
+        }
+
+        self.validate_parent(dest.as_ref())?;
+
+        if self.exists(dest.as_ref()) {
+            return Err(crate::Error::AlreadyExists);
+        }
+
+        let source_tree = self
+            .repo
+            .state_mut()
+            .tree
+            .drain(source.as_ref())
+            .ok_or(crate::Error::NotFound)?
+            .collect::<Vec<_>>();
+
+        for (source_path, handle) in source_tree.into_iter() {
+            let relative_path = source_path.strip_prefix(source.as_ref()).unwrap();
+            let dest_path = dest.as_ref().join(relative_path);
+            self.repo.state_mut().tree.insert(dest_path, handle);
+        }
+
+        Ok(())
+    }
+
+    /// Create a link to the `source` entry at `dest`.
+    ///
+    /// Linked entries share the same metadata and the same contents, so changes to `source` are
+    /// reflected in `dest` and vice versa. This is different from creating a copy of an entry using
+    /// [`copy`]. Linking entries is analogous to creating a hard link in a file system. It is not
+    /// possible to link directory entries.
+    ///
+    /// You can use [`entry_id`] to determine if two paths refer to the same entry. You can use
+    /// [`link_count`] to determine the number of links there are to an entry.
+    ///
+    /// # Examples
+    /// ```
+    /// # use std::io::{Read, Write};
+    /// # use acid_store::repo::{OpenOptions, OpenMode};
+    /// # use acid_store::repo::file::{Entry, FileRepo};
+    /// # use acid_store::store::MemoryConfig;
+    /// #
+    /// # let mut repo: FileRepo = OpenOptions::new()
+    /// #    .mode(OpenMode::CreateNew)
+    /// #    .open(&MemoryConfig::new())
+    /// #    .unwrap();
+    /// repo.create("one", &Entry::file()).unwrap();
+    /// repo.link("one", "two").unwrap();
+    ///
+    /// let mut object = repo.open("two").unwrap();
+    /// object.write_all(b"test data").unwrap();
+    /// object.commit();
+    ///
+    /// let mut object = repo.open("one").unwrap();
+    /// let mut contents = Vec::new();
+    /// object.read_to_end(&mut contents).unwrap();
+    ///
+    /// assert_eq!(&contents, b"test data");
+    /// ```
+    ///
+    /// # Errors
+    /// - `Error::NotFile`: The `source` entry is a directory entry.
+    /// - `Error::NotFound`: The parent of `dest` does not exist.
+    /// - `Error::NotFound`: There is no entry at `source`.
+    /// - `Error::NotDirectory`: The parent of `dest` is not a directory entry.
+    /// - `Error::InvalidPath`: The given `source` or `dest` paths are empty.
+    /// - `Error::AlreadyExists`: There is already an entry at `dest`.
+    ///
+    /// [`copy`]: crate::repo::file::FileRepo::copy
+    /// [`entry_id`]: crate::repo::file::FileRepo::entry_id
+    /// [`link_count`]: crate::repo::file::FileRepo::link_count
+    pub fn link(
+        &mut self,
+        source: impl AsRef<RelativePath>,
+        dest: impl AsRef<RelativePath>,
+    ) -> crate::Result<()> {
+        if source.as_ref() == *EMPTY_PATH || dest.as_ref() == *EMPTY_PATH {
+            return Err(crate::Error::InvalidPath);
+        }
+
+        self.validate_parent(dest.as_ref())?;
+
+        if self.exists(dest.as_ref()) {
+            return Err(crate::Error::AlreadyExists);
+        }
+
+        let entry_handle = *self
+            .repo
+            .state()
+            .tree
+            .get(source.as_ref())
+            .ok_or(crate::Error::NotFound)?;
+
+        if matches!(entry_handle.kind, HandleType::Directory) {
+            return Err(crate::Error::NotFile);
+        }
+
+        self.repo
+            .state_mut()
+            .tree
+            .insert(dest.as_ref(), entry_handle);
+
+        *self
+            .repo
+            .state_mut()
+            .links
+            .get_mut(&entry_handle.id())
+            .unwrap() += 1;
+
+        Ok(())
+    }
+
+    /// The number of links to the entry with the given `id`.
+    ///
+    /// This returns the number of paths which refer to the entry with the given `id`. This number
+    /// can be greater than 1 if entries have been linked using [`link`]. If there is no entry with
+    /// the given `id` in the repository, this returns 0.
+    ///
+    /// [`link`]: crate::repo::file::FileRepo::link
+    pub fn link_count(&self, id: EntryId) -> u32 {
+        self.repo.state().links.get(&id).copied().unwrap_or(0)
     }
 
     /// Verify that `path` has descendants.
@@ -554,8 +802,9 @@ where
         }
 
         let entry_handle = self
-            .0
+            .repo
             .state()
+            .tree
             .get(parent.as_ref())
             .ok_or(crate::Error::NotFound)?;
 
@@ -581,7 +830,7 @@ where
         parent: impl AsRef<RelativePath> + 'a,
     ) -> crate::Result<Children<'a>> {
         self.verify_has_descendants(parent.as_ref())?;
-        Ok(Children(self.0.state().children(parent).unwrap()))
+        Ok(Children(self.repo.state().tree.children(parent).unwrap()))
     }
 
     /// Return an iterator of paths which are descendants of `parent`.
@@ -602,7 +851,9 @@ where
         parent: impl AsRef<RelativePath> + 'a,
     ) -> crate::Result<Descendants<'a>> {
         self.verify_has_descendants(parent.as_ref())?;
-        Ok(Descendants(self.0.state().descendants(parent).unwrap()))
+        Ok(Descendants(
+            self.repo.state().tree.descendants(parent).unwrap(),
+        ))
     }
 
     /// Walk through the tree of descendants of `parent`.
@@ -678,8 +929,9 @@ where
         self.verify_has_descendants(parent.as_ref())?;
 
         Ok(self
-            .0
+            .repo
             .state()
+            .tree
             .walk(parent, |walk_entry| {
                 visitor(WalkEntry {
                     path: walk_entry.path,
@@ -745,9 +997,9 @@ where
         self.create(&dest, &entry)?;
 
         // Write the contents of the file entry if it's a file.
-        let entry_handle = self.0.state().get(dest.as_ref()).unwrap();
+        let entry_handle = self.repo.state().tree.get(dest.as_ref()).unwrap();
         if let HandleType::File(object_id) = entry_handle.kind {
-            let mut object = self.0.object(object_id).unwrap();
+            let mut object = self.repo.object(object_id).unwrap();
             archive_file(&mut object, source.as_ref())?;
         }
 
@@ -766,6 +1018,9 @@ where
     /// If a file in the `source` tree is a sparse file, this method will attempt to efficiently
     /// copy any sparse holes in the file to the [`Object`] in the repository, creating a sparse
     /// object.
+    ///
+    /// This method does not attempt to handle hard links in the `source` tree specially; if two
+    /// files in the `source` tree are hard links, they will be archived as separate entries.
     ///
     /// # Errors
     /// - `Error::NotFound`: The parent of `dest` does not exist.
@@ -877,6 +1132,9 @@ where
     /// copy any sparse holes in the [`Object`] to the file in the file system, creating a sparse
     /// file.
     ///
+    /// If entries in the `source` tree are linked via [`link`], this method will attempt to make
+    /// them hard links in the file system.
+    ///
     /// # Errors
     /// - `Error::InvalidPath`: The given `source` path is empty.
     /// - `Error::NotFound`: The `source` entry does not exist.
@@ -889,30 +1147,46 @@ where
     /// [`extract`]: crate::repo::file::FileRepo::extract
     /// [`FileMetadata`]: crate::repo::file::FileMetadata
     /// [`Object`]: crate::repo::Object
+    /// [`link`]: crate::repo::file::FileRepo::link
     pub fn extract_tree(
         &self,
         source: impl AsRef<RelativePath>,
         dest: impl AsRef<Path>,
     ) -> crate::Result<()> {
-        let relative_descendants = self
-            .0
-            .state()
-            .descendants(&source)
-            .ok_or(crate::Error::NotFound)?
-            .map(|(path, _)| path.strip_prefix(&source).unwrap().to_owned());
-
-        // Extract the root directory.
         self.extract(&source, &dest)?;
 
-        // Extract the descendants.
-        for descendant in relative_descendants {
-            self.extract(
-                source.as_ref().join(&descendant),
-                descendant.to_path(dest.as_ref()),
-            )?;
-        }
+        let mut link_map: HashMap<EntryId, PathBuf> = HashMap::new();
 
-        Ok(())
+        let walk_result: crate::Result<Option<crate::Error>> = self.walk(&source, |entry| {
+            let relative_path = entry.path().strip_prefix(&source).unwrap();
+            let dest_path = relative_path.to_path(dest.as_ref());
+
+            match link_map.get(&entry.entry_id()) {
+                Some(original_path) => {
+                    if let Err(error) = hard_link(original_path, &dest_path) {
+                        return WalkPredicate::Stop(error.into());
+                    }
+                }
+                None => {
+                    if let Err(error) = entry.extract(&dest_path) {
+                        return WalkPredicate::Stop(error);
+                    }
+
+                    if !entry.is_directory() {
+                        link_map.insert(entry.entry_id(), dest_path);
+                    }
+                }
+            }
+
+            WalkPredicate::Continue
+        });
+
+        match walk_result {
+            Err(crate::Error::NotDirectory) => Ok(()),
+            Err(error) => Err(error),
+            Ok(None) => Ok(()),
+            Ok(Some(error)) => Err(error),
+        }
     }
 
     /// Verify the integrity of all the data in the repository.
@@ -930,10 +1204,11 @@ where
     ///
     /// [`Object::verify`]: crate::repo::Object::verify
     pub fn verify(&self) -> crate::Result<HashSet<RelativePathBuf>> {
-        let corrupt_keys = self.0.verify()?;
+        let corrupt_keys = self.repo.verify()?;
         Ok(self
-            .0
+            .repo
             .state()
+            .tree
             .descendants(&*EMPTY_PATH)
             .unwrap()
             .filter(|(_, entry_handle)| {
@@ -954,7 +1229,7 @@ where
     ///
     /// [`KeyRepo::clear_instance`]: crate::repo::key::KeyRepo::clear_instance
     pub fn clear_instance(&mut self) {
-        self.0.clear_instance()
+        self.repo.clear_instance()
     }
 
     /// Change the password for this repository.
@@ -968,13 +1243,13 @@ where
         memory_limit: ResourceLimit,
         operations_limit: ResourceLimit,
     ) {
-        self.0
+        self.repo
             .change_password(new_password, memory_limit, operations_limit);
     }
 
     /// Return this repository's instance ID.
     pub fn instance(&self) -> InstanceId {
-        self.0.instance()
+        self.repo.instance()
     }
 
     /// Compute statistics about the repository.
@@ -983,12 +1258,12 @@ where
     ///
     /// [`KeyRepo::stats`]: crate::repo::key::KeyRepo::stats
     pub fn stats(&self) -> RepoStats {
-        self.0.stats()
+        self.repo.stats()
     }
 
     /// Return information about the repository.
     pub fn info(&self) -> RepoInfo {
-        self.0.info()
+        self.repo.info()
     }
 }
 
@@ -998,15 +1273,15 @@ where
     M: FileMetadata,
 {
     fn commit(&mut self) -> crate::Result<()> {
-        self.0.commit()
+        self.repo.commit()
     }
 
     fn rollback(&mut self) -> crate::Result<()> {
-        self.0.rollback()
+        self.repo.rollback()
     }
 
     fn clean(&mut self) -> crate::Result<()> {
-        self.0.clean()
+        self.repo.clean()
     }
 }
 impl<S, M> RestoreSavepoint for FileRepo<S, M>
@@ -1017,15 +1292,15 @@ where
     type Restore = <StateRepo<RepoState> as RestoreSavepoint>::Restore;
 
     fn savepoint(&mut self) -> crate::Result<Savepoint> {
-        self.0.savepoint()
+        self.repo.savepoint()
     }
 
     fn start_restore(&mut self, savepoint: &Savepoint) -> crate::Result<Self::Restore> {
-        self.0.start_restore(savepoint)
+        self.repo.start_restore(savepoint)
     }
 
     fn finish_restore(&mut self, restore: Self::Restore) -> bool {
-        self.0.finish_restore(restore)
+        self.repo.finish_restore(restore)
     }
 }
 
@@ -1070,18 +1345,18 @@ where
     M: FileMetadata,
 {
     fn unlock(&self) -> crate::Result<()> {
-        self.0.unlock()
+        self.repo.unlock()
     }
 
     fn is_locked(&self) -> crate::Result<bool> {
-        self.0.is_locked()
+        self.repo.is_locked()
     }
 
     fn context(&self) -> crate::Result<Vec<u8>> {
-        self.0.context()
+        self.repo.context()
     }
 
     fn update_context(&self, context: &[u8]) -> crate::Result<()> {
-        self.0.update_context(context)
+        self.repo.update_context(context)
     }
 }
