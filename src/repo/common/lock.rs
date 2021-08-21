@@ -56,7 +56,7 @@ impl<T: Eq + Hash> LockTable<T> {
     }
 }
 
-/// A repository which can be unlocked.
+/// A repository which supports locking.
 pub trait Unlock {
     /// Release this repository's lock.
     ///
@@ -74,8 +74,11 @@ pub trait Unlock {
     /// Return whether this repository is currently locked.
     ///
     /// This returns `true` if this repository currently holds a lock on the data store or `false`
-    /// if its lock has been released. A lock can be released via [`unlock`] or via a lock handler
-    /// set with [`OpenOptions::locking`].
+    /// if its lock has been released. A lock can be released via [`unlock`] or by another client
+    /// via a lock handler set with [`OpenOptions::locking`].
+    ///
+    /// Note that it is possible for this repository's lock to be released by another client at any
+    /// time, including potentially between calling this method and acting on the result.
     ///
     /// # Errors
     /// - `Error::Store`: An error occurred with the data store.
@@ -101,6 +104,12 @@ pub trait Unlock {
     ///
     /// This method changes the context value associated with this repository's lock on the data
     /// store. This is the same context value which is supplied to [`OpenOptions::locking`].
+    ///
+    /// One potential use for this method is to refresh a lease on a timeout-based lock.
+    ///
+    /// This method is **not** a safe way to re-acquire a released lock. If this repository's lock
+    /// has been released by another client via a lock handler, calling this method could cause data
+    /// loss.
     ///
     /// # Errors
     /// - `Error::Store`: An error occurred with the data store.

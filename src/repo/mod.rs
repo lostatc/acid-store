@@ -41,16 +41,18 @@
 //!
 //! When a repository is dropped, it will attempt to release its lock on the data store. However,
 //! releasing a lock can fail for a number of reasons, such as an I/O error or the thread panicking.
-//! In this case, the repository will remain locked. You can use [`Unlock::unlock`] to manually
-//! release a repository's lock on the data store while handling errors.
+//! In this case, the lock on the data store will remain.
 //!
-//! Because releasing a repository lock can fail, it may be necessary to implement logic for
-//! removing stale locks. When you open a repository with [`OpenOptions`], you can register a lock
-//! handler that is invoked when an existing lock on the repository is detected and decides
-//! whether to respect the existing lock or remove it. See [`OpenOptions::locking`] for details.
+//! You can implement logic for invalidating stale locks by registering a lock handler with
+//! [`OpenOptions::locking`] when you open a repository. This lock handler is invoked when an
+//! existing lock on the repository is detected and decides whether to respect the existing lock or
+//! remove it. You can also associate a context value with an acquired lock that is used by lock
+//! handlers to determine whether the lock is stale.
 //!
 //! **Removing an existing lock is potentially dangerous, as concurrent access to a repository can
 //! cause data loss.**
+//!
+//! See [`Unlock`] for more information about locking.
 //!
 //! # Atomicity
 //! Changes made to a repository are not persisted to the data store until those changes are
@@ -116,7 +118,7 @@
 //! [`KeyRepo`]: crate::repo::key::KeyRepo
 //! [`OpenOptions`]: crate::repo::OpenOptions
 //! [`Chunking`]: crate::repo::Chunking
-//! [`Unlock::unlock`]: crate::repo::Unlock::unlock
+//! [`Unlock`]: crate::repo::Unlock
 //! [`OpenOptions::locking`]: crate::repo::OpenOptions::locking
 //! [`Commit::commit`]: crate::repo::Commit::commit
 //! [`Commit::clean`]: crate::repo::Commit::clean
