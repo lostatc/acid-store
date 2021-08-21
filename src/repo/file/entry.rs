@@ -120,3 +120,21 @@ pub struct EntryHandle {
     pub entry: ObjectKey,
     pub kind: HandleType,
 }
+
+impl EntryHandle {
+    /// Return the `EntryId` of this entry.
+    pub fn id(&self) -> EntryId {
+        EntryId(self.entry)
+    }
+}
+
+/// An ID that uniquely identifies an entry in a [`FileRepo`].
+///
+/// This value can be used to determine if two paths refer to the same entry. You can get the
+/// `EntryId` of an entry using [`FileRepo::entry_id`].
+///
+/// [`FileRepo`]: crate::repo::file::FileRepo
+/// [`FileRepo::entry_id`]: crate::repo::file::FileRepo::entry_id
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct EntryId(ObjectKey);

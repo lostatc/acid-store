@@ -19,7 +19,7 @@ use std::path::Path;
 
 use relative_path::{RelativePath, RelativePathBuf};
 
-use super::entry::{Entry, EntryHandle, HandleType};
+use super::entry::{Entry, EntryHandle, EntryId, HandleType};
 use super::metadata::FileMetadata;
 use super::path_tree;
 use super::repository::FileRepo;
@@ -164,6 +164,11 @@ where
     /// - `Error::Io`: An I/O error occurred.
     pub fn entry(&self) -> crate::Result<Entry<S, M>> {
         self.repo.entry(&self.path)
+    }
+
+    /// Return the `EntryId` of this entry.
+    pub fn entry_id(&self) -> EntryId {
+        self.repo.entry_id(&self.path).unwrap()
     }
 
     /// Return an `Object` for reading and writing the contents of this entry.
