@@ -87,10 +87,6 @@ pub struct ObjectReaderGuard<'a> {
 }
 
 impl<'a> ObjectReaderGuard<'a> {
-    pub fn info(&self) -> ObjectInfo {
-        ObjectInfo::new(&self.repo_state, &self.object_state, &self.handle)
-    }
-
     pub fn reader(&mut self) -> ObjectReader {
         ObjectReader::new(&self.repo_state, &mut self.object_state, &self.handle)
     }
@@ -103,14 +99,6 @@ pub struct ObjectWriterGuard<'a> {
 }
 
 impl<'a> ObjectWriterGuard<'a> {
-    pub fn info(&self) -> ObjectInfo {
-        ObjectInfo::new(&self.repo_state, &self.object_state, &self.handle)
-    }
-
-    pub fn reader(&mut self) -> ObjectReader {
-        ObjectReader::new(&self.repo_state, &mut self.object_state, &self.handle)
-    }
-
     pub fn writer(&mut self) -> ObjectWriter {
         ObjectWriter::new(
             &mut self.repo_state,

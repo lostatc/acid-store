@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 use std::fmt::{self, Debug, Formatter};
-use std::sync::Once;
 
 use secrecy::{DebugSecret, ExposeSecret, Secret, SecretVec};
 use serde::{Deserialize, Serialize};
@@ -30,13 +29,15 @@ use {
         derive_key, gen_salt, MemLimit, OpsLimit, Salt, MEMLIMIT_INTERACTIVE, MEMLIMIT_MODERATE,
         MEMLIMIT_SENSITIVE, OPSLIMIT_INTERACTIVE, OPSLIMIT_MODERATE, OPSLIMIT_SENSITIVE,
     },
+    std::sync::Once,
 };
 
+#[cfg(feature = "encryption")]
 static ENCRYPTION_INIT: Once = Once::new();
 
 /// Initialize the environment for encryption.
+#[cfg(feature = "encryption")]
 fn init() {
-    #[cfg(feature = "encryption")]
     ENCRYPTION_INIT.call_once(|| {
         sodiumoxide::init().expect("Failed to initialize encryption.");
     });

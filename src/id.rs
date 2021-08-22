@@ -132,11 +132,6 @@ macro_rules! id_table {
                 $id_name(self.0.next())
             }
 
-            /// Return whether the given `id` is in the table.
-            pub fn contains(&self, id: $id_name) -> bool {
-                self.0.contains(id.0)
-            }
-
             /// Return the given `id` back to the table.
             ///
             /// This returns `true` if the value was returned or `false` if it was unused.

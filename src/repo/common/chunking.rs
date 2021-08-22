@@ -134,18 +134,6 @@ impl IncrementalChunker {
     pub fn chunks(&mut self) -> Vec<Vec<u8>> {
         std::mem::take(&mut self.chunks)
     }
-
-    /// Clear all the data in the chunker.
-    pub fn clear(&mut self) {
-        self.buffer.clear();
-        self.chunks.clear();
-        self.chunker.reset();
-    }
-
-    /// Return whether this chunker contains no data.
-    pub fn is_empty(&self) -> bool {
-        self.buffer.is_empty() && self.chunks.is_empty()
-    }
 }
 
 impl Write for IncrementalChunker {

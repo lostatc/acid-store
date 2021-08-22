@@ -19,7 +19,6 @@ use std::fmt::{Debug, Formatter};
 use std::sync::{Arc, Mutex, RwLock};
 
 use hex_literal::hex;
-use once_cell::sync::Lazy;
 use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
 use uuid::Uuid;
@@ -32,7 +31,7 @@ use super::config::RepoConfig;
 use super::encryption::{Encryption, EncryptionKey, KeySalt, ResourceLimit};
 use super::handle::HandleIdTable;
 use super::lock::{lock_store, LockTable};
-use super::metadata::{Header, RepoId, RepoMetadata};
+use super::metadata::{Header, RepoMetadata};
 use super::open_repo::OpenRepo;
 use super::packing::Packing;
 use super::repository::KeyRepo;
@@ -52,9 +51,6 @@ pub const DEFAULT_INSTANCE: InstanceId = InstanceId::new(Uuid::from_bytes(hex!(
 /// This must be changed any time a backwards-incompatible change is made to the repository
 /// format.
 const VERSION_ID: Uuid = Uuid::from_bytes(hex!("44253e72 f08f 11eb a2a3 a701701f8601"));
-
-/// A table of locks on repositories.
-static REPO_LOCKS: Lazy<Mutex<LockTable<RepoId>>> = Lazy::new(|| Mutex::new(LockTable::new()));
 
 /// The mode to use to open a repository.
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]

@@ -166,16 +166,19 @@ fn unix_file_time(secs: i64, nsec: i64) -> SystemTime {
 }
 
 /// Extract the user permission bits from a file `mode`.
+#[cfg(feature = "file-metadata")]
 fn user_perm(mode: u32) -> u32 {
     (mode & 0o700) >> 6
 }
 
 /// Extract the group permission bits from a file `mode`.
+#[cfg(feature = "file-metadata")]
 fn group_perm(mode: u32) -> u32 {
     (mode & 0o070) >> 3
 }
 
 /// Extract the other permission bits from a file `mode`.
+#[cfg(feature = "file-metadata")]
 fn other_perm(mode: u32) -> u32 {
     mode & 0o007
 }
