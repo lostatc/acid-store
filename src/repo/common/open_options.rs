@@ -78,6 +78,7 @@ pub enum OpenMode {
 ///
 /// # Examples
 /// ```
+/// # #[cfg(all(feature = "encryption", feature = "compression"))] {
 /// use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo, Chunking, Compression, Encryption, Packing};
 /// use acid_store::store::MemoryConfig;
 ///
@@ -91,8 +92,10 @@ pub enum OpenMode {
 ///     .mode(OpenMode::Create)
 ///     .open(&store_config)
 ///     .unwrap();
+/// # }
 /// ```
 /// ```
+/// # #[cfg(all(feature = "encryption", feature = "compression"))] {
 /// use acid_store::repo::{OpenOptions, OpenMode, key::KeyRepo, Chunking, Compression, Encryption, Packing, RepoConfig};
 /// use acid_store::store::MemoryConfig;
 ///
@@ -109,6 +112,7 @@ pub enum OpenMode {
 ///     .mode(OpenMode::Create)
 ///     .open(&store_config)
 ///     .unwrap();
+/// # }
 /// ```
 ///
 /// [`new`]: crate::repo::OpenOptions::new
