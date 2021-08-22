@@ -80,7 +80,6 @@ pub trait WriteBlock: ReadBlock {
 struct PackingBlockReader<'a> {
     repo_state: &'a RepoState,
     store_state: &'a mut StoreState,
-    pack_size: u32,
 }
 
 impl<'a> ReadBlock for PackingBlockReader<'a> {
@@ -151,7 +150,6 @@ impl<'a> ReadBlock for PackingBlockWriter<'a> {
         let mut reader = PackingBlockReader {
             repo_state: self.repo_state,
             store_state: self.store_state,
-            pack_size: self.pack_size,
         };
         reader.read_block(id)
     }
@@ -296,12 +294,6 @@ struct DirectBlockWriter<'a> {
     state: &'a RepoState,
 }
 
-impl<'a> DirectBlockWriter<'a> {
-    fn new(state: &'a RepoState) -> Self {
-        DirectBlockWriter { state }
-    }
-}
-
 impl<'a> ReadBlock for DirectBlockWriter<'a> {
     fn read_block(&mut self, id: BlockId) -> crate::Result<Vec<u8>> {
         let encoded_block = self
@@ -387,10 +379,9 @@ impl<'a> ReadBlock for StoreReader<'a> {
             Packing::None => Box::new(DirectBlockWriter {
                 state: &self.repo_state,
             }),
-            Packing::Fixed(pack_size) => Box::new(PackingBlockReader {
+            Packing::Fixed(_) => Box::new(PackingBlockReader {
                 repo_state: &self.repo_state,
                 store_state: &mut self.store_state,
-                pack_size: *pack_size,
             }),
         };
         read_block.read_block(id)

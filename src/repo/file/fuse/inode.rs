@@ -49,7 +49,7 @@ impl InodeTable {
     /// Return a new empty `InodeTable`.
     pub fn new(root: &RelativePath) -> Self {
         let mut table = Self {
-            id_table: IdTable::with_reserved(vec![FUSE_ROOT_ID]),
+            id_table: IdTable::new(vec![FUSE_ROOT_ID]),
             entries: BiMap::new(),
             paths: HashMap::new(),
             generations: HashMap::new(),
@@ -60,16 +60,6 @@ impl InodeTable {
         table.paths.insert(FUSE_ROOT_ID, root_paths);
 
         table
-    }
-
-    /// Return whether the entry with the given `inode` is in the table.
-    pub fn contains_inode(&self, inode: u64) -> bool {
-        self.entries.contains_right(&inode)
-    }
-
-    /// Return whether the entry with the given `id` is in the table.
-    pub fn contains_entry(&self, id: EntryId) -> bool {
-        self.entries.contains_left(&id)
     }
 
     /// Insert the given `path` and entry `id` into the table and return the entry's inode.

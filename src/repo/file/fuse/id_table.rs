@@ -30,17 +30,8 @@ pub struct IdTable {
 }
 
 impl IdTable {
-    /// Return a new empty `IdTable`.
-    pub fn new() -> Self {
-        Self {
-            highest: 0,
-            unused: HashSet::new(),
-            reserved: HashSet::new(),
-        }
-    }
-
     /// Return a new empty `IdTable` with the given `reserved` IDs.
-    pub fn with_reserved(reserved: impl IntoIterator<Item = u64>) -> Self {
+    pub fn new(reserved: impl IntoIterator<Item = u64>) -> Self {
         Self {
             highest: 0,
             unused: HashSet::new(),

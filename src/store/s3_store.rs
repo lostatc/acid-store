@@ -58,9 +58,6 @@ const STORE_VERSION_KEY: &str = "version";
 /// A UUID which acts as the version ID of the store format.
 const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("f0511da2 f90d 11eb be71 13f36b8156e4"));
 
-/// The MIME content type to use for binary data.
-const BINARY_CONTENT_TYPE: &str = "application/octet-stream";
-
 /// The HTTP status code for an object which does not exist.
 const NOT_FOUND_CODE: u16 = 404;
 

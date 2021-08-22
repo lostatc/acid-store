@@ -1306,6 +1306,7 @@ where
 }
 
 /// The default mount options which are always passed to libfuse.
+#[cfg(all(any(unix, doc), feature = "fuse-mount"))]
 const DEFAULT_FUSE_MOUNT_OPTS: &[&str] = &["-o", "default_permissions"];
 
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
