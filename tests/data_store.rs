@@ -201,10 +201,14 @@ fn list_data_blocks(#[case] mut store: Box<dyn DataStore>, buffer: Vec<u8>) {
 
     assert_that!(store.write_block(BlockKey::Lock(Uuid::new_v4().into()), &buffer)).is_ok();
     assert_that!(store.write_block(BlockKey::Header(Uuid::new_v4().into()), &buffer)).is_ok();
+    assert_that!(store.write_block(BlockKey::Super, &buffer)).is_ok();
+    assert_that!(store.write_block(BlockKey::Version, &buffer)).is_ok();
 
     let list_result = store.list_blocks(BlockType::Data);
-    assert_that!(list_result).is_ok();
-    assert_that!(list_result.unwrap()).contains_all_of(&[&id1, &id2, &id3]);
+    assert_that!(list_result).is_ok().has_length(3);
+    assert_that!(list_result)
+        .is_ok()
+        .contains_all_of(&[&id1, &id2, &id3]);
 }
 
 #[apply(data_stores)]
@@ -222,10 +226,14 @@ fn list_lock_blocks(#[case] mut store: Box<dyn DataStore>, buffer: Vec<u8>) {
 
     assert_that!(store.write_block(BlockKey::Data(Uuid::new_v4().into()), &buffer)).is_ok();
     assert_that!(store.write_block(BlockKey::Header(Uuid::new_v4().into()), &buffer)).is_ok();
+    assert_that!(store.write_block(BlockKey::Super, &buffer)).is_ok();
+    assert_that!(store.write_block(BlockKey::Version, &buffer)).is_ok();
 
     let list_result = store.list_blocks(BlockType::Lock);
-    assert_that!(list_result).is_ok();
-    assert_that!(list_result.unwrap()).contains_all_of(&[&id1, &id2, &id3]);
+    assert_that!(list_result).is_ok().has_length(3);
+    assert_that!(list_result)
+        .is_ok()
+        .contains_all_of(&[&id1, &id2, &id3]);
 }
 
 #[apply(data_stores)]
@@ -243,8 +251,12 @@ fn list_header_blocks(#[case] mut store: Box<dyn DataStore>, buffer: Vec<u8>) {
 
     assert_that!(store.write_block(BlockKey::Data(Uuid::new_v4().into()), &buffer)).is_ok();
     assert_that!(store.write_block(BlockKey::Lock(Uuid::new_v4().into()), &buffer)).is_ok();
+    assert_that!(store.write_block(BlockKey::Super, &buffer)).is_ok();
+    assert_that!(store.write_block(BlockKey::Version, &buffer)).is_ok();
 
     let list_result = store.list_blocks(BlockType::Header);
-    assert_that!(list_result).is_ok();
-    assert_that!(list_result.unwrap()).contains_all_of(&[&id1, &id2, &id3]);
+    assert_that!(list_result).is_ok().has_length(3);
+    assert_that!(list_result)
+        .is_ok()
+        .contains_all_of(&[&id1, &id2, &id3]);
 }
