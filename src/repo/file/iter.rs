@@ -195,6 +195,9 @@ where
     /// This entry’s metadata will be copied to the `dest` file according to the selected
     /// [`FileMetadata`] implementation.
     ///
+    /// If this entry is a regular file, this method will attempt to efficiently copy any sparse
+    /// holes in the [`Object`] to the file in the file system, creating a sparse file.
+    ///
     /// # Errors
     /// - `Error::AlreadyExists`: The `dest` file already exists.
     /// - `Error::Deserialize`: The file metadata could not be deserialized.

@@ -99,8 +99,8 @@ pub use self::repository::FileRepo;
 pub use self::special::{NoSpecial, SpecialType};
 
 mod entry;
-mod file;
 mod fuse;
+mod holes;
 mod iter;
 mod metadata;
 mod path_tree;

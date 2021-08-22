@@ -34,7 +34,7 @@ use crate::repo::{
 };
 
 use super::entry::{Entry, EntryHandle, EntryType, HandleType};
-use super::file::{archive_file, extract_file};
+use super::holes::{archive_file, extract_file};
 use super::iter::{Children, Descendants, WalkEntry, WalkPredicate};
 use super::metadata::{FileMetadata, NoMetadata};
 use super::path_tree::PathTree;
@@ -688,7 +688,7 @@ where
             .ok_or(crate::Error::NotFound)?
             .collect::<Vec<_>>();
 
-        for (source_path, handle) in source_tree.into_iter() {
+        for (source_path, handle) in source_tree {
             let relative_path = source_path.strip_prefix(source.as_ref()).unwrap();
             let dest_path = dest.as_ref().join(relative_path);
             self.repo.state_mut().tree.insert(dest_path, handle);
