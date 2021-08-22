@@ -7,28 +7,29 @@
 
 `acid-store` is a library for secure, deduplicated, transactional, and verifiable data storage.
 
-This library provides high-level abstractions for data storage over a number of storage backends.
-The goal is to decouple how you access your data from where you store it. You can access your data
-as an object store, a virtual file system, a persistent collection, or a content-addressable
-storage, regardless of where the data is stored. Out of the box, this library supports the local
-file system, SQLite, Redis, Amazon S3, SFTP, and many cloud providers as storage backends. Storage
-backends are easy to implement, and this library builds on top of them to provide features like
+This library provides high-level abstractions for data storage over a number of storage backends. The goal is to
+decouple how you access your data from where you store it. You can access your data as an object store, a virtual file
+system, a persistent collection, or a content-addressable storage, regardless of where the data is stored. Out of the
+box, this library supports the local file system, SQLite, Redis, Amazon S3, SFTP, and many cloud providers as storage
+backends. Storage backends are easy to implement, and this library builds on top of them to provide features like
 encryption, compression, deduplication, locking, and atomic transactions.
 
 For details and examples, see the [documentation](https://docs.rs/acid-store).
 
-⚠️ This project is still immature and needs more testing. Testers are always appreciated, but please
-remember to back up your data! Also keep in mind that this code has not been audited for security.
-All the usual disclaimers apply.
+⚠️ This project is still experimental; it experiences frequent breaking API changes and requires more testing. This
+project is not ready for use in production environments. Testers are always appreciated, but please remember to back up
+your data! Also keep in mind that this code has not been audited for security.
 
 ## Features
+
 - Optional encryption of all data and metadata using XChaCha20-Poly1305 and Argon2, powered by
-[libsodium](https://download.libsodium.org/doc/)
+  [libsodium](https://download.libsodium.org/doc/)
 - Optional compression using LZ4
 - Optional content-based deduplication using the ZPAQ chunking algorithm
 - Supports packing data into fixed-size blocks to avoid metadata leakage
 - Integrity checking of data and metadata using checksums and (if encryption is enabled) AEAD
 - Transactional operations providing atomicity, consistency, isolation, and durability (ACID)
+- Two-phase locking protects against concurrent access from multiple clients
 - Copy-on-write semantics
 - New storage backends are easy to implement
 
@@ -37,8 +38,8 @@ All the usual disclaimers apply.
 This library provides the following abstractions for data storage.
 
 - An object store which maps keys to seekable binary blobs
-- A virtual file system which supports file metadata, special files, importing and exporting
-files to the local OS file system, and being mounted via FUSE
+- A virtual file system which supports file metadata, special files, sparse files, hard links, importing and exporting
+  files to the local OS file system, and being mounted via FUSE
 - A persistent, heterogeneous, map-like collection
 - An object store with support for content versioning
 - A content-addressable storage which allows for accessing data by its cryptographic hash

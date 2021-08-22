@@ -23,8 +23,9 @@
 //! This library currently provides the following abstractions for data storage. They can be found
 //! in the [`crate::repo`] module.
 //! - [`KeyRepo`] is an object store which maps keys to seekable binary blobs.
-//! - [`FileRepo`] is a virtual file system which supports file metadata, special files, importing
-//! and exporting files to the local OS file system, and being mounted via FUSE
+//! - [`FileRepo`] is a virtual file system which supports file metadata, special files, sparse
+//! files, hard links, importing and exporting files to the local OS file system, and being mounted
+//! via FUSE
 //! - [`ValueRepo`] is a persistent, heterogeneous, map-like collection.
 //! - [`VersionRepo`] is an object store with support for content versioning.
 //! - [`ContentRepo`] is a content-addressable storage which allows for accessing data by its
