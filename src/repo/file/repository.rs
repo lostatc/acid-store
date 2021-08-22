@@ -932,9 +932,10 @@ where
             .repo
             .state()
             .tree
-            .walk(parent, |walk_entry| {
+            .walk(parent.as_ref(), |walk_entry| {
                 visitor(WalkEntry {
                     path: walk_entry.path,
+                    base: parent.as_ref(),
                     handle: *walk_entry.value,
                     depth: walk_entry.depth,
                     repo: &self,
