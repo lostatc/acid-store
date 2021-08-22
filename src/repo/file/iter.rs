@@ -102,6 +102,7 @@ where
     M: FileMetadata,
 {
     pub(super) path: RelativePathBuf,
+    pub(super) base: &'a RelativePath,
     pub(super) handle: EntryHandle,
     pub(super) depth: usize,
     pub(super) repo: &'a FileRepo<S, M>,
@@ -125,6 +126,11 @@ where
     /// Return the path of this entry.
     pub fn path(&self) -> &RelativePath {
         self.path.as_relative_path()
+    }
+
+    /// Return the path of this entry relative to the base path.
+    pub fn relative_path(&self) -> &RelativePath {
+        self.path.strip_prefix(self.base).unwrap()
     }
 
     /// Consume this entry, returning its path.
