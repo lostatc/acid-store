@@ -26,7 +26,7 @@ use exacl::{AclEntry, AclEntryKind, AclOption, Flag, Perm};
 use relative_path::RelativePathBuf;
 use tempfile::TempDir;
 
-use acid_store::repo::file::{Entry, FileMode, FileRepo};
+use acid_store::repo::file::{Entry, FileMode, FileRepo, WalkPredicate};
 use acid_store::repo::{Commit, SwitchInstance, DEFAULT_INSTANCE};
 
 use acid_store::uuid::Uuid;
@@ -96,6 +96,37 @@ fn empty_path_does_not_exist(repo: FileRepo) {
 }
 
 #[rstest]
+fn nonexistent_child_does_not_exist(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("parent", &Entry::directory())?;
+
+    assert_that!(repo.exists("parent/nonexistent")).is_false();
+    assert_that!(repo.is_file("parent/nonexistent")).is_false();
+    assert_that!(repo.is_directory("parent/nonexistent")).is_false();
+    assert_that!(repo.is_special("parent/nonexistent")).is_false();
+
+    Ok(())
+}
+
+#[rstest]
+fn check_entry_type(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("file", &Entry::file())?;
+    repo.create("directory", &Entry::directory())?;
+
+    assert_that!(repo.exists("file")).is_true();
+    assert_that!(repo.exists("directory")).is_true();
+
+    assert_that!(repo.is_file("file")).is_true();
+    assert_that!(repo.is_directory("file")).is_false();
+    assert_that!(repo.is_special("file")).is_false();
+
+    assert_that!(repo.is_file("directory")).is_false();
+    assert_that!(repo.is_directory("directory")).is_true();
+    assert_that!(repo.is_special("directory")).is_false();
+
+    Ok(())
+}
+
+#[rstest]
 fn creating_existing_file_errs(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create("home", &Entry::directory())?;
     assert_that!(repo.create("home", &Entry::directory()))
@@ -153,6 +184,7 @@ fn create_parent_of_top_level_file(mut repo: FileRepo) -> anyhow::Result<()> {
 #[rstest]
 fn removing_nonexistent_path_errs(mut repo: FileRepo) {
     assert_that!(repo.remove("nonexistent")).is_err_variant(acid_store::Error::NotFound);
+    assert_that!(repo.remove_tree("nonexistent")).is_err_variant(acid_store::Error::NotFound);
 }
 
 #[rstest]
@@ -201,8 +233,23 @@ fn remove_tree_without_descendants(mut repo: FileRepo) -> anyhow::Result<()> {
 }
 
 #[rstest]
-fn getting_empty_path_errs(repo: FileRepo) {
+fn getting_entry_of_empty_path_errs(repo: FileRepo) {
     assert_that!(repo.entry("")).is_err_variant(acid_store::Error::InvalidPath);
+}
+
+#[rstest]
+fn getting_nonexistent_entry_errs(repo: FileRepo) {
+    assert_that!(repo.entry("nonexistent")).is_err_variant(acid_store::Error::NotFound);
+}
+
+#[rstest]
+fn getting_entry_id_of_empty_path_errs(repo: FileRepo) {
+    assert_that!(repo.entry_id("")).is_err_variant(acid_store::Error::InvalidPath);
+}
+
+#[rstest]
+fn getting_nonexistent_entry_id_errs(repo: FileRepo) {
+    assert_that!(repo.entry_id("nonexistent")).is_err_variant(acid_store::Error::NotFound);
 }
 
 #[rstest]
@@ -219,8 +266,8 @@ fn setting_metadata_on_empty_path_errs(mut repo: FileRepo) {
 #[cfg(feature = "file-metadata")]
 fn set_common_metadata(mut repo: FileRepo<NoSpecial, CommonMetadata>) -> anyhow::Result<()> {
     let expected_metadata = CommonMetadata {
-        modified: SystemTime::UNIX_EPOCH,
-        accessed: SystemTime::UNIX_EPOCH,
+        modified: SystemTime::UNIX_EPOCH + Duration::from_secs(10),
+        accessed: SystemTime::UNIX_EPOCH + Duration::from_secs(20),
     };
     repo.create("file", &Entry::file())?;
     repo.set_metadata("file", Some(expected_metadata.clone()))?;
@@ -255,6 +302,20 @@ fn opening_empty_path_errs(repo: FileRepo) {
 }
 
 #[rstest]
+fn opening_nonexistent_entry_errs(repo: FileRepo) {
+    assert_that!(repo.open("nonexistent")).is_err_variant(acid_store::Error::NotFound);
+}
+
+#[rstest]
+fn opening_directory_entry_errs(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("directory", &Entry::directory())?;
+
+    assert_that!(repo.open("directory")).is_err_variant(acid_store::Error::NotFile);
+
+    Ok(())
+}
+
+#[rstest]
 fn copied_file_has_same_contents(mut repo: FileRepo, buffer: Vec<u8>) -> anyhow::Result<()> {
     // Add a file entry and write data to it.
     repo.create("source", &Entry::file())?;
@@ -276,7 +337,26 @@ fn copied_file_has_same_contents(mut repo: FileRepo, buffer: Vec<u8>) -> anyhow:
 }
 
 #[rstest]
-fn copy_file_with_invalid_destination(mut repo: FileRepo) -> anyhow::Result<()> {
+fn copied_entry_has_different_entry_id(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("source", &Entry::file())?;
+    let source_id = repo.entry_id("source")?;
+
+    repo.copy("source", "dest")?;
+
+    assert_that!(repo.entry_id("dest"))
+        .is_ok()
+        .is_not_equal_to(source_id);
+
+    Ok(())
+}
+
+#[rstest]
+fn copying_nonexistent_source_errs(mut repo: FileRepo) {
+    assert_that!(repo.copy("nonexistent", "dest")).is_err_variant(acid_store::Error::NotFound);
+}
+
+#[rstest]
+fn copy_entry_with_invalid_destination_errs(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create("source", &Entry::file())?;
 
     assert_that!(repo.copy("source", "nonexistent/dest"))
@@ -345,6 +425,44 @@ fn copying_with_empty_path_as_source_errs(mut repo: FileRepo) {
 fn copying_with_empty_path_as_dest_errs(mut repo: FileRepo) {
     assert_that!(repo.copy("test", "")).is_err_variant(acid_store::Error::InvalidPath);
     assert_that!(repo.copy_tree("test", "")).is_err_variant(acid_store::Error::InvalidPath);
+}
+
+#[rstest]
+fn renaming_nonexistent_source_errs(mut repo: FileRepo) {
+    assert_that!(repo.rename("nonexistent", "dest")).is_err_variant(acid_store::Error::NotFound);
+}
+
+#[rstest]
+fn rename_entry_with_invalid_destination_errs(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("source", &Entry::file())?;
+
+    assert_that!(repo.rename("source", "nonexistent/dest"))
+        .is_err_variant(acid_store::Error::NotFound);
+
+    repo.create("file", &Entry::file())?;
+
+    assert_that!(repo.rename("source", "file/dest"))
+        .is_err_variant(acid_store::Error::NotDirectory);
+
+    repo.create("dest", &Entry::directory())?;
+
+    assert_that!(repo.rename("source", "dest")).is_err_variant(acid_store::Error::AlreadyExists);
+
+    Ok(())
+}
+
+#[rstest]
+fn rename_with_empty_source_errs(mut repo: FileRepo) {
+    assert_that!(repo.rename("", "dest")).is_err_variant(acid_store::Error::InvalidPath);
+}
+
+#[rstest]
+fn rename_with_empty_dest_errs(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("source", &Entry::file())?;
+
+    assert_that!(repo.rename("source", "")).is_err_variant(acid_store::Error::InvalidPath);
+
+    Ok(())
 }
 
 #[rstest]
@@ -460,6 +578,16 @@ fn linking_to_existing_dest_errs(mut repo: FileRepo) -> anyhow::Result<()> {
 }
 
 #[rstest]
+fn linking_to_dest_with_nonexistent_parent_errs(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("source", &Entry::file())?;
+
+    assert_that!(repo.link("source", "nonexistent/dest"))
+        .is_err_variant(acid_store::Error::NotFound);
+
+    Ok(())
+}
+
+#[rstest]
 fn linking_to_dest_with_file_parent_errs(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create("source", &Entry::file())?;
     repo.create("parent", &Entry::file())?;
@@ -482,8 +610,8 @@ fn linked_entries_share_metadata(
     repo.link("source", "dest")?;
 
     let expected_metadata = CommonMetadata {
-        modified: SystemTime::UNIX_EPOCH + Duration::from_secs(50),
-        accessed: SystemTime::UNIX_EPOCH + Duration::from_secs(100),
+        modified: SystemTime::UNIX_EPOCH + Duration::from_secs(10),
+        accessed: SystemTime::UNIX_EPOCH + Duration::from_secs(20),
     };
 
     repo.set_metadata("source", Some(expected_metadata.clone()))?;
@@ -571,13 +699,13 @@ fn list_children(mut repo: FileRepo) -> anyhow::Result<()> {
 }
 
 #[rstest]
-fn list_children_of_nonexistent_directory(repo: FileRepo) {
+fn listing_children_of_nonexistent_directory_errs(repo: FileRepo) {
     assert_that!(repo.children("nonexistent").map(Vec::from_iter))
         .is_err_variant(acid_store::Error::NotFound);
 }
 
 #[rstest]
-fn list_children_of_a_file(mut repo: FileRepo) -> anyhow::Result<()> {
+fn listing_children_of_a_file_errs(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create("file", &Entry::file())?;
     assert_that!(repo.children("file").map(Vec::from_iter))
         .is_err_variant(acid_store::Error::NotDirectory);
@@ -612,13 +740,13 @@ fn list_descendants(mut repo: FileRepo) -> anyhow::Result<()> {
 }
 
 #[rstest]
-fn list_descendants_of_nonexistent_directory(repo: FileRepo) {
+fn listing_descendants_of_nonexistent_directory_errs(repo: FileRepo) {
     assert_that!(repo.descendants("nonexistent").map(Vec::from_iter))
         .is_err_variant(acid_store::Error::NotFound);
 }
 
 #[rstest]
-fn list_descendants_of_a_file(mut repo: FileRepo) -> anyhow::Result<()> {
+fn listing_descendants_of_a_file_errs(mut repo: FileRepo) -> anyhow::Result<()> {
     repo.create("file", &Entry::file())?;
 
     assert_that!(repo.descendants("file").map(Vec::from_iter))
@@ -635,6 +763,106 @@ fn list_descendants_of_empty_path(mut repo: FileRepo) -> anyhow::Result<()> {
         &RelativePathBuf::from("directory"),
         &RelativePathBuf::from("directory/file"),
     ]);
+
+    Ok(())
+}
+
+#[rstest]
+fn walking_nonexistent_entry_errs(repo: FileRepo) {
+    assert_that!(repo.walk::<(), _, _>("nonexistent", |_| WalkPredicate::Continue))
+        .is_err_variant(acid_store::Error::NotFound);
+}
+
+#[rstest]
+fn walking_file_entry_errs(mut repo: FileRepo) -> anyhow::Result<()> {
+    repo.create("file", &Entry::file())?;
+
+    assert_that!(repo.walk::<(), _, _>("file", |_| WalkPredicate::Continue))
+        .is_err_variant(acid_store::Error::NotDirectory);
+
+    Ok(())
+}
+
+#[rstest]
+fn archiving_to_dest_with_nonexistent_parent_errs(
+    mut repo: FileRepo,
+    temp_dir: TempDir,
+) -> anyhow::Result<()> {
+    let source_path = temp_dir.as_ref().join("source");
+    File::create(&source_path)?;
+
+    assert_that!(repo.archive(&source_path, "nonexistent/dest"))
+        .is_err_variant(acid_store::Error::NotFound);
+    assert_that!(repo.archive_tree(&source_path, "nonexistent/dest"))
+        .is_err_variant(acid_store::Error::NotFound);
+
+    Ok(())
+}
+
+#[rstest]
+fn archiving_nonexistent_source_errs(mut repo: FileRepo, temp_dir: TempDir) {
+    let source_path = temp_dir.as_ref().join("nonexistent");
+
+    assert_that!(repo.archive(&source_path, "dest")).is_err_variant(acid_store::Error::NotFound);
+    assert_that!(repo.archive_tree(&source_path, "dest"))
+        .is_err_variant(acid_store::Error::NotFound);
+}
+
+#[rstest]
+fn archiving_to_dest_with_file_parent_errs(
+    mut repo: FileRepo,
+    temp_dir: TempDir,
+) -> anyhow::Result<()> {
+    let source_path = temp_dir.as_ref().join("source");
+    File::create(&source_path)?;
+
+    repo.create("file", &Entry::file())?;
+
+    assert_that!(repo.archive(&source_path, "file/dest"))
+        .is_err_variant(acid_store::Error::NotDirectory);
+    assert_that!(repo.archive_tree(&source_path, "file/dest"))
+        .is_err_variant(acid_store::Error::NotDirectory);
+
+    Ok(())
+}
+
+#[rstest]
+fn archiving_with_existing_dest_errs(mut repo: FileRepo, temp_dir: TempDir) -> anyhow::Result<()> {
+    let source_path = temp_dir.as_ref().join("source");
+    File::create(&source_path)?;
+
+    repo.create("dest", &Entry::directory())?;
+
+    assert_that!(repo.archive(&source_path, "dest"))
+        .is_err_variant(acid_store::Error::AlreadyExists);
+    assert_that!(repo.archive_tree(&source_path, "dest"))
+        .is_err_variant(acid_store::Error::AlreadyExists);
+
+    Ok(())
+}
+
+#[rstest]
+fn archiving_to_empty_path_errs(mut repo: FileRepo, temp_dir: TempDir) -> anyhow::Result<()> {
+    let source_path = temp_dir.as_ref().join("source");
+    File::create(&source_path)?;
+
+    assert_that!(repo.archive(&source_path, "")).is_err_variant(acid_store::Error::InvalidPath);
+    assert_that!(repo.archive_tree(&source_path, ""))
+        .is_err_variant(acid_store::Error::InvalidPath);
+
+    Ok(())
+}
+
+#[rstest]
+#[cfg(unix)]
+fn archiving_unsupported_file_type_errs(
+    mut repo: FileRepo,
+    temp_dir: TempDir,
+) -> anyhow::Result<()> {
+    let source_path = temp_dir.as_ref().join("source");
+    mkfifo(&source_path, Mode::S_IRWXU)?;
+
+    assert_that!(repo.archive(&source_path, "dest")).is_err_variant(acid_store::Error::FileType);
 
     Ok(())
 }
@@ -692,21 +920,6 @@ fn archive_unix_special_files(
 }
 
 #[rstest]
-fn archiving_file_with_existing_dest_errs(
-    mut repo: FileRepo,
-    temp_dir: TempDir,
-) -> anyhow::Result<()> {
-    let source_path = temp_dir.as_ref().join("source");
-    File::create(&source_path)?;
-
-    repo.create("dest", &Entry::file())?;
-    assert_that!(repo.archive(&source_path, "dest"))
-        .is_err_variant(acid_store::Error::AlreadyExists);
-
-    Ok(())
-}
-
-#[rstest]
 fn archive_tree(mut repo: FileRepo, temp_dir: TempDir) -> anyhow::Result<()> {
     let source_path = temp_dir.as_ref().join("source");
 
@@ -731,13 +944,62 @@ fn archive_tree(mut repo: FileRepo, temp_dir: TempDir) -> anyhow::Result<()> {
 }
 
 #[rstest]
-fn archiving_to_empty_path_errs(mut repo: FileRepo, temp_dir: TempDir) -> anyhow::Result<()> {
+#[cfg(unix)]
+fn archive_tree_skips_unsupported_file_types(
+    mut repo: FileRepo,
+    temp_dir: TempDir,
+) -> anyhow::Result<()> {
     let source_path = temp_dir.as_ref().join("source");
-    File::create(&source_path)?;
+    let special_file = source_path.join("special");
+    create_dir(&source_path)?;
+    mkfifo(&special_file, Mode::S_IRWXU)?;
 
-    assert_that!(repo.archive(&source_path, "")).is_err_variant(acid_store::Error::InvalidPath);
-    assert_that!(repo.archive_tree(&source_path, ""))
-        .is_err_variant(acid_store::Error::InvalidPath);
+    assert_that!(repo.archive_tree(&source_path, "dest")).is_ok();
+
+    assert_that!(repo.exists("dest/special")).is_false();
+    assert_that!(repo.entry("dest/special")).is_err_variant(acid_store::Error::NotFound);
+    assert_that!(repo
+        .children("dest")
+        .map(|children| children.collect::<Vec<_>>()))
+    .is_ok()
+    .is_empty();
+
+    Ok(())
+}
+
+#[rstest]
+fn extracting_from_empty_path_errs(repo: FileRepo, temp_dir: TempDir) -> anyhow::Result<()> {
+    let dest_path = temp_dir.as_ref().join("dest");
+
+    assert_that!(repo.extract("", &dest_path)).is_err_variant(acid_store::Error::InvalidPath);
+    assert_that!(repo.extract_tree("", &dest_path)).is_err_variant(acid_store::Error::InvalidPath);
+
+    Ok(())
+}
+
+#[rstest]
+fn extracting_nonexisting_source_entry_errs(repo: FileRepo, temp_dir: TempDir) {
+    let dest_path = temp_dir.as_ref().join("dest");
+    assert_that!(repo.extract("nonexistent", &dest_path))
+        .is_err_variant(acid_store::Error::NotFound);
+    assert_that!(repo.extract_tree("nonexistent", &dest_path))
+        .is_err_variant(acid_store::Error::NotFound);
+}
+
+#[rstest]
+fn extracting_file_with_existing_dest_errs(
+    mut repo: FileRepo,
+    temp_dir: TempDir,
+) -> anyhow::Result<()> {
+    let dest_path = temp_dir.as_ref().join("dest");
+    File::create(&dest_path)?;
+
+    repo.create("source", &Entry::file())?;
+
+    assert_that!(repo.extract("source", &dest_path))
+        .is_err_variant(acid_store::Error::AlreadyExists);
+    assert_that!(repo.extract_tree("source", &dest_path))
+        .is_err_variant(acid_store::Error::AlreadyExists);
 
     Ok(())
 }
@@ -802,22 +1064,6 @@ fn extract_unix_special_files(
 }
 
 #[rstest]
-fn extracting_file_with_existing_dest_errs(
-    mut repo: FileRepo,
-    temp_dir: TempDir,
-) -> anyhow::Result<()> {
-    let dest_path = temp_dir.as_ref().join("dest");
-    File::create(&dest_path)?;
-
-    repo.create("source", &Entry::file())?;
-
-    assert_that!(repo.extract("source", &dest_path))
-        .is_err_variant(acid_store::Error::AlreadyExists);
-
-    Ok(())
-}
-
-#[rstest]
 fn extract_tree(mut repo: FileRepo, temp_dir: TempDir) -> anyhow::Result<()> {
     let dest_path = temp_dir.as_ref().join("dest");
 
@@ -836,16 +1082,6 @@ fn extract_tree(mut repo: FileRepo, temp_dir: TempDir) -> anyhow::Result<()> {
 }
 
 #[rstest]
-fn extracting_from_empty_path_errs(repo: FileRepo, temp_dir: TempDir) -> anyhow::Result<()> {
-    let dest_path = temp_dir.as_ref().join("dest");
-
-    assert_that!(repo.extract("", &dest_path)).is_err_variant(acid_store::Error::InvalidPath);
-    assert_that!(repo.extract_tree("", &dest_path)).is_err_variant(acid_store::Error::InvalidPath);
-
-    Ok(())
-}
-
-#[rstest]
 #[cfg(all(unix, feature = "file-metadata"))]
 fn write_unix_metadata(
     mut repo: FileRepo<NoSpecial, UnixMetadata>,
@@ -858,9 +1094,9 @@ fn write_unix_metadata(
 
     let entry_metadata = UnixMetadata {
         mode: FileMode::S_IWUSR | FileMode::S_IRGRP | FileMode::S_IROTH | FileMode::S_IWOTH,
-        modified: SystemTime::UNIX_EPOCH,
-        accessed: SystemTime::UNIX_EPOCH,
-        changed: SystemTime::UNIX_EPOCH,
+        modified: SystemTime::UNIX_EPOCH + Duration::from_secs(10),
+        accessed: SystemTime::UNIX_EPOCH + Duration::from_secs(20),
+        changed: SystemTime::UNIX_EPOCH + Duration::from_secs(30),
         user: 1000,
         group: 1000,
         attributes: HashMap::new(),

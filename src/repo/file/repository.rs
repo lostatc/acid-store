@@ -955,6 +955,7 @@ where
     /// in the file to the [`Object`] in the repository, creating a sparse object.
     ///
     /// # Errors
+    /// - `Error::NotFound`: The given `source` file does not exist.
     /// - `Error::NotFound`: The parent of `dest` does not exist.
     /// - `Error::NotDirectory`: The parent of `dest` is not a directory entry.
     /// - `Error::InvalidPath`: The given `dest` path is empty.
@@ -978,6 +979,10 @@ where
 
         if self.exists(&dest) {
             return Err(crate::Error::AlreadyExists);
+        }
+
+        if !source.as_ref().exists() {
+            return Err(crate::Error::NotFound);
         }
 
         let file_metadata = metadata(&source)?;
@@ -1024,6 +1029,7 @@ where
     /// files in the `source` tree are hard links, they will be archived as separate entries.
     ///
     /// # Errors
+    /// - `Error::NotFound`: The given `source` file does not exist.
     /// - `Error::NotFound`: The parent of `dest` does not exist.
     /// - `Error::NotDirectory`: The parent of `dest` is not a directory entry.
     /// - `Error::InvalidPath`: The given `dest` path is empty.
@@ -1039,6 +1045,10 @@ where
         source: impl AsRef<Path>,
         dest: impl AsRef<RelativePath>,
     ) -> crate::Result<()> {
+        if !source.as_ref().exists() {
+            return Err(crate::Error::NotFound);
+        }
+
         // `WalkDir` includes `source` in the paths it iterates over.
         // It does not error if `source` is not a directory.
         let all_paths = WalkDir::new(&source).into_iter();
