@@ -16,7 +16,9 @@
 
 #![cfg(all(feature = "encryption", feature = "compression"))]
 
-use acid_store::store::{BlockKey, BlockType, DataStore};
+use std::fmt::Debug;
+
+use acid_store::store::{BlockKey, BlockType, DataStore, OpenStore};
 use rstest_reuse::{self, *};
 use serial_test::serial;
 use uuid::Uuid;
@@ -24,6 +26,15 @@ use uuid::Uuid;
 use common::*;
 
 mod common;
+
+#[apply(data_configs)]
+#[serial(data_store)]
+fn create_then_open_again<T: DataStore + Debug + 'static>(
+    #[case] config: Box<dyn OpenStore<Store = T>>,
+) {
+    assert_that!(config.open()).is_ok();
+    assert_that!(config.open()).is_ok();
+}
 
 #[apply(data_stores)]
 #[serial(data_store)]
