@@ -16,7 +16,7 @@
 
 #![cfg(feature = "store-directory")]
 
-use std::fs::{create_dir, create_dir_all, read_dir, remove_file, rename, File};
+use std::fs::{create_dir_all, read_dir, remove_file, rename, File};
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
@@ -77,18 +77,17 @@ impl OpenStore for DirectoryConfig {
     type Store = DirectoryStore;
 
     fn open(&self) -> crate::Result<Self::Store> {
-        // Create the blocks directory in the data store.
         create_dir_all(&self.path)
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        create_dir(self.path.join(STORE_DIRECTORY))
+        create_dir_all(self.path.join(STORE_DIRECTORY))
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        create_dir(self.path.join(STAGING_DIRECTORY))
+        create_dir_all(self.path.join(STAGING_DIRECTORY))
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        create_dir(self.path.join(type_path(BlockType::Data)))
+        create_dir_all(self.path.join(type_path(BlockType::Data)))
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        create_dir(self.path.join(type_path(BlockType::Lock)))
+        create_dir_all(self.path.join(type_path(BlockType::Lock)))
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        create_dir(self.path.join(type_path(BlockType::Header)))
+        create_dir_all(self.path.join(type_path(BlockType::Header)))
             .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
 
         let version_path = self.path.join(VERSION_FILE);
