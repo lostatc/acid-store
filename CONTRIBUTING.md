@@ -2,13 +2,23 @@
 
 ## Tests
 
+If you run the tests locally, you will probably want to run them without the
+`store-*` cargo features, because many of the `DataStore` tests rely on outside
+services like S3, Redis, etc.
+
+You will almost always want to run the tests with the `encryption` and
+`compression` features enabled, because the way the test suite is architectured
+means that most of the tests require those features.
+
 ### `DataStore` Tests
 
-Some tests are not run in CI because they rely on outside resources. These tests
-must be run locally and be configured with environment variables. Below is a
-table of what those environment variables are and what Cargo features they are
-associated with. The variables only need to be set if their corresponding Cargo
-features are enabled when running the test suite.
+If you want to run tests for the different `DataStore` implementations, you will
+need to provide the necessary services, either mocked or real, for them to test
+against. You can configure the following environment variables to do this.
+
+Below is a table of what those environment variables are and what Cargo features
+they are associated with. The variables only need to be set if their
+corresponding Cargo features are enabled when running the test suite.
 
 | Variable        | Description                                                         | Feature        |
 | --------------- | ------------------------------------------------------------------- | -------------- |
@@ -66,8 +76,9 @@ prove -r ../fstest/fstest
 When building the documentation normally, markers which identify which features
 are required to use various parts of the library will be missing. That is
 because this is an [unstable
-feature](https://github.com/rust-lang/rust/issues/43781) of rustdoc. To build
-the documentation correctly, run the following command:
+feature](https://github.com/rust-lang/rust/issues/43781) of rustdoc that happens
+to be enabled in docs.rs. To build the documentation correctly, run the
+following command:
 
 ```
 RUSTDOCFLAGS='--cfg docsrs' cargo +nightly doc --all-features
