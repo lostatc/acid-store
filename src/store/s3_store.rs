@@ -22,7 +22,6 @@ use hex_literal::hex;
 use s3::bucket::Bucket;
 use s3::creds::Credentials;
 use s3::region::Region;
-use tokio::runtime::Runtime;
 use uuid::Uuid;
 
 use super::data_store::{BlockId, BlockKey, BlockType, DataStore};
@@ -350,6 +349,7 @@ impl S3Config {
                     secret_key: Some(secret_key),
                     security_token: None,
                     session_token: None,
+                    expiration: None,
                 },
                 S3Credentials::Session {
                     access_key,
@@ -360,6 +360,7 @@ impl S3Config {
                     secret_key: Some(secret_key),
                     security_token: None,
                     session_token: Some(session_token),
+                    expiration: None,
                 },
             },
         )
@@ -374,16 +375,15 @@ impl OpenStore for S3Config {
         let bucket = self.clone().into_bucket();
         let prefix = self.prefix.trim_end_matches(SEPARATOR).to_owned();
         let version_key = join_key!(prefix, STORE_VERSION_KEY);
-        let mut runtime = Runtime::new().unwrap();
 
-        match runtime.block_on(bucket.get_object(&version_key)) {
-            Ok((_, code)) if code == NOT_FOUND_CODE => {
-                runtime
-                    .block_on(bucket.put_object(&version_key, CURRENT_VERSION.as_bytes()))
+        match bucket.get_object(&version_key) {
+            Ok(response) if response.status_code() == NOT_FOUND_CODE => {
+                bucket
+                    .put_object(&version_key, CURRENT_VERSION.as_bytes())
                     .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
             }
-            Ok((version_bytes, _)) => {
-                let version = Uuid::from_slice(version_bytes.as_slice())
+            Ok(response) => {
+                let version = Uuid::from_slice(response.bytes())
                     .map_err(|_| crate::Error::UnsupportedStore)?;
                 if version != CURRENT_VERSION {
                     return Err(crate::Error::UnsupportedStore);
@@ -440,44 +440,37 @@ impl S3Store {
 
 impl DataStore for S3Store {
     fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
-        let mut runtime = Runtime::new().unwrap();
-
         let block_path = self.block_path(key);
-        runtime.block_on(self.bucket.put_object(&block_path, data))?;
+        self.bucket.put_object(&block_path, data)?;
         Ok(())
     }
 
     fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
-        let mut runtime = Runtime::new().unwrap();
-
         let block_path = self.block_path(key);
-        let (bytes, code) = runtime.block_on(self.bucket.get_object(&block_path))?;
-        if code == NOT_FOUND_CODE {
+        let response = self.bucket.get_object(&block_path)?;
+        if response.status_code() == NOT_FOUND_CODE {
             Ok(None)
         } else {
-            Ok(Some(bytes))
+            Ok(Some(response.bytes().into()))
         }
     }
 
     fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
-        let mut runtime = Runtime::new().unwrap();
-
         let block_path = self.block_path(key);
-        runtime.block_on(self.bucket.delete_object(&block_path))?;
+        self.bucket.delete_object(&block_path)?;
         Ok(())
     }
 
     fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
-        let mut runtime = Runtime::new().unwrap();
-
         let blocks_key = match kind {
             BlockType::Data => join_key!(self.prefix, STORE_KEY, DATA_KEY) + SEPARATOR,
             BlockType::Lock => join_key!(self.prefix, STORE_KEY, LOCKS_KEY) + SEPARATOR,
             BlockType::Header => join_key!(self.prefix, STORE_KEY, HEADERS_KEY) + SEPARATOR,
         };
 
-        let block_ids = runtime
-            .block_on(self.bucket.list(blocks_key.clone(), None))?
+        let block_ids = self
+            .bucket
+            .list(blocks_key.clone(), None)?
             .into_iter()
             .flat_map(|list| list.contents)
             .map(|object| {

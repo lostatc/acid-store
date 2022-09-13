@@ -19,7 +19,10 @@
 use std::fmt::{self, Debug, Formatter};
 use std::path::PathBuf;
 
-use redis::{Client, Commands, Connection, ConnectionAddr, ConnectionInfo, IntoConnectionInfo};
+use redis::{
+    Client, Commands, Connection, ConnectionAddr, ConnectionInfo, IntoConnectionInfo,
+    RedisConnectionInfo,
+};
 use uuid::Uuid;
 
 use super::data_store::{BlockId, BlockKey, BlockType, DataStore};
@@ -92,14 +95,14 @@ impl RedisConfig {
     pub fn from_url(url: &str) -> Option<Self> {
         let connection_info = url.into_connection_info().ok()?;
         Some(RedisConfig {
-            addr: match *connection_info.addr {
+            addr: match connection_info.addr {
                 ConnectionAddr::Tcp(host, port) => RedisAddr::Tcp(host, port),
                 ConnectionAddr::TcpTls { host, port, .. } => RedisAddr::Tcp(host, port),
                 ConnectionAddr::Unix(path) => RedisAddr::Unix(path),
             },
-            db: connection_info.db,
-            username: connection_info.username,
-            password: connection_info.passwd,
+            db: connection_info.redis.db,
+            username: connection_info.redis.username,
+            password: connection_info.redis.password,
         })
     }
 }
@@ -109,13 +112,15 @@ impl OpenStore for RedisConfig {
 
     fn open(&self) -> crate::Result<Self::Store> {
         let info = ConnectionInfo {
-            addr: Box::new(match self.addr.clone() {
+            addr: match self.addr.clone() {
                 RedisAddr::Tcp(host, port) => ConnectionAddr::Tcp(host, port),
                 RedisAddr::Unix(path) => ConnectionAddr::Unix(path),
-            }),
-            db: self.db,
-            username: self.username.clone(),
-            passwd: self.password.clone(),
+            },
+            redis: RedisConnectionInfo {
+                db: self.db,
+                username: self.username.clone(),
+                password: self.password.clone(),
+            },
         };
         RedisStore::from_connection_info(info)
     }
