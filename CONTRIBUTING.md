@@ -27,7 +27,8 @@ features are enabled when running the test suite.
 
 To test the FUSE file system implementation provided by this library, the
 `/fuse-test` directory contains a `Dockerfile` which provides a test environment
-containing a number of file system testing tools. The `Dockerfile` builds
+containing [a number of file system testing
+tools](https://github.com/billziss-gh/secfs.test). The `Dockerfile` builds
 `acid-store` and provides a binary which mounts a FUSE file system backed by a
 `MemoryStore`. To mount the FUSE file system, the container needs special
 permissions and access to the host's `/dev/fuse` device.
@@ -49,6 +50,15 @@ To mount the FUSE file system in the container:
 ```shell
 mkdir ./mnt
 ./fuse-mount ./mnt &
+```
+
+To run `fstest` with some patches applied to support `acid-store`:
+
+```shell
+cd ./fstest/fstest
+make
+cd ../../mnt
+prove -r ../fstest/fstest
 ```
 
 ## Documentation
