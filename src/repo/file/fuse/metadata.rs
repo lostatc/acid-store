@@ -74,7 +74,7 @@ pub fn other_perm(mode: u32) -> u32 {
 
 /// Convert the given `time` to a `SystemTime`.
 pub fn to_system_time(time: Timespec) -> SystemTime {
-    let duration = Duration::new(time.sec.abs() as u64, time.nsec.abs() as u32);
+    let duration = Duration::new(time.sec.unsigned_abs(), time.nsec.unsigned_abs());
     if time.sec.is_positive() {
         SystemTime::UNIX_EPOCH + duration
     } else {

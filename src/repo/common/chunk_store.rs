@@ -361,10 +361,10 @@ impl<'a> ReadBlock for StoreReader<'a> {
     fn read_block(&mut self, id: BlockId) -> crate::Result<Vec<u8>> {
         let mut read_block: Box<dyn ReadBlock> = match &self.repo_state.metadata.config.packing {
             Packing::None => Box::new(DirectBlockWriter {
-                state: &self.repo_state,
+                state: self.repo_state,
             }),
             Packing::Fixed(_) => Box::new(PackingBlockReader {
-                repo_state: &self.repo_state,
+                repo_state: self.repo_state,
                 store_state: &mut self.store_state,
             }),
         };
@@ -414,7 +414,7 @@ impl<'a> WriteBlock for StoreWriter<'a> {
         let mut block_writer: Box<dyn WriteBlock> =
             match self.repo_state.metadata.config.packing.clone() {
                 Packing::None => Box::new(DirectBlockWriter {
-                    state: &self.repo_state,
+                    state: self.repo_state,
                 }),
                 Packing::Fixed(pack_size) => Box::new(PackingBlockWriter {
                     repo_state: &mut self.repo_state,

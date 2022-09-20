@@ -213,7 +213,7 @@ impl<'a> FuseAdapter<'a> {
     ) -> crate::Result<FileAttr> {
         let entry_id = self.repo.entry_id(&path)?;
         let entry_inode = self.inodes.insert(path.clone(), entry_id);
-        match self.entry_attr(&entry, entry_inode, req) {
+        match self.entry_attr(entry, entry_inode, req) {
             Ok(attr) => Ok(attr),
             Err(error) => {
                 self.inodes.remove(entry_id, &path);

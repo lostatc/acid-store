@@ -496,7 +496,7 @@ impl FileMetadata for UnixMetadata {
 
         if xattr::SUPPORTED_PLATFORM {
             for (attr_name, attr_value) in self.attributes.iter() {
-                xattr::set(&path, &attr_name, &attr_value)?;
+                xattr::set(&path, &attr_name, attr_value)?;
             }
         }
 

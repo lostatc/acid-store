@@ -60,7 +60,7 @@ pub struct ObjectInfoGuard<'a> {
 
 impl<'a> ObjectInfoGuard<'a> {
     pub fn info(&self) -> ObjectInfo {
-        ObjectInfo::new(&self.repo_state, &self.object_state, &self.handle)
+        ObjectInfo::new(&self.repo_state, self.object_state, &self.handle)
     }
 }
 
@@ -72,7 +72,7 @@ pub struct ObjectReaderGuard<'a> {
 
 impl<'a> ObjectReaderGuard<'a> {
     pub fn reader(&mut self) -> ObjectReader {
-        ObjectReader::new(&self.repo_state, &mut self.object_state, &self.handle)
+        ObjectReader::new(&self.repo_state, self.object_state, &self.handle)
     }
 }
 
@@ -84,11 +84,7 @@ pub struct ObjectWriterGuard<'a> {
 
 impl<'a> ObjectWriterGuard<'a> {
     pub fn writer(&mut self) -> ObjectWriter {
-        ObjectWriter::new(
-            &mut self.repo_state,
-            &mut self.object_state,
-            &mut self.handle,
-        )
+        ObjectWriter::new(&mut self.repo_state, self.object_state, &mut self.handle)
     }
 }
 
@@ -367,7 +363,7 @@ impl<'a> ObjectWriter<'a> {
     }
 
     fn store_writer(&mut self) -> StoreWriter {
-        StoreWriter::new(&mut self.repo_state, &mut self.object_state.store_state)
+        StoreWriter::new(self.repo_state, &mut self.object_state.store_state)
     }
 
     fn object_reader(&mut self) -> ObjectReader {
@@ -401,7 +397,7 @@ impl<'a> ObjectWriter<'a> {
                 let handle_id = self.handle.id;
                 Extent::Chunk(
                     self.store_writer()
-                        .write_chunk(&new_last_chunk_data, handle_id)?,
+                        .write_chunk(new_last_chunk_data, handle_id)?,
                 )
             }
             Extent::Hole { .. } => Extent::Hole {

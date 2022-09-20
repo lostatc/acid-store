@@ -1,3 +1,5 @@
+#![cfg(feature = "encryption")]
+
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::time::Duration;
 

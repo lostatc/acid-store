@@ -28,6 +28,8 @@ impl RepoObject {
     }
 }
 
+pub type BoxLockHandler = Box<dyn Fn(&[u8]) -> bool>;
+
 /// A test helper for opening multiple repositories backed by the same data store.
 pub struct RepoStore {
     pub store: MemoryConfig,
@@ -35,7 +37,7 @@ pub struct RepoStore {
     pub password: String,
     pub instance: InstanceId,
     pub context: Vec<u8>,
-    pub handler: Box<dyn Fn(&[u8]) -> bool>,
+    pub handler: BoxLockHandler,
 }
 
 impl RepoStore {

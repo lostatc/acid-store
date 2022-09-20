@@ -919,7 +919,7 @@ where
                     base: parent.as_ref(),
                     handle: *walk_entry.value,
                     depth: walk_entry.depth,
-                    repo: &self,
+                    repo: self,
                 })
             })
             .unwrap())

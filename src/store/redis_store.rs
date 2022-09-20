@@ -24,12 +24,12 @@ const STORE_VERSION_KEY: &str = "version";
 
 fn block_key(key: BlockKey) -> String {
     match key {
-        BlockKey::Data(id) => format!("{}:{}", DATA_KEY, id.as_ref().as_hyphenated().to_string()),
-        BlockKey::Lock(id) => format!("{}:{}", LOCKS_KEY, id.as_ref().as_hyphenated().to_string()),
+        BlockKey::Data(id) => format!("{}:{}", DATA_KEY, id.as_ref().as_hyphenated()),
+        BlockKey::Lock(id) => format!("{}:{}", LOCKS_KEY, id.as_ref().as_hyphenated()),
         BlockKey::Header(id) => format!(
             "{}:{}",
             HEADERS_KEY,
-            id.as_ref().as_hyphenated().to_string()
+            id.as_ref().as_hyphenated()
         ),
         BlockKey::Super => SUPER_KEY.to_string(),
         BlockKey::Version => REPO_VERSION_KEY.to_string(),

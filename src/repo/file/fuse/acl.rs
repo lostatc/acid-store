@@ -61,7 +61,7 @@ impl Permissions {
         metadata.write_metadata(temp_file.path())?;
         let mut metadata = UnixMetadata::from_file(temp_file.path())?.unwrap();
 
-        Ok(metadata.attributes.remove(name).unwrap_or_else(Vec::new))
+        Ok(metadata.attributes.remove(name).unwrap_or_default())
     }
 }
 

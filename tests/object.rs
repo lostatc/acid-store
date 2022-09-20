@@ -562,8 +562,10 @@ fn reading_seeking_with_uncommitted_changes_errs(repo_object: RepoObject) -> any
     object.write_all(b"test data")?;
     let mut content = Vec::new();
 
-    assert_that!(&object.read(&mut content).map_err(acid_store::Error::from))
-        .is_err_variant(acid_store::Error::TransactionInProgress);
+    assert_that!(&object
+        .read_to_end(&mut content)
+        .map_err(acid_store::Error::from))
+    .is_err_variant(acid_store::Error::TransactionInProgress);
     assert_that!(&object
         .seek(SeekFrom::Start(0))
         .map_err(acid_store::Error::from))

@@ -187,8 +187,8 @@ impl OpenStore for SftpConfig {
             type_path(BlockType::Header),
         ];
         for directory in directories {
-            if sftp.stat(&directory).is_err() {
-                sftp.mkdir(&directory, 0o755)
+            if sftp.stat(directory).is_err() {
+                sftp.mkdir(directory, 0o755)
                     .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
             }
         }
@@ -258,8 +258,8 @@ impl DataStore for SftpStore {
 
         // If this is the first block its sub-directory, the directory needs to be created.
         let parent = block_path.parent().unwrap();
-        if !self.exists(&parent) {
-            self.sftp.mkdir(&parent, 0o755)?;
+        if !self.exists(parent) {
+            self.sftp.mkdir(parent, 0o755)?;
         }
 
         // Write to a staging file and then atomically move it to its final destination.

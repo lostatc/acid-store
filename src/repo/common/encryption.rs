@@ -86,7 +86,7 @@ impl Encryption {
             Encryption::XChaCha20Poly1305 => {
                 let nonce = gen_nonce();
                 let chacha_key = ChaChaKey::from_slice(key.expose_secret()).unwrap();
-                let mut ciphertext = seal(&cleartext, None, &nonce, &chacha_key);
+                let mut ciphertext = seal(cleartext, None, &nonce, &chacha_key);
                 let mut output = nonce.as_ref().to_vec();
                 output.append(&mut ciphertext);
                 output
@@ -219,7 +219,7 @@ impl EncryptionKey {
         let mut bytes = vec![0u8; size];
         derive_key(
             &mut bytes,
-            &password,
+            password,
             &Salt::from_slice(salt.0.as_slice()).unwrap(),
             operations.to_ops_limit(),
             memory.to_mem_limit(),

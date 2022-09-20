@@ -47,6 +47,8 @@ pub enum OpenMode {
     CreateNew,
 }
 
+type BoxLockHandler<'a> = Box<dyn FnMut(&[u8]) -> bool + 'a>;
+
 /// Open or create a repository.
 ///
 /// This type is a builder used to open or create repositories. Typically, when using `OpenOptions`,
@@ -107,7 +109,7 @@ pub struct OpenOptions<'a> {
     password: Option<&'a [u8]>,
     instance: InstanceId,
     lock_context: &'a [u8],
-    lock_handler: Box<dyn FnMut(&[u8]) -> bool + 'a>,
+    lock_handler: BoxLockHandler<'a>,
 }
 
 impl<'a> Default for OpenOptions<'a> {
@@ -311,7 +313,7 @@ impl<'a> OpenOptions<'a> {
 
         // Decrypt the master key for the repository.
         let master_key = match password {
-            Some(password_bytes) => metadata.decrypt_master_key(&password_bytes)?,
+            Some(password_bytes) => metadata.decrypt_master_key(password_bytes)?,
             None => EncryptionKey::new(Vec::new()),
         };
 
