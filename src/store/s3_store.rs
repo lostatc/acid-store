@@ -234,14 +234,22 @@ pub enum S3Credentials {
 
     /// Basic credentials.
     Basic {
+        /// Access key ID.
         access_key: String,
+
+        /// Secret access key.
         secret_key: String,
     },
 
     /// Session credentials.
     Session {
+        /// Access key ID.
         access_key: String,
+
+        /// Secret access key.
         secret_key: String,
+
+        /// Session token.
         session_token: String,
     },
 }

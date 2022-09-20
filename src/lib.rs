@@ -107,7 +107,7 @@
 //! Feature | Build Dependencies | Runtime Dependencies
 //! --- | --- | ---
 //! `file-metadata` | `libacl1-dev` | `acl`
-//! `fuse-mount` | `libfuse-dev`, `pkg-config` | `fuse`
+//! `fuse-mount` | `libfuse3-dev`, `pkg-config` | `fuse3`
 //!
 //! [rclone]: https://rclone.org/
 //!
