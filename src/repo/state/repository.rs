@@ -1,10 +1,9 @@
 use std::collections::HashSet;
 
-use hex_literal::hex;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use static_assertions::assert_impl_all;
-use uuid::Uuid;
+use uuid::uuid;
 
 use super::info::{KeyId, KeyIdTable, ObjectKey, RepoKey, RepoState, StateRestore};
 use super::iter::Keys;
@@ -34,9 +33,7 @@ where
 {
     type Key = RepoKey;
 
-    const VERSION_ID: VersionId = VersionId::new(Uuid::from_bytes(hex!(
-        "bb93f91a ce4a 11eb 9c6b b78939b5b629"
-    )));
+    const VERSION_ID: VersionId = VersionId::new(uuid!("bb93f91a-ce4a-11eb-9c6b-b78939b5b629"));
 
     fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where

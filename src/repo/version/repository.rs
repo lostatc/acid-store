@@ -6,8 +6,7 @@ use std::hash::Hash;
 use std::mem;
 use std::time::SystemTime;
 
-use hex_literal::hex;
-use uuid::Uuid;
+use uuid::uuid;
 
 use crate::repo::key::KeyRepo;
 use crate::repo::state::StateRepo;
@@ -34,9 +33,7 @@ pub struct VersionRepo<K: Key>(StateRepo<RepoState<K>>);
 impl<K: Key> OpenRepo for VersionRepo<K> {
     type Key = <StateRepo<RepoState<K>> as OpenRepo>::Key;
 
-    const VERSION_ID: VersionId = VersionId::new(Uuid::from_bytes(hex!(
-        "41a76832 cfc4 11eb ad05 93c1b714dd17"
-    )));
+    const VERSION_ID: VersionId = VersionId::new(uuid!("41a76832-cfc4-11eb-ad05-93c1b714dd17"));
 
     fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where

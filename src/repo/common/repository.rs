@@ -4,11 +4,10 @@ use std::hash::Hash;
 use std::mem;
 use std::sync::{Arc, RwLock};
 
-use hex_literal::hex;
 use rmp_serde::{from_read, to_vec};
 use secrecy::ExposeSecret;
 use static_assertions::assert_impl_all;
-use uuid::Uuid;
+use uuid::{uuid, Uuid};
 
 use crate::store::{BlockKey, BlockType, DataStore};
 
@@ -64,9 +63,7 @@ assert_impl_all!(KeyRepo<()>: Send, Sync);
 impl<K: Key> OpenRepo for KeyRepo<K> {
     type Key = K;
 
-    const VERSION_ID: VersionId = VersionId::new(Uuid::from_bytes(hex!(
-        "989a6a76 9d8b 46b7 9c05 d1c5e0d9471a"
-    )));
+    const VERSION_ID: VersionId = VersionId::new(uuid!("989a6a76-9d8b-46b7-9c05-d1c5e0d9471a"));
 
     fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where

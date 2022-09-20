@@ -29,17 +29,17 @@ fn type_path(kind: BlockType) -> PathBuf {
 fn block_path(key: BlockKey) -> PathBuf {
     match key {
         BlockKey::Data(id) => {
-            let uuid_str = id.as_ref().to_hyphenated().to_string();
+            let uuid_str = id.as_ref().as_hyphenated().to_string();
             type_path(BlockType::Data)
                 .join(&uuid_str[..2])
                 .join(&uuid_str)
         }
         BlockKey::Lock(id) => {
-            let uuid_str = id.as_ref().to_hyphenated().to_string();
+            let uuid_str = id.as_ref().as_hyphenated().to_string();
             type_path(BlockType::Lock).join(&uuid_str)
         }
         BlockKey::Header(id) => {
-            let uuid_str = id.as_ref().to_hyphenated().to_string();
+            let uuid_str = id.as_ref().as_hyphenated().to_string();
             type_path(BlockType::Header).join(&uuid_str)
         }
         BlockKey::Super => [STORE_DIRECTORY, "super"].iter().collect(),
@@ -120,7 +120,7 @@ impl DirectoryStore {
 
     /// Return a new staging path.
     fn staging_path(&self) -> PathBuf {
-        let uuid_str = Uuid::new_v4().to_hyphenated().to_string();
+        let uuid_str = Uuid::new_v4().as_hyphenated().to_string();
         self.path.join(STAGING_DIRECTORY).join(&uuid_str)
     }
 }

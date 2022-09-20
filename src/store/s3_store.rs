@@ -2,11 +2,10 @@
 
 use std::env;
 
-use hex_literal::hex;
 use s3::bucket::Bucket;
 use s3::creds::Credentials;
 use s3::region::Region;
-use uuid::Uuid;
+use uuid::{uuid, Uuid};
 
 use super::data_store::{BlockId, BlockKey, BlockType, DataStore};
 use super::open_store::OpenStore;
@@ -39,7 +38,7 @@ const REPO_VERSION_KEY: &str = "version";
 const STORE_VERSION_KEY: &str = "version";
 
 /// A UUID which acts as the version ID of the store format.
-const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("f0511da2 f90d 11eb be71 13f36b8156e4"));
+const CURRENT_VERSION: Uuid = uuid!("f0511da2-f90d-11eb-be71-13f36b8156e4");
 
 /// The HTTP status code for an object which does not exist.
 const NOT_FOUND_CODE: u16 = 404;
@@ -401,20 +400,20 @@ impl S3Store {
                     self.prefix,
                     STORE_KEY,
                     DATA_KEY,
-                    id.as_ref().to_hyphenated().to_string()
+                    id.as_ref().as_hyphenated().to_string()
                 )
             }
             BlockKey::Lock(id) => join_key!(
                 self.prefix,
                 STORE_KEY,
                 LOCKS_KEY,
-                id.as_ref().to_hyphenated().to_string()
+                id.as_ref().as_hyphenated().to_string()
             ),
             BlockKey::Header(id) => join_key!(
                 self.prefix,
                 STORE_KEY,
                 HEADERS_KEY,
-                id.as_ref().to_hyphenated().to_string()
+                id.as_ref().as_hyphenated().to_string()
             ),
             BlockKey::Super => join_key!(self.prefix, STORE_KEY, SUPER_KEY),
             BlockKey::Version => join_key!(self.prefix, STORE_KEY, REPO_VERSION_KEY),

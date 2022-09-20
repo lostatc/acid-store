@@ -3,10 +3,9 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
 
-use hex_literal::hex;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use uuid::Uuid;
+use uuid::uuid;
 
 use super::iter::Keys;
 use crate::repo::{
@@ -27,9 +26,7 @@ pub struct ValueRepo<K: Key>(StateRepo<RepoState<K>>);
 impl<K: Key> OpenRepo for ValueRepo<K> {
     type Key = <StateRepo<RepoState<K>> as OpenRepo>::Key;
 
-    const VERSION_ID: VersionId = VersionId::new(Uuid::from_bytes(hex!(
-        "4db4c84c cfc7 11eb 9e06 77121c3277f7"
-    )));
+    const VERSION_ID: VersionId = VersionId::new(uuid!("4db4c84c-cfc7-11eb-9e06-77121c3277f7"));
 
     fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where

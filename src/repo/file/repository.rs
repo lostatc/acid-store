@@ -5,11 +5,10 @@ use std::io;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
-use hex_literal::hex;
 use once_cell::sync::Lazy;
 use relative_path::{RelativePath, RelativePathBuf};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use uuid::uuid;
 use walkdir::WalkDir;
 
 use crate::repo::{
@@ -71,9 +70,7 @@ where
 {
     type Key = <StateRepo<RepoState> as OpenRepo>::Key;
 
-    const VERSION_ID: VersionId = VersionId::new(Uuid::from_bytes(hex!(
-        "57ac9d00 fde6 11eb 82cd 1f2bdd384d98"
-    )));
+    const VERSION_ID: VersionId = VersionId::new(uuid!("57ac9d00-fde6-11eb-82cd-1f2bdd384d98"));
 
     fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where

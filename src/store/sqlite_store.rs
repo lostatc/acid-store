@@ -2,15 +2,14 @@
 
 use std::path::PathBuf;
 
-use hex_literal::hex;
 use rusqlite::{params, Connection, OptionalExtension, NO_PARAMS};
-use uuid::Uuid;
+use uuid::{uuid, Uuid};
 
 use super::data_store::{BlockId, BlockKey, BlockType, DataStore};
 use super::open_store::OpenStore;
 
 /// A UUID which acts as the version ID of the store format.
-const CURRENT_VERSION: Uuid = Uuid::from_bytes(hex!("42efde7c f927 11eb bb01 d70e242b02af"));
+const CURRENT_VERSION: Uuid = uuid!("42efde7c-f927-11eb-bb01-d70e242b02af");
 
 /// The configuration for opening a [`SqliteStore`].
 ///

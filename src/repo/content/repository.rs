@@ -2,9 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::io::{Read, Write};
 
-use hex_literal::hex;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use uuid::uuid;
 
 use crate::repo::{
     key::KeyRepo,
@@ -48,9 +47,7 @@ pub struct ContentRepo(StateRepo<RepoState>);
 impl OpenRepo for ContentRepo {
     type Key = <StateRepo<RepoState> as OpenRepo>::Key;
 
-    const VERSION_ID: VersionId = VersionId::new(Uuid::from_bytes(hex!(
-        "91e098e0 cfe3 11eb 8823 77511adc39c8"
-    )));
+    const VERSION_ID: VersionId = VersionId::new(uuid!("91e098e0-cfe3-11eb-8823-77511adc39c8"));
 
     fn open_repo(repo: KeyRepo<Self::Key>) -> crate::Result<Self>
     where
