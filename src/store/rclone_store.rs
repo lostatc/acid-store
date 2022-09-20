@@ -7,19 +7,15 @@ use std::process::{Child, Command, Stdio};
 use std::thread::sleep;
 use std::time::Duration;
 
-use rand::distributions::Alphanumeric;
-use rand::Rng;
+use rand::distributions::{Alphanumeric, DistString};
 
 use super::data_store::{BlockId, BlockKey, BlockType, DataStore};
 use super::open_store::OpenStore;
 use super::sftp_store::{SftpAuth, SftpConfig, SftpStore};
 
 /// Generate a random secure password for the SFTP server.
-fn generate_password(length: u32) -> String {
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(length as usize)
-        .collect()
+fn generate_password(length: usize) -> String {
+    Alphanumeric.sample_string(&mut rand::thread_rng(), length)
 }
 
 /// Return an unused ephemeral port number.
@@ -31,7 +27,7 @@ fn ephemeral_port() -> io::Result<u16> {
 }
 
 /// The length of the password for the SFTP server.
-const PASSWORD_LENGTH: u32 = 30;
+const PASSWORD_LENGTH: usize = 32;
 
 /// The username for authenticating the SSH connection.
 const SSH_USERNAME: &str = "rclone";

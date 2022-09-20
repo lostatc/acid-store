@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "hash-algorithms")]
 use {
-    blake2::{VarBlake2b, VarBlake2s},
-    sha2::{Sha224, Sha256, Sha384, Sha512, Sha512Trunc224, Sha512Trunc256},
+    blake2::{Blake2bVar, Blake2sVar},
+    sha2::{Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256},
     sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512},
 };
 
@@ -134,8 +134,8 @@ impl HashAlgorithm {
             HashAlgorithm::Sha256 => Sha256::output_size(),
             HashAlgorithm::Sha384 => Sha384::output_size(),
             HashAlgorithm::Sha512 => Sha512::output_size(),
-            HashAlgorithm::Sha512Trunc224 => Sha512Trunc224::output_size(),
-            HashAlgorithm::Sha512Trunc256 => Sha512Trunc256::output_size(),
+            HashAlgorithm::Sha512Trunc224 => Sha512_224::output_size(),
+            HashAlgorithm::Sha512Trunc256 => Sha512_256::output_size(),
             HashAlgorithm::Sha3_224 => Sha3_224::output_size(),
             HashAlgorithm::Sha3_256 => Sha3_256::output_size(),
             HashAlgorithm::Sha3_384 => Sha3_384::output_size(),
@@ -179,17 +179,17 @@ impl HashAlgorithm {
             HashAlgorithm::Sha256 => Box::new(FixedDigest(Sha256::default())),
             HashAlgorithm::Sha384 => Box::new(FixedDigest(Sha384::default())),
             HashAlgorithm::Sha512 => Box::new(FixedDigest(Sha512::default())),
-            HashAlgorithm::Sha512Trunc224 => Box::new(FixedDigest(Sha512Trunc224::default())),
-            HashAlgorithm::Sha512Trunc256 => Box::new(FixedDigest(Sha512Trunc256::default())),
+            HashAlgorithm::Sha512Trunc224 => Box::new(FixedDigest(Sha512_224::default())),
+            HashAlgorithm::Sha512Trunc256 => Box::new(FixedDigest(Sha512_256::default())),
             HashAlgorithm::Sha3_224 => Box::new(FixedDigest(Sha3_224::default())),
             HashAlgorithm::Sha3_256 => Box::new(FixedDigest(Sha3_256::default())),
             HashAlgorithm::Sha3_384 => Box::new(FixedDigest(Sha3_384::default())),
             HashAlgorithm::Sha3_512 => Box::new(FixedDigest(Sha3_512::default())),
             HashAlgorithm::Blake2b(size) => Box::new(VariableDigest(
-                VarBlake2b::new(*size).expect("Invalid digest size for BLAKE2b."),
+                Blake2bVar::new(*size).expect("Invalid digest size for BLAKE2b."),
             )),
             HashAlgorithm::Blake2s(size) => Box::new(VariableDigest(
-                VarBlake2s::new(*size).expect("Invalid digest size for BLAKE2s."),
+                Blake2sVar::new(*size).expect("Invalid digest size for BLAKE2s."),
             )),
             HashAlgorithm::Blake3 => Box::new(FixedDigest(Blake3::default())),
         }

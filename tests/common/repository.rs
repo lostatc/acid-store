@@ -5,7 +5,7 @@ use acid_store::repo::{
     key::KeyRepo, InstanceId, Object, OpenMode, OpenOptions, OpenRepo, RepoConfig, DEFAULT_INSTANCE,
 };
 use acid_store::store::MemoryConfig;
-use rand::distributions::Alphanumeric;
+use rand::distributions::{Alphanumeric, DistString};
 
 const KEY_LEN: usize = 16;
 
@@ -21,8 +21,8 @@ pub struct RepoObject {
 impl RepoObject {
     pub fn new(config: RepoConfig) -> anyhow::Result<Self> {
         let mut repo: KeyRepo<String> = create_repo(config)?;
-        let rng = SmallRng::from_entropy();
-        let key: String = rng.sample_iter(&Alphanumeric).take(KEY_LEN).collect();
+        let mut rng = SmallRng::from_entropy();
+        let key = Alphanumeric.sample_string(&mut rng, KEY_LEN);
         let object = repo.insert(key.clone());
         Ok(RepoObject { repo, object, key })
     }
@@ -40,8 +40,8 @@ pub struct RepoStore {
 
 impl RepoStore {
     pub fn new(config: RepoConfig) -> Self {
-        let rng = SmallRng::from_entropy();
-        let password: String = rng.sample_iter(&Alphanumeric).take(PASSWORD_LEN).collect();
+        let mut rng = SmallRng::from_entropy();
+        let password = Alphanumeric.sample_string(&mut rng, PASSWORD_LEN);
         RepoStore {
             store: MemoryConfig::new(),
             config,

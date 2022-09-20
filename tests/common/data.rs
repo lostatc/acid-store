@@ -21,7 +21,7 @@ fn random_bytes(size: usize) -> Vec<u8> {
 #[fixture]
 pub fn buffer() -> Vec<u8> {
     let mut rng = SmallRng::from_entropy();
-    random_bytes(rng.gen_range(MIN_BUFFER_SIZE, MAX_BUFFER_SIZE))
+    random_bytes(rng.gen_range(MIN_BUFFER_SIZE..MAX_BUFFER_SIZE))
 }
 
 /// A test fixture which provides a fixed-size buffer of random bytes.
@@ -36,7 +36,7 @@ pub fn fixed_buffer(#[default(MIN_BUFFER_SIZE)] size: usize) -> Vec<u8> {
 #[fixture]
 pub fn smaller_buffer() -> Vec<u8> {
     let mut rng = SmallRng::from_entropy();
-    random_bytes(rng.gen_range(MIN_BUFFER_SIZE / 2, MIN_BUFFER_SIZE))
+    random_bytes(rng.gen_range((MIN_BUFFER_SIZE / 2)..MIN_BUFFER_SIZE))
 }
 
 /// A test fixture which provides a randomly sized buffer of random bytes.
@@ -45,7 +45,7 @@ pub fn smaller_buffer() -> Vec<u8> {
 #[fixture]
 pub fn larger_buffer() -> Vec<u8> {
     let mut rng = SmallRng::from_entropy();
-    random_bytes(rng.gen_range(MAX_BUFFER_SIZE, MAX_BUFFER_SIZE * 2))
+    random_bytes(rng.gen_range(MAX_BUFFER_SIZE..(MAX_BUFFER_SIZE * 2)))
 }
 
 /// A test fixture which provides a temporary directory that is deleted once the test completes.
