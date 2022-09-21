@@ -18,7 +18,10 @@ against. You can configure the following environment variables to do this.
 
 Below is a table of what those environment variables are and what Cargo features
 they are associated with. The variables only need to be set if their
-corresponding Cargo features are enabled when running the test suite.
+corresponding Cargo features are enabled when running the test suite. You can
+specify these environment variables in a
+[dotenv](https://crates.io/crates/dotenv) file and they will be loaded
+automatically.
 
 | Variable        | Description                                                         | Feature        |
 | --------------- | ------------------------------------------------------------------- | -------------- |
@@ -80,6 +83,6 @@ feature](https://github.com/rust-lang/rust/issues/43781) of rustdoc that happens
 to be enabled in docs.rs. To build the documentation correctly, run the
 following command:
 
-```
+```shell
 RUSTDOCFLAGS='--cfg docsrs' cargo +nightly doc --all-features
 ```
