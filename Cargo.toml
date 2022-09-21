@@ -8,7 +8,7 @@ homepage = "https://github.com/lostatc/acid-store"
 repository = "https://github.com/lostatc/acid-store"
 documentation = "https://docs.rs/acid-store"
 readme = "README.md"
-keywords = ["storage", "filesystem", "data", "transactional", "security"]
+keywords = ["storage", "filesystem", "database", "transaction", "security"]
 categories = ["filesystem", "encoding", "cryptography"]
 license = "Apache-2.0"
 
