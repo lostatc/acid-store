@@ -25,8 +25,9 @@ use super::special::{NoSpecial, SpecialType};
 use crate::repo::file::entry::EntryId;
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
 use {
-    super::fuse::FuseAdapter, super::metadata::UnixMetadata, super::special::UnixSpecial,
-    std::ffi::OsStr,
+    super::fuse::{FuseAdapter, MountOption},
+    super::metadata::UnixMetadata,
+    super::special::UnixSpecial,
 };
 
 /// The path of the root entry.
@@ -1298,7 +1299,7 @@ where
 
 /// The default mount options which are always passed to libfuse.
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
-const DEFAULT_FUSE_MOUNT_OPTS: &[&str] = &["-o", "default_permissions"];
+const DEFAULT_FUSE_MOUNT_OPTS: &[MountOption] = &[MountOption::DefaultPermissions];
 
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "fuse-mount"))))]
@@ -1320,15 +1321,15 @@ impl FileRepo<UnixSpecial, UnixMetadata> {
         &mut self,
         mountpoint: impl AsRef<Path>,
         root: impl AsRef<RelativePath>,
-        options: &[&str],
+        options: &[MountOption],
     ) -> crate::Result<()> {
         let adapter = FuseAdapter::new(self, root.as_ref())?;
         let all_opts = [DEFAULT_FUSE_MOUNT_OPTS, options]
             .concat()
             .into_iter()
-            .map(|opt| opt.as_ref())
-            .collect::<Vec<&OsStr>>();
-        Ok(fuse::mount(adapter, &mountpoint, &all_opts)?)
+            .map(|opt| opt.into_fuser())
+            .collect::<Vec<_>>();
+        Ok(fuser::mount2(adapter, &mountpoint, &all_opts)?)
     }
 }
 

@@ -1,6 +1,7 @@
 #![cfg(all(any(unix, doc), feature = "fuse-mount"))]
 
-pub use self::fs::FuseAdapter;
+pub use fs::FuseAdapter;
+pub use options::MountOption;
 
 mod acl;
 mod fs;
@@ -9,3 +10,4 @@ mod id_table;
 mod inode;
 mod metadata;
 mod object;
+mod options;

@@ -26,8 +26,7 @@ tempfile = { version = "3.1.0", optional = true }
 hole-punch = { version = "0.0.3", optional = true }
 
 # FUSE
-fuse = { version = "0.3.1", optional = true }
-time = { version = "0.1.38", optional = true }
+fuser = { version = "0.11.1", optional = true }
 
 # I/O
 cdchunking = "1.0.0"
@@ -103,20 +102,27 @@ maplit = "1.0.2"
 default = []
 
 store-directory = []
-store-sqlite = ["rusqlite"]
-store-redis = ["redis"]
-store-s3 = ["rust-s3"]
-store-sftp = ["ssh2"]
-store-rclone = ["store-sftp", "rand"]
-repo-file = ["relative-path", "walkdir", "hole-punch"]
+store-sqlite = ["dep:rusqlite"]
+store-redis = ["dep:redis"]
+store-s3 = ["dep:rust-s3"]
+store-sftp = ["dep:ssh2"]
+store-rclone = ["store-sftp", "dep:rand"]
+repo-file = ["dep:relative-path", "dep:walkdir", "dep:hole-punch"]
 repo-content = []
 repo-value = []
 repo-version = []
-file-metadata = ["repo-file", "nix", "filetime", "xattr", "users", "exacl"]
-hash-algorithms = ["blake2", "sha2", "sha3"]
-compression = ["lz4"]
-encryption = ["sodiumoxide", "rand"]
-fuse-mount = ["fuse", "bimap", "time", "tempfile", "file-metadata"]
+file-metadata = [
+  "repo-file",
+  "dep:nix",
+  "dep:filetime",
+  "dep:xattr",
+  "dep:users",
+  "dep:exacl",
+]
+hash-algorithms = ["dep:blake2", "dep:sha2", "dep:sha3"]
+compression = ["dep:lz4"]
+encryption = ["dep:sodiumoxide", "dep:rand"]
+fuse-mount = ["dep:fuser", "dep:bimap", "dep:tempfile", "file-metadata"]
 
 [[bench]]
 name = "io"

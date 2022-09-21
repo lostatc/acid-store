@@ -3,26 +3,23 @@ use std::ffi::OsStr;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
-use fuse::{
+use fuser::{
     FileAttr, Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyOpen,
-    ReplyWrite, ReplyXattr, Request,
+    ReplyWrite, ReplyXattr, Request, TimeOrNow,
 };
 use nix::fcntl::OFlag;
 use nix::libc;
 use nix::sys::stat::{self, SFlag};
 use once_cell::sync::Lazy;
 use relative_path::{RelativePath, RelativePathBuf};
-use time::Timespec;
 
 use super::acl::{Permissions, ACCESS_ACL_XATTR, DEFAULT_ACL_XATTR};
 use super::handle::{DirectoryEntry, DirectoryHandle, FileHandle, HandleState, HandleTable};
 use super::inode::InodeTable;
-use super::metadata::to_timespec;
 use super::object::ObjectTable;
 
-use crate::repo::file::fuse::metadata::to_system_time;
 use crate::repo::file::{
     repository::EMPTY_PATH, AclQualifier, Entry, EntryType, FileMode, FileRepo, UnixMetadata,
     UnixSpecial, WalkPredicate,
@@ -30,16 +27,13 @@ use crate::repo::file::{
 use crate::repo::{Commit, RestoreSavepoint};
 
 /// The block size used to calculate `st_blocks`.
-const BLOCK_SIZE: u64 = 512;
+const BLOCK_SIZE: u32 = 512;
 
 /// The default TTL value to use in FUSE replies.
 ///
 /// Because the backing `FileRepo` can only be safely modified through the FUSE file system, we can
 /// set this to an arbitrarily large value.
-const DEFAULT_TTL: Timespec = Timespec {
-    sec: i64::MAX,
-    nsec: i32::MAX,
-};
+const DEFAULT_TTL: Duration = Duration::MAX;
 
 /// The set of `open` flags which are not supported by this file system.
 static UNSUPPORTED_OPEN_FLAGS: Lazy<OFlag> = Lazy::new(|| OFlag::O_DIRECT | OFlag::O_TMPFILE);
@@ -166,19 +160,19 @@ impl<'a> FuseAdapter<'a> {
         Ok(FileAttr {
             ino: inode,
             size,
-            blocks: size / BLOCK_SIZE,
-            atime: to_timespec(metadata.accessed),
-            mtime: to_timespec(metadata.modified),
-            ctime: to_timespec(metadata.changed),
-            crtime: to_timespec(SystemTime::now()),
+            blocks: size / u64::from(BLOCK_SIZE),
+            atime: metadata.accessed,
+            mtime: metadata.modified,
+            ctime: metadata.changed,
+            crtime: SystemTime::now(),
             kind: match &entry.kind {
-                EntryType::File => fuse::FileType::RegularFile,
-                EntryType::Directory => fuse::FileType::Directory,
+                EntryType::File => fuser::FileType::RegularFile,
+                EntryType::Directory => fuser::FileType::Directory,
                 EntryType::Special(special) => match special {
-                    UnixSpecial::Symlink { .. } => fuse::FileType::Symlink,
-                    UnixSpecial::NamedPipe => fuse::FileType::NamedPipe,
-                    UnixSpecial::BlockDevice { .. } => fuse::FileType::BlockDevice,
-                    UnixSpecial::CharDevice { .. } => fuse::FileType::CharDevice,
+                    UnixSpecial::Symlink { .. } => fuser::FileType::Symlink,
+                    UnixSpecial::NamedPipe => fuser::FileType::NamedPipe,
+                    UnixSpecial::BlockDevice { .. } => fuser::FileType::BlockDevice,
+                    UnixSpecial::CharDevice { .. } => fuser::FileType::CharDevice,
                 },
             },
             perm: mode as u16,
@@ -197,6 +191,7 @@ impl<'a> FuseAdapter<'a> {
                 },
                 _ => NON_SPECIAL_RDEV,
             },
+            blksize: BLOCK_SIZE,
             flags: 0,
         })
     }
@@ -283,12 +278,13 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         uid: Option<u32>,
         gid: Option<u32>,
         size: Option<u64>,
-        atime: Option<Timespec>,
-        mtime: Option<Timespec>,
+        atime: Option<TimeOrNow>,
+        mtime: Option<TimeOrNow>,
+        _ctime: Option<SystemTime>,
         _fh: Option<u64>,
-        _crtime: Option<Timespec>,
-        chgtime: Option<Timespec>,
-        _bkuptime: Option<Timespec>,
+        _crtime: Option<SystemTime>,
+        chgtime: Option<SystemTime>,
+        _bkuptime: Option<SystemTime>,
         _flags: Option<u32>,
         reply: ReplyAttr,
     ) {
@@ -319,16 +315,20 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             metadata.group = gid;
         }
 
-        if let Some(atime) = atime {
-            metadata.accessed = to_system_time(atime);
+        match atime {
+            Some(TimeOrNow::SpecificTime(atime)) => metadata.accessed = atime,
+            Some(TimeOrNow::Now) => metadata.accessed = SystemTime::now(),
+            _ => {}
         }
 
-        if let Some(mtime) = mtime {
-            metadata.modified = to_system_time(mtime);
+        match mtime {
+            Some(TimeOrNow::SpecificTime(mtime)) => metadata.modified = mtime,
+            Some(TimeOrNow::Now) => metadata.modified = SystemTime::now(),
+            _ => {}
         }
 
         if let Some(ctime) = chgtime {
-            metadata.changed = to_system_time(ctime);
+            metadata.changed = ctime;
         } else {
             metadata.changed = now;
         }
@@ -394,6 +394,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         parent: u64,
         name: &OsStr,
         mode: u32,
+        _umask: u32,
         rdev: u32,
         reply: ReplyEntry,
     ) {
@@ -448,7 +449,15 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         reply.entry(&DEFAULT_TTL, &attr, generation);
     }
 
-    fn mkdir(&mut self, req: &Request, parent: u64, name: &OsStr, mode: u32, reply: ReplyEntry) {
+    fn mkdir(
+        &mut self,
+        req: &Request,
+        parent: u64,
+        name: &OsStr,
+        mode: u32,
+        _umask: u32,
+        reply: ReplyEntry,
+    ) {
         let file_name = try_option!(name.to_str(), reply, libc::EINVAL);
         let parent_path = try_option!(self.inodes.path(parent), reply, libc::ENOENT).to_owned();
         let entry_path = parent_path.join(file_name);
@@ -572,6 +581,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         name: &OsStr,
         newparent: u64,
         newname: &OsStr,
+        _flags: u32,
         reply: ReplyEmpty,
     ) {
         let source_name = try_option!(name.to_str(), reply, libc::ENOENT);
@@ -707,7 +717,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         reply.entry(&DEFAULT_TTL, &attr, generation);
     }
 
-    fn open(&mut self, _req: &Request, ino: u64, flags: u32, reply: ReplyOpen) {
+    fn open(&mut self, _req: &Request, ino: u64, flags: i32, reply: ReplyOpen) {
         let flags = OFlag::from_bits_truncate(flags as i32);
 
         if flags.intersects(*UNSUPPORTED_OPEN_FLAGS) {
@@ -733,7 +743,17 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         reply.opened(fh, 0);
     }
 
-    fn read(&mut self, req: &Request, ino: u64, fh: u64, offset: i64, size: u32, reply: ReplyData) {
+    fn read(
+        &mut self,
+        req: &Request,
+        ino: u64,
+        fh: u64,
+        offset: i64,
+        size: u32,
+        _flags: i32,
+        _lock_owner: Option<u64>,
+        reply: ReplyData,
+    ) {
         // Technically, on Unix systems, a file should still be accessible via its file descriptor
         // once it's been unlinked. Because this isn't how repositories work, we will return `EBADF`
         // if the user tries to read from a file which has been unlinked since it was opened.
@@ -802,7 +822,9 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         fh: u64,
         offset: i64,
         data: &[u8],
-        _flags: u32,
+        _write_flags: u32,
+        _flags: i32,
+        _lock_owner: Option<u64>,
         reply: ReplyWrite,
     ) {
         // Technically, on Unix systems, a file should still be accessible via its file descriptor
@@ -906,8 +928,8 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         _req: &Request,
         ino: u64,
         fh: u64,
-        _flags: u32,
-        _lock_owner: u64,
+        _flags: i32,
+        _lock_owner: Option<u64>,
         _flush: bool,
         reply: ReplyEmpty,
     ) {
@@ -922,7 +944,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         reply.ok();
     }
 
-    fn opendir(&mut self, _req: &Request, ino: u64, _flags: u32, reply: ReplyOpen) {
+    fn opendir(&mut self, _req: &Request, ino: u64, _flags: i32, reply: ReplyOpen) {
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
 
         if !self.repo.is_directory(entry_path) {
@@ -1000,7 +1022,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         reply.ok();
     }
 
-    fn releasedir(&mut self, _req: &Request, _ino: u64, fh: u64, _flags: u32, reply: ReplyEmpty) {
+    fn releasedir(&mut self, _req: &Request, _ino: u64, fh: u64, _flags: i32, reply: ReplyEmpty) {
         self.handles.close(fh);
         reply.ok()
     }
@@ -1023,7 +1045,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         ino: u64,
         name: &OsStr,
         value: &[u8],
-        flags: u32,
+        flags: i32,
         _position: u32,
         reply: ReplyEmpty,
     ) {
@@ -1037,7 +1059,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
             metadata
                 .attributes
                 .insert(attr_name.clone(), value.to_vec());
-        } else if flags == libc::XATTR_CREATE as u32 {
+        } else if flags == libc::XATTR_CREATE {
             match metadata.attributes.entry(attr_name.clone()) {
                 HashMapEntry::Occupied(_) => {
                     reply.error(libc::EEXIST);
@@ -1047,7 +1069,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
                     entry.insert(value.to_vec());
                 }
             }
-        } else if flags == libc::XATTR_REPLACE as u32 {
+        } else if flags == libc::XATTR_REPLACE {
             match metadata.attributes.entry(attr_name.clone()) {
                 HashMapEntry::Occupied(mut entry) => {
                     entry.insert(value.to_vec());

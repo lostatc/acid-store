@@ -1,12 +1,11 @@
 use std::collections::hash_map::Entry as HashMapEntry;
 use std::collections::HashMap;
 use std::io;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
-use fuse::{FileType as FuseFileType, Request};
+use fuser::{FileType as FuseFileType, Request};
 use nix::libc;
 use relative_path::RelativePath;
-use time::Timespec;
 
 use crate::repo::file::{
     Acl, AclMode, AclQualifier, AclType, Entry, EntryType, FileMode, FileRepo, UnixMetadata,
@@ -70,30 +69,6 @@ pub fn group_perm(mode: u32) -> u32 {
 /// Extract the other permission bits from a file `mode`.
 pub fn other_perm(mode: u32) -> u32 {
     mode & 0o007
-}
-
-/// Convert the given `time` to a `SystemTime`.
-pub fn to_system_time(time: Timespec) -> SystemTime {
-    let duration = Duration::new(time.sec.unsigned_abs(), time.nsec.unsigned_abs());
-    if time.sec.is_positive() {
-        SystemTime::UNIX_EPOCH + duration
-    } else {
-        SystemTime::UNIX_EPOCH - duration
-    }
-}
-
-/// Convert the given `time` to a `Timespec`.
-pub fn to_timespec(time: SystemTime) -> Timespec {
-    match time.duration_since(SystemTime::UNIX_EPOCH) {
-        Ok(duration) => Timespec {
-            sec: duration.as_secs() as i64,
-            nsec: duration.subsec_nanos() as i32,
-        },
-        Err(error) => Timespec {
-            sec: -(error.duration().as_secs() as i64),
-            nsec: -(error.duration().subsec_nanos() as i32),
-        },
-    }
 }
 
 /// Modify the given `acl` so its permissions do not exceed the given `mode`.

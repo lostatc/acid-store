@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use fuse::FileType as FuseFileType;
+use fuser::FileType as FuseFileType;
 use nix::fcntl::OFlag;
 
 use super::id_table::IdTable;

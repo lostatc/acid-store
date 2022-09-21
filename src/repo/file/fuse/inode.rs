@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use bimap::BiMap;
-use fuse::FUSE_ROOT_ID;
+use fuser::FUSE_ROOT_ID;
 use relative_path::{RelativePath, RelativePathBuf};
 
 use super::id_table::IdTable;

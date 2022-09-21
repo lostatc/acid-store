@@ -1,5 +1,5 @@
 use acid_store::repo::{
-    file::{Entry, FileRepo, UnixMetadata, UnixSpecial},
+    file::{Entry, FileRepo, MountOption, UnixMetadata, UnixSpecial},
     OpenMode, OpenOptions,
 };
 use acid_store::store::MemoryConfig;
@@ -20,5 +20,10 @@ fn main() {
         .unwrap();
 
     repo.create("root", &Entry::directory()).unwrap();
-    repo.mount(mount_path, "root", &["-o", "auto_unmount", "-o", "allow_other"]).unwrap();
+    repo.mount(
+        mount_path,
+        "root",
+        &[MountOption::AutoUnmount, MountOption::AllowOther],
+    )
+    .unwrap();
 }

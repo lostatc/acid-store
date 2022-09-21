@@ -82,6 +82,10 @@ pub use self::metadata::{FileMetadata, NoMetadata};
 pub use self::repository::FileRepo;
 pub use self::special::{NoSpecial, SpecialType};
 
+#[cfg(all(any(unix, doc), feature = "fuse-mount"))]
+#[cfg_attr(docsrs, doc(cfg(all(unix, feature = "fuse-mount"))))]
+pub use self::fuse::MountOption;
+
 mod entry;
 mod fuse;
 mod holes;
