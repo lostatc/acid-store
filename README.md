@@ -71,7 +71,7 @@ This library provides the following storage backends out of the box.
 The following results show read and write speeds for an in-memory repository
 with various configurations. An in-memory repository is used to make benchmark
 results more consistent between runs and between machines. You can run the
-benchmarks yourself by running `cargo bench --all-features`.
+benchmarks yourself by running `cargo bench --features 'encryption'`.
 
 ### Specs
 
