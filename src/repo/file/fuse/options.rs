@@ -3,6 +3,7 @@
 /// See `man mount.fuse` for details.
 #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "fuse-mount"))))]
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MountOption {
     /// Set the name of the source in mtab.
     FsName(String),
@@ -14,7 +15,7 @@ pub enum MountOption {
     /// user who mounted it.
     AllowOther,
 
-    /// Allow the root user to access this filesystem, in addition to the user who mounted it.
+    /// Allow the root user to access this filesystem in addition to the user who mounted it.
     AllowRoot,
 
     /// Automatically unmount when the mounting process exits.
@@ -25,6 +26,9 @@ pub enum MountOption {
     AutoUnmount,
 
     /// Enable permission checking in the kernel.
+    ///
+    /// This is enabled by default when using
+    /// [`FileRepo::mount`][crate::repo::file::FileRepo::mount].
     DefaultPermissions,
 
     /// Enable special character and block devices.
@@ -39,10 +43,10 @@ pub enum MountOption {
     /// Don't honor set-user-id and set-groupd-id bits on files.
     NoSuid,
 
-    /// Read-only filesystem.
+    /// Mount the filesystem read-only.
     Ro,
 
-    /// Read-write filesystem.
+    /// Mount the filesystem read-write.
     Rw,
 
     /// Allow execution of binaries.
@@ -66,7 +70,7 @@ pub enum MountOption {
     /// All I/O will be done asynchronously.
     Async,
 
-    /// Allows passing an option which is not otherwise supported in these enums.
+    /// Pass an option which is not otherwise supported in this enum.
     Custom(String),
 }
 

@@ -1308,7 +1308,7 @@ impl FileRepo<UnixSpecial, UnixMetadata> {
     ///
     /// This accepts the path of the `root` entry in the repository which will be mounted in the
     /// file system at `mountpoint`. This also accepts an array of mount `options` to pass to
-    /// libfuse.
+    /// libfuse. This method enables the [`DefaultPermissions`] mount option by default.
     ///
     /// This method does not return until the file system is unmounted.
     ///
@@ -1317,6 +1317,8 @@ impl FileRepo<UnixSpecial, UnixMetadata> {
     /// - `Error::NotFound`: There is no entry at `root`.
     /// - `Error::NotDirectory`: The given `root` entry is not a directory.
     /// - `Error::Io`: An I/O error occurred.
+    ///
+    /// [`DefaultPermissions`]: crate::repo::file::MountOption::DefaultPermissions
     pub fn mount(
         &mut self,
         mountpoint: impl AsRef<Path>,
