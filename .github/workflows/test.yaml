@@ -10,7 +10,7 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: Install native dependencies
-        run: sudo apt-get install libacl1-dev acl
+        run: sudo apt-get install libacl1-dev acl libfuse3-dev fuse3 pkg-config
 
       - name: Build
         run: cargo build --all-features
