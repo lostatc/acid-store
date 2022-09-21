@@ -6,6 +6,7 @@
 //!
 //! This library currently provides the following abstractions for data storage. They can be found
 //! in the [`crate::repo`] module.
+//!
 //! - [`KeyRepo`] is an object store which maps keys to seekable binary blobs.
 //! - [`FileRepo`] is a virtual file system which supports file metadata, special files, sparse
 //! files, hard links, importing and exporting files to the local OS file system, and being mounted
@@ -20,6 +21,7 @@
 //! A repository stores its data in a [`DataStore`], which is a small trait that can be implemented
 //! to create new storage backends. The following data stores are provided out of the box. They can
 //! be found in the [`crate::store`] module.
+//!
 //! - [`DirectoryStore`] stores data in a directory in the local file system.
 //! - [`SqliteStore`] stores data in a SQLite database.
 //! - [`RedisStore`] stores data on a Redis server.
@@ -30,13 +32,14 @@
 //! - [`MemoryStore`] stores data in memory.
 //!
 //! # Examples
+//!
 //! ```
 //! use std::io::{Read, Seek, Write, SeekFrom};
 //! use acid_store::store::MemoryConfig;
 //! use acid_store::repo::{OpenMode, OpenOptions, Commit, key::KeyRepo};
 //!
 //! fn main() -> acid_store::Result<()> {
-//!     // Create a `KeyRepo` with the default configuration that stores data in memory.
+//!     // Create a `KeyRepo` where objects are indexed by strings and data is stored in memory.
 //!     let mut repo: KeyRepo<String> = OpenOptions::new()
 //!         .mode(OpenMode::CreateNew)
 //!         .open(&MemoryConfig::new())?;
@@ -44,15 +47,15 @@
 //!     // Insert a key into the repository and get an object which can be used to read/write data.
 //!     let mut object = repo.insert(String::from("Key"));
 //!
-//!     // Write data to the repository via `std::io::Write`.
-//!     object.write_all(b"Data")?;
+//!     // Write data to the repository via `std::io::Write` and commit changes to this object.
+//!     write!(object, "Data")?;
 //!     object.commit()?;
 //!     drop(object);
 //!
 //!     // Get the object associated with a key.
 //!     let mut object = repo.object("Key").unwrap();
 //!
-//!     // Read data from the repository via `std::io::Read`.
+//!     // Read data from the object via `std::io::Read`.
 //!     let mut data = Vec::new();
 //!     object.read_to_end(&mut data)?;
 //!     drop(object);
@@ -68,46 +71,45 @@
 //!
 //! # Features
 //!
-//! Some functionality is gated behind cargo features. To use a feature which is not enabled by
-//! default, you must enable it in your `Cargo.toml`.
+//! Some functionality is gated behind Cargo features. To use any of these features, you must enable
+//! them in your `Cargo.toml`.
 //!
 //! These features enable different repository types.
 //!
-//! Feature | Description | Default
-//! --- | --- | ---
-//! `repo-content` | Use the [`ContentRepo`] repository type | No
-//! `repo-file` | Use the [`FileRepo`] repository type | No
-//! `repo-value` | Use the [`ValueRepo`] repository type | No
-//! `repo-version` | Use the [`VersionRepo`] repository type | No
+//! Feature        | Description
+//! ---            | ---
+//! `repo-content` | Use the [`ContentRepo`] repository type
+//! `repo-file`    | Use the [`FileRepo`] repository type
+//! `repo-value`   | Use the [`ValueRepo`] repository type
+//! `repo-version` | Use the [`VersionRepo`] repository type
 //!
 //! These features enable different [`DataStore`] implementations.
 //!
-//! Feature | Description | Default
-//! --- | --- | ---
-//! `store-directory` | Store data in a directory in the local file system | No
-//! `store-sqlite` | Store data in a SQLite database | No
-//! `store-redis` | Store data on a Redis server | No
-//! `store-s3` | Store data in an Amazon S3 bucket | No
-//! `store-sftp` | Store data on an SFTP server | No
-//! `store-rclone` | Store data in cloud storage via [rclone] | No
+//! Feature           | Description
+//! ---               | ---
+//! `store-directory` | Store data in a directory in the local file system
+//! `store-sqlite`    | Store data in a SQLite database
+//! `store-redis`     | Store data on a Redis server
+//! `store-s3`        | Store data in an Amazon S3 bucket
+//! `store-sftp`      | Store data on an SFTP server
+//! `store-rclone`    | Store data in cloud storage via [rclone]
 //!
 //! These features enable additional functionality.
 //!
-//! Feature | Description | Default
-//! --- | --- | ---
-//! `encryption` | Encrypt repositories | No
-//! `compression` | Compress repositories | No
-//! `file-metadata` | Store file metadata and special file types in [`FileRepo`] | No
-//! `hash-algorithms` | Use hash algorithms other than BLAKE3 in [`ContentRepo`] | No
-//! `fuse-mount` | Mount a [`FileRepo`] as a FUSE file system | No
+//! Feature           | Description
+//! ---               | ---
+//! `encryption`      | Encrypt repositories
+//! `compression`     | Compress repositories
+//! `file-metadata`   | Store file metadata and special file types in [`FileRepo`]
+//! `hash-algorithms` | Use hash algorithms other than BLAKE3 in [`ContentRepo`]
+//! `fuse-mount`      | Mount a [`FileRepo`] as a FUSE file system
 //!
-//! If a feature has native dependencies, this table shows those dependencies as their package names
-//! on Ubuntu.
+//! These features have native dependencies. This table shows their package names on Ubuntu.
 //!
-//! Feature | Build Dependencies | Runtime Dependencies
-//! --- | --- | ---
-//! `file-metadata` | `libacl1-dev` | `acl`
-//! `fuse-mount` | `libfuse3-dev`, `pkg-config` | `fuse3`
+//! Feature         | Build Dependencies           | Runtime Dependencies
+//! ---             | ---                          | ---
+//! `file-metadata` | `libacl1-dev`                | `acl`
+//! `fuse-mount`    | `libfuse3-dev`, `pkg-config` | `fuse3`
 //!
 //! [rclone]: https://rclone.org/
 //!
