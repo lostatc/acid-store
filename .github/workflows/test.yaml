@@ -4,14 +4,13 @@ on: [push]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
 
       - name: Install native dependencies
-        run: sudo apt-get install libacl1-dev libfuse-dev pkg-config
+        run: sudo apt-get install libacl1-dev acl
 
       - name: Build
         run: cargo build --all-features

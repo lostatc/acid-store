@@ -14,9 +14,9 @@ jobs:
         with:
           toolchain: stable
           override: true
-        
+
       - name: Install native dependencies
-        run: sudo apt-get install libacl1-dev libfuse-dev pkg-config
+        run: sudo apt-get install libacl1-dev acl
 
       - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
