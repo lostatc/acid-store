@@ -1,6 +1,7 @@
 /// A mount option accepted when mounting a FUSE file system.
 ///
 /// See `man mount.fuse` for details.
+#[cfg_attr(docsrs, doc(cfg(all(unix, feature = "fuse-mount"))))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MountOption {
     /// Set the name of the source in mtab.

@@ -68,7 +68,7 @@ pub use relative_path;
 
 pub use relative_path::{RelativePath, RelativePathBuf};
 
-#[cfg(all(unix, feature = "file-metadata"))]
+#[cfg(all(any(unix, doc), feature = "file-metadata"))]
 pub use {
     self::metadata::{Acl, AclMode, AclQualifier, AclType, FileMode, UnixMetadata},
     self::special::UnixSpecial,
@@ -83,7 +83,6 @@ pub use self::repository::FileRepo;
 pub use self::special::{NoSpecial, SpecialType};
 
 #[cfg(all(any(unix, doc), feature = "fuse-mount"))]
-#[cfg_attr(docsrs, doc(cfg(all(unix, feature = "fuse-mount"))))]
 pub use self::fuse::MountOption;
 
 mod entry;
