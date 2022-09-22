@@ -39,12 +39,15 @@ automatically.
 ### FUSE Tests
 
 To test the FUSE file system implementation provided by this library, the
-`/fuse-test` directory contains a `Dockerfile` which provides a test environment
+`/fuse-test` directory contains a Dockerfile which provides a test environment
 containing [a number of file system testing
-tools](https://github.com/billziss-gh/secfs.test). The `Dockerfile` builds
-`acid-store` and provides a binary which mounts a FUSE file system backed by a
-`MemoryStore`. To mount the FUSE file system, the container needs special
-permissions and access to the host's `/dev/fuse` device.
+tools](https://github.com/billziss-gh/secfs.test). The Dockerfile builds your
+local clone of `acid-store` and provides a binary which mounts a FUSE file
+system backed by an in-memory data store. To mount the FUSE file system, the
+container needs special permissions and access to the host's `/dev/fuse` device.
+
+Depending on your system configuration, these commands may need to be run as
+root.
 
 To build the docker image:
 
@@ -52,26 +55,41 @@ To build the docker image:
 docker build -t fuse-test -f ./fuse-test/Dockerfile .
 ```
 
-To create the container and start an interactive shell:
+`fstest` is a file system testing tool originally written by Pawel Jakub Dawidek
+for FreeBSD and since ported to Linux. It tests compliance with a wide range of
+POSIX system calls. To run it against the FUSE file system with some patches
+applied to support `acid-store`, run:
+
+```shell
+docker run -it --rm --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined fuse-test ./fstest.sh
+```
+
+`fsx` is a file system testing tool by Apple that specifically tests reading and
+writing to files. You'll probably want to take a look at its usage
+documentation, which you can see by running the `./fsx.sh` script with no
+arguments. This is a stress testing tool, so by default it runs indefinitely. It
+requires the path of a regular file to test against, and there is one provided
+in the script's working directory at `./test-file`.
+
+To run this tool in verbose mode, run:
+
+```shell
+docker run -it --rm --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined fuse-test ./fsx.sh -v ./test-file
+```
+
+If you want to play with some of the other tools provided in the environment,
+you can run this command to start an interactive shell.
 
 ```shell
 docker run -it --rm --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor:unconfined fuse-test bash
 ```
 
-To mount the FUSE file system in the container:
+From there, you can mount the FUSE file system in the container using the
+provided `fuse-mount` binary.
 
 ```shell
 mkdir ./mnt
 ./fuse-mount ./mnt &
-```
-
-To run `fstest` with some patches applied to support `acid-store`:
-
-```shell
-cd ./fstest/fstest
-make
-cd ../../mnt
-prove -r ../fstest/fstest
 ```
 
 ## Documentation
@@ -80,7 +98,7 @@ When building the documentation normally, markers which identify which features
 are required to use various parts of the library will be missing. That is
 because this is an [unstable
 feature](https://github.com/rust-lang/rust/issues/43781) of rustdoc that happens
-to be enabled in docs.rs. To build the documentation correctly, run the
+to be enabled in docs.rs. To build the documentation with these markers, run the
 following command:
 
 ```shell
