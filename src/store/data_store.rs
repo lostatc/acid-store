@@ -74,7 +74,8 @@ pub trait DataStore: fmt::Debug + Send {
 
     /// Return a list of IDs of blocks of the given `kind` in the store.
     ///
-    /// This appends the [`BlockId`]s to `list`.
+    /// This appends the [`BlockId`]s to `list`. If this method returns before all the block IDs
+    /// have been written to `list`, then it must return `Err`.
     ///
     /// [`BlockId`]: crate::store::BlockId
     fn list_blocks(&mut self, kind: BlockType, list: &mut Vec<BlockId>) -> Result<()>;

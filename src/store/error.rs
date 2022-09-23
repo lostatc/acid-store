@@ -24,6 +24,19 @@ impl Error {
         }
     }
 
+    /// Construct a new `Error` from a printable error message.
+    ///
+    /// If the argument implements [`std::error::Error`], use [`new`] instead. If an `Error` is
+    /// constructed this way, it cannot be downcast back to its original value.
+    pub fn msg<M>(message: M) -> Self
+    where
+        M: fmt::Display + fmt::Debug + Send + Sync + 'static,
+    {
+        Self {
+            inner: anyhow::Error::msg(message),
+        }
+    }
+
     /// Return `true` if `E` is the type held by this error object.
     pub fn is<E>(&self) -> bool
     where
