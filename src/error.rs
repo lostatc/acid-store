@@ -3,6 +3,8 @@ use std::result;
 
 use thiserror::Error as DeriveError;
 
+use crate::store;
+
 /// The error type for operations with a repository.
 ///
 /// This type can be converted `From` and `Into` an `io::Error` for compatibility with types from
@@ -92,10 +94,8 @@ pub enum Error {
     Io(io::Error),
 
     /// An error occurred with the data store.
-    ///
-    /// This wraps the error provided by the data store.
     #[error("{0}")]
-    Store(anyhow::Error),
+    Store(store::Error),
 }
 
 impl From<Error> for io::Error {
