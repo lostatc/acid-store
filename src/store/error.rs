@@ -3,7 +3,11 @@ use std::fmt;
 use std::ops::Deref;
 use std::result;
 
+use static_assertions::assert_impl_all;
+
 /// An error type for an error that occurred in a data store.
+///
+/// This wraps a dynamic error type.
 #[derive(Debug)]
 pub struct Error {
     inner: anyhow::Error,
@@ -18,6 +22,32 @@ impl Error {
         Self {
             inner: anyhow::Error::new(error),
         }
+    }
+
+    /// Return `true` if `E` is the type held by this error object.
+    pub fn is<E>(&self) -> bool
+    where
+        E: StdError + Send + Sync + 'static,
+    {
+        self.inner.is::<E>()
+    }
+
+    /// Attempt to downcast this error object to a concrete type.
+    pub fn downcast<E>(self) -> Result<E>
+    where
+        E: StdError + Send + Sync + 'static,
+    {
+        self.inner
+            .downcast::<E>()
+            .map_err(|error| Self { inner: error })
+    }
+
+    /// Attempt to downcast this error object to a concrete type by reference.
+    pub fn downcast_ref<E>(&self) -> Option<&E>
+    where
+        E: StdError + Send + Sync + 'static,
+    {
+        self.inner.downcast_ref()
     }
 }
 
@@ -49,6 +79,26 @@ impl Deref for Error {
         self.inner.deref()
     }
 }
+
+impl From<Error> for Box<dyn StdError + 'static> {
+    fn from(error: Error) -> Self {
+        error.into()
+    }
+}
+
+impl From<Error> for Box<dyn StdError + Send + 'static> {
+    fn from(error: Error) -> Self {
+        error.into()
+    }
+}
+
+impl From<Error> for Box<dyn StdError + Send + Sync + 'static> {
+    fn from(error: Error) -> Self {
+        error.into()
+    }
+}
+
+assert_impl_all!(Error: Send, Sync);
 
 /// A result type for an error that occurred in a data store.
 pub type Result<T> = result::Result<T, Error>;
