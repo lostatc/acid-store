@@ -21,7 +21,7 @@ pub use self::data_store::{BlockId, BlockKey, BlockType, DataStore};
 #[cfg(feature = "store-directory")]
 pub use self::directory_store::{DirectoryConfig, DirectoryStore};
 pub use self::error::{Error, Result};
-pub use self::memory_store::{MemoryConfig, MemoryStore};
+pub use self::memory::{MemoryConfig, MemoryStore};
 pub use self::open_store::OpenStore;
 #[cfg(feature = "store-rclone")]
 pub use self::rclone_store::{RcloneConfig, RcloneStore};
@@ -37,7 +37,7 @@ pub use self::sqlite_store::{SqliteConfig, SqliteStore};
 mod data_store;
 mod directory_store;
 mod error;
-mod memory_store;
+mod memory;
 mod open_store;
 mod rclone_store;
 mod redis_store;
