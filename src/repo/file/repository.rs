@@ -1326,11 +1326,16 @@ impl FileRepo<UnixSpecial, UnixMetadata> {
         options: &[MountOption],
     ) -> crate::Result<()> {
         let adapter = FuseAdapter::new(self, root.as_ref())?;
+
+        // These need to be deduplicated.
         let all_opts = [DEFAULT_FUSE_MOUNT_OPTS, options]
             .concat()
             .into_iter()
             .map(|opt| opt.into_fuser())
+            .collect::<HashSet<_>>()
+            .into_iter()
             .collect::<Vec<_>>();
+
         Ok(fuser::mount2(adapter, &mountpoint, &all_opts)?)
     }
 }
