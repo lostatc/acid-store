@@ -24,13 +24,13 @@ pub use self::error::{Error, Result};
 pub use self::memory::{MemoryConfig, MemoryStore};
 pub use self::open_store::OpenStore;
 #[cfg(feature = "store-rclone")]
-pub use self::rclone_store::{RcloneConfig, RcloneStore};
+pub use self::rclone::{RcloneConfig, RcloneStore};
 #[cfg(feature = "store-redis")]
 pub use self::redis_store::{RedisAddr, RedisConfig, RedisStore};
 #[cfg(feature = "store-s3")]
 pub use self::s3_store::{S3Config, S3Credentials, S3Region, S3Store};
 #[cfg(feature = "store-sftp")]
-pub use self::sftp_store::{SftpAuth, SftpConfig, SftpStore};
+pub use self::sftp::{SftpAuth, SftpConfig, SftpStore};
 #[cfg(feature = "store-sqlite")]
 pub use self::sqlite_store::{SqliteConfig, SqliteStore};
 
@@ -39,8 +39,8 @@ mod directory;
 mod error;
 mod memory;
 mod open_store;
-mod rclone_store;
+mod rclone;
 mod redis_store;
 mod s3_store;
-mod sftp_store;
+mod sftp;
 mod sqlite_store;

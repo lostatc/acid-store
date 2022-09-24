@@ -5,20 +5,31 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 
-use anyhow::anyhow;
+use once_cell::sync::Lazy;
 use ssh2::{self, RenameFlags, Session, Sftp};
-use uuid::Uuid;
+use uuid::{uuid, Uuid};
 
 use super::data_store::{BlockId, BlockKey, BlockType, DataStore};
+use super::error::{Error, Result};
 use super::open_store::OpenStore;
 
 // A UUID which acts as the version ID of the directory store format.
-const CURRENT_VERSION: &str = "dcfb91ae-f8ab-11eb-964b-5b439fc44271";
+const CURRENT_VERSION: Uuid = uuid!("dcfb91ae-f8ab-11eb-964b-5b439fc44271");
+
+static CURRENT_VERSION_STR: Lazy<&'static str> = Lazy::new(|| {
+    CURRENT_VERSION
+        .as_hyphenated()
+        .encode_lower(&mut Uuid::encode_buffer())
+});
 
 // The names of top-level files in the data store.
 const STORE_DIRECTORY: &str = "store";
 const STAGING_DIRECTORY: &str = "stage";
 const VERSION_FILE: &str = "version";
+
+fn block_file_name_err() -> Error {
+    Error::msg("block file name is invalid")
+}
 
 fn type_path(kind: BlockType) -> PathBuf {
     match kind {
@@ -111,21 +122,20 @@ impl OpenStore for SftpConfig {
 
     fn open(&self) -> crate::Result<Self::Store> {
         // Connect to the SSH server.
-        let stream = TcpStream::connect(&self.addr)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
-        let mut session =
-            Session::new().map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+        let stream =
+            TcpStream::connect(&self.addr).map_err(|error| crate::Error::Store(error.into()))?;
+        let mut session = Session::new().map_err(|error| crate::Error::Store(error.into()))?;
         session.set_tcp_stream(stream);
         session
             .handshake()
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(error.into()))?;
 
         // Perform authentication.
         match &self.auth {
             SftpAuth::Password { username, password } => {
                 session
                     .userauth_password(username, password)
-                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                    .map_err(|error| crate::Error::Store(error.into()))?;
             }
             SftpAuth::Key {
                 username,
@@ -140,42 +150,42 @@ impl OpenStore for SftpConfig {
                         private_key,
                         password.as_ref().map(|str| str.as_str()),
                     )
-                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                    .map_err(|error| crate::Error::Store(error.into()))?;
             }
             SftpAuth::Agent { username, comment } => match comment {
                 Some(comment) => {
                     let mut agent = session
                         .agent()
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                        .map_err(|error| crate::Error::Store(error.into()))?;
                     agent
                         .connect()
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                        .map_err(|error| crate::Error::Store(error.into()))?;
                     agent
                         .list_identities()
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                        .map_err(|error| crate::Error::Store(error.into()))?;
                     let identities = agent
                         .identities()
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                        .map_err(|error| crate::Error::Store(error.into()))?;
                     let key = identities
                         .iter()
                         .find(|key| key.comment() == comment)
-                        .ok_or_else(|| anyhow!("No key with matching comment found in agent."))
+                        .ok_or_else(|| Error::msg("No key with matching comment found in agent."))
                         .map_err(crate::Error::Store)?;
                     agent
                         .userauth(username, key)
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                        .map_err(|error| crate::Error::Store(error.into()))?;
                 }
                 None => {
                     session
                         .userauth_agent(username)
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                        .map_err(|error| crate::Error::Store(error.into()))?;
                 }
             },
         }
 
         let sftp = session
             .sftp()
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(error.into()))?;
 
         // Create the directories if they don't exist.
         let directories = &[
@@ -189,7 +199,7 @@ impl OpenStore for SftpConfig {
         for directory in directories {
             if sftp.stat(directory).is_err() {
                 sftp.mkdir(directory, 0o755)
-                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                    .map_err(|error| crate::Error::Store(error.into()))?;
             }
         }
 
@@ -199,19 +209,19 @@ impl OpenStore for SftpConfig {
             // Read the version ID file.
             let mut version_file = sftp
                 .open(&version_path)
-                .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                .map_err(|error| crate::Error::Store(error.into()))?;
             let mut version_id = String::new();
             version_file.read_to_string(&mut version_id)?;
 
             // Verify the version ID.
-            if version_id != CURRENT_VERSION {
+            if version_id != *CURRENT_VERSION_STR {
                 return Err(crate::Error::UnsupportedStore);
             }
         } else {
             // Write the version ID file.
             let mut version_file = sftp
                 .create(&version_path)
-                .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                .map_err(|error| crate::Error::Store(error.into()))?;
             version_file.write_all(CURRENT_VERSION.as_bytes())?;
         }
 
@@ -252,7 +262,7 @@ impl SftpStore {
 }
 
 impl DataStore for SftpStore {
-    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> Result<()> {
         let staging_path = self.staging_path();
         let block_path = self.block_path(key);
 
@@ -280,7 +290,7 @@ impl DataStore for SftpStore {
         Ok(())
     }
 
-    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, key: BlockKey, buf: &mut Vec<u8>) -> Result<Option<usize>> {
         let block_path = self.block_path(key);
 
         if !self.exists(&block_path) {
@@ -289,12 +299,14 @@ impl DataStore for SftpStore {
 
         let mut file = self.sftp.open(&block_path)?;
 
-        let mut buffer = Vec::with_capacity(file.stat()?.size.unwrap_or(0) as usize);
-        file.read_to_end(&mut buffer)?;
-        Ok(Some(buffer))
+        let file_size = file.stat()?.size.unwrap_or(0).try_into()?;
+        buf.reserve(file_size);
+        file.read_to_end(buf)?;
+
+        Ok(Some(file_size))
     }
 
-    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+    fn remove_block(&mut self, key: BlockKey) -> Result<()> {
         let block_path = self.block_path(key);
 
         if !self.exists(&block_path) {
@@ -306,9 +318,7 @@ impl DataStore for SftpStore {
         Ok(())
     }
 
-    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
-        let mut block_ids = Vec::new();
-
+    fn list_blocks(&mut self, kind: BlockType, list: &mut Vec<BlockId>) -> Result<()> {
         match kind {
             BlockType::Data => {
                 let block_directories = self.sftp.readdir(&self.path.join(type_path(kind)))?;
@@ -318,11 +328,11 @@ impl DataStore for SftpStore {
                             .file_name()
                             .unwrap()
                             .to_str()
-                            .ok_or_else(|| anyhow!("Block file name is invalid."))?;
+                            .ok_or_else(block_file_name_err)?;
                         let id = Uuid::parse_str(file_name)
-                            .map_err(|_| anyhow!("Block file name is invalid."))?
+                            .map_err(|_| block_file_name_err())?
                             .into();
-                        block_ids.push(id);
+                        list.push(id);
                     }
                 }
             }
@@ -332,16 +342,16 @@ impl DataStore for SftpStore {
                         .file_name()
                         .unwrap()
                         .to_str()
-                        .ok_or_else(|| anyhow!("Block file name is invalid."))?;
+                        .ok_or_else(block_file_name_err)?;
                     let id = Uuid::parse_str(file_name)
-                        .map_err(|_| anyhow!("Block file name is invalid."))?
+                        .map_err(|_| block_file_name_err())?
                         .into();
-                    block_ids.push(id);
+                    list.push(id);
                 }
             }
         }
 
-        Ok(block_ids)
+        Ok(())
     }
 }
 
