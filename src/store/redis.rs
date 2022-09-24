@@ -3,17 +3,25 @@
 use std::fmt::{self, Debug, Formatter};
 use std::path::PathBuf;
 
+use once_cell::sync::Lazy;
 use redis::{
     Client, Commands, Connection, ConnectionAddr, ConnectionInfo, IntoConnectionInfo,
     RedisConnectionInfo,
 };
-use uuid::Uuid;
+use uuid::{uuid, Uuid};
 
 use super::data_store::{BlockId, BlockKey, BlockType, DataStore};
+use super::error::Result;
 use super::open_store::OpenStore;
 
 /// A UUID which acts as the version ID of the store format.
-const CURRENT_VERSION: &str = "e64b73f0-f90f-11eb-bb25-7348383f5353";
+const CURRENT_VERSION: Uuid = uuid!("e64b73f0-f90f-11eb-bb25-7348383f5353");
+
+static CURRENT_VERSION_STR: Lazy<&'static str> = Lazy::new(|| {
+    CURRENT_VERSION
+        .as_hyphenated()
+        .encode_lower(&mut Uuid::encode_buffer())
+});
 
 const DATA_KEY: &str = "store:data";
 const LOCKS_KEY: &str = "store:lock";
@@ -26,11 +34,7 @@ fn block_key(key: BlockKey) -> String {
     match key {
         BlockKey::Data(id) => format!("{}:{}", DATA_KEY, id.as_ref().as_hyphenated()),
         BlockKey::Lock(id) => format!("{}:{}", LOCKS_KEY, id.as_ref().as_hyphenated()),
-        BlockKey::Header(id) => format!(
-            "{}:{}",
-            HEADERS_KEY,
-            id.as_ref().as_hyphenated()
-        ),
+        BlockKey::Header(id) => format!("{}:{}", HEADERS_KEY, id.as_ref().as_hyphenated()),
         BlockKey::Super => SUPER_KEY.to_string(),
         BlockKey::Version => REPO_VERSION_KEY.to_string(),
     }
@@ -129,23 +133,23 @@ impl Debug for RedisStore {
 impl RedisStore {
     fn from_connection_info(info: ConnectionInfo) -> crate::Result<Self> {
         let mut connection = Client::open(info)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
+            .map_err(|error| crate::Error::Store(error.into()))?
             .get_connection()
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(error.into()))?;
 
         let version_response: Option<String> = connection
             .get(STORE_VERSION_KEY)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(error.into()))?;
 
         match version_response {
             Some(version) => {
-                if version != CURRENT_VERSION {
+                if version != *CURRENT_VERSION_STR {
                     return Err(crate::Error::UnsupportedStore);
                 }
             }
             None => connection
-                .set(STORE_VERSION_KEY, CURRENT_VERSION)
-                .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?,
+                .set(STORE_VERSION_KEY, *CURRENT_VERSION_STR)
+                .map_err(|error| crate::Error::Store(error.into()))?,
         }
 
         Ok(RedisStore { connection })
@@ -153,21 +157,23 @@ impl RedisStore {
 }
 
 impl DataStore for RedisStore {
-    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> Result<()> {
         self.connection.set(block_key(key), data)?;
         Ok(())
     }
 
-    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
-        Ok(self.connection.get(block_key(key))?)
+    fn read_block(&mut self, key: BlockKey, buf: &mut Vec<u8>) -> Result<Option<usize>> {
+        let bytes: Vec<u8> = self.connection.get(block_key(key))?;
+        buf.extend_from_slice(&bytes);
+        Ok(Some(bytes.len()))
     }
 
-    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+    fn remove_block(&mut self, key: BlockKey) -> Result<()> {
         self.connection.del(block_key(key))?;
         Ok(())
     }
 
-    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
+    fn list_blocks(&mut self, kind: BlockType, list: &mut Vec<BlockId>) -> Result<()> {
         let key_prefix = match kind {
             BlockType::Data => format!("{}:", DATA_KEY),
             BlockType::Lock => format!("{}:", LOCKS_KEY),
@@ -175,16 +181,13 @@ impl DataStore for RedisStore {
         };
         let search_key = format!("{}*", key_prefix);
 
-        let blocks = self
-            .connection
-            .keys::<_, Vec<String>>(search_key)?
-            .iter()
-            .map(|key| {
-                let uuid = key.trim_start_matches(&key_prefix);
-                Uuid::parse_str(uuid).map(|id| id.into())
-            })
-            .collect::<Result<_, _>>()?;
+        let keys = self.connection.keys::<_, Vec<String>>(search_key)?;
 
-        Ok(blocks)
+        for key in keys {
+            let uuid = key.trim_start_matches(&key_prefix);
+            list.push(Uuid::parse_str(uuid).map(BlockId::from)?);
+        }
+
+        Ok(())
     }
 }

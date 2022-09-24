@@ -26,7 +26,7 @@ pub use self::open_store::OpenStore;
 #[cfg(feature = "store-rclone")]
 pub use self::rclone::{RcloneConfig, RcloneStore};
 #[cfg(feature = "store-redis")]
-pub use self::redis_store::{RedisAddr, RedisConfig, RedisStore};
+pub use self::redis::{RedisAddr, RedisConfig, RedisStore};
 #[cfg(feature = "store-s3")]
 pub use self::s3_store::{S3Config, S3Credentials, S3Region, S3Store};
 #[cfg(feature = "store-sftp")]
@@ -40,7 +40,7 @@ mod error;
 mod memory;
 mod open_store;
 mod rclone;
-mod redis_store;
+mod redis;
 mod s3_store;
 mod sftp;
 mod sqlite_store;
