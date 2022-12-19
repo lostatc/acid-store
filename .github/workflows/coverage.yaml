@@ -21,7 +21,7 @@ jobs:
       - name: Run cargo-tarpaulin
         uses: actions-rs/tarpaulin@v0.1
         with:
-          args: --features 'file-metadata hash-algorithms encryption compression repo-version repo-value repo-file repo-content' --ignore-tests
+          args: --features 'encryption compression file-metadata hash-algorithms repo-version repo-value repo-file repo-content' --ignore-tests
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
