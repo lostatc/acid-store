@@ -1,4 +1,4 @@
-[![Tests Workflow Status (main)](https://img.shields.io/github/actions/workflow/status/lostatc/acid-store/test.yaml?branch=main&label=Tests&style=for-the-badge)](https://github.com/lostatc/acid-store/actions/workflows/test.yaml)
+[![Tests Workflow Status (main)](https://img.shields.io/github/actions/workflow/status/lostatc/acid-store/test.yaml?branch=main&label=Tests&style=for-the-badge&logo=github)](https://github.com/lostatc/acid-store/actions/workflows/test.yaml)
 [![Codecov](https://img.shields.io/codecov/c/github/lostatc/acid-store?logo=codecov&style=for-the-badge)](https://app.codecov.io/gh/lostatc/acid-store)
 [![Crates.io](https://img.shields.io/crates/v/acid-store?logo=rust&style=for-the-badge)](https://crates.io/crates/acid-store)
 [![docs.rs](https://img.shields.io/docsrs/acid-store?logo=docsdotrs&style=for-the-badge)](https://docs.rs/acid-store)
