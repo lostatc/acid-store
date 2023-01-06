@@ -365,7 +365,7 @@ impl<'a> ReadBlock for StoreReader<'a> {
             }),
             Packing::Fixed(_) => Box::new(PackingBlockReader {
                 repo_state: self.repo_state,
-                store_state: &mut self.store_state,
+                store_state: self.store_state,
             }),
         };
         read_block.read_block(id)
@@ -417,8 +417,8 @@ impl<'a> WriteBlock for StoreWriter<'a> {
                     state: self.repo_state,
                 }),
                 Packing::Fixed(pack_size) => Box::new(PackingBlockWriter {
-                    repo_state: &mut self.repo_state,
-                    store_state: &mut self.store_state,
+                    repo_state: self.repo_state,
+                    store_state: self.store_state,
                     pack_size,
                 }),
             };

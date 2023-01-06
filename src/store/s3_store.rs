@@ -432,13 +432,13 @@ impl S3Store {
 impl DataStore for S3Store {
     fn write_block(&mut self, key: BlockKey, data: &[u8]) -> super::Result<()> {
         let block_path = self.block_path(key);
-        self.bucket.put_object(&block_path, data)?;
+        self.bucket.put_object(block_path, data)?;
         Ok(())
     }
 
     fn read_block(&mut self, key: BlockKey) -> super::Result<Option<Vec<u8>>> {
         let block_path = self.block_path(key);
-        let response = self.bucket.get_object(&block_path)?;
+        let response = self.bucket.get_object(block_path)?;
         if response.status_code() == NOT_FOUND_CODE {
             Ok(None)
         } else {
@@ -448,7 +448,7 @@ impl DataStore for S3Store {
 
     fn remove_block(&mut self, key: BlockKey) -> super::Result<()> {
         let block_path = self.block_path(key);
-        self.bucket.delete_object(&block_path)?;
+        self.bucket.delete_object(block_path)?;
         Ok(())
     }
 

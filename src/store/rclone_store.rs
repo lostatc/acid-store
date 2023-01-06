@@ -38,7 +38,7 @@ const CONNECT_WAIT_TIME: Duration = Duration::from_millis(100);
 /// Serve the rclone remote over SFTP and return the server process.
 fn serve(port: u16, password: &str, config: &str) -> io::Result<Child> {
     Command::new("rclone")
-        .args(&[
+        .args([
             "serve",
             "sftp",
             "--vfs-cache-mode",

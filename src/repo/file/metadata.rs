@@ -410,8 +410,8 @@ impl FileMetadata for UnixMetadata {
 
         let mut attributes = HashMap::new();
         if xattr::SUPPORTED_PLATFORM {
-            for attr_name in xattr::list(&path)? {
-                if let Some(attr_value) = xattr::get(&path, &attr_name)? {
+            for attr_name in xattr::list(path)? {
+                if let Some(attr_value) = xattr::get(path, &attr_name)? {
                     attributes.insert(attr_name.to_string_lossy().to_string(), attr_value);
                 }
             }
@@ -496,7 +496,7 @@ impl FileMetadata for UnixMetadata {
 
         if xattr::SUPPORTED_PLATFORM {
             for (attr_name, attr_value) in self.attributes.iter() {
-                xattr::set(&path, &attr_name, attr_value)?;
+                xattr::set(path, attr_name, attr_value)?;
             }
         }
 

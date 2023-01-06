@@ -37,11 +37,11 @@ fn block_path(key: BlockKey) -> PathBuf {
         }
         BlockKey::Lock(id) => {
             let uuid_str = id.as_ref().as_hyphenated().to_string();
-            type_path(BlockType::Lock).join(&uuid_str)
+            type_path(BlockType::Lock).join(uuid_str)
         }
         BlockKey::Header(id) => {
             let uuid_str = id.as_ref().as_hyphenated().to_string();
-            type_path(BlockType::Header).join(&uuid_str)
+            type_path(BlockType::Header).join(uuid_str)
         }
         BlockKey::Super => [STORE_DIRECTORY, "super"].iter().collect(),
         BlockKey::Version => [STORE_DIRECTORY, "version"].iter().collect(),
@@ -110,7 +110,7 @@ impl OpenStore for SftpConfig {
 
     fn open(&self) -> crate::Result<Self::Store> {
         // Connect to the SSH server.
-        let stream = TcpStream::connect(&self.addr)
+        let stream = TcpStream::connect(self.addr)
             .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
         let mut session =
             Session::new().map_err(|error| crate::Error::Store(super::Error::from(error)))?;
@@ -243,7 +243,7 @@ impl SftpStore {
     /// Return the path where a block with the given `id` will be staged.
     fn staging_path(&self) -> PathBuf {
         let uuid_str = Uuid::new_v4().as_hyphenated().to_string();
-        self.path.join(STAGING_DIRECTORY).join(&uuid_str)
+        self.path.join(STAGING_DIRECTORY).join(uuid_str)
     }
 
     /// Return whether the given remote `path` exists.

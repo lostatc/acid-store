@@ -497,7 +497,7 @@ impl<K: Key> KeyRepo<K> {
             .map(|(_, handle)| handle)
             .collect::<Vec<_>>();
         for handle in handles {
-            self.remove_handle(&*handle.read().unwrap());
+            self.remove_handle(&handle.read().unwrap());
         }
     }
 

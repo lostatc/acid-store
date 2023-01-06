@@ -264,7 +264,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
     fn getattr(&mut self, req: &Request, ino: u64, reply: ReplyAttr) {
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
-        let entry = try_result!(self.repo.entry(&entry_path), reply);
+        let entry = try_result!(self.repo.entry(entry_path), reply);
         let attr = try_result!(self.entry_attr(&entry, ino, req), reply);
 
         reply.attr(&DEFAULT_TTL, &attr);
@@ -377,7 +377,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
     fn readlink(&mut self, _req: &Request, ino: u64, reply: ReplyData) {
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
-        let entry = try_result!(self.repo.entry(&entry_path), reply);
+        let entry = try_result!(self.repo.entry(entry_path), reply);
         match &entry.kind {
             EntryType::Special(UnixSpecial::Symlink { target }) => {
                 reply.data(target.as_os_str().as_bytes());
@@ -608,7 +608,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         }
 
         // Check if the parent of the destination path is not a directory.
-        if !self.repo.is_directory(&dest_path.parent().unwrap()) {
+        if !self.repo.is_directory(dest_path.parent().unwrap()) {
             reply.error(libc::ENOTDIR);
             return;
         }
@@ -718,7 +718,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
     }
 
     fn open(&mut self, _req: &Request, ino: u64, flags: i32, reply: ReplyOpen) {
-        let flags = OFlag::from_bits_truncate(flags as i32);
+        let flags = OFlag::from_bits_truncate(flags);
 
         if flags.intersects(*UNSUPPORTED_OPEN_FLAGS) {
             reply.error(libc::ENOTSUP);
@@ -727,12 +727,12 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
 
-        if !self.repo.exists(&entry_path) {
+        if !self.repo.exists(entry_path) {
             reply.error(libc::ENOENT);
             return;
         }
 
-        if !self.repo.is_file(&entry_path) {
+        if !self.repo.is_file(entry_path) {
             reply.error(libc::ENOTSUP);
             return;
         }
@@ -1116,8 +1116,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
         let attr_name = try_option!(name.to_str(), reply, libc::ENODATA).to_owned();
 
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
-        let mut metadata =
-            try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
+        let mut metadata = try_result!(self.repo.entry(entry_path), reply).metadata_or_default(req);
 
         // `UnixMetadata.acl` is the single source of truth for ACL entries. We should intercept
         // attempts to read the ACL xattr and generate its value from the ACL entries in the
@@ -1156,7 +1155,7 @@ impl<'a> Filesystem for FuseAdapter<'a> {
 
     fn listxattr(&mut self, req: &Request, ino: u64, size: u32, reply: ReplyXattr) {
         let entry_path = try_option!(self.inodes.path(ino), reply, libc::ENOENT);
-        let metadata = try_result!(self.repo.entry(&entry_path), reply).metadata_or_default(req);
+        let metadata = try_result!(self.repo.entry(entry_path), reply).metadata_or_default(req);
 
         // Construct a byte string of null-terminated attribute names.
         let mut attr_names = Vec::new();

@@ -35,11 +35,11 @@ fn block_path(key: BlockKey) -> PathBuf {
         }
         BlockKey::Lock(id) => {
             let uuid_str = id.as_ref().as_hyphenated().to_string();
-            type_path(BlockType::Lock).join(&uuid_str)
+            type_path(BlockType::Lock).join(uuid_str)
         }
         BlockKey::Header(id) => {
             let uuid_str = id.as_ref().as_hyphenated().to_string();
-            type_path(BlockType::Header).join(&uuid_str)
+            type_path(BlockType::Header).join(uuid_str)
         }
         BlockKey::Super => [STORE_DIRECTORY, "super"].iter().collect(),
         BlockKey::Version => [STORE_DIRECTORY, "version"].iter().collect(),
@@ -120,7 +120,7 @@ impl DirectoryStore {
     /// Return a new staging path.
     fn staging_path(&self) -> PathBuf {
         let uuid_str = Uuid::new_v4().as_hyphenated().to_string();
-        self.path.join(STAGING_DIRECTORY).join(&uuid_str)
+        self.path.join(STAGING_DIRECTORY).join(uuid_str)
     }
 }
 
@@ -130,7 +130,7 @@ impl DataStore for DirectoryStore {
         let block_path = self.block_path(key);
 
         // If this is the first block its sub-directory, the directory needs to be created.
-        create_dir_all(&block_path.parent().unwrap())?;
+        create_dir_all(block_path.parent().unwrap())?;
 
         // Write to a staging file and then atomically move it to its final destination.
         let mut staging_file = File::create(&staging_path)?;
