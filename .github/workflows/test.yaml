@@ -4,18 +4,18 @@ on: [push, pull_request]
 
 jobs:
   check:
-    name: Check
+    name: "Check"
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: "-D warnings"
     steps:
-      - name: Checkout sources
+      - name: "Checkout sources"
         uses: actions/checkout@v2
 
-      - name: Install native dependencies
+      - name: "Install native dependencies"
         run: sudo apt-get install libacl1-dev libfuse3-dev pkg-config
 
-      - name: Install stable toolchain
+      - name: "Install stable toolchain"
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -23,25 +23,25 @@ jobs:
           toolchain: "1.63.0"
           override: true
 
-      - name: Run cargo check
+      - name: "Run cargo check"
         uses: actions-rs/cargo@v1
         with:
           command: check
           args: --all-features
 
   test:
-    name: Test Suite
+    name: "Tests"
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: "-D warnings"
     steps:
-      - name: Checkout sources
+      - name: "Checkout sources"
         uses: actions/checkout@v2
 
-      - name: Install native dependencies
+      - name: "Install native dependencies"
         run: sudo apt-get install libacl1-dev libfuse3-dev pkg-config acl fuse3
 
-      - name: Install stable toolchain
+      - name: "Install stable toolchain"
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -49,25 +49,25 @@ jobs:
           toolchain: "1.63.0"
           override: true
 
-      - name: Run cargo test
+      - name: "Run cargo test"
         uses: actions-rs/cargo@v1
         with:
           command: test
           args: --features 'encryption compression file-metadata hash-algorithms repo-version repo-value repo-file repo-content'
 
   lints:
-    name: Lints
+    name: "Lints"
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: "-D warnings"
     steps:
-      - name: Checkout sources
+      - name: "Checkout sources"
         uses: actions/checkout@v2
 
-      - name: Install native dependencies
+      - name: "Install native dependencies"
         run: sudo apt-get install libacl1-dev libfuse3-dev pkg-config
 
-      - name: Install stable toolchain
+      - name: "Install stable toolchain"
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -75,14 +75,37 @@ jobs:
           override: true
           components: rustfmt, clippy
 
-      - name: Run cargo fmt
+      - name: "Run cargo fmt"
         uses: actions-rs/cargo@v1
         with:
           command: fmt
           args: --all -- --check
 
-      - name: Run cargo clippy
+      - name: "Run cargo clippy"
         uses: actions-rs/cargo@v1
         with:
           command: clippy
           args: --all-features
+
+  docs:
+    name: "Docs"
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: "-D warnings --cfg docsrs"
+    steps:
+      - name: "Checkout sources"
+        uses: actions/checkout@v2
+
+      - name: "Install rust toolchain"
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+
+      - name: "Run cargo doc"
+        uses: actions-rs/cargo@v1
+        with:
+          toolchain: nightly
+          command: doc
+          args: "--all-features --no-deps"
