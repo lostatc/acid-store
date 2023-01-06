@@ -1,9 +1,10 @@
-on: [push]
+name: "Coverage"
 
-name: Coverage
+on: [push]
 
 jobs:
   check:
+    name: "Coverage"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
