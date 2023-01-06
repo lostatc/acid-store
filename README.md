@@ -78,11 +78,11 @@ benchmarks yourself by running `cargo bench --features 'encryption'`.
 
 ### Specs
 
-| Spec      | Value           |
-| --------- | --------------- |
-| Processor | Ryzen 5 1600x   |
-| Memory    | 32 GB (3200MHz) |
-| OS        | Linux 5.11      |
+| Spec      | Value                |
+| --------- | -------------------- |
+| Processor | Ryzen 5 1600x        |
+| Memory    | 32 GB DDR4 (3200MHz) |
+| OS        | Linux 5.11           |
 
 ### Results
 
@@ -113,6 +113,13 @@ bump. The semantics of minor vs patch versions <1.0.0 is unspecified in the
 [semver spec](https://semver.org/).
 
 This policy was added with v0.13.0.
+
+## Similar Projects
+
+Here are some similar projects to check out:
+
+- [Persy](https://persy.rs/)
+- [ZboxFS](https://zbox.io/fs/)
 
 ## Copyright
 
