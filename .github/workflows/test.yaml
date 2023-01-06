@@ -96,6 +96,9 @@ jobs:
       - name: "Checkout sources"
         uses: actions/checkout@v2
 
+      - name: "Install native dependencies"
+        run: sudo apt-get install libacl1-dev libfuse3-dev pkg-config
+
       - name: "Install rust toolchain"
         uses: actions-rs/toolchain@v1
         with:
