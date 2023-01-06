@@ -371,7 +371,7 @@ impl OpenStore for S3Config {
             Ok(response) if response.status_code() == NOT_FOUND_CODE => {
                 bucket
                     .put_object(&version_key, CURRENT_VERSION.as_bytes())
-                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                    .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
             }
             Ok(response) => {
                 let version = Uuid::from_slice(response.bytes())
@@ -380,7 +380,7 @@ impl OpenStore for S3Config {
                     return Err(crate::Error::UnsupportedStore);
                 }
             }
-            Err(error) => return Err(crate::Error::Store(anyhow::Error::from(error))),
+            Err(error) => return Err(crate::Error::Store(super::Error::from(error))),
         };
 
         Ok(S3Store { bucket, prefix })
@@ -430,13 +430,13 @@ impl S3Store {
 }
 
 impl DataStore for S3Store {
-    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> super::Result<()> {
         let block_path = self.block_path(key);
         self.bucket.put_object(&block_path, data)?;
         Ok(())
     }
 
-    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, key: BlockKey) -> super::Result<Option<Vec<u8>>> {
         let block_path = self.block_path(key);
         let response = self.bucket.get_object(&block_path)?;
         if response.status_code() == NOT_FOUND_CODE {
@@ -446,13 +446,13 @@ impl DataStore for S3Store {
         }
     }
 
-    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+    fn remove_block(&mut self, key: BlockKey) -> super::Result<()> {
         let block_path = self.block_path(key);
         self.bucket.delete_object(&block_path)?;
         Ok(())
     }
 
-    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
+    fn list_blocks(&mut self, kind: BlockType) -> super::Result<Vec<BlockId>> {
         let blocks_key = match kind {
             BlockType::Data => join_key!(self.prefix, STORE_KEY, DATA_KEY) + SEPARATOR,
             BlockType::Lock => join_key!(self.prefix, STORE_KEY, LOCKS_KEY) + SEPARATOR,

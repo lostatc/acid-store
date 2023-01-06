@@ -95,7 +95,7 @@ pub enum Error {
     ///
     /// This wraps the error provided by the data store.
     #[error("{0}")]
-    Store(anyhow::Error),
+    Store(crate::store::Error),
 }
 
 impl From<Error> for io::Error {

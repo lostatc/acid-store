@@ -125,13 +125,13 @@ impl Debug for RedisStore {
 impl RedisStore {
     fn from_connection_info(info: ConnectionInfo) -> crate::Result<Self> {
         let mut connection = Client::open(info)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?
+            .map_err(|error| crate::Error::Store(super::Error::from(error)))?
             .get_connection()
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
 
         let version_response: Option<String> = connection
             .get(STORE_VERSION_KEY)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
 
         match version_response {
             Some(version) => {
@@ -141,7 +141,7 @@ impl RedisStore {
             }
             None => connection
                 .set(STORE_VERSION_KEY, CURRENT_VERSION)
-                .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?,
+                .map_err(|error| crate::Error::Store(super::Error::from(error)))?,
         }
 
         Ok(RedisStore { connection })
@@ -149,21 +149,21 @@ impl RedisStore {
 }
 
 impl DataStore for RedisStore {
-    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> super::Result<()> {
         self.connection.set(block_key(key), data)?;
         Ok(())
     }
 
-    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, key: BlockKey) -> super::Result<Option<Vec<u8>>> {
         Ok(self.connection.get(block_key(key))?)
     }
 
-    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+    fn remove_block(&mut self, key: BlockKey) -> super::Result<()> {
         self.connection.del(block_key(key))?;
         Ok(())
     }
 
-    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
+    fn list_blocks(&mut self, kind: BlockType) -> super::Result<Vec<BlockId>> {
         let key_prefix = match kind {
             BlockType::Data => format!("{}:", DATA_KEY),
             BlockType::Lock => format!("{}:", LOCKS_KEY),

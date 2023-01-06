@@ -467,7 +467,10 @@ fn unused_data_is_reclaimed_on_clean(
     drop(repo);
 
     let mut store = repo_store.store.open()?;
-    let original_blocks = store.list_blocks(BlockType::Data)?.len();
+    let original_blocks = store
+        .list_blocks(BlockType::Data)
+        .map_err(anyhow::Error::msg)?
+        .len();
     drop(store);
 
     let mut repo: KeyRepo<String> = repo_store.open()?;
@@ -477,7 +480,10 @@ fn unused_data_is_reclaimed_on_clean(
     drop(repo);
 
     let mut store = repo_store.store.open()?;
-    let new_blocks = store.list_blocks(BlockType::Data)?.len();
+    let new_blocks = store
+        .list_blocks(BlockType::Data)
+        .map_err(anyhow::Error::msg)?
+        .len();
 
     assert_that!(new_blocks).is_less_than(original_blocks);
 

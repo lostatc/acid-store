@@ -26,7 +26,7 @@ impl OpenStore for SqliteConfig {
 
     fn open(&self) -> crate::Result<Self::Store> {
         let connection = Connection::open(&self.path)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
 
         connection
             .execute_batch(
@@ -57,7 +57,7 @@ impl OpenStore for SqliteConfig {
                     );
                 "#,
             )
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
 
         let version_bytes: Option<Vec<u8>> = connection
             .query_row(
@@ -69,7 +69,7 @@ impl OpenStore for SqliteConfig {
                 |row| row.get(0),
             )
             .optional()
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
 
         match version_bytes {
             Some(bytes) => {
@@ -88,7 +88,7 @@ impl OpenStore for SqliteConfig {
                     "#,
                         params![&CURRENT_VERSION.as_bytes()[..]],
                     )
-                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                    .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
             }
         }
 
@@ -109,7 +109,7 @@ pub struct SqliteStore {
 }
 
 impl DataStore for SqliteStore {
-    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> super::Result<()> {
         match key {
             BlockKey::Data(id) => {
                 self.connection.execute(
@@ -161,7 +161,7 @@ impl DataStore for SqliteStore {
         Ok(())
     }
 
-    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, key: BlockKey) -> super::Result<Option<Vec<u8>>> {
         match key {
             BlockKey::Data(id) => Ok(self
                 .connection
@@ -221,7 +221,7 @@ impl DataStore for SqliteStore {
         }
     }
 
-    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+    fn remove_block(&mut self, key: BlockKey) -> super::Result<()> {
         match key {
             BlockKey::Data(id) => {
                 self.connection.execute(
@@ -273,7 +273,7 @@ impl DataStore for SqliteStore {
         Ok(())
     }
 
-    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
+    fn list_blocks(&mut self, kind: BlockType) -> super::Result<Vec<BlockId>> {
         let mut statement = match kind {
             BlockType::Data => self.connection.prepare(r#"SELECT uuid FROM Data;"#)?,
             BlockType::Lock => self.connection.prepare(r#"SELECT uuid FROM Locks;"#)?,

@@ -134,19 +134,19 @@ pub struct RcloneStore {
 }
 
 impl DataStore for RcloneStore {
-    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> super::Result<()> {
         self.sftp_store.write_block(key, data)
     }
 
-    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, key: BlockKey) -> super::Result<Option<Vec<u8>>> {
         self.sftp_store.read_block(key)
     }
 
-    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+    fn remove_block(&mut self, key: BlockKey) -> super::Result<()> {
         self.sftp_store.remove_block(key)
     }
 
-    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
+    fn list_blocks(&mut self, kind: BlockType) -> super::Result<Vec<BlockId>> {
         self.sftp_store.list_blocks(kind)
     }
 }

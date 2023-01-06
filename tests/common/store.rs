@@ -23,7 +23,7 @@ use {
 };
 
 /// Remove all blocks in the given `store`.
-fn truncate_store(store: &mut impl DataStore) -> anyhow::Result<()> {
+fn truncate_store(store: &mut impl DataStore) -> acid_store::store::Result<()> {
     for block_id in store.list_blocks(BlockType::Data)? {
         store.remove_block(BlockKey::Data(block_id))?;
     }
@@ -46,19 +46,19 @@ struct WithTempDir<T> {
 }
 
 impl<T: DataStore> DataStore for WithTempDir<T> {
-    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> acid_store::store::Result<()> {
         self.value.write_block(key, data)
     }
 
-    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, key: BlockKey) -> acid_store::store::Result<Option<Vec<u8>>> {
         self.value.read_block(key)
     }
 
-    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+    fn remove_block(&mut self, key: BlockKey) -> acid_store::store::Result<()> {
         self.value.remove_block(key)
     }
 
-    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
+    fn list_blocks(&mut self, kind: BlockType) -> acid_store::store::Result<Vec<BlockId>> {
         self.value.list_blocks(kind)
     }
 }

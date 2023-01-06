@@ -5,7 +5,6 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 
-use anyhow::anyhow;
 use ssh2::{self, RenameFlags, Session, Sftp};
 use uuid::Uuid;
 
@@ -112,20 +111,20 @@ impl OpenStore for SftpConfig {
     fn open(&self) -> crate::Result<Self::Store> {
         // Connect to the SSH server.
         let stream = TcpStream::connect(&self.addr)
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
         let mut session =
-            Session::new().map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            Session::new().map_err(|error| crate::Error::Store(super::Error::from(error)))?;
         session.set_tcp_stream(stream);
         session
             .handshake()
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
 
         // Perform authentication.
         match &self.auth {
             SftpAuth::Password { username, password } => {
                 session
                     .userauth_password(username, password)
-                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                    .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
             }
             SftpAuth::Key {
                 username,
@@ -140,42 +139,44 @@ impl OpenStore for SftpConfig {
                         private_key,
                         password.as_ref().map(|str| str.as_str()),
                     )
-                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                    .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
             }
             SftpAuth::Agent { username, comment } => match comment {
                 Some(comment) => {
                     let mut agent = session
                         .agent()
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                        .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
                     agent
                         .connect()
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                        .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
                     agent
                         .list_identities()
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                        .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
                     let identities = agent
                         .identities()
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                        .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
                     let key = identities
                         .iter()
                         .find(|key| key.comment() == comment)
-                        .ok_or_else(|| anyhow!("No key with matching comment found in agent."))
+                        .ok_or_else(|| {
+                            super::Error::msg("No key with matching comment found in agent.")
+                        })
                         .map_err(crate::Error::Store)?;
                     agent
                         .userauth(username, key)
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                        .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
                 }
                 None => {
                     session
                         .userauth_agent(username)
-                        .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                        .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
                 }
             },
         }
 
         let sftp = session
             .sftp()
-            .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+            .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
 
         // Create the directories if they don't exist.
         let directories = &[
@@ -189,7 +190,7 @@ impl OpenStore for SftpConfig {
         for directory in directories {
             if sftp.stat(directory).is_err() {
                 sftp.mkdir(directory, 0o755)
-                    .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                    .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
             }
         }
 
@@ -199,7 +200,7 @@ impl OpenStore for SftpConfig {
             // Read the version ID file.
             let mut version_file = sftp
                 .open(&version_path)
-                .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
             let mut version_id = String::new();
             version_file.read_to_string(&mut version_id)?;
 
@@ -211,7 +212,7 @@ impl OpenStore for SftpConfig {
             // Write the version ID file.
             let mut version_file = sftp
                 .create(&version_path)
-                .map_err(|error| crate::Error::Store(anyhow::Error::from(error)))?;
+                .map_err(|error| crate::Error::Store(super::Error::from(error)))?;
             version_file.write_all(CURRENT_VERSION.as_bytes())?;
         }
 
@@ -252,7 +253,7 @@ impl SftpStore {
 }
 
 impl DataStore for SftpStore {
-    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> super::Result<()> {
         let staging_path = self.staging_path();
         let block_path = self.block_path(key);
 
@@ -280,7 +281,7 @@ impl DataStore for SftpStore {
         Ok(())
     }
 
-    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, key: BlockKey) -> super::Result<Option<Vec<u8>>> {
         let block_path = self.block_path(key);
 
         if !self.exists(&block_path) {
@@ -294,7 +295,7 @@ impl DataStore for SftpStore {
         Ok(Some(buffer))
     }
 
-    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+    fn remove_block(&mut self, key: BlockKey) -> super::Result<()> {
         let block_path = self.block_path(key);
 
         if !self.exists(&block_path) {
@@ -306,7 +307,7 @@ impl DataStore for SftpStore {
         Ok(())
     }
 
-    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
+    fn list_blocks(&mut self, kind: BlockType) -> super::Result<Vec<BlockId>> {
         let mut block_ids = Vec::new();
 
         match kind {
@@ -318,9 +319,9 @@ impl DataStore for SftpStore {
                             .file_name()
                             .unwrap()
                             .to_str()
-                            .ok_or_else(|| anyhow!("Block file name is invalid."))?;
+                            .ok_or_else(|| super::Error::msg("Block file name is invalid."))?;
                         let id = Uuid::parse_str(file_name)
-                            .map_err(|_| anyhow!("Block file name is invalid."))?
+                            .map_err(|_| super::Error::msg("Block file name is invalid."))?
                             .into();
                         block_ids.push(id);
                     }
@@ -332,9 +333,9 @@ impl DataStore for SftpStore {
                         .file_name()
                         .unwrap()
                         .to_str()
-                        .ok_or_else(|| anyhow!("Block file name is invalid."))?;
+                        .ok_or_else(|| super::Error::msg("Block file name is invalid."))?;
                     let id = Uuid::parse_str(file_name)
-                        .map_err(|_| anyhow!("Block file name is invalid."))?
+                        .map_err(|_| super::Error::msg("Block file name is invalid."))?
                         .into();
                     block_ids.push(id);
                 }

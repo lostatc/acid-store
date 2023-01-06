@@ -52,7 +52,7 @@ pub struct MemoryStore {
 }
 
 impl DataStore for MemoryStore {
-    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> anyhow::Result<()> {
+    fn write_block(&mut self, key: BlockKey, data: &[u8]) -> super::Result<()> {
         let mut block_map = self.blocks.lock().unwrap();
         match key {
             BlockKey::Data(id) => {
@@ -74,7 +74,7 @@ impl DataStore for MemoryStore {
         Ok(())
     }
 
-    fn read_block(&mut self, key: BlockKey) -> anyhow::Result<Option<Vec<u8>>> {
+    fn read_block(&mut self, key: BlockKey) -> super::Result<Option<Vec<u8>>> {
         let block_map = self.blocks.lock().unwrap();
         Ok(match key {
             BlockKey::Data(id) => block_map.data.get(&id).map(|data| data.to_owned()),
@@ -85,7 +85,7 @@ impl DataStore for MemoryStore {
         })
     }
 
-    fn remove_block(&mut self, key: BlockKey) -> anyhow::Result<()> {
+    fn remove_block(&mut self, key: BlockKey) -> super::Result<()> {
         let mut block_map = self.blocks.lock().unwrap();
         match key {
             BlockKey::Data(id) => {
@@ -107,7 +107,7 @@ impl DataStore for MemoryStore {
         Ok(())
     }
 
-    fn list_blocks(&mut self, kind: BlockType) -> anyhow::Result<Vec<BlockId>> {
+    fn list_blocks(&mut self, kind: BlockType) -> super::Result<Vec<BlockId>> {
         let block_map = self.blocks.lock().unwrap();
         Ok(match kind {
             BlockType::Data => block_map.data.keys().copied().collect(),
