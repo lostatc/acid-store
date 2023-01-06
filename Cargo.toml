@@ -11,6 +11,7 @@ readme = "README.md"
 keywords = ["storage", "filesystem", "database", "transaction", "security"]
 categories = ["filesystem", "encoding", "cryptography"]
 license = "Apache-2.0"
+# If you update this, update the GitHub Actions workflow as well.
 rust-version = "1.63.0"
 
   # We use an attribute when building on docs.rs so we can make use of unstable rustdoc features.

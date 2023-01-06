@@ -17,7 +17,8 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stable
+          # If you update this, update the Cargo.toml as well.
+          toolchain: "1.63.0"
           override: true
 
       - name: Run cargo check
@@ -40,7 +41,8 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: stable
+          # If you update this, update the Cargo.toml as well.
+          toolchain: "1.63.0"
           override: true
 
       - name: Run cargo test
