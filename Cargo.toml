@@ -1,6 +1,6 @@
 [package]
 name = "acid-store"
-version = "0.12.1"
+version = "0.13.0"
 authors = ["Wren Powell <wrenp@duck.com>"]
 edition = "2021"
 description = "A library for secure, deduplicated, transactional, and verifiable data storage"
