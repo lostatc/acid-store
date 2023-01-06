@@ -113,7 +113,7 @@ This policy was added with v0.13.0.
 
 ## Copyright
 
-Copyright 2019-2022 Wren Powell
+Copyright © 2019-2023 Wren Powell
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
