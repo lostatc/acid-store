@@ -20,11 +20,12 @@ locking, and atomic transactions.
 
 For details and examples, see the [documentation](https://docs.rs/acid-store).
 
-⚠️ This project is still experimental; it experiences frequent breaking API
-changes and hasn't been tested thoroughly. This project is not ready for use in
-production environments. Please remember to back up your data if you choose to
-use this library. Also keep in mind that this code has not been audited for
-security.
+⚠ This project is experimental! ⚠
+
+This project experiences frequent breaking API changes and hasn't been tested
+thoroughly. This project is not ready for use in production environments. Please
+remember to back up your data if you choose to use this library. Also keep in
+mind that this code has not been audited for security.
 
 ## Features
 
