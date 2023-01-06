@@ -90,6 +90,27 @@ benchmarks yourself by running `cargo bench --features 'encryption'`.
 | Fixed    | Fixed   | XChaCha20-Poly1305 | None        | 870 MiB/s  | 610 MiB/s  |
 | ZPAQ     | Fixed   | XChaCha20-Poly1305 | None        | 840 MiB/s  | 300 MiB/s  |
 
+## MSRV Policy
+
+The last two stable Rust releases are supported. Older releases may or may not
+be supported as well.
+
+The MSRV will only be increased when necessary to take advantage of new Rust
+features—not every time there is a new Rust release. An increase in the MSRV
+will be accompanied by a minor semver bump if >=1.0.0 or a patch semver bump if
+<1.0.0.
+
+This policy was added with v0.13.0.
+
+## Semver Policy
+
+Prior to version 1.0.0, breaking changes will be accompanied by a minor version
+bump, and new features and bug fixes will be accompanied by a patch version
+bump. The semantics of minor vs patch versions <1.0.0 is unspecified in the
+[semver spec](https://semver.org/).
+
+This policy was added with v0.13.0.
+
 ## Copyright
 
 Copyright 2019-2022 Wren Powell
