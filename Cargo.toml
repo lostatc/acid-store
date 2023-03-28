@@ -69,7 +69,7 @@ secrecy = "0.8.0"
 # Serialization
 serde = { version = "1.0.103", features = ["derive", "rc"] }
 rmp = "0.8.8"
-rmp-serde = "0.14.0"
+rmp-serde = "1.1.1"
 
 # Data structures
 weak-table = "0.2.3"
