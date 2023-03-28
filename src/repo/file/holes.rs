@@ -20,7 +20,7 @@ pub fn archive_file(object: &mut Object, path: &Path) -> crate::Result<()> {
     let mut file = File::open(path)?;
 
     assert!(matches!(object.size(), Ok(0)));
-    assert!(matches!(object.seek(SeekFrom::Current(0)), Ok(0)));
+    assert!(matches!(object.stream_position(), Ok(0)));
 
     match file.scan_chunks() {
         Ok(segments) => {
@@ -60,14 +60,14 @@ pub fn archive_file(object: &mut Object, path: &Path) -> crate::Result<()> {
 /// # Panics
 /// - The seek position of the `object` is not at `0`.
 pub fn extract_file(object: &mut Object, path: &Path) -> crate::Result<()> {
-    assert!(matches!(object.seek(SeekFrom::Current(0)), Ok(0)));
+    assert!(matches!(object.stream_position(), Ok(0)));
 
     let stats = object.stats()?;
     let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
 
     for hole in stats.holes() {
         // Copy the bytes before the hole.
-        let current_position = object.seek(SeekFrom::Current(0))?;
+        let current_position = object.stream_position()?;
         let bytes_before_hole = hole.start - current_position;
         let mut object_reader = object.take(bytes_before_hole);
         io::copy(&mut object_reader, &mut file)?;

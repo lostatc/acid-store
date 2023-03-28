@@ -206,7 +206,7 @@ fn truncate_object(#[case] repo_object: RepoObject, buffer: Vec<u8>) -> anyhow::
     object.set_len(new_size)?;
 
     assert_that!(&object.size()).is_ok_containing(new_size);
-    assert_that!(&object.seek(SeekFrom::Current(0))).is_ok_containing(new_size);
+    assert_that!(&object.stream_position()).is_ok_containing(new_size);
 
     // Read data from the object.
     let mut actual_data = Vec::new();
@@ -236,7 +236,7 @@ fn extend_object(#[case] repo_object: RepoObject, buffer: Vec<u8>) -> anyhow::Re
     object.set_len(new_size)?;
 
     assert_that!(&object.size()).is_ok_containing(new_size);
-    assert_that!(&object.seek(SeekFrom::Current(0))).is_ok_containing(original_bytes);
+    assert_that!(&object.stream_position()).is_ok_containing(original_bytes);
 
     // Read data from the object.
     let mut actual_data = Vec::new();
