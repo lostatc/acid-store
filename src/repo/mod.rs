@@ -143,10 +143,6 @@ pub mod key {
 
 mod common;
 
-#[cfg(feature = "repo-content")]
-#[cfg_attr(docsrs, doc(cfg(feature = "repo-content")))]
-pub mod content;
-
 #[cfg(feature = "repo-file")]
 #[cfg_attr(docsrs, doc(cfg(feature = "repo-file")))]
 pub mod file;

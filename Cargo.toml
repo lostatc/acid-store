@@ -50,9 +50,6 @@ ssh2 = { version = "0.8.2", features = ["vendored-openssl"], optional = true }
 # Hashing
 digest = "0.10.5"
 blake3 = { version = "1.3.1", features = ["traits-preview"] }
-blake2 = { version = "0.10.4", optional = true }
-sha2 = { version = "0.10.6", optional = true }
-sha3 = { version = "0.10.5", optional = true }
 
 # Error handling
 thiserror = "1.0.9"
@@ -110,7 +107,6 @@ store-s3 = ["dep:rust-s3"]
 store-sftp = ["dep:ssh2"]
 store-rclone = ["store-sftp", "dep:rand"]
 repo-file = ["dep:relative-path", "dep:walkdir", "dep:hole-punch"]
-repo-content = []
 repo-value = []
 repo-version = []
 file-metadata = [
@@ -121,7 +117,6 @@ file-metadata = [
   "dep:users",
   "dep:exacl",
 ]
-hash-algorithms = ["dep:blake2", "dep:sha2", "dep:sha3"]
 compression = ["dep:lz4"]
 encryption = ["dep:sodiumoxide", "dep:rand"]
 fuse-mount = ["dep:fuser", "dep:bimap", "dep:tempfile", "file-metadata"]

@@ -53,7 +53,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --features 'encryption compression file-metadata hash-algorithms repo-version repo-value repo-file repo-content'
+          args: --features 'encryption compression file-metadata repo-version repo-value repo-file'
 
   lints:
     name: "Lints"

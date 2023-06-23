@@ -13,8 +13,6 @@
 //! via FUSE
 //! - [`ValueRepo`] is a persistent, heterogeneous, map-like collection.
 //! - [`VersionRepo`] is an object store with support for content versioning.
-//! - [`ContentRepo`] is a content-addressable storage which allows for accessing data by its
-//! cryptographic hash.
 //! - [`StateRepo`] is a low-level repository type which can be used to implement higher-level
 //! repository types.
 //!
@@ -78,7 +76,6 @@
 //!
 //! Feature        | Description
 //! ---            | ---
-//! `repo-content` | Use the [`ContentRepo`] repository type
 //! `repo-file`    | Use the [`FileRepo`] repository type
 //! `repo-value`   | Use the [`ValueRepo`] repository type
 //! `repo-version` | Use the [`VersionRepo`] repository type
@@ -101,7 +98,6 @@
 //! `encryption`      | Encrypt repositories
 //! `compression`     | Compress repositories
 //! `file-metadata`   | Store file metadata and special file types in [`FileRepo`]
-//! `hash-algorithms` | Use hash algorithms other than BLAKE3 in [`ContentRepo`]
 //! `fuse-mount`      | Mount a [`FileRepo`] as a FUSE file system
 //!
 //! These features have native dependencies. This table shows their package names on Ubuntu.
@@ -117,7 +113,6 @@
 //! [`FileRepo`]: crate::repo::file::FileRepo
 //! [`ValueRepo`]: crate::repo::value::ValueRepo
 //! [`VersionRepo`]: crate::repo::version::VersionRepo
-//! [`ContentRepo`]: crate::repo::content::ContentRepo
 //! [`StateRepo`]: crate::repo::state::StateRepo
 //!
 //! [`DataStore`]: crate::store::DataStore
