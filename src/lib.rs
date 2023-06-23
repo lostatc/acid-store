@@ -12,7 +12,6 @@
 //! files, hard links, importing and exporting files to the local OS file system, and being mounted
 //! via FUSE
 //! - [`ValueRepo`] is a persistent, heterogeneous, map-like collection.
-//! - [`VersionRepo`] is an object store with support for content versioning.
 //! - [`StateRepo`] is a low-level repository type which can be used to implement higher-level
 //! repository types.
 //!
@@ -78,7 +77,6 @@
 //! ---            | ---
 //! `repo-file`    | Use the [`FileRepo`] repository type
 //! `repo-value`   | Use the [`ValueRepo`] repository type
-//! `repo-version` | Use the [`VersionRepo`] repository type
 //!
 //! These features enable different [`DataStore`] implementations.
 //!
@@ -112,7 +110,6 @@
 //! [`KeyRepo`]: crate::repo::key::KeyRepo
 //! [`FileRepo`]: crate::repo::file::FileRepo
 //! [`ValueRepo`]: crate::repo::value::ValueRepo
-//! [`VersionRepo`]: crate::repo::version::VersionRepo
 //! [`StateRepo`]: crate::repo::state::StateRepo
 //!
 //! [`DataStore`]: crate::store::DataStore

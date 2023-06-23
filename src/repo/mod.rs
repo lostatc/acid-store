@@ -84,7 +84,7 @@
 //!
 //! Instances of the same repository can be different repository types. This feature allows for
 //! having multiple repositories of different types which are backed by the same [`DataStore`]. For
-//! example, you could have a data store which contains both a [`FileRepo`] and a [`VersionRepo`] by
+//! example, you could have a data store which contains both a [`FileRepo`] and a [`KeyRepo`] by
 //! giving them different instance IDs, and data will still be deduplicated between them.
 //!
 //! This feature can also be used to manage memory usage. The amount of memory used by a repository
@@ -113,7 +113,6 @@
 //! [`InstanceId`]: crate::repo::InstanceId
 //! [`SwitchInstance::switch_instance`]: crate::repo::SwitchInstance::switch_instance
 //! [`FileRepo`]: crate::repo::file::FileRepo
-//! [`VersionRepo`]: crate::repo::version::VersionRepo
 
 pub use self::common::{
     peek_info, Chunking, Commit, Compression, ContentId, Encryption, InstanceId, Object, ObjectId,
@@ -152,7 +151,3 @@ pub mod state;
 #[cfg(feature = "repo-value")]
 #[cfg_attr(docsrs, doc(cfg(feature = "repo-value")))]
 pub mod value;
-
-#[cfg(feature = "repo-version")]
-#[cfg_attr(docsrs, doc(cfg(feature = "repo-version")))]
-pub mod version;

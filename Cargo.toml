@@ -108,7 +108,6 @@ store-sftp = ["dep:ssh2"]
 store-rclone = ["store-sftp", "dep:rand"]
 repo-file = ["dep:relative-path", "dep:walkdir", "dep:hole-punch"]
 repo-value = []
-repo-version = []
 file-metadata = [
   "repo-file",
   "dep:nix",

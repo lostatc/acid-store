@@ -1,13 +1,11 @@
 #![cfg(all(
     feature = "repo-value",
-    feature = "repo-version",
     feature = "encryption",
     feature = "compression"
 ))]
 
 use acid_store::repo::key::KeyRepo;
 use acid_store::repo::value::ValueRepo;
-use acid_store::repo::version::VersionRepo;
 use acid_store::repo::{
     Chunking, Commit, Compression, Encryption, OpenMode, OpenOptions, RepoConfig, ResourceLimit,
 };
@@ -145,7 +143,7 @@ fn open_or_create_nonexistent_repo() {
 
 #[rstest]
 fn opening_existing_repo_of_different_type_errs(repo_store: RepoStore) -> anyhow::Result<()> {
-    let mut repo = repo_store.create::<VersionRepo<String>>()?;
+    let mut repo = repo_store.create::<KeyRepo<String>>()?;
     repo.commit()?;
     drop(repo);
     assert_that!(repo_store.open::<ValueRepo<String>>())

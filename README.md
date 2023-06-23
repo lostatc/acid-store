@@ -52,7 +52,6 @@ This library provides the following abstractions for data storage.
   files, hard links, importing and exporting files to the local OS file system,
   and being mounted via FUSE
 - A persistent, heterogeneous, map-like collection
-- An object store with support for content versioning
 
 ### Backends
 
