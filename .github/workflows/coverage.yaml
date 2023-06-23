@@ -19,10 +19,17 @@ jobs:
       - name: Install native dependencies
         run: sudo apt-get install libacl1-dev acl libfuse3-dev fuse3 pkg-config
 
-      - name: Run cargo-tarpaulin
-        uses: actions-rs/tarpaulin@v0.1
+      - name: Install cargo-tarpaulin
+        uses: actions-rs/cargo@v1
         with:
-          args: --features 'encryption compression file-metadata repo-value repo-file' --ignore-tests
+          command: install
+          args: cargo-tarpaulin
+
+      - name: Run cargo-tarpaulin
+        uses: actions-rs/cargo@v1
+        with:
+          command: tarpaulin
+          args: --out Xml --features 'encryption compression file-metadata repo-value repo-file' --ignore-tests
 
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
