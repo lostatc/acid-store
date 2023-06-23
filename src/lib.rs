@@ -1,17 +1,16 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-//! `acid-store` is a library for secure, deduplicated, transactional, and verifiable data storage.
+//! acid-store is a library for secure, deduplicated, and transactional data storage. It provides
+//! abstractions for data storage over a number of storage backends.
 //!
-//! This crate provides high-level abstractions for data storage over a number of storage backends.
+//! This library provides the following abstractions for data storage, called repositories. They can
+//! be found in the [`crate::repo`] module.
 //!
-//! This library currently provides the following abstractions for data storage. They can be found
-//! in the [`crate::repo`] module.
-//!
-//! - [`KeyRepo`] is an object store which maps keys to seekable binary blobs.
-//! - [`FileRepo`] is a virtual file system which supports file metadata, special files, sparse
-//! files, hard links, importing and exporting files to the local OS file system, and being mounted
-//! via FUSE
-//! - [`ValueRepo`] is a persistent, heterogeneous, map-like collection.
+//! - [`KeyRepo`][crate::repo::key] is an object store which maps keys to seekable binary blobs.
+//! - [`ValueRepo`][crate::repo::value] is a persistent, heterogeneous, map-like collection.
+//! - [`FileRepo`] is a virtual file system which can be mounted via FUSE and supports file
+//! metadata, special files, sparse files, hard links, and importing and exporting files to the
+//! local file system.
 //! - [`StateRepo`] is a low-level repository type which can be used to implement higher-level
 //! repository types.
 //!
@@ -75,8 +74,8 @@
 //!
 //! Feature        | Description
 //! ---            | ---
-//! `repo-file`    | Use the [`FileRepo`] repository type
 //! `repo-value`   | Use the [`ValueRepo`] repository type
+//! `repo-file`    | Use the [`FileRepo`] repository type
 //!
 //! These features enable different [`DataStore`] implementations.
 //!
@@ -107,10 +106,10 @@
 //!
 //! [rclone]: https://rclone.org/
 //!
-//! [`KeyRepo`]: crate::repo::key::KeyRepo
-//! [`FileRepo`]: crate::repo::file::FileRepo
-//! [`ValueRepo`]: crate::repo::value::ValueRepo
-//! [`StateRepo`]: crate::repo::state::StateRepo
+//! [`KeyRepo`]: crate::repo::key
+//! [`FileRepo`]: crate::repo::file
+//! [`ValueRepo`]: crate::repo::value
+//! [`StateRepo`]: crate::repo::state
 //!
 //! [`DataStore`]: crate::store::DataStore
 //! [`DirectoryStore`]: crate::store::DirectoryStore

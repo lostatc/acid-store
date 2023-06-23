@@ -1,15 +1,14 @@
-//! High-level abstractions for data storage.
+//! Abstractions for data storage.
 //!
-//! This module provides abstractions for data storage called repositories. Each repository is
-//! backed by a [`DataStore`], and provides features like encryption, compression, deduplication,
-//! integrity checking, and atomic transactions.
+//! This module provides abstractions for data storage called repositories. A repository is backed
+//! by a [`DataStore`], and provides features like encryption, compression, deduplication, integrity
+//! checking, and atomic transactions.
 //!
 //! This module contains types which are common to most repositories. The most important of these
 //! are [`Object`] and [`ReadOnlyObject`], which provide views of data in a repository and are used
 //! to read data from them and write data to them.
 //!
-//! Each sub-module of this module contains a different repository type. If you're not sure which
-//! one you should use, [`KeyRepo`] has the most general use-case.
+//! Each sub-module of this module contains a different repository type.
 //!
 //! You can open or create a repository using [`OpenOptions`].
 //!

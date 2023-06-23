@@ -5,41 +5,40 @@
 
 # acid-store
 
-`acid-store` is a library for secure, deduplicated, transactional, and
-verifiable data storage.
+acid-store is a Rust library for secure, deduplicated, and transactional data
+storage.
 
-This library provides high-level abstractions for data storage over a number of
-storage backends. The goal is to decouple how you access your data from where
-you store it. You can access your data as an object store, a virtual file
-system, or a persistent collection, regardless of where the data is stored.
+This library provides abstractions for data storage over a number of storage
+backends. You can turn any storage backend into an encrypted and deduplicated
+object store, persistent collection, or virtual file system (which can be
+mounted via FUSE).
 
 Out of the box, this library supports the local file system, SQLite, Redis,
 Amazon S3, SFTP, and many cloud providers as storage backends. Storage backends
 are easy to implement, and this library builds on top of them to provide
-features like encryption, compression, deduplication, locking, and atomic
+encryption, compression, content-based deduplication, locking, and atomic
 transactions.
 
 For details and examples, see the [documentation](https://docs.rs/acid-store).
 
 ⚠ This project is experimental! ⚠
 
-This project experiences frequent breaking API changes and hasn't been tested
-thoroughly. This project is not ready for use in production environments. Please
-remember to back up your data if you choose to use this library. Also keep in
-mind that this code has not been audited for security.
+This project experiences frequent breaking API changes and hasn't seen
+significant real-world usage. This project is not ready for use in production
+environments. Also keep in mind that this code has not been audited for
+security.
 
 ## Features
 
 - Optional encryption of all data and metadata using XChaCha20-Poly1305 and
-  Argon2, powered by [libsodium](https://download.libsodium.org/doc/)
+  Argon2, via [libsodium](https://download.libsodium.org/doc/)
 - Optional compression using LZ4
-- Optional content-based deduplication using the ZPAQ chunking algorithm
-- Supports packing data into fixed-size blocks to avoid metadata leakage
+- Optional content-based deduplication
+- Supports packing data into fixed-size blocks to avoid metadata leakage when
+  using encryption
 - Integrity checking of data and metadata using checksums and (if encryption is
   enabled) AEAD
-- Transactional operations providing atomicity, consistency, isolation, and
-  durability (ACID)
-- Two-phase locking protects against concurrent access from multiple clients
+- Locking protects against concurrent access from multiple clients
 - Copy-on-write semantics
 - New storage backends are easy to implement
 
@@ -48,9 +47,9 @@ mind that this code has not been audited for security.
 This library provides the following abstractions for data storage.
 
 - An object store which maps keys to seekable binary blobs
-- A virtual file system which supports file metadata, special files, sparse
-  files, hard links, importing and exporting files to the local OS file system,
-  and being mounted via FUSE
+- A virtual file system which can be mounted via FUSE and supports file
+  metadata, special files, sparse files, hard links, and importing and exporting
+  files to the local file system
 - A persistent, heterogeneous, map-like collection
 
 ### Backends
@@ -67,10 +66,9 @@ This library provides the following storage backends out of the box.
 
 ## Benchmarks
 
-The following results show read and write speeds for an in-memory repository
-with various configurations. An in-memory repository is used to make benchmark
-results more consistent between runs and between machines. You can run the
-benchmarks yourself by running `cargo bench --features 'encryption'`.
+The following results show read and write speeds using an in-memory storage
+backend. You can run the benchmarks yourself by running `cargo bench --features
+'encryption'`.
 
 ### Specs
 
@@ -91,8 +89,8 @@ benchmarks yourself by running `cargo bench --features 'encryption'`.
 
 ## MSRV Policy
 
-The last two stable Rust releases are supported. Older releases may or may not
-be supported as well.
+The last two stable Rust releases are supported. Older releases may be supported
+as well.
 
 The MSRV will only be increased when necessary to take advantage of new Rust
 features—not every time there is a new Rust release. An increase in the MSRV
@@ -105,8 +103,7 @@ This policy was added with v0.13.0.
 
 Prior to version 1.0.0, breaking changes will be accompanied by a minor version
 bump, and new features and bug fixes will be accompanied by a patch version
-bump. The semantics of minor vs patch versions <1.0.0 is unspecified in the
-[semver spec](https://semver.org/).
+bump.
 
 This policy was added with v0.13.0.
 
