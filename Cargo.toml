@@ -1,6 +1,6 @@
 [package]
 name = "acid-store"
-version = "0.14.0"
+version = "0.14.1"
 authors = ["Wren Powell <wrenp@duck.com>"]
 edition = "2021"
 description = "A transactional and deduplicating virtual file system"
