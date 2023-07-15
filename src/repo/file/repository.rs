@@ -787,7 +787,7 @@ where
             .repo
             .state()
             .tree
-            .get(parent.as_ref())
+            .get(parent)
             .ok_or(crate::Error::NotFound)?;
 
         if !matches!(entry_handle.kind, HandleType::Directory) {

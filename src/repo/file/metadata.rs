@@ -76,7 +76,9 @@ pub enum AclQualifier {
 bitflags! {
     /// The permission mode for an access control list.
     #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
     #[derive(Serialize, Deserialize)]
+    #[serde(transparent)]
     pub struct AclMode: u32 {
         /// Read permissions.
         const R = exacl::Perm::READ.bits();
@@ -88,7 +90,7 @@ bitflags! {
         const X = exacl::Perm::EXECUTE.bits();
 
         /// Read, write, and execute permissions.
-        const RWX = Self::R.bits | Self::W.bits | Self::X.bits;
+        const RWX = Self::R.bits() | Self::W.bits() | Self::X.bits();
     }
 
 }
@@ -97,7 +99,9 @@ bitflags! {
 bitflags! {
     /// A type of access control list.
     #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
     #[derive(Serialize, Deserialize)]
+    #[serde(transparent)]
     pub struct AclType: u32 {
         /// The access ACL.
         const ACCESS = 1 << 0;
@@ -233,7 +237,9 @@ fn qualifier_to_entry(qualifier: AclQualifier, mode: AclMode, flags: exacl::Flag
 bitflags! {
     /// The permission mode for a file.
     #[cfg_attr(docsrs, doc(cfg(all(unix, feature = "file-metadata"))))]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
     #[derive(Serialize, Deserialize)]
+    #[serde(transparent)]
     pub struct FileMode: u32 {
         /// Read permissions for the owning user (`0o400`).
         const S_IRUSR = stat::Mode::S_IRUSR.bits();
