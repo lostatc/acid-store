@@ -20,7 +20,7 @@ jobs:
         with:
           profile: minimal
           # If you update this, update the Cargo.toml as well.
-          toolchain: "1.65.0"
+          toolchain: "1.70.0"
           override: true
 
       - name: "Run cargo check"
@@ -46,7 +46,7 @@ jobs:
         with:
           profile: minimal
           # If you update this, update the Cargo.toml as well.
-          toolchain: "1.65.0"
+          toolchain: "1.70.0"
           override: true
 
       - name: "Run cargo test"
