@@ -3,6 +3,10 @@
 [![Crates.io](https://img.shields.io/crates/v/acid-store?logo=rust&style=for-the-badge)](https://crates.io/crates/acid-store)
 [![docs.rs](https://img.shields.io/docsrs/acid-store?logo=docsdotrs&style=for-the-badge)](https://docs.rs/acid-store)
 
+⚠ **UNMAINTAINED**
+
+*I am no longer maintaining this project.*
+
 # acid-store
 
 acid-store is a Rust library for secure, deduplicated, and transactional data
